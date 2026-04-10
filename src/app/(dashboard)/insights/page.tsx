@@ -6,7 +6,6 @@ export default async function InsightsPage() {
   const summary = await api.insight.getDashboardSummary();
   const trend = await api.insight.getMarketTrend({ days: 7 });
   const maxPackages = Math.max(1, ...trend.map((row) => row.newPackages));
-  const avgPackages = trend.reduce((sum, row) => sum + row.newPackages, 0) / trend.length;
   const latestVsPrev = (trend[0]?.newPackages ?? 0) - (trend[1]?.newPackages ?? 0);
 
   return (
@@ -25,18 +24,15 @@ export default async function InsightsPage() {
         />
       </section>
 
-      <section className="mt-4 rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-        <h2 className="font-bold text-sm pb-2 border-b border-slate-200">7-Day Trend</h2>
+      <section className="panel mt-4 p-3">
+        <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">7-Day Trend</h2>
         <ul className="mt-2 space-y-2 text-xs">
           {trend.map((row, idx) => {
             const prevRow = idx > 0 ? trend[idx - 1] : null;
             const change = prevRow ? row.newPackages - prevRow.newPackages : 0;
             const pctChange = prevRow ? Math.round((change / prevRow.newPackages) * 100) : 0;
             return (
-              <li
-                key={row.date}
-                className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-2.5 py-2 transition-colors"
-              >
+              <li key={row.date} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 transition-colors hover:bg-slate-100">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="font-semibold text-slate-900">{row.date}</span>
                   <div className="flex items-center gap-1">

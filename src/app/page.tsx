@@ -7,8 +7,8 @@ export default async function Home() {
   const latestAlerts = await api.notification.list({ limit: 3 });
 
   return (
-    <main className="min-h-screen px-4 py-10 text-slate-900">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
+    <main className="min-h-screen px-4 py-8 text-slate-900">
+      <div className="mx-auto w-full max-w-[1320px] space-y-6">
         <section className="rounded-3xl border border-cyan-100 bg-gradient-to-r from-cyan-950 via-sky-900 to-teal-900 p-8 text-white shadow-sm">
           <p className="text-xs uppercase tracking-[0.2em] text-cyan-100">
             BidTool v3
@@ -37,20 +37,20 @@ export default async function Home() {
           </div>
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <article className="panel p-4">
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Tổng gói thầu</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.totalPackages}</p>
           </article>
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+          <article className="panel p-4">
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Cảnh báo chưa đọc</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.unreadAlerts}</p>
           </article>
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+          <article className="panel p-4">
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Workflow đang bật</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.activeWorkflows}</p>
           </article>
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+          <article className="panel p-4">
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Tỷ lệ thành công workflow</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">
               {summary.workflowSuccessRate}%
@@ -59,7 +59,7 @@ export default async function Home() {
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+          <article className="panel p-4">
             <h2 className="text-lg font-semibold">Lối tắt thao tác</h2>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <Link
@@ -89,7 +89,7 @@ export default async function Home() {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+          <article className="panel p-4">
             <h2 className="text-lg font-semibold">Cảnh báo mới nhất</h2>
             <ul className="mt-3 space-y-2">
               {latestAlerts.map((alert) => (

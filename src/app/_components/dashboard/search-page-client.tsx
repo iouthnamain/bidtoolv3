@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   usePathname,
   useRouter,
   useSearchParams,
   type ReadonlyURLSearchParams,
 } from "next/navigation";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
 
 import {
   CATEGORY_OPTIONS,
@@ -192,16 +198,16 @@ function getImportantStatuses(item: {
 
   if (item.matchScore >= 85) {
     badges.push({
-      label: "✓ Cao",
-      className: "border-emerald-400 bg-emerald-500/20 text-emerald-700 font-semibold",
+      label: "Match cao",
+      className: "border-emerald-300 bg-emerald-100 text-emerald-700 font-semibold",
       level: "important",
     });
   }
 
   if (item.budget >= 10_000_000_000) {
     badges.push({
-      label: "💰 Giá trị",
-      className: "border-amber-400 bg-amber-500/20 text-amber-700 font-semibold",
+      label: "Gói lớn",
+      className: "border-amber-300 bg-amber-100 text-amber-700 font-semibold",
       level: "important",
     });
   }
@@ -212,8 +218,8 @@ function getImportantStatuses(item: {
       (Date.now() - publishedAt.getTime()) / (1000 * 60 * 60);
     if (hoursFromPublish <= 24) {
       badges.push({
-        label: "🆕 Mới",
-        className: "border-blue-400 bg-blue-500/20 text-blue-700",
+        label: "Mới đăng",
+        className: "border-blue-300 bg-blue-100 text-blue-700",
         level: "normal",
       });
     }
@@ -226,14 +232,14 @@ function getImportantStatuses(item: {
 
     if (hoursToClose < 0) {
       badges.push({
-        label: "⊘ Đóng",
-        className: "border-slate-300 bg-slate-400/20 text-slate-600",
+        label: "Đã đóng",
+        className: "border-slate-300 bg-slate-100 text-slate-600",
         level: "normal",
       });
     } else if (hoursToClose <= 48) {
       badges.push({
-        label: "⚠ SAP DONG",
-        className: "border-rose-500 bg-rose-500/30 text-rose-700 font-bold animate-pulse border-l-4",
+        label: "Sắp đóng",
+        className: "border-rose-400 bg-rose-100 text-rose-700 font-bold",
         level: "critical",
       });
     }
@@ -718,7 +724,7 @@ export function SearchPageClient() {
     applyDraftFilters();
   };
 
-  const handleSortByHeader = (field: SortBy) => {
+  const handleSortByHeader = useCallback((field: SortBy) => {
     setPage(1);
     if (field === sortBy) {
       setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -727,7 +733,7 @@ export function SearchPageClient() {
 
     setSortBy(field);
     setSortOrder("desc");
-  };
+  }, [sortBy]);
 
   const allCurrentPageSelected =
     packages.length > 0 &&
@@ -750,8 +756,239 @@ export function SearchPageClient() {
     });
   }, [packages]);
 
+  type SearchRow = (typeof packages)[number];
+
+  const columns = useMemo<ColumnDef<SearchRow>[]>(
+    () => [
+      {
+        id: "select",
+        header: () => (
+          <input
+            type="checkbox"
+            checked={allCurrentPageSelected}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedExternalIds(
+                  new Set<string>(packages.map((item) => item.externalId)),
+                );
+                return;
+              }
+              setSelectedExternalIds(new Set<string>());
+            }}
+            aria-label="Chọn tất cả gói thầu trang hiện tại"
+          />
+        ),
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            checked={selectedExternalIds.has(row.original.externalId)}
+            onChange={(e) => {
+              setSelectedExternalIds((prev) => {
+                const next = new Set(prev);
+                if (e.target.checked) {
+                  next.add(row.original.externalId);
+                } else {
+                  next.delete(row.original.externalId);
+                }
+                return next;
+              });
+            }}
+            aria-label={`Chọn gói thầu ${row.original.title}`}
+          />
+        ),
+        size: 44,
+      },
+      {
+        accessorKey: "title",
+        header: () => (
+          <button
+            type="button"
+            onClick={() => handleSortByHeader("title")}
+            className="font-semibold"
+          >
+            Tên {sortBy === "title" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+          </button>
+        ),
+        cell: ({ row }) => (
+          <p className="min-w-[240px] max-w-[320px] font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere]">
+            {row.original.title}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "inviter",
+        header: () => (
+          <button
+            type="button"
+            onClick={() => handleSortByHeader("inviter")}
+            className="font-semibold"
+          >
+            Bên mời{" "}
+            {sortBy === "inviter" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+          </button>
+        ),
+        cell: ({ row }) => (
+          <p className="max-w-[240px] text-xs [overflow-wrap:anywhere]">
+            {row.original.inviter}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "province",
+        header: "Tỉnh",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs">{row.original.province}</span>
+        ),
+      },
+      {
+        accessorKey: "category",
+        header: "Lĩnh vực",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs">{row.original.category}</span>
+        ),
+      },
+      {
+        accessorKey: "budget",
+        header: () => (
+          <button
+            type="button"
+            onClick={() => handleSortByHeader("budget")}
+            className="w-full text-right font-semibold"
+          >
+            Ngân sách{" "}
+            {sortBy === "budget" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+          </button>
+        ),
+        cell: ({ row }) => (
+          <p className="whitespace-nowrap text-right font-mono font-semibold">
+            {formatCurrency(row.original.budget)}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "publishedAt",
+        header: () => (
+          <button
+            type="button"
+            onClick={() => handleSortByHeader("publishedAt")}
+            className="font-semibold"
+          >
+            Ngày đăng{" "}
+            {sortBy === "publishedAt" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+          </button>
+        ),
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-xs">
+            {formatDate(row.original.publishedAt)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "matchScore",
+        header: () => (
+          <button
+            type="button"
+            onClick={() => handleSortByHeader("matchScore")}
+            className="w-full text-right font-semibold"
+          >
+            Match{" "}
+            {sortBy === "matchScore" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
+          </button>
+        ),
+        cell: ({ row }) => (
+          <p
+            className={`whitespace-nowrap text-right text-sm font-bold ${
+              row.original.matchScore >= 85
+                ? "text-emerald-700"
+                : row.original.matchScore >= 70
+                  ? "text-blue-700"
+                  : "text-slate-500"
+            }`}
+          >
+            {row.original.matchScore}%
+          </p>
+        ),
+      },
+      {
+        id: "status",
+        header: "Ưu tiên",
+        cell: ({ row }) => {
+          const statusBadges = getImportantStatuses(row.original);
+          return (
+            <div className="flex min-w-[180px] max-w-[220px] flex-wrap gap-1">
+              {statusBadges.length === 0 ? (
+                <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                  Bình thường
+                </span>
+              ) : (
+                statusBadges.map((badge) => (
+                  <span
+                    key={`${row.original.externalId}-${badge.label}`}
+                    className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                ))
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        id: "action",
+        header: "Hành động",
+        cell: ({ row }) => (
+          <div className="flex min-w-[180px] flex-wrap gap-1">
+            <Link
+              href={`/package-details/${encodeURIComponent(row.original.externalId)}?sourceUrl=${encodeURIComponent(row.original.sourceUrl)}`}
+              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+            >
+              Chi tiết
+            </Link>
+            <a
+              href={row.original.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+            >
+              Nguồn
+            </a>
+            <button
+              type="button"
+              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+              onClick={() => {
+                addWatchlist.mutate({
+                  type: "package",
+                  refKey: row.original.externalId,
+                  label: row.original.title,
+                });
+              }}
+            >
+              Watch
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [
+      addWatchlist,
+      allCurrentPageSelected,
+      handleSortByHeader,
+      packages,
+      selectedExternalIds,
+      sortBy,
+      sortOrder,
+    ],
+  );
+
+  const table = useReactTable({
+    data: packages,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm sm:p-5">
+    <section className="panel p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Kho dữ liệu gói thầu realtime</h2>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
@@ -1081,163 +1318,50 @@ export function SearchPageClient() {
         ) : null}
 
         <div className="mt-6 w-full max-w-full overflow-x-auto rounded-lg border border-slate-300 shadow-sm">
-          <table className="min-w-[1080px] w-full divide-y divide-slate-200 text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-900 text-left text-[10px] uppercase tracking-widest text-white font-bold">
-              <tr>
-                <th className="px-2 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allCurrentPageSelected}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedExternalIds(
-                          new Set<string>(packages.map((item) => item.externalId)),
-                        );
-                        return;
-                      }
-
-                      setSelectedExternalIds(new Set<string>());
-                    }}
-                    aria-label="Chọn tất cả gói thầu trang hiện tại"
-                  />
-                </th>
-                <th className="whitespace-nowrap px-2 py-2">
-                  <button type="button" onClick={() => handleSortByHeader("title")} className="font-bold">
-                    Tên {sortBy === "title" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-                  </button>
-                </th>
-                <th className="whitespace-nowrap px-2 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSortByHeader("inviter")}
-                    className="font-bold"
-                  >
-                    Bên mời {sortBy === "inviter" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-                  </button>
-                </th>
-                <th className="whitespace-nowrap px-2 py-2 font-bold">Tỉnh</th>
-                <th className="whitespace-nowrap px-2 py-2 font-bold">Lĩnh vực</th>
-                <th className="whitespace-nowrap px-2 py-2 text-right">
-                  <button type="button" onClick={() => handleSortByHeader("budget")} className="font-bold w-full text-right">
-                    Ngân sách {sortBy === "budget" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-                  </button>
-                </th>
-                <th className="whitespace-nowrap px-2 py-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSortByHeader("publishedAt")}
-                    className="font-bold"
-                  >
-                    Ngày đăng {sortBy === "publishedAt" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-                  </button>
-                </th>
-                <th className="whitespace-nowrap px-2 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => handleSortByHeader("matchScore")}
-                    className="font-bold w-full text-right"
-                  >
-                    Match {sortBy === "matchScore" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-                  </button>
-                </th>
-                <th className="whitespace-nowrap px-2 py-2 font-bold">Trạng thái</th>
-                <th className="whitespace-nowrap px-2 py-2 font-bold">Hành động</th>
-              </tr>
+          <table className="min-w-[1180px] w-full divide-y divide-slate-200 text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-900 text-left text-[10px] font-bold uppercase tracking-widest text-white">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th key={header.id} className="px-2 py-2">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-              {packages.map((item) => {
-                const statusBadges = getImportantStatuses(item);
+              {table.getRowModel().rows.map((row) => {
+                const statusBadges = getImportantStatuses(row.original);
                 const hasCritical = statusBadges.some(
                   (badge) => badge.level === "critical",
                 );
 
                 return (
-                <tr
-                  key={item.externalId}
-                  className={`border-l-4 transition-colors ${hasCritical ? "bg-rose-50/80 border-l-rose-500 hover:bg-rose-100/50" : "border-l-transparent hover:bg-slate-50"}`}
-                >
-                  <td className="px-2 py-2 align-middle">
-                    <input
-                      type="checkbox"
-                      checked={selectedExternalIds.has(item.externalId)}
-                      onChange={(e) => {
-                        setSelectedExternalIds((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) {
-                            next.add(item.externalId);
-                          } else {
-                            next.delete(item.externalId);
-                          }
-                          return next;
-                        });
-                      }}
-                      aria-label={`Chọn gói thầu ${item.title}`}
-                    />
-                  </td>
-                  <td className="min-w-[240px] max-w-[320px] px-2 py-2 align-middle font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere]">
-                    {item.title}
-                  </td>
-                  <td className="max-w-[240px] px-2 py-2 align-middle [overflow-wrap:anywhere] text-xs">{item.inviter}</td>
-                  <td className="px-2 py-2 align-middle whitespace-nowrap text-xs">{item.province}</td>
-                  <td className="px-2 py-2 align-middle whitespace-nowrap text-xs">{item.category}</td>
-                  <td className="px-2 py-2 align-middle whitespace-nowrap font-mono font-semibold text-right">{formatCurrency(item.budget)}</td>
-                  <td className="px-2 py-2 align-middle whitespace-nowrap text-xs">{formatDate(item.publishedAt)}</td>
-                  <td className={`px-2 py-2 align-middle whitespace-nowrap font-bold text-right text-sm ${item.matchScore >= 85 ? "text-emerald-600" : item.matchScore >= 70 ? "text-blue-600" : "text-slate-500"}`}>{item.matchScore}%</td>
-                  <td className="min-w-[160px] px-2 py-2 align-middle">
-                    <div className="flex max-w-[200px] flex-wrap gap-0.5">
-                      {statusBadges.length === 0 ? (
-                        <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 font-medium">
-                          —
-                        </span>
-                      ) : (
-                        statusBadges.map((badge) => (
-                          <span
-                            key={`${item.externalId}-${badge.label}`}
-                            className={`rounded border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${badge.className}`}
-                          >
-                            {badge.label}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="min-w-[140px] px-2 py-2 align-middle">
-                    <div className="flex flex-wrap gap-0.5">
-                      <Link
-                        href={`/package-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`}
-                        className="whitespace-nowrap rounded border border-slate-300 px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100 bg-white"
-                      >
-                        Chi tiết
-                      </Link>
-                      <a
-                        href={item.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="whitespace-nowrap rounded border border-slate-300 px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100 bg-white"
-                      >
-                        Xem
-                      </a>
-                      <button
-                        type="button"
-                        className="whitespace-nowrap rounded border border-slate-300 px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100 bg-white"
-                        onClick={() => {
-                          addWatchlist.mutate({
-                            type: "package",
-                            refKey: item.externalId,
-                            label: item.title,
-                          });
-                        }}
-                      >
-                        ⭐
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  <tr
+                    key={row.id}
+                    className={`border-l-4 transition-colors ${
+                      hasCritical
+                        ? "border-l-rose-500 bg-rose-50/70 hover:bg-rose-100/50"
+                        : "border-l-transparent hover:bg-slate-50"
+                    }`}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-2 py-2 align-middle">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
                 );
               })}
               {packages.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-6 text-center text-slate-500 text-xs" colSpan={10}>
+                  <td className="px-2 py-6 text-center text-xs text-slate-500" colSpan={10}>
                     Không tìm thấy gói thầu phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>

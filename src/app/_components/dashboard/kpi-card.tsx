@@ -7,16 +7,22 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, hint, trend }: KpiCardProps) {
   return (
-    <article className="rounded-xl border border-slate-200 bg-gradient-to-br from-white via-slate-50/50 to-slate-50 p-3 shadow-xs backdrop-blur hover:border-slate-300 transition-colors">
+    <article className="panel rounded-xl p-3 transition-colors hover:border-slate-300">
       <div className="flex items-start justify-between">
-        <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">{label}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
         {trend ? (
-          <span className={`text-xs font-bold ${trend === "up" ? "text-emerald-600" : "text-rose-600"}`}>
-            {trend === "up" ? "↑" : "↓"}
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+              trend === "up"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {trend === "up" ? "Up" : "Down"}
           </span>
         ) : null}
       </div>
-      <p className="mt-1.5 text-4xl font-bold tracking-tight text-slate-900 leading-none">{value}</p>
+      <p className="mt-1.5 text-3xl leading-none font-bold tracking-tight text-slate-900">{value}</p>
       {hint ? <p className="mt-1 text-[11px] text-slate-500">{hint}</p> : null}
     </article>
   );

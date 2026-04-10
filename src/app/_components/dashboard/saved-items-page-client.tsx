@@ -96,9 +96,9 @@ export function SavedItemsPageClient() {
   });
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+    <div className="grid gap-3 lg:grid-cols-2">
+      <section className="panel p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <h2 className="font-bold text-sm">Smart Views</h2>
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
             {savedFilters.length}
@@ -114,7 +114,7 @@ export function SavedItemsPageClient() {
             {savedFilters.map((filter) => (
               <li
                 key={filter.id}
-                className="rounded-lg border border-slate-200 bg-slate-50/50 p-2.5 hover:bg-slate-100 transition-colors"
+                className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 transition-colors hover:bg-slate-100"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2 mb-1.5">
                   <div className="min-w-0 flex-1">
@@ -125,7 +125,7 @@ export function SavedItemsPageClient() {
                   </div>
                   <button
                     type="button"
-                    className="shrink-0 rounded border border-rose-300 bg-rose-100 hover:bg-rose-200 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 disabled:opacity-50 transition-colors"
+                    className="shrink-0 rounded border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-200 disabled:opacity-50"
                     disabled={deleteSavedFilter.isPending}
                     onClick={() => {
                       deleteSavedFilter.mutate({ id: filter.id });
@@ -152,7 +152,7 @@ export function SavedItemsPageClient() {
                 <div className="mt-2">
                   <Link
                     href={buildSavedFilterHref(filter)}
-                    className="inline-flex rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 text-[10px] font-bold transition-colors"
+                    className="inline-flex rounded bg-sky-700 px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-sky-800"
                   >
                     Áp dụng
                   </Link>
@@ -163,8 +163,8 @@ export function SavedItemsPageClient() {
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+      <section className="panel p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <h2 className="font-bold text-sm">Watchlist</h2>
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
             {watchlist.length}
@@ -173,7 +173,7 @@ export function SavedItemsPageClient() {
 
         {watchlist.length === 0 ? (
           <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-xs text-slate-600">
-            Watchlist kosong. → Tambah dari Search.
+            Chưa có mục theo dõi. → Thêm từ trang Search.
           </p>
         ) : (
           <ul className="mt-2 space-y-1">

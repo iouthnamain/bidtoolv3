@@ -109,7 +109,7 @@ function SidebarNav({
             onClick={onNavigate}
             title={collapsed ? item.label : undefined}
             aria-current={isActive ? "page" : undefined}
-            className={`group rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+            className={`group rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
               isActive
                 ? "bg-gradient-to-r from-cyan-900 to-sky-800 text-white shadow-sm"
                 : "text-slate-700 hover:bg-slate-100"
@@ -184,7 +184,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen flex-col text-slate-900 sm:flex-row">
       <aside
-        className={`hidden w-full shrink-0 border-b border-slate-200/80 bg-white/90 p-4 backdrop-blur transition-all duration-300 ease-out sm:flex sm:h-screen sm:flex-col sm:border-b-0 sm:border-r ${
+        className={`hidden w-full shrink-0 border-b border-slate-200/80 bg-white/95 p-3 backdrop-blur transition-all duration-300 ease-out sm:flex sm:h-screen sm:flex-col sm:border-b-0 sm:border-r ${
           sidebarCollapsed ? "sm:w-24" : "sm:w-72"
         }`}
       >
@@ -199,7 +199,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </button>
 
         <div
-          className={`rounded-2xl border border-cyan-100 bg-gradient-to-br from-cyan-900 via-sky-900 to-teal-900 text-white shadow-sm ${
+          className={`rounded-xl border border-cyan-100 bg-gradient-to-br from-cyan-900 via-sky-900 to-teal-900 text-white shadow-sm ${
             sidebarCollapsed ? "p-2.5" : "p-4"
           }`}
         >
@@ -252,7 +252,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6">{children}</div>
+          <div className="mx-auto w-full max-w-[1440px] px-4 py-5">{children}</div>
         </main>
       </div>
 

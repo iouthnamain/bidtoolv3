@@ -24,13 +24,13 @@ export function WorkflowsPageClient() {
   });
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-      <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
-          <h2 className="font-bold text-sm">Workflows</h2>
+    <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+      <section className="panel p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+          <h2 className="text-sm font-bold">Workflows</h2>
           <button
             type="button"
-            className="w-full rounded bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 text-xs font-bold transition-colors sm:w-auto"
+            className="w-full rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-800 sm:w-auto"
             onClick={() => {
               createWorkflow.mutate({
                 name: `Workflow mới ${workflows.length + 1}`,
@@ -42,11 +42,11 @@ export function WorkflowsPageClient() {
             }}
             disabled={createWorkflow.isPending}
           >
-            {createWorkflow.isPending ? "..." : "+"}
+            {createWorkflow.isPending ? "Đang tạo..." : "Tạo workflow"}
           </button>
         </div>
 
-        <div className="mt-2 space-y-1.5">
+        <div className="mt-2 space-y-2">
           {workflows.length === 0 ? (
             <article className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-xs text-slate-600">
               Không có workflow. ➜ Tạo mới
@@ -65,8 +65,8 @@ export function WorkflowsPageClient() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
-        <h3 className="font-bold text-sm pb-2 border-b border-slate-200">Thông báo gần đây</h3>
+      <section className="panel p-3">
+        <h3 className="border-b border-slate-200 pb-2 text-sm font-bold">Thông báo gần đây</h3>
         <ul className="mt-2 space-y-1.5 text-xs text-slate-700">
           {notifications.length === 0 ? (
             <li className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-slate-500">
@@ -74,7 +74,10 @@ export function WorkflowsPageClient() {
             </li>
           ) : (
             notifications.map((item) => (
-              <li key={item.id} className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 hover:bg-slate-100 transition-colors">
+              <li
+                key={item.id}
+                className="rounded-lg border border-slate-200 bg-slate-50/90 px-2 py-1.5 transition-colors hover:bg-slate-100"
+              >
                 <p className="font-semibold text-slate-900 leading-tight">{item.title}</p>
                 <p className="text-slate-600 text-[10px] mt-0.5">{item.body}</p>
               </li>

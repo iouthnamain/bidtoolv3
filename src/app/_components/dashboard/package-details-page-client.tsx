@@ -36,8 +36,8 @@ export function PackageDetailsPageClient({
   });
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+    <div className="space-y-4">
+      <section className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Source URL</p>
@@ -65,18 +65,18 @@ export function PackageDetailsPageClient({
         <h2 className="mt-3 text-lg font-semibold text-slate-900">{details.pageTitle}</h2>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="grid gap-3 sm:grid-cols-2">
+        <article className="panel p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Products (heuristic)</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{details.products.length}</p>
         </article>
-        <article className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+        <article className="panel p-4">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Available links</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">{details.links.length}</p>
         </article>
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Danh mục hàng hóa</h3>
         {details.requiredTables.commodityCategories.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -96,7 +96,7 @@ export function PackageDetailsPageClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Nội dung TBMT</h3>
         {details.requiredTables.tenderNoticeContents.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -116,7 +116,7 @@ export function PackageDetailsPageClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Hồ sơ mời thầu</h3>
         {details.requiredTables.invitationDocuments.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -125,7 +125,7 @@ export function PackageDetailsPageClient({
         ) : (
           <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
                 <tr>
                   <th className="px-3 py-2">Tên hiển thị</th>
                   <th className="px-3 py-2">Loại</th>
@@ -157,7 +157,7 @@ export function PackageDetailsPageClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Danh sách các lô</h3>
         {details.requiredTables.lotList.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -177,7 +177,7 @@ export function PackageDetailsPageClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Danh sách products</h3>
         {details.products.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -200,7 +200,7 @@ export function PackageDetailsPageClient({
         )}
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm">
+      <section className="panel p-4">
         <h3 className="text-lg font-semibold">Danh sách links khả dụng</h3>
         {details.links.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -209,7 +209,7 @@ export function PackageDetailsPageClient({
         ) : (
           <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
                 <tr>
                   <th className="px-3 py-2">Text</th>
                   <th className="px-3 py-2">Host</th>

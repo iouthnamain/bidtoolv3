@@ -12,7 +12,7 @@ export default async function DashboardPage() {
       title="Tổng quan điều hành"
       description="Theo dõi nhanh KPI, cảnh báo và trạng thái automation"
     >
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Tổng gói thầu"
           value={summary.totalPackages}
@@ -35,9 +35,9 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <section className="mt-6 grid gap-4">
+      <section className="mt-4 grid gap-3">
         {alerts.length === 0 ? (
-          <article className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 text-sm text-slate-600 shadow-sm">
+          <article className="panel p-5 text-sm text-slate-600">
             Chưa có cảnh báo mới. Hệ thống sẽ hiển thị cảnh báo tại đây khi workflow tạo sự kiện.
           </article>
         ) : (

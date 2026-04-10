@@ -5,9 +5,10 @@ interface AlertCardProps {
 }
 
 const severityClass: Record<AlertCardProps["severity"], string> = {
-  high: "bg-rose-500/10 text-rose-700 border-rose-300 border-l-4 border-l-rose-500",
-  medium: "bg-amber-500/10 text-amber-700 border-amber-300 border-l-4 border-l-amber-500",
-  low: "bg-sky-500/10 text-sky-700 border-sky-300 border-l-4 border-l-sky-500",
+  high: "border-rose-300 bg-rose-50/90 text-rose-800 border-l-4 border-l-rose-600",
+  medium:
+    "border-amber-300 bg-amber-50/90 text-amber-800 border-l-4 border-l-amber-600",
+  low: "border-sky-300 bg-sky-50/90 text-sky-800 border-l-4 border-l-sky-600",
 };
 
 const severityLabel: Record<AlertCardProps["severity"], string> = {
@@ -18,14 +19,18 @@ const severityLabel: Record<AlertCardProps["severity"], string> = {
 
 export function AlertCard({ title, body, severity }: AlertCardProps) {
   return (
-    <article className={`rounded-lg border p-3 shadow-xs backdrop-blur ${severityClass[severity]}`}>
+    <article
+      className={`rounded-xl border p-3 shadow-sm backdrop-blur ${severityClass[severity]}`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 font-semibold [overflow-wrap:anywhere]">{title}</p>
-        <span className="shrink-0 rounded text-xs font-semibold px-1.5 py-0.5 bg-white/40">
+        <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere]">
+          {title}
+        </p>
+        <span className="shrink-0 rounded bg-white/60 px-1.5 py-0.5 text-[10px] font-semibold">
           {severityLabel[severity]}
         </span>
       </div>
-      <p className="mt-1.5 text-sm leading-relaxed opacity-90">{body}</p>
+      <p className="mt-1 text-xs leading-relaxed opacity-95">{body}</p>
     </article>
   );
 }
