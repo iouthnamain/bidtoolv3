@@ -1,0 +1,225 @@
+{
+  "main": {
+    "id": "38b610625f9c7a10",
+    "type": "split",
+    "children": [
+      {
+        "id": "4ccba0ebc1bfedb3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "feb12e08e2ff211e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/04-mvp-roadmap.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "04-mvp-roadmap"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "2074bd733bf74359",
+    "type": "split",
+    "children": [
+      {
+        "id": "484f65ed3c58e5e9",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1609f5e4140612ac",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "7c129f15e78b46d4",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "9f095ce2f7c081d8",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 200
+  },
+  "right": {
+    "id": "51a387a0768d241c",
+    "type": "split",
+    "children": [
+      {
+        "id": "d3a60c87675f0b4f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "4deef11de4986581",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/04-mvp-roadmap.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for 04-mvp-roadmap"
+            }
+          },
+          {
+            "id": "40b2522e3cd5f2d0",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/04-mvp-roadmap.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from 04-mvp-roadmap"
+            }
+          },
+          {
+            "id": "4b74214422a78be5",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "495ee1b0b4aa12a6",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "4b7ad2d27349b726",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/04-mvp-roadmap.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of 04-mvp-roadmap"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "1609f5e4140612ac",
+  "lastOpenFiles": [
+    "docs/06-bidwinner-public-research.md",
+    "src/app/(dashboard)/error.tsx",
+    "src/app/(dashboard)/layout.tsx",
+    "src/app/_components/dashboard/dashboard-layout.tsx",
+    "drizzle/0001_nasty_vargas.sql",
+    "drizzle/meta/0001_snapshot.json",
+    "drizzle/0000_purple_starhawk.sql",
+    "drizzle/meta/0000_snapshot.json",
+    "drizzle/meta/_journal.json",
+    "drizzle/meta",
+    "drizzle",
+    "node_modules/dotenv/skills/dotenv/SKILL.md",
+    "node_modules/dotenv/skills/dotenvx/SKILL.md",
+    "node_modules/dotenv/SECURITY.md",
+    "node_modules/dotenv/README.md",
+    "node_modules/dotenv/README-es.md",
+    "node_modules/dotenv/CHANGELOG.md",
+    "node_modules/source-map/README.md",
+    "node_modules/source-map/CHANGELOG.md",
+    "node_modules/buffer-from/readme.md",
+    "node_modules/source-map-support/README.md",
+    "node_modules/source-map-support/LICENSE.md",
+    "node_modules/@esbuild/linux-x64/README.md",
+    "node_modules/tsx/node_modules/esbuild/node_modules/@esbuild/linux-x64/README.md",
+    "node_modules/tsx/node_modules/esbuild/README.md",
+    "node_modules/tsx/node_modules/esbuild/LICENSE.md",
+    "node_modules/tsx/README.md",
+    "node_modules/esbuild/README.md",
+    "node_modules/esbuild/LICENSE.md",
+    "node_modules/@esbuild-kit/core-utils/node_modules/esbuild/node_modules/@esbuild/linux-x64/README.md",
+    "node_modules/@esbuild-kit/core-utils/node_modules/esbuild/README.md",
+    "node_modules/@esbuild-kit/core-utils/node_modules/esbuild/LICENSE.md",
+    "node_modules/@esbuild-kit/esm-loader/README.md",
+    "node_modules/@esbuild-kit/core-utils/README.md",
+    "node_modules/@drizzle-team/brocli/README.md",
+    "node_modules/drizzle-kit/README.md"
+  ]
+}

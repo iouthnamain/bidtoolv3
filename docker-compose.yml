@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bidtoolv3-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bidtoolv3
+      POSTGRES_USER: bidtool
+      POSTGRES_PASSWORD: bidtool
+    ports:
+      - "5432:5432"
+    volumes:
+      - bidtoolv3-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bidtool -d bidtoolv3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bidtoolv3-postgres-data:
