@@ -4,18 +4,21 @@ import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { PackageDetailsPageClient } from "~/app/_components/dashboard/package-details-page-client";
 
 type PackageDetailsPageProps = {
-  params: {
+  params: Promise<{
     externalId: string;
-  };
-  searchParams: {
+  }>;
+  searchParams: Promise<{
     sourceUrl?: string;
-  };
+  }>;
 };
 
-export default function PackageDetailsPage({
+export default async function PackageDetailsPage({
   params,
   searchParams,
 }: PackageDetailsPageProps) {
+  const { externalId } = await params;
+  const { sourceUrl } = await searchParams;
+
   return (
     <DashboardShell
       title="Chi tiết từ trang nguồn"
@@ -29,8 +32,8 @@ export default function PackageDetailsPage({
         }
       >
         <PackageDetailsPageClient
-          externalId={params.externalId}
-          sourceUrl={searchParams.sourceUrl}
+          externalId={externalId}
+          sourceUrl={sourceUrl}
         />
       </Suspense>
     </DashboardShell>
