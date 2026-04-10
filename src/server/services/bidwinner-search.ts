@@ -67,9 +67,18 @@ export type LiveSearchResult = {
 };
 
 const DEFAULT_HEADERS = {
-  "User-Agent": "BidToolV3/1.0 (+https://localhost)",
-  Accept: "text/html,application/xhtml+xml",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  Referer: env.BIDWINNER_BASE_URL,
 };
+
+const SEARCH_PAYLOAD_REGEX = /<bid-search[^>]*:hsmts="([^"]+)"/i;
+const MAX_FETCH_ATTEMPTS = 3;
 
 const STOP_WORDS = new Set([
   "goi",
@@ -189,8 +198,7 @@ function extractDynamicKeywords(items: LivePackageItem[]): string[] {
 }
 
 function parseBidSearchPayload(html: string): BidWinnerPayload {
-  const payloadRegex = /<bid-search[^>]*:hsmts="([^"]+)"/i;
-  const match = payloadRegex.exec(html);
+  const match = SEARCH_PAYLOAD_REGEX.exec(html);
   if (!match?.[1]) {
     throw new Error("Không tìm thấy payload dữ liệu BidWinner trong HTML.");
   }
@@ -335,27 +343,89 @@ function buildOptions(items: LivePackageItem[]) {
   return { provinces, categories, keywords };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function summarizeHtmlFailure(html: string): string {
+  const normalized = html.replace(/\s+/g, " ").trim().slice(0, 220);
+
+  if (/just a moment/i.test(html)) {
+    return "Cloudflare challenge";
+  }
+
+  if (/attention required/i.test(html)) {
+    return "Cloudflare access page";
+  }
+
+  if (/captcha/i.test(html)) {
+    return "captcha challenge";
+  }
+
+  if (/access denied/i.test(html)) {
+    return "access denied";
+  }
+
+  if (/login/i.test(html) && /bidwinner/i.test(html)) {
+    return "unexpected login page";
+  }
+
+  if (!normalized) {
+    return "empty HTML response";
+  }
+
+  return `unexpected HTML: ${normalized}`;
+}
+
 async function fetchBidWinnerPage(page: number): Promise<string> {
   const url = new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL);
   url.searchParams.set("page", String(page));
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), env.BIDWINNER_TIMEOUT_MS);
+  let lastError: unknown;
 
-  try {
-    const response = await fetch(url, {
-      headers: DEFAULT_HEADERS,
-      signal: controller.signal,
-    });
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
+    );
 
-    if (!response.ok) {
-      throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+    try {
+      const response = await fetch(url, {
+        headers: DEFAULT_HEADERS,
+        signal: controller.signal,
+        cache: "no-store",
+        redirect: "follow",
+      });
+      const html = await response.text();
+
+      if (!response.ok) {
+        throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+      }
+
+      if (!SEARCH_PAYLOAD_REGEX.test(html)) {
+        throw new Error(
+          `BidWinner trả về HTML không chứa payload tìm kiếm (${summarizeHtmlFailure(html)}).`,
+        );
+      }
+
+      return html;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < MAX_FETCH_ATTEMPTS) {
+        await sleep(attempt * 500);
+      }
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return response.text();
-  } finally {
-    clearTimeout(timeout);
   }
+
+  const message =
+    lastError instanceof Error ? lastError.message : "Lỗi không xác định khi gọi BidWinner.";
+  throw new Error(
+    `Không thể lấy dữ liệu BidWinner cho page=${page} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
+  );
 }
 
 export async function searchBidWinnerLive(input: SearchOptions): Promise<LiveSearchResult> {

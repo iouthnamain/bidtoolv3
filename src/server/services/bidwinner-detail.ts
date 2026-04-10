@@ -1,8 +1,14 @@
 import { env } from "~/env";
 
 const DEFAULT_HEADERS = {
-  "User-Agent": "BidToolV3/1.0 (+https://localhost)",
-  Accept: "text/html,application/xhtml+xml",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+  Referer: env.BIDWINNER_BASE_URL,
 };
 
 const PRODUCT_HINTS = [
@@ -525,6 +531,8 @@ async function fetchDetailHtml(sourceUrl: string): Promise<string> {
     const response = await fetch(sourceUrl, {
       headers: DEFAULT_HEADERS,
       signal: controller.signal,
+      cache: "no-store",
+      redirect: "follow",
     });
 
     if (!response.ok) {

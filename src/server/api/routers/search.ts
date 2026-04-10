@@ -41,6 +41,11 @@ export const searchRouter = createTRPCRouter({
       try {
         return await searchBidWinnerLive(input);
       } catch (error) {
+        console.error("BidWinner live search failed", {
+          input,
+          error,
+        });
+
         throw new TRPCError({
           code: "BAD_GATEWAY",
           message:
@@ -61,6 +66,11 @@ export const searchRouter = createTRPCRouter({
       try {
         return await fetchBidWinnerDetail(input);
       } catch (error) {
+        console.error("BidWinner detail fetch failed", {
+          input,
+          error,
+        });
+
         throw new TRPCError({
           code: "BAD_GATEWAY",
           message:
