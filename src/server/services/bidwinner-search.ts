@@ -59,6 +59,7 @@ export type LiveSearchResult = {
   limit: number;
   source: "bidwinner_live";
   fetchedAt: string;
+  warning?: string;
   options: {
     provinces: string[];
     categories: string[];

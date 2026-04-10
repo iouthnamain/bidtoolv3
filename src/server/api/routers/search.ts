@@ -2,6 +2,11 @@ import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
+import {
+  CATEGORY_OPTIONS,
+  KEYWORD_OPTIONS,
+  PROVINCE_OPTIONS,
+} from "~/constants/search-options";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { savedFilters, tenderPackages } from "~/server/db/schema";
 import { fetchBidWinnerDetail } from "~/server/services/bidwinner-detail";
@@ -46,12 +51,21 @@ export const searchRouter = createTRPCRouter({
           error,
         });
 
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message:
-            "Không thể lấy dữ liệu realtime từ BidWinner. Vui lòng thử lại sau.",
-          cause: error,
-        });
+        return {
+          items: [],
+          total: 0,
+          offset: input.offset,
+          limit: input.limit,
+          source: "bidwinner_live" as const,
+          fetchedAt: new Date().toISOString(),
+          warning:
+            "Nguồn realtime BidWinner tạm thời không ổn định. Dữ liệu hiện tại có thể trống, vui lòng thử lại sau vài phút.",
+          options: {
+            provinces: [...PROVINCE_OPTIONS],
+            categories: [...CATEGORY_OPTIONS],
+            keywords: [...KEYWORD_OPTIONS],
+          },
+        };
       }
     }),
 

@@ -1007,6 +1007,11 @@ export function SearchPageClient() {
         <p className="mt-2 text-xs text-slate-500">
           Nguồn: BidWinner public ({packagesResult.source}) • Cập nhật: {formatDateTime(packagesResult.fetchedAt)}
         </p>
+        {packagesResult.warning ? (
+          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {packagesResult.warning}
+          </div>
+        ) : null}
 
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="flex items-center justify-between gap-2">
