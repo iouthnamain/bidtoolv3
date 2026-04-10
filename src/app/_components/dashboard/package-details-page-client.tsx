@@ -26,6 +26,50 @@ function detectDomain(url: string): string {
   }
 }
 
+function formatDurationMs(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return "-";
+  }
+
+  const totalMinutes = Math.floor(durationMs / 60_000);
+  if (totalMinutes < 1) {
+    return "< 1 phút";
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours < 1) {
+    return `${totalMinutes} phút`;
+  }
+
+  return minutes > 0 ? `${hours} giờ ${minutes} phút` : `${hours} giờ`;
+}
+
+function EvidenceBlock(props: { title: string; items: string[] }) {
+  if (props.items.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+      <summary className="cursor-pointer text-sm font-medium text-amber-800">
+        {props.title}
+      </summary>
+      <ul className="mt-2 space-y-1.5 text-xs text-amber-900">
+        {props.items.map((item, index) => (
+          <li
+            key={`${props.title}-${index}-${item}`}
+            className="rounded border border-amber-200 bg-white/70 px-2 py-1.5"
+          >
+            {item}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function PackageDetailsPageClient({
   externalId,
   sourceUrl,
@@ -34,6 +78,19 @@ export function PackageDetailsPageClient({
     externalId,
     sourceUrl: sourceUrl?.trim() ? sourceUrl : undefined,
   });
+
+  const showCommodityEvidence =
+    details.requiredTablesEvidence.commodityCategories.length > 0 &&
+    details.requiredTables.commodityCategories.length < 2;
+  const showTbmtEvidence =
+    details.requiredTablesEvidence.tenderNoticeContents.length > 0 &&
+    details.requiredTables.tenderNoticeContents.length < 2;
+  const showInvitationEvidence =
+    details.requiredTablesEvidence.invitationDocuments.length > 0 &&
+    details.requiredTables.invitationDocuments.length < 2;
+  const showLotEvidence =
+    details.requiredTablesEvidence.lotList.length > 0 &&
+    details.requiredTables.lotList.length < 2;
 
   return (
     <div className="space-y-4">
@@ -52,6 +109,12 @@ export function PackageDetailsPageClient({
             <p className="mt-2 text-xs text-slate-500">
               Domain: {detectDomain(details.sourceUrl)} • Cập nhật: {formatDateTime(details.fetchedAt)}
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Cache: {details.extractionMeta.fromCache ? "hit" : "miss"}
+              {details.extractionMeta.cacheAgeMs !== null
+                ? ` • Tuổi cache: ${formatDurationMs(details.extractionMeta.cacheAgeMs)}`
+                : ""}
+            </p>
           </div>
 
           <Link
@@ -63,6 +126,23 @@ export function PackageDetailsPageClient({
         </div>
 
         <h2 className="mt-3 text-lg font-semibold text-slate-900">{details.pageTitle}</h2>
+        {details.extractionMeta.sectionsDetected.length > 0 ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Sections detect được: {details.extractionMeta.sectionsDetected.join(" • ")}
+          </p>
+        ) : null}
+        {details.extractionMeta.warnings.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800">
+              Cảnh báo extraction
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-amber-900">
+              {details.extractionMeta.warnings.map((warning, index) => (
+                <li key={`warning-${index}-${warning}`}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2">
@@ -94,6 +174,12 @@ export function PackageDetailsPageClient({
             ))}
           </ul>
         )}
+        {showCommodityEvidence ? (
+          <EvidenceBlock
+            title="Evidence thô (Danh mục hàng hóa)"
+            items={details.requiredTablesEvidence.commodityCategories}
+          />
+        ) : null}
       </section>
 
       <section className="panel p-4">
@@ -114,6 +200,12 @@ export function PackageDetailsPageClient({
             ))}
           </ul>
         )}
+        {showTbmtEvidence ? (
+          <EvidenceBlock
+            title="Evidence thô (Nội dung TBMT)"
+            items={details.requiredTablesEvidence.tenderNoticeContents}
+          />
+        ) : null}
       </section>
 
       <section className="panel p-4">
@@ -155,6 +247,12 @@ export function PackageDetailsPageClient({
             </table>
           </div>
         )}
+        {showInvitationEvidence ? (
+          <EvidenceBlock
+            title="Evidence thô (Hồ sơ mời thầu)"
+            items={details.requiredTablesEvidence.invitationDocuments}
+          />
+        ) : null}
       </section>
 
       <section className="panel p-4">
@@ -175,6 +273,12 @@ export function PackageDetailsPageClient({
             ))}
           </ul>
         )}
+        {showLotEvidence ? (
+          <EvidenceBlock
+            title="Evidence thô (Danh sách các lô)"
+            items={details.requiredTablesEvidence.lotList}
+          />
+        ) : null}
       </section>
 
       <section className="panel p-4">

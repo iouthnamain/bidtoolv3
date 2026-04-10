@@ -1,4 +1,9 @@
+import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
+
 import { env } from "~/env";
+import { db } from "~/server/db";
+import { packageDetailsCache } from "~/server/db/schema";
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -59,8 +64,40 @@ export type BidWinnerDetailResult = {
     invitationDocuments: BidWinnerDetailLink[];
     lotList: string[];
   };
+  requiredTablesEvidence: {
+    commodityCategories: string[];
+    tenderNoticeContents: string[];
+    invitationDocuments: string[];
+    lotList: string[];
+  };
+  extractionMeta: {
+    fromCache: boolean;
+    cacheAgeMs: number | null;
+    sectionsDetected: string[];
+    warnings: string[];
+  };
   fetchedAt: string;
 };
+
+type BidWinnerDetailExtractionDiagnostics = Omit<
+  BidWinnerDetailResult["extractionMeta"],
+  "fromCache" | "cacheAgeMs"
+>;
+
+type BidWinnerDetailCoreResult = Omit<BidWinnerDetailResult, "extractionMeta"> & {
+  extractionMeta: BidWinnerDetailExtractionDiagnostics;
+};
+
+type BidWinnerTableSections = {
+  commoditySections: HtmlSection[];
+  tenderNoticeSections: HtmlSection[];
+  invitationSections: HtmlSection[];
+  lotSections: HtmlSection[];
+};
+
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SECTION_EVIDENCE_LIMIT = 20;
+const BIDWINNER_ALLOWED_HOSTS = new Set(["bidwinner.info", "www.bidwinner.info"]);
 
 const COMMODITY_TABLE_KEYWORDS = [
   "danh muc hang hoa",
@@ -199,6 +236,23 @@ function dedupeProducts(items: BidWinnerDetailProduct[]): BidWinnerDetailProduct
   return deduped.slice(0, 120);
 }
 
+function dedupeLinks(items: BidWinnerDetailLink[], limit = 150): BidWinnerDetailLink[] {
+  const seen = new Set<string>();
+  const deduped: BidWinnerDetailLink[] = [];
+
+  for (const item of items) {
+    const key = `${item.href}::${normalizeText(item.text)}`;
+    if (!item.href || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return deduped.slice(0, limit);
+}
+
 function dedupeStrings(items: string[], limit = 120): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -219,6 +273,13 @@ function dedupeStrings(items: string[], limit = 120): string[] {
 type TextCandidate = {
   text: string;
   source: "table" | "list" | "paragraph";
+};
+
+type HtmlSection = {
+  heading: string;
+  headingNormalized: string;
+  contentHtml: string;
+  lines: string[];
 };
 
 function extractTextCandidates(html: string): TextCandidate[] {
@@ -268,33 +329,64 @@ function extractTextCandidates(html: string): TextCandidate[] {
   });
 }
 
-function extractHeadingSectionLines(html: string, keywords: string[]): string[] {
-  const matches = Array.from(html.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi));
-  const lines: string[] = [];
+function parseHtmlSections(html: string): HtmlSection[] {
+  const matches = Array.from(html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi));
+  const sections: HtmlSection[] = [];
 
   for (let index = 0; index < matches.length; index += 1) {
-    const heading = matches[index];
-    if (!heading?.[1]) {
+    const headingMatch = matches[index];
+    const headingInnerHtml = headingMatch?.[2] ?? "";
+    const heading = stripTags(headingInnerHtml);
+
+    if (!heading) {
       continue;
     }
 
-    const headingText = stripTags(heading[1]);
-    if (!hasAnyKeyword(headingText, keywords)) {
-      continue;
-    }
-
-    const start = (heading.index ?? 0) + heading[0].length;
+    const start = (headingMatch?.index ?? 0) + (headingMatch?.[0]?.length ?? 0);
     const end = matches[index + 1]?.index ?? html.length;
-    const sectionHtml = html.slice(start, end);
-    const sectionLines = stripTagsKeepLines(sectionHtml)
+    const contentHtml = html.slice(start, end);
+    const lines = stripTagsKeepLines(contentHtml)
       .split(/\n+/)
       .map((line) => line.trim())
       .filter((line) => line.length >= 8 && line.length <= 420);
 
-    lines.push(...sectionLines);
+    sections.push({
+      heading,
+      headingNormalized: normalizeText(heading),
+      contentHtml,
+      lines,
+    });
   }
 
-  return dedupeStrings(lines, 120);
+  return sections;
+}
+
+function filterSectionsByKeywords(
+  sections: HtmlSection[],
+  keywords: string[],
+): HtmlSection[] {
+  return sections.filter((section) => hasAnyKeyword(section.headingNormalized, keywords));
+}
+
+function collectSectionLines(
+  sections: HtmlSection[],
+  predicate: (line: string) => boolean,
+  limit = 120,
+): string[] {
+  const lines = sections.flatMap((section) => section.lines.filter((line) => predicate(line)));
+  return dedupeStrings(lines, limit);
+}
+
+function collectSectionEvidence(sections: HtmlSection[]): string[] {
+  return dedupeStrings(sections.flatMap((section) => section.lines), SECTION_EVIDENCE_LIMIT);
+}
+
+function collectFallbackEvidence(
+  lines: string[],
+  existingEvidence: string[],
+  limit = SECTION_EVIDENCE_LIMIT,
+): string[] {
+  return dedupeStrings([...existingEvidence, ...lines], limit);
 }
 
 function looksLikeLotText(text: string): boolean {
@@ -446,14 +538,38 @@ function extractLinks(html: string, sourceUrl: string): BidWinnerDetailLink[] {
   return links.slice(0, 250);
 }
 
+function formatLinkEvidence(link: BidWinnerDetailLink): string {
+  return `${link.text} | ${link.href}`;
+}
+
+function buildTableSections(sections: HtmlSection[]): BidWinnerTableSections {
+  return {
+    commoditySections: filterSectionsByKeywords(sections, COMMODITY_TABLE_KEYWORDS),
+    tenderNoticeSections: filterSectionsByKeywords(sections, TBMT_CONTENT_KEYWORDS),
+    invitationSections: filterSectionsByKeywords(sections, INVITATION_DOCUMENT_KEYWORDS),
+    lotSections: filterSectionsByKeywords(sections, LOT_TABLE_KEYWORDS),
+  };
+}
+
 function extractRequiredTables(
   html: string,
+  sourceUrl: string,
   products: BidWinnerDetailProduct[],
   links: BidWinnerDetailLink[],
-) {
+): Pick<
+  BidWinnerDetailCoreResult,
+  "requiredTables" | "requiredTablesEvidence" | "extractionMeta"
+> {
+  const warnings: string[] = [];
   const candidates = extractTextCandidates(html);
+  const sections = parseHtmlSections(html);
+  const tableSections = buildTableSections(sections);
 
-  const commodityCategories = dedupeStrings(
+  const commodityFromSections = collectSectionLines(
+    tableSections.commoditySections,
+    (line) => looksLikeProductText(line) || hasAnyKeyword(line, COMMODITY_TABLE_KEYWORDS),
+  );
+  const commodityFallback = dedupeStrings(
     [
       ...products.map((item) => item.text),
       ...candidates
@@ -463,64 +579,227 @@ function extractRequiredTables(
             hasAnyKeyword(candidate.text, COMMODITY_TABLE_KEYWORDS),
         )
         .map((candidate) => candidate.text),
-      ...extractHeadingSectionLines(html, COMMODITY_TABLE_KEYWORDS),
     ],
-    120,
   );
+  const commodityCategories =
+    commodityFromSections.length > 0 ? commodityFromSections : commodityFallback;
+  if (tableSections.commoditySections.length === 0) {
+    warnings.push(
+      "Không tìm thấy section Danh mục hàng hóa theo heading, đã dùng heuristic toàn trang.",
+    );
+  } else if (commodityFromSections.length === 0) {
+    warnings.push("Section Danh mục hàng hóa không đủ dữ liệu, đã dùng fallback heuristic.");
+  }
 
-  const tenderNoticeContents = dedupeStrings(
-    [
-      ...extractHeadingSectionLines(html, TBMT_CONTENT_KEYWORDS),
-      ...candidates
-        .filter((candidate) => hasAnyKeyword(candidate.text, TBMT_CONTENT_KEYWORDS))
-        .map((candidate) => candidate.text),
-    ],
-    120,
+  const tenderFromSections = collectSectionLines(
+    tableSections.tenderNoticeSections,
+    (line) => hasAnyKeyword(line, TBMT_CONTENT_KEYWORDS),
   );
+  const tenderFallback = dedupeStrings(
+    candidates
+      .filter((candidate) => hasAnyKeyword(candidate.text, TBMT_CONTENT_KEYWORDS))
+      .map((candidate) => candidate.text),
+  );
+  const tenderNoticeContents =
+    tenderFromSections.length > 0 ? tenderFromSections : tenderFallback;
+  if (tableSections.tenderNoticeSections.length === 0) {
+    warnings.push(
+      "Không tìm thấy section Nội dung TBMT theo heading, đã dùng heuristic toàn trang.",
+    );
+  } else if (tenderFromSections.length === 0) {
+    warnings.push("Section Nội dung TBMT không đủ dữ liệu, đã dùng fallback heuristic.");
+  }
 
-  const invitationDocuments = links
+  const invitationFromSections = dedupeLinks(
+    tableSections.invitationSections
+      .flatMap((section) => extractLinks(section.contentHtml, sourceUrl))
+      .filter((link) =>
+        hasAnyKeyword(`${link.text} ${link.href}`, INVITATION_DOCUMENT_KEYWORDS),
+      ),
+  );
+  const invitationFallback = links
     .filter(
       (link) =>
         hasAnyKeyword(`${link.text} ${link.href}`, INVITATION_DOCUMENT_KEYWORDS) ||
-        (link.kind === "file" && hasAnyKeyword(`${link.text} ${link.href}`, ["thau", "hsmt", "ho so"])),
+        (link.kind === "file" &&
+          hasAnyKeyword(`${link.text} ${link.href}`, ["thau", "hsmt", "ho so"])),
     )
     .slice(0, 150);
+  const invitationDocuments =
+    invitationFromSections.length > 0 ? invitationFromSections : invitationFallback;
+  if (tableSections.invitationSections.length === 0) {
+    warnings.push(
+      "Không tìm thấy section Hồ sơ mời thầu theo heading, đã dùng heuristic toàn trang.",
+    );
+  } else if (invitationFromSections.length === 0) {
+    warnings.push("Section Hồ sơ mời thầu không đủ dữ liệu, đã dùng fallback heuristic.");
+  }
 
-  const lotList = dedupeStrings(
+  const lotFromSections = collectSectionLines(
+    tableSections.lotSections,
+    (line) => looksLikeLotText(line),
+  );
+  const lotFallback = dedupeStrings(
+    candidates
+      .filter((candidate) => looksLikeLotText(candidate.text))
+      .map((candidate) => candidate.text),
+  );
+  const lotList = lotFromSections.length > 0 ? lotFromSections : lotFallback;
+  if (tableSections.lotSections.length === 0) {
+    warnings.push(
+      "Không tìm thấy section Danh sách các lô theo heading, đã dùng heuristic toàn trang.",
+    );
+  } else if (lotFromSections.length === 0) {
+    warnings.push("Section Danh sách các lô không đủ dữ liệu, đã dùng fallback heuristic.");
+  }
+
+  const commodityEvidence = collectFallbackEvidence(
+    commodityFallback,
+    collectSectionEvidence(tableSections.commoditySections),
+  );
+  const tenderEvidence = collectFallbackEvidence(
+    tenderFallback,
+    collectSectionEvidence(tableSections.tenderNoticeSections),
+  );
+  const invitationEvidence = collectFallbackEvidence(
+    invitationFallback.map((link) => formatLinkEvidence(link)),
+    collectSectionEvidence(tableSections.invitationSections),
+  );
+  const lotEvidence = collectFallbackEvidence(
+    lotFallback,
+    collectSectionEvidence(tableSections.lotSections),
+  );
+
+  const sectionsDetected = dedupeStrings(
     [
-      ...extractHeadingSectionLines(html, LOT_TABLE_KEYWORDS),
-      ...candidates
-        .filter((candidate) => looksLikeLotText(candidate.text))
-        .map((candidate) => candidate.text),
+      ...tableSections.commoditySections.map((section) => section.heading),
+      ...tableSections.tenderNoticeSections.map((section) => section.heading),
+      ...tableSections.invitationSections.map((section) => section.heading),
+      ...tableSections.lotSections.map((section) => section.heading),
     ],
-    120,
+    80,
   );
 
   return {
-    commodityCategories,
-    tenderNoticeContents,
-    invitationDocuments,
-    lotList,
+    requiredTables: {
+      commodityCategories,
+      tenderNoticeContents,
+      invitationDocuments,
+      lotList,
+    },
+    requiredTablesEvidence: {
+      commodityCategories: commodityEvidence,
+      tenderNoticeContents: tenderEvidence,
+      invitationDocuments: invitationEvidence,
+      lotList: lotEvidence,
+    },
+    extractionMeta: {
+      sectionsDetected,
+      warnings: dedupeStrings(warnings, 40),
+    },
   };
+}
+
+export class InvalidSourceUrlError extends Error {}
+
+function isAllowedBidWinnerHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    BIDWINNER_ALLOWED_HOSTS.has(normalized) || normalized.endsWith(".bidwinner.info")
+  );
+}
+
+function assertAllowedSourceUrl(url: URL): void {
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new InvalidSourceUrlError("Source URL không hợp lệ (chỉ hỗ trợ http/https).");
+  }
+
+  if (!isAllowedBidWinnerHost(url.host)) {
+    throw new InvalidSourceUrlError(
+      "Source URL không hợp lệ: chỉ cho phép domain BidWinner và subdomain liên quan.",
+    );
+  }
 }
 
 function buildSourceUrl(externalId: string, sourceUrl?: string): string {
   const maybeSource = sourceUrl?.trim();
   if (maybeSource) {
     const parsed = new URL(maybeSource);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error("Source URL không hợp lệ (chỉ hỗ trợ http/https).");
-    }
-
+    assertAllowedSourceUrl(parsed);
     return parsed.toString();
   }
 
   const id = externalId.trim();
   if (!id) {
-    throw new Error("Thiếu externalId để tạo source URL chi tiết.");
+    throw new InvalidSourceUrlError("Thiếu externalId để tạo source URL chi tiết.");
   }
 
-  return `https://bidwinner.info/4.0/chi-tiet-goi-thau/${encodeURIComponent(id)}`;
+  const fallbackUrl = new URL(
+    `/4.0/chi-tiet-goi-thau/${encodeURIComponent(id)}`,
+    "https://bidwinner.info",
+  );
+  assertAllowedSourceUrl(fallbackUrl);
+  return fallbackUrl.toString();
+}
+
+function computeCacheKey(externalId: string, sourceUrl: string): string {
+  return createHash("sha256")
+    .update(`${externalId.trim()}::${sourceUrl.trim().toLowerCase()}`)
+    .digest("hex");
+}
+
+function toEpochMs(value: string): number | null {
+  const epoch = new Date(value).getTime();
+  return Number.isFinite(epoch) ? epoch : null;
+}
+
+function toCachePayload(core: BidWinnerDetailCoreResult): Record<string, unknown> {
+  return core as unknown as Record<string, unknown>;
+}
+
+function parseCachePayload(value: unknown): BidWinnerDetailCoreResult | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const payload = value as Partial<BidWinnerDetailCoreResult>;
+  if (
+    typeof payload.externalId !== "string" ||
+    typeof payload.sourceUrl !== "string" ||
+    typeof payload.pageTitle !== "string" ||
+    !Array.isArray(payload.products) ||
+    !Array.isArray(payload.links) ||
+    !payload.requiredTables ||
+    !payload.requiredTablesEvidence ||
+    !payload.extractionMeta ||
+    typeof payload.fetchedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return payload as BidWinnerDetailCoreResult;
+}
+
+function hydrateDetailResult(
+  core: BidWinnerDetailCoreResult,
+  options: {
+    fromCache: boolean;
+    cacheAgeMs: number | null;
+    extraWarnings?: string[];
+  },
+): BidWinnerDetailResult {
+  return {
+    ...core,
+    extractionMeta: {
+      fromCache: options.fromCache,
+      cacheAgeMs: options.cacheAgeMs,
+      sectionsDetected: core.extractionMeta.sectionsDetected,
+      warnings: dedupeStrings(
+        [...core.extractionMeta.warnings, ...(options.extraWarnings ?? [])],
+        40,
+      ),
+    },
+  };
 }
 
 async function fetchDetailHtml(sourceUrl: string): Promise<string> {
@@ -545,22 +824,143 @@ async function fetchDetailHtml(sourceUrl: string): Promise<string> {
   }
 }
 
+async function extractLiveDetails(input: {
+  externalId: string;
+  sourceUrl: string;
+}): Promise<BidWinnerDetailCoreResult> {
+  const html = await fetchDetailHtml(input.sourceUrl);
+  const products = extractProducts(html);
+  const links = extractLinks(html, input.sourceUrl);
+  const requiredTableResult = extractRequiredTables(
+    html,
+    input.sourceUrl,
+    products,
+    links,
+  );
+
+  return {
+    externalId: input.externalId,
+    sourceUrl: input.sourceUrl,
+    pageTitle: extractTitle(html),
+    products,
+    links,
+    requiredTables: requiredTableResult.requiredTables,
+    requiredTablesEvidence: requiredTableResult.requiredTablesEvidence,
+    extractionMeta: requiredTableResult.extractionMeta,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 export async function fetchBidWinnerDetail(input: {
   externalId: string;
   sourceUrl?: string;
 }): Promise<BidWinnerDetailResult> {
   const resolvedSourceUrl = buildSourceUrl(input.externalId, input.sourceUrl);
-  const html = await fetchDetailHtml(resolvedSourceUrl);
-  const products = extractProducts(html);
-  const links = extractLinks(html, resolvedSourceUrl);
+  const cacheKey = computeCacheKey(input.externalId, resolvedSourceUrl);
 
-  return {
-    externalId: input.externalId,
-    sourceUrl: resolvedSourceUrl,
-    pageTitle: extractTitle(html),
-    products,
-    links,
-    requiredTables: extractRequiredTables(html, products, links),
-    fetchedAt: new Date().toISOString(),
-  };
+  let cacheRow: typeof packageDetailsCache.$inferSelect | undefined;
+  try {
+    const [row] = await db
+      .select()
+      .from(packageDetailsCache)
+      .where(eq(packageDetailsCache.cacheKey, cacheKey))
+      .limit(1);
+    cacheRow = row;
+  } catch (error) {
+    console.warn("Package details cache read failed, continue without cache", {
+      externalId: input.externalId,
+      sourceUrl: resolvedSourceUrl,
+      error,
+    });
+  }
+
+  const cachedCore = parseCachePayload(cacheRow?.payloadJson);
+  const cachedAgeMs =
+    cacheRow?.updatedAt != null ? (() => {
+      const updatedAtMs = toEpochMs(cacheRow.updatedAt);
+      if (updatedAtMs === null) {
+        return null;
+      }
+
+      return Date.now() - updatedAtMs;
+    })() : null;
+
+  if (cachedCore && cachedAgeMs !== null && cachedAgeMs <= CACHE_TTL_MS) {
+    console.info("Package details cache hit", {
+      externalId: input.externalId,
+      sourceUrl: resolvedSourceUrl,
+      cacheAgeMs: cachedAgeMs,
+    });
+
+    return hydrateDetailResult(cachedCore, {
+      fromCache: true,
+      cacheAgeMs: cachedAgeMs,
+    });
+  }
+
+  try {
+    const freshCore = await extractLiveDetails({
+      externalId: input.externalId,
+      sourceUrl: resolvedSourceUrl,
+    });
+    const nowIso = new Date().toISOString();
+
+    try {
+      await db
+        .insert(packageDetailsCache)
+        .values({
+          externalId: input.externalId,
+          sourceUrl: resolvedSourceUrl,
+          cacheKey,
+          payloadJson: toCachePayload(freshCore),
+          fetchedAt: freshCore.fetchedAt,
+          updatedAt: nowIso,
+        })
+        .onConflictDoUpdate({
+          target: packageDetailsCache.cacheKey,
+          set: {
+            externalId: input.externalId,
+            sourceUrl: resolvedSourceUrl,
+            payloadJson: toCachePayload(freshCore),
+            fetchedAt: freshCore.fetchedAt,
+            updatedAt: nowIso,
+          },
+        });
+
+      console.info("Package details cache refreshed", {
+        externalId: input.externalId,
+        sourceUrl: resolvedSourceUrl,
+      });
+    } catch (error) {
+      console.warn("Package details cache write failed, continue with live data", {
+        externalId: input.externalId,
+        sourceUrl: resolvedSourceUrl,
+        error,
+      });
+    }
+
+    return hydrateDetailResult(freshCore, {
+      fromCache: false,
+      cacheAgeMs: null,
+    });
+  } catch (error) {
+    if (cachedCore) {
+      console.warn("Package details upstream failed, serving stale cache", {
+        externalId: input.externalId,
+        sourceUrl: resolvedSourceUrl,
+        cacheAgeMs: cachedAgeMs,
+        error,
+      });
+
+      return hydrateDetailResult(cachedCore, {
+        fromCache: true,
+        cacheAgeMs: cachedAgeMs,
+        extraWarnings: [
+          "Nguồn trang chi tiết tạm thời lỗi, đang dùng dữ liệu cache đã lưu trước đó.",
+        ],
+      });
+    }
+
+    throw error;
+  }
 }

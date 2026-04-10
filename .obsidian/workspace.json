@@ -185,6 +185,8 @@
   },
   "active": "feb12e08e2ff211e",
   "lastOpenFiles": [
+    "drizzle/0002_watery_wrecker.sql",
+    "drizzle/meta/0002_snapshot.json",
     "node_modules/@unrs/resolver-binding-linux-x64-musl/resolver.linux-x64-musl.node",
     "node_modules/@unrs/resolver-binding-linux-x64-musl/package.json",
     "node_modules/@unrs/resolver-binding-linux-x64-musl/README.md",
@@ -196,9 +198,7 @@
     "node_modules/lightningcss-linux-x64-musl",
     "node_modules/@img/sharp-linuxmusl-x64/lib/sharp-linuxmusl-x64.node",
     "node_modules/@img/sharp-linuxmusl-x64/package.json",
-    "node_modules/@img/sharp-linuxmusl-x64/lib",
     "node_modules/@img/sharp-linuxmusl-x64/README.md",
-    "node_modules/@img/sharp-linuxmusl-x64/LICENSE",
     "node_modules/@img/sharp-libvips-linuxmusl-x64/README.md",
     "node_modules/@tailwindcss/oxide-linux-x64-musl/README.md",
     "node_modules/@next/swc-linux-x64-musl/README.md",

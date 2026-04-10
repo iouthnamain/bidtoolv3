@@ -9,7 +9,10 @@ import {
 } from "~/constants/search-options";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { savedFilters, tenderPackages } from "~/server/db/schema";
-import { fetchBidWinnerDetail } from "~/server/services/bidwinner-detail";
+import {
+  fetchBidWinnerDetail,
+  InvalidSourceUrlError,
+} from "~/server/services/bidwinner-detail";
 import { searchBidWinnerLive } from "~/server/services/bidwinner-search";
 
 const searchInputSchema = z.object({
@@ -80,6 +83,14 @@ export const searchRouter = createTRPCRouter({
       try {
         return await fetchBidWinnerDetail(input);
       } catch (error) {
+        if (error instanceof InvalidSourceUrlError) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+            cause: error,
+          });
+        }
+
         console.error("BidWinner detail fetch failed", {
           input,
           error,

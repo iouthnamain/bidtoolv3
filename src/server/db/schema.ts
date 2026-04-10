@@ -8,6 +8,8 @@ import {
   timestamp,
   jsonb,
   bigint,
+  index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const notificationFrequencyEnum = pgEnum("notification_frequency", [
@@ -132,3 +134,38 @@ export const notifications = pgTable("notifications", {
     .notNull()
     .defaultNow(),
 });
+
+export const packageDetailsCache = pgTable(
+  "package_details_cache",
+  {
+    id: serial("id").primaryKey(),
+    externalId: text("external_id").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    cacheKey: text("cache_key").notNull(),
+    payloadJson: jsonb("payload_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    fetchedAt: timestamp("fetched_at", { mode: "string", withTimezone: true })
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    packageDetailsCacheKeyUnique: uniqueIndex(
+      "package_details_cache_cache_key_unique",
+    ).on(table.cacheKey),
+    packageDetailsCacheExternalIdIdx: index(
+      "package_details_cache_external_id_idx",
+    ).on(table.externalId),
+    packageDetailsCacheSourceUrlIdx: index(
+      "package_details_cache_source_url_idx",
+    ).on(table.sourceUrl),
+    packageDetailsCacheUpdatedAtIdx: index(
+      "package_details_cache_updated_at_idx",
+    ).on(table.updatedAt),
+  }),
+);
