@@ -5,36 +5,58 @@ import { api } from "~/trpc/server";
 export default async function InsightsPage() {
   const summary = await api.insight.getDashboardSummary();
   const trend = await api.insight.getMarketTrend({ days: 7 });
+  const maxPackages = Math.max(1, ...trend.map((row) => row.newPackages));
+  const avgPackages = trend.reduce((sum, row) => sum + row.newPackages, 0) / trend.length;
+  const latestVsPrev = (trend[0]?.newPackages ?? 0) - (trend[1]?.newPackages ?? 0);
 
   return (
     <DashboardShell
-      title="Báo cáo & Insights"
-      description="Tổng hợp nhanh xu hướng thị trường và hiệu quả vận hành"
+      title="Insights & Trends"
+      description="Market overview and operational metrics"
     >
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Tổng gói thầu" value={summary.totalPackages} />
-        <KpiCard label="Cảnh báo chưa đọc" value={summary.unreadAlerts} />
-        <KpiCard label="Workflow đang bật" value={summary.activeWorkflows} />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label="Total Packages" value={summary.totalPackages} trend={latestVsPrev > 0 ? "up" : "down"} />
+        <KpiCard label="Unread Alerts" value={summary.unreadAlerts} />
+        <KpiCard label="Active Workflows" value={summary.activeWorkflows} />
         <KpiCard
-          label="Tỷ lệ workflow thành công"
+          label="Success Rate"
           value={`${summary.workflowSuccessRate}%`}
+          trend={summary.workflowSuccessRate >= 90 ? "up" : "down"}
         />
       </section>
 
-      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold">Xu hướng 7 ngày gần nhất</h2>
-        <ul className="mt-3 space-y-2 text-sm">
-          {trend.map((row) => (
-            <li
-              key={row.date}
-              className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-            >
-              <span className="text-slate-700">{row.date}</span>
-              <span className="font-medium text-slate-900">
-                {row.newPackages} gói mới
-              </span>
-            </li>
-          ))}
+      <section className="mt-4 rounded-lg border border-slate-300 bg-white p-3 shadow-xs">
+        <h2 className="font-bold text-sm pb-2 border-b border-slate-200">7-Day Trend</h2>
+        <ul className="mt-2 space-y-2 text-xs">
+          {trend.map((row, idx) => {
+            const prevRow = idx > 0 ? trend[idx - 1] : null;
+            const change = prevRow ? row.newPackages - prevRow.newPackages : 0;
+            const pctChange = prevRow ? Math.round((change / prevRow.newPackages) * 100) : 0;
+            return (
+              <li
+                key={row.date}
+                className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-2.5 py-2 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="font-semibold text-slate-900">{row.date}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-slate-900">{row.newPackages}</span>
+                    {change !== 0 && (
+                      <span className={`text-xs font-bold ${change > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {change > 0 ? "+" : ""}{pctChange}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-300">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-sky-600 transition-all"
+                    style={{ width: `${Math.max(3, (row.newPackages / maxPackages) * 100)}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </DashboardShell>

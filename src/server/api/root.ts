@@ -1,6 +1,5 @@
 import { insightRouter } from "~/server/api/routers/insight";
 import { notificationRouter } from "~/server/api/routers/notification";
-import { postRouter } from "~/server/api/routers/post";
 import { searchRouter } from "~/server/api/routers/search";
 import { watchlistRouter } from "~/server/api/routers/watchlist";
 import { workflowRouter } from "~/server/api/routers/workflow";
@@ -14,7 +13,6 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 export const appRouter = createTRPCRouter({
   insight: insightRouter,
   notification: notificationRouter,
-  post: postRouter,
   search: searchRouter,
   watchlist: watchlistRouter,
   workflow: workflowRouter,

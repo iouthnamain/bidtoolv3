@@ -9,6 +9,12 @@ export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
     DATABASE_URL: z.string().url(),
+    BIDWINNER_BASE_URL: z.string().url().default("https://bidwinner.info"),
+    BIDWINNER_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+    ENABLE_DEMO_SEED: z
+      .enum(["true", "false"])
+      .optional()
+      .default("false"),
   },
 
   /**
@@ -27,6 +33,9 @@ export const env = createEnv({
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
+    BIDWINNER_BASE_URL: process.env.BIDWINNER_BASE_URL,
+    BIDWINNER_TIMEOUT_MS: process.env.BIDWINNER_TIMEOUT_MS,
+    ENABLE_DEMO_SEED: process.env.ENABLE_DEMO_SEED,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

@@ -9,6 +9,13 @@ import {
 } from "~/server/db/schema";
 
 async function seed() {
+  if (process.env.ENABLE_DEMO_SEED !== "true") {
+    console.log(
+      "Bo qua seed du lieu demo. Dat ENABLE_DEMO_SEED=true neu can seed mau.",
+    );
+    return;
+  }
+
   await db.insert(tenderPackages).values([
     {
       id: 1,

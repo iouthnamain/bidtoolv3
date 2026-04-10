@@ -23,7 +23,7 @@ Mục tiêu của bộ tài liệu này là định nghĩa rõ sản phẩm dash
 - Ngôn ngữ: tiếng Việt.
 - Định hướng giao diện: card-based, trực quan, ưu tiên dễ đọc.
 - MVP: bao phủ Search + Workflow + Insights ở mức cơ bản.
-- Dữ liệu: kết hợp nhiều nguồn (public, import file, API nếu có).
+- Dữ liệu: ưu tiên nguồn public realtime cho bước xem trước; chỉ lưu DB khi người dùng chủ động chọn.
 
 ## Checklist tổng hợp
 
@@ -32,3 +32,9 @@ Mục tiêu của bộ tài liệu này là định nghĩa rõ sản phẩm dash
 - [ ] Technical Architecture được chốt với team engineering.
 - [ ] MVP Roadmap có owner và timeline cho từng phase.
 - [ ] Data Source Strategy có xác nhận pháp lý và vận hành.
+
+
+# Note
+## New Flow (v2 target)
+1. `search -> open link -> review -> wait confirm -> receive YCKT -> export YCKT Excel`
+2. `excel workspace -> search product -> create new excel (example, product country, price, ...) -> review -> create catalog PDF -> check -> final review`

@@ -36,14 +36,20 @@ export default async function DashboardPage() {
       </section>
 
       <section className="mt-6 grid gap-4">
-        {alerts.map((item) => (
-          <AlertCard
-            key={item.id}
-            title={item.title}
-            body={item.body}
-            severity={item.severity}
-          />
-        ))}
+        {alerts.length === 0 ? (
+          <article className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 text-sm text-slate-600 shadow-sm">
+            Chưa có cảnh báo mới. Hệ thống sẽ hiển thị cảnh báo tại đây khi workflow tạo sự kiện.
+          </article>
+        ) : (
+          alerts.map((item) => (
+            <AlertCard
+              key={item.id}
+              title={item.title}
+              body={item.body}
+              severity={item.severity}
+            />
+          ))
+        )}
       </section>
     </DashboardShell>
   );
