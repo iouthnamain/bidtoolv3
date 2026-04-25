@@ -40,7 +40,7 @@ export function MaterialsListClient() {
   const importCsv = api.material.importMaterialsCsv.useMutation({
     onSuccess: async (result) => {
       setImportMessage(
-        `Đã import ${result.inserted}, bỏ qua ${result.skipped}, lỗi ${result.errors.length}.`,
+        `Đã nhập ${result.inserted}, bỏ qua ${result.skipped}, lỗi ${result.errors.length}.`,
       );
       setCsv("");
       await utils.material.searchMaterials.invalidate();
@@ -63,9 +63,9 @@ export function MaterialsListClient() {
       <section className="panel p-4">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
-            <h2 className="text-sm font-bold">Thêm vật tư</h2>
+            <h2 className="text-sm font-bold">Thêm sản phẩm / vật tư</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Tạo nhanh master để dùng trong bước Search.
+              Tạo nhanh danh mục nội bộ để dùng trong bước tìm sản phẩm.
             </p>
           </div>
         </div>
@@ -73,13 +73,15 @@ export function MaterialsListClient() {
         <div className="mt-3 grid gap-2">
           <input
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Mã vật tư (tuỳ chọn)"
+            placeholder="Mã sản phẩm / vật tư (tuỳ chọn)"
+            aria-label="Mã sản phẩm hoặc vật tư"
             value={form.code}
             onChange={(event) => setForm({ ...form, code: event.target.value })}
           />
           <input
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Tên qui cách vật tư"
+            placeholder="Tên sản phẩm / quy cách vật tư"
+            aria-label="Tên sản phẩm hoặc quy cách vật tư"
             value={form.name}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
@@ -87,6 +89,7 @@ export function MaterialsListClient() {
             <input
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
               placeholder="ĐVT"
+              aria-label="Đơn vị tính"
               value={form.unit}
               onChange={(event) =>
                 setForm({ ...form, unit: event.target.value })
@@ -94,7 +97,8 @@ export function MaterialsListClient() {
             />
             <input
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Nhóm vật tư"
+              placeholder="Nhóm sản phẩm / vật tư"
+              aria-label="Nhóm sản phẩm hoặc vật tư"
               value={form.category}
               onChange={(event) =>
                 setForm({ ...form, category: event.target.value })
@@ -108,6 +112,7 @@ export function MaterialsListClient() {
               type="number"
               min={0}
               step={0.1}
+              aria-label="Khấu hao mặc định"
               value={form.defaultDepreciation}
               onChange={(event) =>
                 setForm({ ...form, defaultDepreciation: event.target.value })
@@ -119,6 +124,7 @@ export function MaterialsListClient() {
               type="number"
               min={0}
               max={100}
+              aria-label="Phần trăm sử dụng lại mặc định"
               value={form.defaultReusePct}
               onChange={(event) =>
                 setForm({ ...form, defaultReusePct: event.target.value })
@@ -131,14 +137,14 @@ export function MaterialsListClient() {
             disabled={!form.name || !form.unit || createMaterial.isPending}
             onClick={submit}
           >
-            {createMaterial.isPending ? "Đang lưu..." : "Lưu vật tư"}
+            {createMaterial.isPending ? "Đang lưu..." : "Lưu sản phẩm / vật tư"}
           </button>
         </div>
 
         <div className="mt-5 border-t border-slate-200 pt-4">
-          <h3 className="text-sm font-bold">Import CSV</h3>
+          <h3 className="text-sm font-bold">Nhập CSV</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Header:
+            Dòng tiêu đề:
             code,name,unit,category,default_depreciation,default_reuse_pct
           </p>
           <textarea
@@ -146,6 +152,7 @@ export function MaterialsListClient() {
             value={csv}
             onChange={(event) => setCsv(event.target.value)}
             placeholder="Dán CSV tại đây"
+            aria-label="Nội dung CSV sản phẩm hoặc vật tư"
           />
           <button
             type="button"
@@ -153,7 +160,7 @@ export function MaterialsListClient() {
             disabled={!csv.trim() || importCsv.isPending}
             onClick={() => importCsv.mutate({ csv })}
           >
-            Import CSV
+            Nhập CSV
           </button>
           {importMessage ? (
             <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
@@ -166,14 +173,17 @@ export function MaterialsListClient() {
       <section className="panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
-            <h2 className="text-sm font-bold">Material master</h2>
+            <h2 className="text-sm font-bold">Danh mục sản phẩm / vật tư</h2>
             <p className="mt-1 text-xs text-slate-500">
-              {isLoading ? "Đang tải..." : `${materials.length} vật tư`}
+              {isLoading
+                ? "Đang tải..."
+                : `${materials.length.toLocaleString("vi-VN")} sản phẩm / vật tư`}
             </p>
           </div>
           <input
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72"
-            placeholder="Tìm vật tư"
+            placeholder="Tìm theo tên, mã, ĐVT hoặc nhóm"
+            aria-label="Tìm sản phẩm hoặc vật tư"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
           />
@@ -204,8 +214,8 @@ export function MaterialsListClient() {
                   <td className="px-3 py-2">{item.unit}</td>
                   <td className="px-3 py-2">{item.category ?? "-"}</td>
                   <td className="px-3 py-2 text-xs text-slate-600">
-                    KH {item.defaultDepreciation} • reuse {item.defaultReusePct}
-                    %
+                    KH {item.defaultDepreciation} • sử dụng lại{" "}
+                    {item.defaultReusePct}%
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -213,6 +223,7 @@ export function MaterialsListClient() {
                       className="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
                       disabled={deleteMaterial.isPending}
                       onClick={() => deleteMaterial.mutate({ id: item.id })}
+                      aria-label={`Xoá ${item.name}`}
                     >
                       Xoá
                     </button>
@@ -225,7 +236,7 @@ export function MaterialsListClient() {
                     colSpan={5}
                     className="px-3 py-8 text-center text-sm text-slate-500"
                   >
-                    Chưa có vật tư.
+                    Chưa có sản phẩm / vật tư.
                   </td>
                 </tr>
               ) : null}

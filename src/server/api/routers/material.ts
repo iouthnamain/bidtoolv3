@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, isNull } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -76,21 +76,26 @@ export const materialRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const conditions = [isNull(materials.deletedAt)];
-      if (input.keyword) {
-        conditions.push(ilike(materials.name, `%${input.keyword}%`));
-      }
-      if (input.unit) {
-        conditions.push(eq(materials.unit, input.unit));
-      }
-      if (input.category) {
-        conditions.push(eq(materials.category, input.category));
-      }
+      const keyword = input.keyword ? `%${input.keyword}%` : undefined;
 
       return ctx.db
         .select()
         .from(materials)
-        .where(and(...conditions))
+        .where(
+          and(
+            isNull(materials.deletedAt),
+            keyword
+              ? or(
+                  ilike(materials.name, keyword),
+                  ilike(materials.code, keyword),
+                  ilike(materials.unit, keyword),
+                  ilike(materials.category, keyword),
+                )
+              : undefined,
+            input.unit ? eq(materials.unit, input.unit) : undefined,
+            input.category ? eq(materials.category, input.category) : undefined,
+          ),
+        )
         .orderBy(desc(materials.updatedAt))
         .limit(input.limit)
         .offset(input.offset);

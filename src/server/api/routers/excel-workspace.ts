@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -8,6 +18,7 @@ import {
   excelWorkspaceEvents,
   excelWorkspaceItems,
   excelWorkspaces,
+  materials,
   webProductCandidates,
 } from "~/server/db/schema";
 import {
@@ -60,6 +71,15 @@ const rowPatchSchema = z.object({
   originHint: z.string().nullable().optional(),
   notes: z.string().optional(),
   searchKeywords: z.array(z.string()).optional(),
+});
+
+const materialInputSchema = z.object({
+  code: z.string().trim().optional(),
+  name: z.string().trim().min(1),
+  unit: z.string().trim().min(1),
+  category: z.string().trim().optional(),
+  defaultDepreciation: z.number().nonnegative().default(1),
+  defaultReusePct: z.number().int().min(0).max(100).default(0),
 });
 
 const specSchema = z.object({
@@ -118,7 +138,7 @@ async function assertWorkspaceEditable(db: DbExecutor, id: number) {
   return workspace;
 }
 
-async function getRowWithWorkspace(db: DbExecutor, id: number) {
+async function getRowWithWorkspaceForRead(db: DbExecutor, id: number) {
   const [row] = await db
     .select({
       item: excelWorkspaceItems,
@@ -138,6 +158,12 @@ async function getRowWithWorkspace(db: DbExecutor, id: number) {
       message: "Không tìm thấy dòng sản phẩm.",
     });
   }
+
+  return row;
+}
+
+async function getRowWithWorkspace(db: DbExecutor, id: number) {
+  const row = await getRowWithWorkspaceForRead(db, id);
 
   if (
     row.workspace.status === "exported" ||
@@ -186,6 +212,152 @@ async function refreshWorkspaceMatchedStatus(
       .set({ status: "matched", updatedAt: new Date().toISOString() })
       .where(eq(excelWorkspaces.id, workspaceId));
   }
+}
+
+type MaterialRow = typeof materials.$inferSelect;
+type WorkspaceItemRow = typeof excelWorkspaceItems.$inferSelect;
+
+function normalizeMatchText(value: string | null | undefined) {
+  return (value ?? "").toLocaleLowerCase("vi-VN").replace(/\s+/g, " ").trim();
+}
+
+function matchTokens(value: string | null | undefined) {
+  return Array.from(
+    new Set(
+      normalizeMatchText(value)
+        .split(/[^\p{L}\p{N}]+/u)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2),
+    ),
+  );
+}
+
+function scoreMaterialCandidate(input: {
+  item: WorkspaceItemRow;
+  material: MaterialRow;
+  keyword?: string;
+}) {
+  const targetTokens = Array.from(
+    new Set([
+      ...matchTokens(input.item.productName),
+      ...matchTokens(input.item.specText),
+      ...matchTokens(input.keyword),
+    ]),
+  );
+  const haystack = normalizeMatchText(
+    [
+      input.material.code,
+      input.material.name,
+      input.material.unit,
+      input.material.category,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  const matchedTokens = targetTokens.filter((token) =>
+    haystack.includes(token),
+  );
+  const reasons: string[] = [];
+  let score = 20;
+
+  if (targetTokens.length > 0 && matchedTokens.length > 0) {
+    score += Math.round((matchedTokens.length / targetTokens.length) * 45);
+    reasons.push(`Khớp ${matchedTokens.length}/${targetTokens.length} từ khóa`);
+  }
+
+  if (
+    input.item.unit &&
+    normalizeMatchText(input.material.unit) ===
+      normalizeMatchText(input.item.unit)
+  ) {
+    score += 20;
+    reasons.push("Khớp đơn vị tính");
+  }
+
+  if (input.material.code) {
+    score += 5;
+    reasons.push("Có mã vật tư");
+  }
+
+  if (input.material.category) {
+    score += 5;
+    reasons.push("Có nhóm vật tư");
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("Cần kiểm tra thủ công");
+  }
+
+  return {
+    confidenceScore: Math.max(0, Math.min(100, score)),
+    matchReasons: reasons,
+  };
+}
+
+function materialEvidence(material: MaterialRow) {
+  return [
+    `Nguồn nội bộ #${material.id}`,
+    material.code ? `Mã: ${material.code}` : null,
+    `ĐVT: ${material.unit}`,
+    material.category ? `Nhóm: ${material.category}` : null,
+    `Khấu hao mặc định: ${material.defaultDepreciation}`,
+    `% sử dụng lại mặc định: ${material.defaultReusePct}`,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+}
+
+function materialSpec(material: MaterialRow): ExtractedProductSpec {
+  const evidenceText = materialEvidence(material);
+  return {
+    productName: material.name,
+    brand: null,
+    model: material.code,
+    specSummary: [
+      material.code ? `Mã ${material.code}` : null,
+      material.category ? `Nhóm ${material.category}` : null,
+      `ĐVT ${material.unit}`,
+    ]
+      .filter(Boolean)
+      .join(" • "),
+    unit: material.unit,
+    priceText: null,
+    priceVnd: null,
+    originCountry: null,
+    vendorName: "Danh mục nội bộ",
+    vendorDomain: "Danh mục nội bộ",
+    sourceUrl: `Material Master #${material.id}`,
+    imageUrl: null,
+    evidenceText,
+  };
+}
+
+function materialCandidateValues(input: {
+  item: WorkspaceItemRow;
+  material: MaterialRow;
+  now: string;
+  confidenceScore: number;
+  matchReasons: string[];
+}) {
+  const spec = materialSpec(input.material);
+  return {
+    workspaceItemId: input.item.id,
+    provider: "material",
+    query: input.item.productName,
+    title: input.material.name,
+    url: `material://materials/${input.material.id}`,
+    domain: "Danh mục nội bộ",
+    snippet: spec.specSummary,
+    rawEvidence: spec.evidenceText,
+    imageUrl: null,
+    extractedSpecJson: spec,
+    confidenceScore: input.confidenceScore,
+    tavilyScore: null,
+    matchReasons: input.matchReasons,
+    isSelected: true,
+    fetchedAt: input.now,
+    createdAt: input.now,
+  };
 }
 
 export const excelWorkspaceRouter = createTRPCRouter({
@@ -551,6 +723,16 @@ export const excelWorkspaceRouter = createTRPCRouter({
     .input(z.object({ rowId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const row = await getRowWithWorkspace(ctx.db, input.rowId);
+      const [selectedCandidate] = row.item.selectedCandidateId
+        ? await ctx.db
+            .select()
+            .from(webProductCandidates)
+            .where(eq(webProductCandidates.id, row.item.selectedCandidateId))
+            .limit(1)
+        : [];
+      const keepsSelectedCandidate =
+        selectedCandidate?.provider === "manual" ||
+        selectedCandidate?.provider === "material";
       const result = await searchProductCandidates({
         productName: row.item.productName,
         specText: row.item.specText,
@@ -566,17 +748,30 @@ export const excelWorkspaceRouter = createTRPCRouter({
       const candidates = await ctx.db.transaction(async (tx) => {
         await tx
           .delete(webProductCandidates)
-          .where(eq(webProductCandidates.workspaceItemId, row.item.id));
+          .where(
+            and(
+              eq(webProductCandidates.workspaceItemId, row.item.id),
+              inArray(webProductCandidates.provider, ["searxng", "tavily"]),
+            ),
+          );
 
         await tx
           .update(excelWorkspaceItems)
-          .set({
-            selectedCandidateId: null,
-            enrichedSnapshotJson: {},
-            matchStatus:
-              result.candidates.length > 0 ? "candidates_found" : "unmatched",
-            updatedAt: now,
-          })
+          .set(
+            keepsSelectedCandidate
+              ? {
+                  updatedAt: now,
+                }
+              : {
+                  selectedCandidateId: null,
+                  enrichedSnapshotJson: {},
+                  matchStatus:
+                    result.candidates.length > 0
+                      ? "candidates_found"
+                      : "unmatched",
+                  updatedAt: now,
+                },
+          )
           .where(eq(excelWorkspaceItems.id, row.item.id));
 
         if (result.candidates.length === 0) {
@@ -614,6 +809,220 @@ export const excelWorkspaceRouter = createTRPCRouter({
       });
 
       return { query: result.query, candidates, warning: result.warning };
+    }),
+
+  searchMaterialCandidates: publicProcedure
+    .input(
+      z.object({
+        rowId: z.number().int().positive(),
+        keyword: z.string().trim().optional(),
+        limit: z.number().int().min(1).max(30).default(12),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const row = await getRowWithWorkspaceForRead(ctx.db, input.rowId);
+      const keyword = input.keyword?.trim() ?? row.item.productName;
+      const likeKeyword = `%${keyword}%`;
+      const rows = await ctx.db
+        .select()
+        .from(materials)
+        .where(
+          and(
+            isNull(materials.deletedAt),
+            keyword
+              ? or(
+                  ilike(materials.name, likeKeyword),
+                  ilike(materials.code, likeKeyword),
+                  ilike(materials.unit, likeKeyword),
+                  ilike(materials.category, likeKeyword),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(materials.updatedAt))
+        .limit(input.limit);
+
+      return rows
+        .map((material) => {
+          const scored = scoreMaterialCandidate({
+            item: row.item,
+            material,
+            keyword,
+          });
+          return {
+            materialId: material.id,
+            code: material.code,
+            title: material.name,
+            unit: material.unit,
+            category: material.category,
+            defaultDepreciation: material.defaultDepreciation,
+            defaultReusePct: material.defaultReusePct,
+            confidenceScore: scored.confidenceScore,
+            matchReasons: scored.matchReasons,
+          };
+        })
+        .sort((a, b) => b.confidenceScore - a.confidenceScore);
+    }),
+
+  selectMaterialCandidate: publicProcedure
+    .input(
+      z.object({
+        rowId: z.number().int().positive(),
+        materialId: z.number().int().positive(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const row = await getRowWithWorkspace(ctx.db, input.rowId);
+      const [material] = await ctx.db
+        .select()
+        .from(materials)
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
+        .limit(1);
+
+      if (!material) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy sản phẩm / vật tư.",
+        });
+      }
+
+      const scored = scoreMaterialCandidate({ item: row.item, material });
+      const now = new Date().toISOString();
+      const candidate = await ctx.db.transaction(async (tx) => {
+        await tx
+          .update(webProductCandidates)
+          .set({ isSelected: false })
+          .where(eq(webProductCandidates.workspaceItemId, input.rowId));
+
+        const [created] = await tx
+          .insert(webProductCandidates)
+          .values(
+            materialCandidateValues({
+              item: row.item,
+              material,
+              now,
+              confidenceScore: scored.confidenceScore,
+              matchReasons: scored.matchReasons,
+            }),
+          )
+          .returning();
+
+        if (!created) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Không tạo được gợi ý từ danh mục nội bộ.",
+          });
+        }
+
+        await tx
+          .update(excelWorkspaceItems)
+          .set({
+            selectedCandidateId: created.id,
+            enrichedSnapshotJson: materialSpec(material),
+            matchStatus: "matched",
+            updatedAt: now,
+          })
+          .where(eq(excelWorkspaceItems.id, input.rowId));
+        await refreshWorkspaceMatchedStatus(tx, row.workspace.id);
+        return created;
+      });
+
+      await writeEvent(
+        ctx.db,
+        row.workspace.id,
+        "candidate_material_selected",
+        {
+          rowId: row.item.id,
+          materialId: material.id,
+          candidateId: candidate.id,
+        },
+      );
+
+      return candidate;
+    }),
+
+  createMaterialAndMatch: publicProcedure
+    .input(
+      z.object({
+        rowId: z.number().int().positive(),
+        material: materialInputSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const row = await getRowWithWorkspace(ctx.db, input.rowId);
+      const now = new Date().toISOString();
+
+      const result = await ctx.db.transaction(async (tx) => {
+        const [material] = await tx
+          .insert(materials)
+          .values({
+            ...input.material,
+            code: input.material.code ?? null,
+            category: input.material.category ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        if (!material) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Không tạo được sản phẩm / vật tư.",
+          });
+        }
+
+        const scored = scoreMaterialCandidate({ item: row.item, material });
+        await tx
+          .update(webProductCandidates)
+          .set({ isSelected: false })
+          .where(eq(webProductCandidates.workspaceItemId, input.rowId));
+
+        const [candidate] = await tx
+          .insert(webProductCandidates)
+          .values(
+            materialCandidateValues({
+              item: row.item,
+              material,
+              now,
+              confidenceScore: scored.confidenceScore,
+              matchReasons: [
+                "Người dùng thêm vào danh mục nội bộ",
+                ...scored.matchReasons,
+              ],
+            }),
+          )
+          .returning();
+
+        if (!candidate) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Không tạo được gợi ý từ danh mục nội bộ.",
+          });
+        }
+
+        await tx
+          .update(excelWorkspaceItems)
+          .set({
+            selectedCandidateId: candidate.id,
+            enrichedSnapshotJson: materialSpec(material),
+            matchStatus: "matched",
+            updatedAt: now,
+          })
+          .where(eq(excelWorkspaceItems.id, input.rowId));
+        await refreshWorkspaceMatchedStatus(tx, row.workspace.id);
+
+        return { material, candidate };
+      });
+
+      await writeEvent(ctx.db, row.workspace.id, "candidate_material_created", {
+        rowId: row.item.id,
+        materialId: result.material.id,
+        candidateId: result.candidate.id,
+      });
+
+      return result;
     }),
 
   selectWebCandidate: publicProcedure
@@ -876,7 +1285,7 @@ export const excelWorkspaceRouter = createTRPCRouter({
           code: "BAD_REQUEST",
           message:
             input.to === "matched"
-              ? "Cần chọn hoặc nhập manual match cho tất cả dòng trước."
+              ? "Cần chọn hoặc nhập kết quả thủ công cho tất cả dòng trước."
               : "Không thể chuyển trạng thái ở bước hiện tại.",
         });
       }

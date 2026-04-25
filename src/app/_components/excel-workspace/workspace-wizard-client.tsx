@@ -9,6 +9,8 @@ import { api, type RouterOutputs } from "~/trpc/react";
 type WorkspacePayload = RouterOutputs["excelWorkspace"]["getWorkspace"];
 type WorkspaceItem = WorkspacePayload["items"][number];
 type WebCandidate = WorkspacePayload["candidates"][number];
+type MaterialCandidate =
+  RouterOutputs["excelWorkspace"]["searchMaterialCandidates"][number];
 type SheetPreview =
   RouterOutputs["excelWorkspace"]["previewWorkbookSheets"][number];
 
@@ -126,6 +128,15 @@ const emptyManualSpec = {
   evidenceText: "",
 };
 
+const emptyMaterialForm = {
+  code: "",
+  name: "",
+  unit: "",
+  category: "",
+  defaultDepreciation: "1",
+  defaultReusePct: "0",
+};
+
 function specFromCandidate(candidate: WebCandidate | undefined) {
   return candidate?.extractedSpecJson as
     | {
@@ -146,6 +157,36 @@ function specFromCandidate(candidate: WebCandidate | undefined) {
     | undefined;
 }
 
+function candidateSourceLabel(provider: string) {
+  if (provider === "material") {
+    return "Danh mục";
+  }
+  if (provider === "manual") {
+    return "Thủ công";
+  }
+  return "Nguồn web";
+}
+
+function candidateBadgeClass(provider: string) {
+  if (provider === "material") {
+    return "bg-sky-100 text-sky-700";
+  }
+  if (provider === "manual") {
+    return "bg-violet-100 text-violet-700";
+  }
+  return "bg-slate-100 text-slate-700";
+}
+
+function formatOptionalValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  if (typeof value === "number") {
+    return value.toLocaleString("vi-VN");
+  }
+  return value;
+}
+
 function statusClass(status: WorkspaceItem["matchStatus"]) {
   if (status === "matched" || status === "manual") {
     return "bg-emerald-100 text-emerald-700";
@@ -164,7 +205,7 @@ function fileToBase64(file: File) {
       if (typeof value === "string") {
         resolve(value);
       } else {
-        reject(new Error("Không đọc được file."));
+        reject(new Error("Không đọc được tệp."));
       }
     };
     reader.onerror = () =>
@@ -761,28 +802,103 @@ function FindStep({
   payload: WorkspacePayload;
   refetchWorkspace: () => Promise<unknown>;
 }) {
+  const utils = api.useUtils();
   const [activeId, setActiveId] = useState<number | null>(
     payload.items[0]?.id ?? null,
   );
   const [warning, setWarning] = useState<string | null>(null);
   const [manualSpec, setManualSpec] = useState(emptyManualSpec);
+  const [materialKeyword, setMaterialKeyword] = useState("");
+  const [materialCandidates, setMaterialCandidates] = useState<
+    MaterialCandidate[]
+  >([]);
+  const [materialForm, setMaterialForm] = useState(emptyMaterialForm);
+  const [materialMessage, setMaterialMessage] = useState<string | null>(null);
   const activeItem =
     payload.items.find((item) => item.id === activeId) ?? payload.items[0];
+  const activeItemId = activeItem?.id ?? null;
+  const activeItemName = activeItem?.productName ?? "";
+  const activeItemUnit = activeItem?.unit ?? "";
   const candidates = payload.candidates.filter(
     (candidate) => candidate.workspaceItemId === activeItem?.id,
   );
   const selectedCandidate = payload.candidates.find(
     (candidate) => candidate.id === activeItem?.selectedCandidateId,
   );
+  const persistedMaterialUrls = new Set(
+    candidates
+      .filter((candidate) => candidate.provider === "material")
+      .map((candidate) => candidate.url),
+  );
+  const visibleMaterialCandidates = materialCandidates.filter(
+    (candidate) =>
+      !persistedMaterialUrls.has(
+        `material://materials/${candidate.materialId}`,
+      ),
+  );
+
+  useEffect(() => {
+    if (!activeItemId) {
+      return;
+    }
+
+    setWarning(null);
+    setMaterialMessage(null);
+    setMaterialCandidates([]);
+    setMaterialKeyword(activeItemName);
+    setMaterialForm({
+      ...emptyMaterialForm,
+      name: activeItemName,
+      unit: activeItemUnit,
+    });
+  }, [activeItemId, activeItemName, activeItemUnit]);
+
   const searchWeb = api.excelWorkspace.searchWebCandidates.useMutation({
     onSuccess: async (result) => {
       setWarning(result.warning ?? null);
       await refetchWorkspace();
     },
   });
+  const searchMaterials =
+    api.excelWorkspace.searchMaterialCandidates.useMutation({
+      onSuccess: (result) => {
+        setMaterialMessage(
+          result.length > 0
+            ? `Tìm thấy ${result.length.toLocaleString("vi-VN")} sản phẩm / vật tư.`
+            : "Chưa tìm thấy sản phẩm / vật tư phù hợp.",
+        );
+        setMaterialCandidates(result);
+      },
+      onError: (nextError) => setMaterialMessage(nextError.message),
+    });
   const selectCandidate = api.excelWorkspace.selectWebCandidate.useMutation({
     onSuccess: async () => refetchWorkspace(),
   });
+  const selectMaterial = api.excelWorkspace.selectMaterialCandidate.useMutation(
+    {
+      onSuccess: async () => {
+        setMaterialCandidates([]);
+        setMaterialMessage("Đã chọn sản phẩm / vật tư từ danh mục nội bộ.");
+        await refetchWorkspace();
+      },
+      onError: (nextError) => setMaterialMessage(nextError.message),
+    },
+  );
+  const createMaterialAndMatch =
+    api.excelWorkspace.createMaterialAndMatch.useMutation({
+      onSuccess: async () => {
+        setMaterialCandidates([]);
+        setMaterialMessage(
+          "Đã thêm sản phẩm / vật tư vào danh mục nội bộ và chọn cho dòng hiện tại.",
+        );
+        setMaterialForm(emptyMaterialForm);
+        await Promise.all([
+          refetchWorkspace(),
+          utils.material.searchMaterials.invalidate(),
+        ]);
+      },
+      onError: (nextError) => setMaterialMessage(nextError.message),
+    });
   const manualMatch = api.excelWorkspace.manualMatch.useMutation({
     onSuccess: async () => {
       setManualSpec(emptyManualSpec);
@@ -793,6 +909,72 @@ function FindStep({
     onSuccess: async () => refetchWorkspace(),
   });
 
+  const searchMaterialCandidates = () => {
+    if (!activeItem) {
+      return;
+    }
+    setMaterialMessage(null);
+    searchMaterials.mutate({
+      rowId: activeItem.id,
+      keyword: materialKeyword || activeItem.productName,
+    });
+  };
+
+  const saveMaterialAndMatch = () => {
+    if (!activeItem || !materialForm.name.trim() || !materialForm.unit.trim()) {
+      setMaterialMessage("Cần nhập tên và đơn vị tính.");
+      return;
+    }
+
+    createMaterialAndMatch.mutate({
+      rowId: activeItem.id,
+      material: {
+        code: materialForm.code || undefined,
+        name: materialForm.name,
+        unit: materialForm.unit,
+        category: materialForm.category || undefined,
+        defaultDepreciation: Number(materialForm.defaultDepreciation || 1),
+        defaultReusePct: Number.parseInt(
+          materialForm.defaultReusePct || "0",
+          10,
+        ),
+      },
+    });
+  };
+
+  const saveExternalManualMatch = () => {
+    if (!activeItem) {
+      return;
+    }
+
+    let domain: string;
+    try {
+      domain = new URL(manualSpec.sourceUrl).host;
+    } catch {
+      setWarning("Đường dẫn nguồn không hợp lệ.");
+      return;
+    }
+
+    manualMatch.mutate({
+      rowId: activeItem.id,
+      spec: {
+        productName: manualSpec.productName,
+        sourceUrl: manualSpec.sourceUrl,
+        specSummary: manualSpec.specSummary,
+        priceText: manualSpec.priceText || null,
+        priceVnd: null,
+        originCountry: manualSpec.originCountry || null,
+        vendorDomain: domain,
+        vendorName: domain,
+        evidenceText: manualSpec.evidenceText || manualSpec.specSummary,
+        imageUrl: null,
+        brand: null,
+        model: null,
+        unit: activeItem.unit || null,
+      },
+    });
+  };
+
   if (!activeItem) {
     return (
       <section className="panel p-6 text-center text-sm text-slate-500">
@@ -800,6 +982,19 @@ function FindStep({
       </section>
     );
   }
+
+  const rowDetails = [
+    { label: "Dòng Excel", value: activeItem.originalRowIndex },
+    { label: "Tên sản phẩm", value: activeItem.productName },
+    { label: "Thông số", value: activeItem.specText },
+    { label: "Đơn vị tính", value: activeItem.unit },
+    { label: "Số lượng", value: activeItem.quantity },
+    { label: "Giá mục tiêu", value: activeItem.targetPrice },
+    { label: "Tiền tệ", value: activeItem.currency },
+    { label: "Nhà cung cấp", value: activeItem.vendorHint },
+    { label: "Xuất xứ", value: activeItem.originHint },
+    { label: "Ghi chú", value: activeItem.notes },
+  ];
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.72fr_1.28fr]">
@@ -845,12 +1040,14 @@ function FindStep({
                 {activeItem.productName}
               </h2>
               <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                Dòng {activeItem.originalRowIndex} •{" "}
                 {activeItem.specText || "Chưa có thông số"} • Đơn vị{" "}
                 {activeItem.unit || "-"}
               </p>
               {selectedCandidate ? (
                 <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                  Đã chọn: {selectedCandidate.title}
+                  Đã chọn ({candidateSourceLabel(selectedCandidate.provider)}):{" "}
+                  {selectedCandidate.title}
                 </p>
               ) : null}
             </div>
@@ -860,9 +1057,9 @@ function FindStep({
                 className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                 disabled={searchWeb.isPending}
                 onClick={() => searchWeb.mutate({ rowId: activeItem.id })}
-                aria-label={`Tìm lại gợi ý cho ${activeItem.productName}`}
+                aria-label={`Tìm nguồn web cho ${activeItem.productName}`}
               >
-                {searchWeb.isPending ? "Đang tìm..." : "Tìm lại"}
+                {searchWeb.isPending ? "Đang tìm..." : "Tìm nguồn web"}
               </button>
               <button
                 type="button"
@@ -881,9 +1078,69 @@ function FindStep({
           ) : null}
         </article>
 
+        <article className="panel p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+            <div>
+              <h3 className="text-sm font-bold">Thông tin dòng Excel</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Các trường đã duyệt dùng để tìm và đối chiếu sản phẩm.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+              {matchStatusLabels[activeItem.matchStatus]}
+            </span>
+          </div>
+          <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {rowDetails.map((detail) => (
+              <div
+                key={detail.label}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+              >
+                <dt className="text-[11px] font-semibold text-slate-500">
+                  {detail.label}
+                </dt>
+                <dd className="mt-1 text-sm font-medium [overflow-wrap:anywhere] text-slate-900">
+                  {formatOptionalValue(detail.value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+
+        <article className="panel p-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-64 flex-1">
+              <span className="text-xs font-semibold text-slate-600">
+                Tìm trong danh mục nội bộ
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={materialKeyword}
+                onChange={(event) => setMaterialKeyword(event.target.value)}
+                placeholder="Tên, mã, ĐVT hoặc nhóm sản phẩm / vật tư"
+                aria-label="Từ khoá tìm trong danh mục nội bộ"
+              />
+            </label>
+            <button
+              type="button"
+              className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+              disabled={searchMaterials.isPending}
+              onClick={searchMaterialCandidates}
+            >
+              {searchMaterials.isPending ? "Đang tìm..." : "Tìm danh mục"}
+            </button>
+          </div>
+          {materialMessage ? (
+            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              {materialMessage}
+            </p>
+          ) : null}
+        </article>
+
         <div className="grid gap-3 lg:grid-cols-2">
           {candidates.map((candidate) => {
             const spec = specFromCandidate(candidate);
+            const canOpenSource = /^https?:\/\//i.test(candidate.url);
             return (
               <article
                 key={candidate.id}
@@ -903,9 +1160,16 @@ function FindStep({
                   />
                 ) : null}
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="leading-tight font-semibold text-slate-900">
-                    {candidate.title}
-                  </h3>
+                  <div>
+                    <span
+                      className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${candidateBadgeClass(candidate.provider)}`}
+                    >
+                      {candidateSourceLabel(candidate.provider)}
+                    </span>
+                    <h3 className="leading-tight font-semibold text-slate-900">
+                      {candidate.title}
+                    </h3>
+                  </div>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-800">
                     {candidate.confidenceScore}%
                   </span>
@@ -944,28 +1208,177 @@ function FindStep({
                   >
                     Chọn
                   </button>
-                  <a
-                    href={candidate.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold hover:bg-slate-100"
-                    aria-label={`Mở trang nguồn của ${candidate.title}`}
-                  >
-                    Mở nguồn
-                  </a>
+                  {canOpenSource ? (
+                    <a
+                      href={candidate.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold hover:bg-slate-100"
+                      aria-label={`Mở trang nguồn của ${candidate.title}`}
+                    >
+                      Mở nguồn
+                    </a>
+                  ) : (
+                    <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-500">
+                      Nguồn nội bộ
+                    </span>
+                  )}
                 </div>
               </article>
             );
           })}
-          {candidates.length === 0 ? (
+          {visibleMaterialCandidates.map((candidate) => (
+            <article
+              key={`material-${candidate.materialId}`}
+              className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="mb-2 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                    Danh mục
+                  </span>
+                  <h3 className="leading-tight font-semibold text-slate-900">
+                    {candidate.title}
+                  </h3>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-800">
+                  {candidate.confidenceScore}%
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-slate-600">
+                {candidate.code ? `Mã ${candidate.code} • ` : ""}ĐVT{" "}
+                {candidate.unit} • Nhóm {candidate.category ?? "-"}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Khấu hao {candidate.defaultDepreciation} • Sử dụng lại{" "}
+                {candidate.defaultReusePct}%
+              </p>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {candidate.matchReasons.map((reason) => (
+                  <span
+                    key={`${candidate.materialId}-${reason}`}
+                    className="rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] text-sky-700"
+                  >
+                    {reason}
+                  </span>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="mt-3 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                disabled={selectMaterial.isPending}
+                onClick={() =>
+                  selectMaterial.mutate({
+                    rowId: activeItem.id,
+                    materialId: candidate.materialId,
+                  })
+                }
+                aria-label={`Chọn ${candidate.title} từ danh mục nội bộ`}
+              >
+                Chọn
+              </button>
+            </article>
+          ))}
+          {candidates.length === 0 && visibleMaterialCandidates.length === 0 ? (
             <article className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-              Chưa có gợi ý. Hãy chạy tìm kiếm hoặc nhập kết quả thủ công.
+              Chưa có gợi ý. Hãy tìm web, tìm danh mục hoặc thêm sản phẩm mới.
             </article>
           ) : null}
         </div>
 
         <article className="panel p-4">
-          <h3 className="text-sm font-bold">Kết quả thủ công</h3>
+          <h3 className="text-sm font-bold">
+            Thêm sản phẩm vào danh mục và chọn
+          </h3>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Mã sản phẩm / vật tư (tuỳ chọn)"
+              aria-label="Mã sản phẩm hoặc vật tư"
+              value={materialForm.code}
+              onChange={(event) =>
+                setMaterialForm({ ...materialForm, code: event.target.value })
+              }
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Tên sản phẩm / vật tư"
+              aria-label="Tên sản phẩm hoặc vật tư"
+              value={materialForm.name}
+              onChange={(event) =>
+                setMaterialForm({ ...materialForm, name: event.target.value })
+              }
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="ĐVT"
+              aria-label="Đơn vị tính sản phẩm hoặc vật tư"
+              value={materialForm.unit}
+              onChange={(event) =>
+                setMaterialForm({ ...materialForm, unit: event.target.value })
+              }
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Nhóm sản phẩm / vật tư"
+              aria-label="Nhóm sản phẩm hoặc vật tư"
+              value={materialForm.category}
+              onChange={(event) =>
+                setMaterialForm({
+                  ...materialForm,
+                  category: event.target.value,
+                })
+              }
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Khấu hao"
+              type="number"
+              min={0}
+              step={0.1}
+              aria-label="Khấu hao mặc định"
+              value={materialForm.defaultDepreciation}
+              onChange={(event) =>
+                setMaterialForm({
+                  ...materialForm,
+                  defaultDepreciation: event.target.value,
+                })
+              }
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="% sử dụng lại"
+              type="number"
+              min={0}
+              max={100}
+              aria-label="Phần trăm sử dụng lại mặc định"
+              value={materialForm.defaultReusePct}
+              onChange={(event) =>
+                setMaterialForm({
+                  ...materialForm,
+                  defaultReusePct: event.target.value,
+                })
+              }
+            />
+          </div>
+          <button
+            type="button"
+            className="mt-3 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+            disabled={
+              !materialForm.name.trim() ||
+              !materialForm.unit.trim() ||
+              createMaterialAndMatch.isPending
+            }
+            onClick={saveMaterialAndMatch}
+          >
+            {createMaterialAndMatch.isPending
+              ? "Đang lưu..."
+              : "Thêm vào danh mục và chọn"}
+          </button>
+        </article>
+
+        <article className="panel p-4">
+          <h3 className="text-sm font-bold">Thêm nguồn ngoài thủ công</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <input
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -1023,28 +1436,7 @@ function FindStep({
             type="button"
             className="mt-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
             disabled={!manualSpec.productName || !manualSpec.sourceUrl}
-            onClick={() => {
-              const domain = new URL(manualSpec.sourceUrl).host;
-              manualMatch.mutate({
-                rowId: activeItem.id,
-                spec: {
-                  productName: manualSpec.productName,
-                  sourceUrl: manualSpec.sourceUrl,
-                  specSummary: manualSpec.specSummary,
-                  priceText: manualSpec.priceText || null,
-                  priceVnd: null,
-                  originCountry: manualSpec.originCountry || null,
-                  vendorDomain: domain,
-                  vendorName: domain,
-                  evidenceText:
-                    manualSpec.evidenceText || manualSpec.specSummary,
-                  imageUrl: null,
-                  brand: null,
-                  model: null,
-                  unit: activeItem.unit || null,
-                },
-              });
-            }}
+            onClick={saveExternalManualMatch}
           >
             Lưu kết quả thủ công
           </button>
