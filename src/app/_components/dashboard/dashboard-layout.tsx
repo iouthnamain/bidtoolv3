@@ -10,15 +10,28 @@ type NavItem = {
   href: string;
   label: string;
   short: string;
-  icon: "dashboard" | "search" | "saved" | "workflow" | "insight";
+  icon:
+    | "dashboard"
+    | "search"
+    | "excel"
+    | "materials"
+    | "saved"
+    | "workflow"
+    | "insight";
 };
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Tổng quan", short: "TQ", icon: "dashboard" },
   { href: "/search", label: "Tìm kiếm", short: "TK", icon: "search" },
-  { href: "/saved-items", label: "Smart Views", short: "SV", icon: "saved" },
-  { href: "/workflows", label: "Workflows", short: "WF", icon: "workflow" },
-  { href: "/insights", label: "Insights", short: "IN", icon: "insight" },
+  {
+    href: "/excel-workspace",
+    label: "Không gian Excel",
+    short: "XL",
+    icon: "excel",
+  },
+  { href: "/saved-items", label: "Chế độ xem", short: "CV", icon: "saved" },
+  { href: "/workflows", label: "Quy trình", short: "QT", icon: "workflow" },
+  { href: "/insights", label: "Phân tích", short: "PT", icon: "insight" },
 ];
 
 function NavItemIcon({
@@ -62,6 +75,23 @@ function NavItemIcon({
           <path d="M6 4.5h12A1.5 1.5 0 0 1 19.5 6v14.5L12 16l-7.5 4.5V6A1.5 1.5 0 0 1 6 4.5Z" />
         </svg>
       );
+    case "excel":
+      return (
+        <svg {...common}>
+          <path d="M5 4.5h9l5 5v10A1.5 1.5 0 0 1 17.5 21h-12A1.5 1.5 0 0 1 4 19.5V6a1.5 1.5 0 0 1 1-1.5Z" />
+          <path d="M14 4.5V10h5" />
+          <path d="M8 13h7" />
+          <path d="M8 16h7" />
+        </svg>
+      );
+    case "materials":
+      return (
+        <svg {...common}>
+          <path d="M4.5 8.5 12 4l7.5 4.5-7.5 4.5-7.5-4.5Z" />
+          <path d="m4.5 12 7.5 4.5 7.5-4.5" />
+          <path d="m4.5 15.5 7.5 4.5 7.5-4.5" />
+        </svg>
+      );
     case "workflow":
       return (
         <svg {...common}>
@@ -96,7 +126,10 @@ function SidebarNav({
   const pathname = usePathname();
 
   return (
-    <nav className="mt-6 flex flex-col gap-1" aria-label="Dashboard navigation">
+    <nav
+      className="mt-6 flex flex-col gap-1"
+      aria-label="Điều hướng bảng điều khiển"
+    >
       {navItems.map((item) => {
         const isActive =
           pathname === item.href ||
@@ -117,7 +150,7 @@ function SidebarNav({
           >
             {collapsed ? (
               <span
-                className={`flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold tracking-wide ${
+                className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold tracking-wide ${
                   isActive
                     ? "border-white/50 bg-white/20 text-white"
                     : "border-slate-200 bg-white/80 text-slate-700"
@@ -130,7 +163,9 @@ function SidebarNav({
                 <span>{item.label}</span>
                 <span
                   className={`h-1.5 w-1.5 rounded-full transition-opacity ${
-                    isActive ? "bg-white opacity-100" : "bg-slate-300 opacity-0 group-hover:opacity-100"
+                    isActive
+                      ? "bg-white opacity-100"
+                      : "bg-slate-300 opacity-0 group-hover:opacity-100"
                   }`}
                 />
               </>
@@ -184,15 +219,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen flex-col text-slate-900 sm:flex-row">
       <aside
-        className={`hidden w-full shrink-0 border-b border-slate-200/80 bg-white/95 p-3 backdrop-blur transition-all duration-300 ease-out sm:flex sm:h-screen sm:flex-col sm:border-b-0 sm:border-r ${
+        className={`hidden w-full shrink-0 border-b border-slate-200/80 bg-white/95 p-3 backdrop-blur transition-all duration-300 ease-out sm:flex sm:h-screen sm:flex-col sm:border-r sm:border-b-0 ${
           sidebarCollapsed ? "sm:w-24" : "sm:w-72"
         }`}
       >
         <button
           type="button"
-          className="absolute -right-3 top-6 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-100 lg:flex"
+          className="absolute top-6 -right-3 hidden h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-100 lg:flex"
           onClick={() => setSidebarCollapsed((prev) => !prev)}
-          aria-label={sidebarCollapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+          aria-label={
+            sidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"
+          }
           title={`${sidebarCollapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
         >
           {sidebarCollapsed ? ">" : "<"}
@@ -204,14 +241,16 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           }`}
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-100">
+            <p className="text-[11px] tracking-[0.22em] text-cyan-100 uppercase">
               {sidebarCollapsed ? "BT3" : "BidTool v3"}
             </p>
             <button
               type="button"
               className="rounded-md border border-white/30 px-2 py-1 text-[11px] font-medium text-white hover:bg-white/10"
               onClick={() => setSidebarCollapsed((prev) => !prev)}
-              aria-label={sidebarCollapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+              aria-label={
+                sidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"
+              }
               title={`${sidebarCollapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
             >
               {sidebarCollapsed ? ">" : "<"}
@@ -222,7 +261,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <>
               <p className="mt-1 text-lg font-semibold">Bảng điều hành</p>
               <p className="mt-1 text-xs text-cyan-100/90">
-                Theo dõi realtime, lưu chọn lọc, tự động hóa tác vụ.
+                Theo dõi thời gian thực, lưu chọn lọc, tự động hóa tác vụ.
               </p>
               <p className="mt-2 text-[11px] text-cyan-100/80">
                 Phím tắt: Ctrl/Cmd + B
@@ -232,7 +271,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {!sidebarCollapsed ? (
-          <p className="mt-5 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+          <p className="mt-5 text-[11px] tracking-[0.18em] text-slate-400 uppercase">
             Điều hướng
           </p>
         ) : null}
@@ -247,12 +286,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             onClick={() => setMobileOpen(true)}
             className="rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700"
           >
-            Menu
+            Mở menu
           </button>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1440px] px-4 py-5">{children}</div>
+          <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
+            {children}
+          </div>
         </main>
       </div>
 
@@ -260,19 +301,21 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <>
           <button
             type="button"
-            aria-label="Dong menu"
+            aria-label="Đóng menu"
             className="fixed inset-0 z-40 bg-black/30 md:hidden"
             onClick={() => setMobileOpen(false)}
           />
           <aside className="fixed inset-y-0 left-0 z-50 w-64 border-r border-slate-200 bg-white p-4 md:hidden">
             <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">BidTool v3</p>
+              <p className="text-xs tracking-[0.2em] text-slate-500 uppercase">
+                BidTool v3
+              </p>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium"
               >
-                  Đóng
+                Đóng
               </button>
             </div>
             <SidebarNav onNavigate={() => setMobileOpen(false)} />

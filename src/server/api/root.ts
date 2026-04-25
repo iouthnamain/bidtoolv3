@@ -1,4 +1,6 @@
+import { excelWorkspaceRouter } from "~/server/api/routers/excel-workspace";
 import { insightRouter } from "~/server/api/routers/insight";
+import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
 import { watchlistRouter } from "~/server/api/routers/watchlist";
@@ -11,7 +13,9 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  excelWorkspace: excelWorkspaceRouter,
   insight: insightRouter,
+  material: materialRouter,
   notification: notificationRouter,
   search: searchRouter,
   watchlist: watchlistRouter,

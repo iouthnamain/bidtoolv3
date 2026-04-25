@@ -1,40 +1,80 @@
-# Create T3 App
+# BidTool v3
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+BidTool v3 is a Next.js dashboard for tender discovery workflows, Excel-based material review, and product candidate matching. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, Tailwind CSS, and optional self-hosted SearXNG search.
 
-## BidTool v3 Docs (Tiếng Việt)
+## Local Setup
 
-Bộ tài liệu khởi tạo cho hướng app dashboard + workflow được đặt tại thư mục `docs/`:
+1. Install dependencies:
 
-- [Tổng quan docs](docs/README.md)
+```bash
+npm install
+```
+
+2. Copy local environment values:
+
+```bash
+cp -n .env.example .env
+```
+
+3. Start PostgreSQL:
+
+```bash
+docker compose -p bidtoolv3 up -d postgres
+```
+
+4. Run migrations and optional seed:
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+5. Start the app:
+
+```bash
+npm run dev
+```
+
+## Local SearXNG Search
+
+Start the search profile when using `PRODUCT_WEB_SEARCH_PROVIDER=auto` with a local `SEARXNG_BASE_URL`:
+
+```bash
+docker compose -p bidtoolv3 --profile search up -d searxng
+```
+
+Then set:
+
+```env
+SEARXNG_BASE_URL="http://localhost:8080"
+```
+
+The local JSON API can be checked with:
+
+```bash
+curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
+```
+
+## Scripts
+
+- `npm run dev` - start Next.js in development mode.
+- `npm run build` - create a production build.
+- `npm run check` - run ESLint and TypeScript.
+- `npm run format:check` - verify Prettier formatting.
+- `npm run format:write` - format project files.
+- `npm run db:migrate` - apply Drizzle migrations.
+- `npm run db:seed` - seed demo data only when `ENABLE_DEMO_SEED=true`.
+
+## Documentation
+
+Project docs live in `docs/`:
+
+- [Docs overview](docs/README.md)
 - [Product Brief](docs/01-product-brief.md)
 - [UX/UI Dashboard Workflows](docs/02-uxui-dashboard-workflows.md)
 - [Technical Architecture](docs/03-technical-architecture.md)
 - [MVP Roadmap](docs/04-mvp-roadmap.md)
 - [Data Source Strategy](docs/05-data-source-strategy.md)
-
-## What's next? How do I make an app with this?
-
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
-
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
-
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
-
-## Learn More
-
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
-
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
-
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
-
-## How do I deploy this?
-
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+- [Excel Workspace](docs/07-excel-workspace.md)
+- [SearXNG Self-hosted Search](docs/08-searxng-self-hosted-search.md)
+- [Workflow Library](docs/workflows/README.md)

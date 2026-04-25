@@ -143,7 +143,11 @@ function inferCategory(title: string): string {
   if (/(benh vien|y te|thuoc|xet nghiem|hoa chat y)/.test(text)) {
     return "Y tế";
   }
-  if (/(phan mem|may tinh|mang|cntt|viễn thong|vien thong|an ninh mang)/.test(text)) {
+  if (
+    /(phan mem|may tinh|mang|cntt|viễn thong|vien thong|an ninh mang)/.test(
+      text,
+    )
+  ) {
     return "Công nghệ thông tin";
   }
   if (/(xay dung|thi cong|xay lap|ha tang|cong trinh)/.test(text)) {
@@ -242,12 +246,17 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
     budget: Number.isFinite(budget) ? budget : 0,
     publishedAt,
     closingAt,
-    matchScore: Number.isFinite(matchScore) ? Math.max(0, Math.min(100, matchScore)) : 0,
+    matchScore: Number.isFinite(matchScore)
+      ? Math.max(0, Math.min(100, matchScore))
+      : 0,
     sourceUrl,
   };
 }
 
-function applyLocalFilters(items: LivePackageItem[], input: SearchOptions): LivePackageItem[] {
+function applyLocalFilters(
+  items: LivePackageItem[],
+  input: SearchOptions,
+): LivePackageItem[] {
   const keywords = (input.keyword ?? "")
     .split(",")
     .map((term) => normalizeText(term))
@@ -294,12 +303,20 @@ function applyLocalFilters(items: LivePackageItem[], input: SearchOptions): Live
   });
 }
 
-function sortItems(items: LivePackageItem[], sortBy: SortBy, sortOrder: SortOrder) {
+function sortItems(
+  items: LivePackageItem[],
+  sortBy: SortBy,
+  sortOrder: SortOrder,
+) {
   const direction = sortOrder === "asc" ? 1 : -1;
 
   return [...items].sort((a, b) => {
     if (sortBy === "publishedAt") {
-      return (new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()) * direction;
+      return (
+        (new Date(a.publishedAt).getTime() -
+          new Date(b.publishedAt).getTime()) *
+        direction
+      );
     }
 
     if (sortBy === "budget") {
@@ -320,26 +337,22 @@ function sortItems(items: LivePackageItem[], sortBy: SortBy, sortOrder: SortOrde
 
 function buildOptions(items: LivePackageItem[]) {
   const dynamicProvinces = new Set(
-    items
-      .map((item) => item.province)
-      .filter(Boolean),
+    items.map((item) => item.province).filter(Boolean),
   );
   const dynamicCategories = new Set(
-    items
-      .map((item) => item.category)
-      .filter(Boolean),
+    items.map((item) => item.category).filter(Boolean),
   );
   const dynamicKeywords = extractDynamicKeywords(items);
 
-  const provinces = Array.from(new Set([...PROVINCE_OPTIONS, ...dynamicProvinces])).sort(
-    (a, b) => a.localeCompare(b, "vi"),
-  );
-  const categories = Array.from(new Set([...CATEGORY_OPTIONS, ...dynamicCategories])).sort(
-    (a, b) => a.localeCompare(b, "vi"),
-  );
-  const keywords = Array.from(new Set([...KEYWORD_OPTIONS, ...dynamicKeywords])).sort(
-    (a, b) => a.localeCompare(b, "vi"),
-  );
+  const provinces = Array.from(
+    new Set([...PROVINCE_OPTIONS, ...dynamicProvinces]),
+  ).sort((a, b) => a.localeCompare(b, "vi"));
+  const categories = Array.from(
+    new Set([...CATEGORY_OPTIONS, ...dynamicCategories]),
+  ).sort((a, b) => a.localeCompare(b, "vi"));
+  const keywords = Array.from(
+    new Set([...KEYWORD_OPTIONS, ...dynamicKeywords]),
+  ).sort((a, b) => a.localeCompare(b, "vi"));
 
   return { provinces, categories, keywords };
 }
@@ -423,17 +436,26 @@ async function fetchBidWinnerPage(page: number): Promise<string> {
   }
 
   const message =
-    lastError instanceof Error ? lastError.message : "Lỗi không xác định khi gọi BidWinner.";
+    lastError instanceof Error
+      ? lastError.message
+      : "Lỗi không xác định khi gọi BidWinner.";
   throw new Error(
     `Không thể lấy dữ liệu BidWinner cho page=${page} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
   );
 }
 
-export async function searchBidWinnerLive(input: SearchOptions): Promise<LiveSearchResult> {
-  const basePage = Math.max(1, Math.floor(input.offset / Math.max(input.limit, 1)) + 1);
+export async function searchBidWinnerLive(
+  input: SearchOptions,
+): Promise<LiveSearchResult> {
+  const basePage = Math.max(
+    1,
+    Math.floor(input.offset / Math.max(input.limit, 1)) + 1,
+  );
   const pages = new Set([basePage, basePage + 1]);
 
-  const htmlPages = await Promise.all(Array.from(pages).map((page) => fetchBidWinnerPage(page)));
+  const htmlPages = await Promise.all(
+    Array.from(pages).map((page) => fetchBidWinnerPage(page)),
+  );
   const allItems: LivePackageItem[] = [];
 
   for (const html of htmlPages) {
@@ -443,7 +465,9 @@ export async function searchBidWinnerLive(input: SearchOptions): Promise<LiveSea
       .filter((item): item is LivePackageItem => item !== null);
 
     for (const item of mapped) {
-      if (!allItems.some((existing) => existing.externalId === item.externalId)) {
+      if (
+        !allItems.some((existing) => existing.externalId === item.externalId)
+      ) {
         allItems.push(item);
       }
     }

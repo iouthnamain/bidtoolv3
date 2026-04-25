@@ -97,17 +97,20 @@ export function PackageDetailsPageClient({
       <section className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Source URL</p>
+            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+              Source URL
+            </p>
             <a
               href={details.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 block break-all text-sm font-medium text-sky-700 hover:underline"
+              className="mt-1 block text-sm font-medium break-all text-sky-700 hover:underline"
             >
               {details.sourceUrl}
             </a>
             <p className="mt-2 text-xs text-slate-500">
-              Domain: {detectDomain(details.sourceUrl)} • Cập nhật: {formatDateTime(details.fetchedAt)}
+              Domain: {detectDomain(details.sourceUrl)} • Cập nhật:{" "}
+              {formatDateTime(details.fetchedAt)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
               Cache: {details.extractionMeta.fromCache ? "hit" : "miss"}
@@ -119,21 +122,24 @@ export function PackageDetailsPageClient({
 
           <Link
             href="/search"
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Quay lại Search
           </Link>
         </div>
 
-        <h2 className="mt-3 text-lg font-semibold text-slate-900">{details.pageTitle}</h2>
+        <h2 className="mt-3 text-lg font-semibold text-slate-900">
+          {details.pageTitle}
+        </h2>
         {details.extractionMeta.sectionsDetected.length > 0 ? (
           <p className="mt-2 text-xs text-slate-500">
-            Sections detect được: {details.extractionMeta.sectionsDetected.join(" • ")}
+            Sections detect được:{" "}
+            {details.extractionMeta.sectionsDetected.join(" • ")}
           </p>
         ) : null}
         {details.extractionMeta.warnings.length > 0 ? (
           <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800">
+            <p className="text-xs font-semibold tracking-[0.12em] text-amber-800 uppercase">
               Cảnh báo extraction
             </p>
             <ul className="mt-2 space-y-1 text-xs text-amber-900">
@@ -147,12 +153,20 @@ export function PackageDetailsPageClient({
 
       <section className="grid gap-3 sm:grid-cols-2">
         <article className="panel p-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Products (heuristic)</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{details.products.length}</p>
+          <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+            Products (heuristic)
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">
+            {details.products.length}
+          </p>
         </article>
         <article className="panel p-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Available links</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{details.links.length}</p>
+          <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+            Available links
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900">
+            {details.links.length}
+          </p>
         </article>
       </section>
 
@@ -217,7 +231,7 @@ export function PackageDetailsPageClient({
         ) : (
           <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
                   <th className="px-3 py-2">Tên hiển thị</th>
                   <th className="px-3 py-2">Loại</th>
@@ -227,7 +241,9 @@ export function PackageDetailsPageClient({
               <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
                 {details.requiredTables.invitationDocuments.map((doc) => (
                   <tr key={`${doc.href}-${doc.text}`}>
-                    <td className="max-w-[320px] px-3 py-2 align-top">{doc.text}</td>
+                    <td className="max-w-[320px] px-3 py-2 align-top">
+                      {doc.text}
+                    </td>
                     <td className="px-3 py-2 align-top whitespace-nowrap">
                       {doc.kind === "file" ? "File" : "Trang"}
                     </td>
@@ -295,7 +311,7 @@ export function PackageDetailsPageClient({
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
               >
                 <p className="text-sm text-slate-900">{item.text}</p>
-                <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">
+                <p className="mt-1 text-[11px] tracking-[0.12em] text-slate-500 uppercase">
                   Nguồn parse: {item.source}
                 </p>
               </li>
@@ -313,7 +329,7 @@ export function PackageDetailsPageClient({
         ) : (
           <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
                   <th className="px-3 py-2">Text</th>
                   <th className="px-3 py-2">Host</th>
@@ -324,8 +340,12 @@ export function PackageDetailsPageClient({
               <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
                 {details.links.map((link) => (
                   <tr key={`${link.href}-${link.text}`}>
-                    <td className="max-w-[320px] px-3 py-2 align-top">{link.text}</td>
-                    <td className="px-3 py-2 align-top whitespace-nowrap">{link.host}</td>
+                    <td className="max-w-[320px] px-3 py-2 align-top">
+                      {link.text}
+                    </td>
+                    <td className="px-3 py-2 align-top whitespace-nowrap">
+                      {link.host}
+                    </td>
                     <td className="px-3 py-2 align-top whitespace-nowrap">
                       <span
                         className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${

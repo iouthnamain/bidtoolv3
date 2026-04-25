@@ -5,17 +5,17 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "check": "next lint && tsc --noEmit",
+    "check": "eslint . && tsc --noEmit",
     "dev": "next dev --turbo",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "bun run src/server/db/seed.ts",
+    "db:seed": "node --env-file=.env --import tsx src/server/db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "dev:one-time": "cp -n .env.example .env || true && docker compose up -d && bun run db:migrate && bun run db:seed && bun run dev",
+    "dev:one-time": "cp -n .env.example .env || true && docker compose up -d && npm run db:migrate && npm run db:seed && npm run dev",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "preview": "next build && next start",
     "start": "next start",
     "typecheck": "tsc --noEmit"
@@ -34,6 +34,7 @@
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1",
     "superjson": "^2.2.1",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {

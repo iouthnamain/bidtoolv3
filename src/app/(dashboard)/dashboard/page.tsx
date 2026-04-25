@@ -1,17 +1,27 @@
 import { AlertCard } from "~/app/_components/dashboard/alert-card";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
-import { api } from "~/trpc/server";
+import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
 
 export default async function DashboardPage() {
-  const summary = await api.insight.getDashboardSummary();
-  const alerts = await api.notification.list({ limit: 3 });
+  const {
+    summary,
+    latestAlerts: alerts,
+    isDegraded,
+  } = await getDashboardSnapshot();
 
   return (
     <DashboardShell
       title="Tổng quan điều hành"
       description="Theo dõi nhanh KPI, cảnh báo và trạng thái automation"
     >
+      {isDegraded ? (
+        <section className="panel mb-3 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Không tải được dữ liệu dashboard từ database. Kiểm tra Postgres và
+          chạy migration trước khi dùng dữ liệu thật.
+        </section>
+      ) : null}
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Tổng gói thầu"
@@ -38,7 +48,8 @@ export default async function DashboardPage() {
       <section className="mt-4 grid gap-3">
         {alerts.length === 0 ? (
           <article className="panel p-5 text-sm text-slate-600">
-            Chưa có cảnh báo mới. Hệ thống sẽ hiển thị cảnh báo tại đây khi workflow tạo sự kiện.
+            Chưa có cảnh báo mới. Hệ thống sẽ hiển thị cảnh báo tại đây khi
+            workflow tạo sự kiện.
           </article>
         ) : (
           alerts.map((item) => (

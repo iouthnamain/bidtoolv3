@@ -9,31 +9,39 @@
 ## 2. Nhóm nguồn dữ liệu
 
 1. Nguồn công khai
+
 - Dữ liệu đấu thầu công khai, website công bố thông tin.
 - Mục tiêu: bao phủ tin mới và metadata cơ bản.
+- Với web product matching, ưu tiên truy vấn qua SearXNG tự host để metasearch nhiều engine và giảm phụ thuộc API SaaS; Tavily giữ vai trò fallback khi cần raw content/ảnh hoặc SearXNG không ổn định.
 
 2. Nguồn import thủ công
+
 - CSV/Excel do user upload.
 - Mục tiêu: cho phép onboard nhanh với dữ liệu nội bộ.
 
 3. Nguồn API chính thức (nếu có)
+
 - Kết nối qua connector riêng.
 - Mục tiêu: tăng độ tin cậy và cập nhật ổn định.
 
 ## 3. Pipeline đề xuất
 
 1. Ingest
+
 - Scheduler lấy dữ liệu theo tần suất.
 - File import parser theo template.
 
 2. Normalize
+
 - Chuẩn hóa trường: tên gói thầu, địa phương, lĩnh vực, giá trị, thời gian.
 - Mapping key chung để gộp bản ghi trùng lặp.
 
 3. Index
+
 - Tạo index phục vụ search và filter nhanh.
 
 4. Serve
+
 - tRPC trả dữ liệu cho UI và workflow engine.
 
 ## 4. Quality và governance

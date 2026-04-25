@@ -84,7 +84,10 @@ type BidWinnerDetailExtractionDiagnostics = Omit<
   "fromCache" | "cacheAgeMs"
 >;
 
-type BidWinnerDetailCoreResult = Omit<BidWinnerDetailResult, "extractionMeta"> & {
+type BidWinnerDetailCoreResult = Omit<
+  BidWinnerDetailResult,
+  "extractionMeta"
+> & {
   extractionMeta: BidWinnerDetailExtractionDiagnostics;
 };
 
@@ -97,7 +100,10 @@ type BidWinnerTableSections = {
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const SECTION_EVIDENCE_LIMIT = 20;
-const BIDWINNER_ALLOWED_HOSTS = new Set(["bidwinner.info", "www.bidwinner.info"]);
+const BIDWINNER_ALLOWED_HOSTS = new Set([
+  "bidwinner.info",
+  "www.bidwinner.info",
+]);
 
 const COMMODITY_TABLE_KEYWORDS = [
   "danh muc hang hoa",
@@ -219,7 +225,9 @@ function extractTitle(html: string): string {
   return title || "Chi tiết gói thầu";
 }
 
-function dedupeProducts(items: BidWinnerDetailProduct[]): BidWinnerDetailProduct[] {
+function dedupeProducts(
+  items: BidWinnerDetailProduct[],
+): BidWinnerDetailProduct[] {
   const seen = new Set<string>();
   const deduped: BidWinnerDetailProduct[] = [];
 
@@ -236,7 +244,10 @@ function dedupeProducts(items: BidWinnerDetailProduct[]): BidWinnerDetailProduct
   return deduped.slice(0, 120);
 }
 
-function dedupeLinks(items: BidWinnerDetailLink[], limit = 150): BidWinnerDetailLink[] {
+function dedupeLinks(
+  items: BidWinnerDetailLink[],
+  limit = 150,
+): BidWinnerDetailLink[] {
   const seen = new Set<string>();
   const deduped: BidWinnerDetailLink[] = [];
 
@@ -330,7 +341,9 @@ function extractTextCandidates(html: string): TextCandidate[] {
 }
 
 function parseHtmlSections(html: string): HtmlSection[] {
-  const matches = Array.from(html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi));
+  const matches = Array.from(
+    html.matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi),
+  );
   const sections: HtmlSection[] = [];
 
   for (let index = 0; index < matches.length; index += 1) {
@@ -365,7 +378,9 @@ function filterSectionsByKeywords(
   sections: HtmlSection[],
   keywords: string[],
 ): HtmlSection[] {
-  return sections.filter((section) => hasAnyKeyword(section.headingNormalized, keywords));
+  return sections.filter((section) =>
+    hasAnyKeyword(section.headingNormalized, keywords),
+  );
 }
 
 function collectSectionLines(
@@ -373,12 +388,17 @@ function collectSectionLines(
   predicate: (line: string) => boolean,
   limit = 120,
 ): string[] {
-  const lines = sections.flatMap((section) => section.lines.filter((line) => predicate(line)));
+  const lines = sections.flatMap((section) =>
+    section.lines.filter((line) => predicate(line)),
+  );
   return dedupeStrings(lines, limit);
 }
 
 function collectSectionEvidence(sections: HtmlSection[]): string[] {
-  return dedupeStrings(sections.flatMap((section) => section.lines), SECTION_EVIDENCE_LIMIT);
+  return dedupeStrings(
+    sections.flatMap((section) => section.lines),
+    SECTION_EVIDENCE_LIMIT,
+  );
 }
 
 function collectFallbackEvidence(
@@ -491,7 +511,9 @@ function extractLinks(html: string, sourceUrl: string): BidWinnerDetailLink[] {
   while ((match = anchorRegex.exec(html)) !== null) {
     const attrs = match[1] ?? "";
     const inner = match[2] ?? "";
-    const hrefMatch = /href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+    const hrefMatch = /href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(
+      attrs,
+    );
     const rawHref = decodeHtmlEntities(
       (hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3] ?? "").trim(),
     );
@@ -544,9 +566,18 @@ function formatLinkEvidence(link: BidWinnerDetailLink): string {
 
 function buildTableSections(sections: HtmlSection[]): BidWinnerTableSections {
   return {
-    commoditySections: filterSectionsByKeywords(sections, COMMODITY_TABLE_KEYWORDS),
-    tenderNoticeSections: filterSectionsByKeywords(sections, TBMT_CONTENT_KEYWORDS),
-    invitationSections: filterSectionsByKeywords(sections, INVITATION_DOCUMENT_KEYWORDS),
+    commoditySections: filterSectionsByKeywords(
+      sections,
+      COMMODITY_TABLE_KEYWORDS,
+    ),
+    tenderNoticeSections: filterSectionsByKeywords(
+      sections,
+      TBMT_CONTENT_KEYWORDS,
+    ),
+    invitationSections: filterSectionsByKeywords(
+      sections,
+      INVITATION_DOCUMENT_KEYWORDS,
+    ),
     lotSections: filterSectionsByKeywords(sections, LOT_TABLE_KEYWORDS),
   };
 }
@@ -567,28 +598,32 @@ function extractRequiredTables(
 
   const commodityFromSections = collectSectionLines(
     tableSections.commoditySections,
-    (line) => looksLikeProductText(line) || hasAnyKeyword(line, COMMODITY_TABLE_KEYWORDS),
+    (line) =>
+      looksLikeProductText(line) ||
+      hasAnyKeyword(line, COMMODITY_TABLE_KEYWORDS),
   );
-  const commodityFallback = dedupeStrings(
-    [
-      ...products.map((item) => item.text),
-      ...candidates
-        .filter(
-          (candidate) =>
-            looksLikeProductText(candidate.text) ||
-            hasAnyKeyword(candidate.text, COMMODITY_TABLE_KEYWORDS),
-        )
-        .map((candidate) => candidate.text),
-    ],
-  );
+  const commodityFallback = dedupeStrings([
+    ...products.map((item) => item.text),
+    ...candidates
+      .filter(
+        (candidate) =>
+          looksLikeProductText(candidate.text) ||
+          hasAnyKeyword(candidate.text, COMMODITY_TABLE_KEYWORDS),
+      )
+      .map((candidate) => candidate.text),
+  ]);
   const commodityCategories =
-    commodityFromSections.length > 0 ? commodityFromSections : commodityFallback;
+    commodityFromSections.length > 0
+      ? commodityFromSections
+      : commodityFallback;
   if (tableSections.commoditySections.length === 0) {
     warnings.push(
       "Không tìm thấy section Danh mục hàng hóa theo heading, đã dùng heuristic toàn trang.",
     );
   } else if (commodityFromSections.length === 0) {
-    warnings.push("Section Danh mục hàng hóa không đủ dữ liệu, đã dùng fallback heuristic.");
+    warnings.push(
+      "Section Danh mục hàng hóa không đủ dữ liệu, đã dùng fallback heuristic.",
+    );
   }
 
   const tenderFromSections = collectSectionLines(
@@ -597,7 +632,9 @@ function extractRequiredTables(
   );
   const tenderFallback = dedupeStrings(
     candidates
-      .filter((candidate) => hasAnyKeyword(candidate.text, TBMT_CONTENT_KEYWORDS))
+      .filter((candidate) =>
+        hasAnyKeyword(candidate.text, TBMT_CONTENT_KEYWORDS),
+      )
       .map((candidate) => candidate.text),
   );
   const tenderNoticeContents =
@@ -607,32 +644,48 @@ function extractRequiredTables(
       "Không tìm thấy section Nội dung TBMT theo heading, đã dùng heuristic toàn trang.",
     );
   } else if (tenderFromSections.length === 0) {
-    warnings.push("Section Nội dung TBMT không đủ dữ liệu, đã dùng fallback heuristic.");
+    warnings.push(
+      "Section Nội dung TBMT không đủ dữ liệu, đã dùng fallback heuristic.",
+    );
   }
 
   const invitationFromSections = dedupeLinks(
     tableSections.invitationSections
       .flatMap((section) => extractLinks(section.contentHtml, sourceUrl))
       .filter((link) =>
-        hasAnyKeyword(`${link.text} ${link.href}`, INVITATION_DOCUMENT_KEYWORDS),
+        hasAnyKeyword(
+          `${link.text} ${link.href}`,
+          INVITATION_DOCUMENT_KEYWORDS,
+        ),
       ),
   );
   const invitationFallback = links
     .filter(
       (link) =>
-        hasAnyKeyword(`${link.text} ${link.href}`, INVITATION_DOCUMENT_KEYWORDS) ||
+        hasAnyKeyword(
+          `${link.text} ${link.href}`,
+          INVITATION_DOCUMENT_KEYWORDS,
+        ) ||
         (link.kind === "file" &&
-          hasAnyKeyword(`${link.text} ${link.href}`, ["thau", "hsmt", "ho so"])),
+          hasAnyKeyword(`${link.text} ${link.href}`, [
+            "thau",
+            "hsmt",
+            "ho so",
+          ])),
     )
     .slice(0, 150);
   const invitationDocuments =
-    invitationFromSections.length > 0 ? invitationFromSections : invitationFallback;
+    invitationFromSections.length > 0
+      ? invitationFromSections
+      : invitationFallback;
   if (tableSections.invitationSections.length === 0) {
     warnings.push(
       "Không tìm thấy section Hồ sơ mời thầu theo heading, đã dùng heuristic toàn trang.",
     );
   } else if (invitationFromSections.length === 0) {
-    warnings.push("Section Hồ sơ mời thầu không đủ dữ liệu, đã dùng fallback heuristic.");
+    warnings.push(
+      "Section Hồ sơ mời thầu không đủ dữ liệu, đã dùng fallback heuristic.",
+    );
   }
 
   const lotFromSections = collectSectionLines(
@@ -650,7 +703,9 @@ function extractRequiredTables(
       "Không tìm thấy section Danh sách các lô theo heading, đã dùng heuristic toàn trang.",
     );
   } else if (lotFromSections.length === 0) {
-    warnings.push("Section Danh sách các lô không đủ dữ liệu, đã dùng fallback heuristic.");
+    warnings.push(
+      "Section Danh sách các lô không đủ dữ liệu, đã dùng fallback heuristic.",
+    );
   }
 
   const commodityEvidence = collectFallbackEvidence(
@@ -705,13 +760,16 @@ export class InvalidSourceUrlError extends Error {}
 function isAllowedBidWinnerHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
   return (
-    BIDWINNER_ALLOWED_HOSTS.has(normalized) || normalized.endsWith(".bidwinner.info")
+    BIDWINNER_ALLOWED_HOSTS.has(normalized) ||
+    normalized.endsWith(".bidwinner.info")
   );
 }
 
 function assertAllowedSourceUrl(url: URL): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new InvalidSourceUrlError("Source URL không hợp lệ (chỉ hỗ trợ http/https).");
+    throw new InvalidSourceUrlError(
+      "Source URL không hợp lệ (chỉ hỗ trợ http/https).",
+    );
   }
 
   if (!isAllowedBidWinnerHost(url.host)) {
@@ -731,7 +789,9 @@ function buildSourceUrl(externalId: string, sourceUrl?: string): string {
 
   const id = externalId.trim();
   if (!id) {
-    throw new InvalidSourceUrlError("Thiếu externalId để tạo source URL chi tiết.");
+    throw new InvalidSourceUrlError(
+      "Thiếu externalId để tạo source URL chi tiết.",
+    );
   }
 
   const fallbackUrl = new URL(
@@ -753,7 +813,9 @@ function toEpochMs(value: string): number | null {
   return Number.isFinite(epoch) ? epoch : null;
 }
 
-function toCachePayload(core: BidWinnerDetailCoreResult): Record<string, unknown> {
+function toCachePayload(
+  core: BidWinnerDetailCoreResult,
+): Record<string, unknown> {
   return core as unknown as Record<string, unknown>;
 }
 
@@ -804,7 +866,10 @@ function hydrateDetailResult(
 
 async function fetchDetailHtml(sourceUrl: string): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), env.BIDWINNER_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    env.BIDWINNER_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(sourceUrl, {
@@ -876,14 +941,16 @@ export async function fetchBidWinnerDetail(input: {
 
   const cachedCore = parseCachePayload(cacheRow?.payloadJson);
   const cachedAgeMs =
-    cacheRow?.updatedAt != null ? (() => {
-      const updatedAtMs = toEpochMs(cacheRow.updatedAt);
-      if (updatedAtMs === null) {
-        return null;
-      }
+    cacheRow?.updatedAt != null
+      ? (() => {
+          const updatedAtMs = toEpochMs(cacheRow.updatedAt);
+          if (updatedAtMs === null) {
+            return null;
+          }
 
-      return Date.now() - updatedAtMs;
-    })() : null;
+          return Date.now() - updatedAtMs;
+        })()
+      : null;
 
   if (cachedCore && cachedAgeMs !== null && cachedAgeMs <= CACHE_TTL_MS) {
     console.info("Package details cache hit", {
@@ -932,11 +999,14 @@ export async function fetchBidWinnerDetail(input: {
         sourceUrl: resolvedSourceUrl,
       });
     } catch (error) {
-      console.warn("Package details cache write failed, continue with live data", {
-        externalId: input.externalId,
-        sourceUrl: resolvedSourceUrl,
-        error,
-      });
+      console.warn(
+        "Package details cache write failed, continue with live data",
+        {
+          externalId: input.externalId,
+          sourceUrl: resolvedSourceUrl,
+          error,
+        },
+      );
     }
 
     return hydrateDetailResult(freshCore, {

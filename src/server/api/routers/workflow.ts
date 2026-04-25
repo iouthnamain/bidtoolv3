@@ -21,15 +21,15 @@ export const workflowRouter = createTRPCRouter({
       const [newWorkflow] = await ctx.db
         .insert(workflows)
         .values({
-        name: input.name,
-        triggerType: input.triggerType,
-        triggerConfig: input.triggerConfig,
-        actionType: input.actionType,
-        actionConfig: input.actionConfig,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      })
+          name: input.name,
+          triggerType: input.triggerType,
+          triggerConfig: input.triggerConfig,
+          actionType: input.actionType,
+          actionConfig: input.actionConfig,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        })
         .returning();
 
       return newWorkflow;

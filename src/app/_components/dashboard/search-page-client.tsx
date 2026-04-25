@@ -24,6 +24,7 @@ import {
   type SortBy,
   type SortOrder,
 } from "~/constants/search-options";
+import { Button } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
 
 type FilterState = {
@@ -92,11 +93,7 @@ function parseCsvList(value: string): string[] {
 
 function normalizeStringList(values: string[]): string[] {
   return Array.from(
-    new Set(
-      values
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
+    new Set(values.map((value) => value.trim()).filter(Boolean)),
   ).sort((a, b) => a.localeCompare(b, "vi"));
 }
 
@@ -199,7 +196,8 @@ function getImportantStatuses(item: {
   if (item.matchScore >= 85) {
     badges.push({
       label: "Match cao",
-      className: "border-emerald-300 bg-emerald-100 text-emerald-700 font-semibold",
+      className:
+        "border-emerald-300 bg-emerald-100 text-emerald-700 font-semibold",
       level: "important",
     });
   }
@@ -227,8 +225,7 @@ function getImportantStatuses(item: {
 
   const closingAt = parseBidWinnerDateTime(item.closingAt);
   if (closingAt) {
-    const hoursToClose =
-      (closingAt.getTime() - Date.now()) / (1000 * 60 * 60);
+    const hoursToClose = (closingAt.getTime() - Date.now()) / (1000 * 60 * 60);
 
     if (hoursToClose < 0) {
       badges.push({
@@ -336,19 +333,21 @@ function MultiSelectDropdown({
       <p className="mb-1 text-xs font-medium text-slate-600">{label}</p>
       <button
         type="button"
-        className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm hover:border-slate-400"
+        className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <span className="truncate">
           {summarizeSelected(selected, emptyLabel)}
         </span>
-        <span className="ml-2 shrink-0 text-xs text-slate-500">{selected.length}</span>
+        <span className="ml-2 shrink-0 text-xs text-slate-500">
+          {selected.length}
+        </span>
       </button>
 
       {isOpen ? (
         <div className="absolute z-20 mt-2 w-full rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
           <input
-            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm"
+            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
             placeholder="Tìm nhanh..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -357,14 +356,14 @@ function MultiSelectDropdown({
           <div className="mt-2 flex items-center justify-between text-xs">
             <button
               type="button"
-              className="text-blue-600 hover:text-blue-700"
+              className="rounded text-sky-700 transition-colors hover:text-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               onClick={() => onChange(options)}
             >
               Chọn tất cả
             </button>
             <button
               type="button"
-              className="text-slate-500 hover:text-slate-700"
+              className="rounded text-slate-500 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               onClick={() => onChange([])}
             >
               Bỏ chọn
@@ -415,7 +414,9 @@ export function SearchPageClient() {
   const [categories, setCategories] = useState(initialFilters.categories);
   const [budgetMin, setBudgetMin] = useState(initialFilters.budgetMin);
   const [budgetMax, setBudgetMax] = useState(initialFilters.budgetMax);
-  const [minMatchScore, setMinMatchScore] = useState(initialFilters.minMatchScore);
+  const [minMatchScore, setMinMatchScore] = useState(
+    initialFilters.minMatchScore,
+  );
   const [appliedFilters, setAppliedFilters] =
     useState<FilterState>(initialFilters);
   const [sortBy, setSortBy] = useState<SortBy>(() => {
@@ -435,7 +436,9 @@ export function SearchPageClient() {
     const value = searchParams.get("sortOrder");
     return value === "asc" || value === "desc" ? value : "desc";
   });
-  const [page, setPage] = useState(() => parsePositiveInt(searchParams.get("page"), 1));
+  const [page, setPage] = useState(() =>
+    parsePositiveInt(searchParams.get("page"), 1),
+  );
   const [limit, setLimit] = useState(() =>
     parsePositiveInt(searchParams.get("limit"), 20),
   );
@@ -475,19 +478,19 @@ export function SearchPageClient() {
     params.set("limit", String(limit));
 
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [
-    appliedFilters,
-    limit,
-    page,
-    pathname,
-    router,
-    sortBy,
-    sortOrder,
-  ]);
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }, [appliedFilters, limit, page, pathname, router, sortBy, sortOrder]);
 
-  const parsedBudgetMin = useMemo(() => parseOptionalNumber(budgetMin), [budgetMin]);
-  const parsedBudgetMax = useMemo(() => parseOptionalNumber(budgetMax), [budgetMax]);
+  const parsedBudgetMin = useMemo(
+    () => parseOptionalNumber(budgetMin),
+    [budgetMin],
+  );
+  const parsedBudgetMax = useMemo(
+    () => parseOptionalNumber(budgetMax),
+    [budgetMax],
+  );
   const parsedAppliedBudgetMin = useMemo(
     () => parseOptionalNumber(appliedFilters.budgetMin),
     [appliedFilters.budgetMin],
@@ -521,7 +524,8 @@ export function SearchPageClient() {
     ],
   );
 
-  const [packagesResult] = api.search.queryPackages.useSuspenseQuery(queryInput);
+  const [packagesResult] =
+    api.search.queryPackages.useSuspenseQuery(queryInput);
   const packages = packagesResult.items;
   const total = packagesResult.total;
   const liveOptions = packagesResult.options;
@@ -540,11 +544,13 @@ export function SearchPageClient() {
     [keyword],
   );
   const provinceOptions = useMemo(
-    () => mergeSelectOptions(PROVINCE_OPTIONS, liveOptions.provinces, provinces),
+    () =>
+      mergeSelectOptions(PROVINCE_OPTIONS, liveOptions.provinces, provinces),
     [liveOptions.provinces, provinces],
   );
   const categoryOptions = useMemo(
-    () => mergeSelectOptions(CATEGORY_OPTIONS, liveOptions.categories, categories),
+    () =>
+      mergeSelectOptions(CATEGORY_OPTIONS, liveOptions.categories, categories),
     [categories, liveOptions.categories],
   );
 
@@ -581,7 +587,9 @@ export function SearchPageClient() {
       await utils.insight.getDashboardSummary.invalidate();
     },
     onError: (error) => {
-      setSaveSelectedMessage(error.message || "Không thể lưu gói thầu đã chọn.");
+      setSaveSelectedMessage(
+        error.message || "Không thể lưu gói thầu đã chọn.",
+      );
     },
   });
 
@@ -713,9 +721,7 @@ export function SearchPageClient() {
     setAppliedAndDraftFilters(next);
   };
 
-  const handleApplyOnEnter = (
-    event: React.KeyboardEvent<HTMLInputElement>,
-  ) => {
+  const handleApplyOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") {
       return;
     }
@@ -724,16 +730,19 @@ export function SearchPageClient() {
     applyDraftFilters();
   };
 
-  const handleSortByHeader = useCallback((field: SortBy) => {
-    setPage(1);
-    if (field === sortBy) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
-    }
+  const handleSortByHeader = useCallback(
+    (field: SortBy) => {
+      setPage(1);
+      if (field === sortBy) {
+        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+        return;
+      }
 
-    setSortBy(field);
-    setSortOrder("desc");
-  }, [sortBy]);
+      setSortBy(field);
+      setSortOrder("desc");
+    },
+    [sortBy],
+  );
 
   const allCurrentPageSelected =
     packages.length > 0 &&
@@ -810,7 +819,7 @@ export function SearchPageClient() {
           </button>
         ),
         cell: ({ row }) => (
-          <p className="min-w-[240px] max-w-[320px] font-semibold leading-tight text-slate-900 [overflow-wrap:anywhere]">
+          <p className="max-w-[320px] min-w-[240px] leading-tight font-semibold [overflow-wrap:anywhere] text-slate-900">
             {row.original.title}
           </p>
         ),
@@ -837,14 +846,18 @@ export function SearchPageClient() {
         accessorKey: "province",
         header: "Tỉnh",
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-xs">{row.original.province}</span>
+          <span className="text-xs whitespace-nowrap">
+            {row.original.province}
+          </span>
         ),
       },
       {
         accessorKey: "category",
         header: "Lĩnh vực",
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-xs">{row.original.category}</span>
+          <span className="text-xs whitespace-nowrap">
+            {row.original.category}
+          </span>
         ),
       },
       {
@@ -860,7 +873,7 @@ export function SearchPageClient() {
           </button>
         ),
         cell: ({ row }) => (
-          <p className="whitespace-nowrap text-right font-mono font-semibold">
+          <p className="text-right font-mono font-semibold whitespace-nowrap">
             {formatCurrency(row.original.budget)}
           </p>
         ),
@@ -878,7 +891,7 @@ export function SearchPageClient() {
           </button>
         ),
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-xs">
+          <span className="text-xs whitespace-nowrap">
             {formatDate(row.original.publishedAt)}
           </span>
         ),
@@ -897,7 +910,7 @@ export function SearchPageClient() {
         ),
         cell: ({ row }) => (
           <p
-            className={`whitespace-nowrap text-right text-sm font-bold ${
+            className={`text-right text-sm font-bold whitespace-nowrap ${
               row.original.matchScore >= 85
                 ? "text-emerald-700"
                 : row.original.matchScore >= 70
@@ -915,16 +928,16 @@ export function SearchPageClient() {
         cell: ({ row }) => {
           const statusBadges = getImportantStatuses(row.original);
           return (
-            <div className="flex min-w-[180px] max-w-[220px] flex-wrap gap-1">
+            <div className="flex max-w-[220px] min-w-[180px] flex-wrap gap-1">
               {statusBadges.length === 0 ? (
-                <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
                   Bình thường
                 </span>
               ) : (
                 statusBadges.map((badge) => (
                   <span
                     key={`${row.original.externalId}-${badge.label}`}
-                    className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium ${badge.className}`}
+                    className={`rounded border px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${badge.className}`}
                   >
                     {badge.label}
                   </span>
@@ -941,7 +954,7 @@ export function SearchPageClient() {
           <div className="flex min-w-[180px] flex-wrap gap-1">
             <Link
               href={`/package-details/${encodeURIComponent(row.original.externalId)}?sourceUrl=${encodeURIComponent(row.original.sourceUrl)}`}
-              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+              className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
             >
               Chi tiết
             </Link>
@@ -949,13 +962,14 @@ export function SearchPageClient() {
               href={row.original.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+              className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
             >
               Nguồn
             </a>
-            <button
-              type="button"
-              className="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold hover:bg-slate-100"
+            <Button
+              variant="secondary"
+              size="sm"
+              className="px-1.5 py-1"
               onClick={() => {
                 addWatchlist.mutate({
                   type: "package",
@@ -964,8 +978,8 @@ export function SearchPageClient() {
                 });
               }}
             >
-              Watch
-            </button>
+              Theo dõi
+            </Button>
           </div>
         ),
       },
@@ -989,415 +1003,438 @@ export function SearchPageClient() {
 
   return (
     <section className="panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Kho dữ liệu gói thầu realtime</h2>
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
-            <p className="whitespace-nowrap text-sm text-slate-600">
-              Hiển thị {packages.length} / {total.toLocaleString("vi-VN")} kết quả
-            </p>
-            <Link
-              href="/saved-items"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-center text-xs font-medium text-slate-700 hover:bg-slate-100"
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Kho dữ liệu gói thầu realtime</h2>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <p className="text-sm whitespace-nowrap text-slate-600">
+            Hiển thị {packages.length} / {total.toLocaleString("vi-VN")} kết quả
+          </p>
+          <Link
+            href="/saved-items"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            Mở Smart Views & Watchlist
+          </Link>
+        </div>
+      </div>
+
+      <p className="mt-2 text-xs text-slate-500">
+        Nguồn: BidWinner public ({packagesResult.source}) • Cập nhật:{" "}
+        {formatDateTime(packagesResult.fetchedAt)}
+      </p>
+      {packagesResult.warning ? (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {packagesResult.warning}
+        </div>
+      ) : null}
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium tracking-[0.12em] text-slate-500 uppercase">
+            Bộ lọc đang áp dụng ({appliedFilterChips.length})
+          </p>
+          {appliedFilterChips.length > 0 ? (
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-600 hover:text-slate-900"
+              onClick={() => {
+                setAppliedAndDraftFilters({
+                  keyword: "",
+                  provinces: [],
+                  categories: [],
+                  budgetMin: "",
+                  budgetMax: "",
+                  minMatchScore: 0,
+                });
+              }}
             >
-              Mở Smart Views & Watchlist
-            </Link>
-          </div>
-        </div>
-
-        <p className="mt-2 text-xs text-slate-500">
-          Nguồn: BidWinner public ({packagesResult.source}) • Cập nhật: {formatDateTime(packagesResult.fetchedAt)}
-        </p>
-        {packagesResult.warning ? (
-          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {packagesResult.warning}
-          </div>
-        ) : null}
-
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Bộ lọc đang áp dụng ({appliedFilterChips.length})
-            </p>
-            {appliedFilterChips.length > 0 ? (
-              <button
-                type="button"
-                className="text-xs font-medium text-slate-600 hover:text-slate-900"
-                onClick={() => {
-                  setAppliedAndDraftFilters({
-                    keyword: "",
-                    provinces: [],
-                    categories: [],
-                    budgetMin: "",
-                    budgetMax: "",
-                    minMatchScore: 0,
-                  });
-                }}
-              >
-                Xóa tất cả
-              </button>
-            ) : null}
-          </div>
-
-          {appliedFilterChips.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">Chưa có điều kiện lọc nào đang được áp dụng.</p>
-          ) : (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {appliedFilterChips.map((chip) => (
-                <button
-                  key={chip.id}
-                  type="button"
-                  className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
-                  onClick={() => removeAppliedFilterChip(chip.id)}
-                  title="Bấm để bỏ điều kiện này"
-                >
-                  {chip.label} ×
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={keyword}
-            placeholder="Từ khóa (có thể nhập nhiều cụm, ngăn cách bằng dấu phẩy)"
-            onChange={(e) => {
-              setKeyword(e.target.value);
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-          <MultiSelectDropdown
-            label="Tỉnh/Thành"
-            options={provinceOptions}
-            selected={provinces}
-            onChange={setProvinces}
-            emptyLabel="Chọn tỉnh/thành"
-          />
-          <MultiSelectDropdown
-            label="Lĩnh vực"
-            options={categoryOptions}
-            selected={categories}
-            onChange={setCategories}
-            emptyLabel="Chọn lĩnh vực"
-          />
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Điểm match tối thiểu (0-100)"
-            type="number"
-            min={0}
-            max={100}
-            step={5}
-            value={minMatchScore}
-            onChange={(e) => {
-              const next = Number.parseInt(e.target.value, 10);
-              setMinMatchScore(Number.isNaN(next) ? 0 : Math.max(0, Math.min(100, next)));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-        </div>
-
-        <p className="mt-2 text-xs text-slate-500">
-          Bộ lọc nhiều lựa chọn hỗ trợ tìm nhanh, chọn tất cả và bỏ chọn ngay trong danh sách.
-        </p>
-
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-medium text-slate-700">
-            Gợi ý từ khóa nhanh (bấm để thêm):
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {keywordOptions.slice(0, 20).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
-                onClick={() => {
-                  setKeyword((prev) => {
-                    const terms = prev
-                      .split(",")
-                      .map((term) => term.trim())
-                      .filter(Boolean);
-
-                    if (terms.some((term) => term.toLowerCase() === item.toLowerCase())) {
-                      return prev;
-                    }
-
-                    return terms.length > 0 ? `${terms.join(", ")}, ${item}` : item;
-                  });
-                }}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            Dirty search: nhập nhiều cụm bằng dấu phẩy, hệ thống sẽ tìm nếu khớp ít nhất một cụm.
-          </p>
-          {keywordTerms.length > 0 ? (
-            <p className="mt-2 text-xs text-slate-600">
-              Đang áp dụng {keywordTerms.length} cụm từ khóa.
-            </p>
+              Xóa tất cả
+            </button>
           ) : null}
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Ngân sách từ (VNĐ)"
-            type="number"
-            min={0}
-            value={budgetMin}
-            onChange={(e) => {
-              setBudgetMin(e.target.value);
-            }}
-            onBlur={() => {
-              const parsed = parseOptionalNumber(budgetMin);
-              if (typeof parsed !== "number") {
-                setBudgetMin("");
-                return;
-              }
-
-              setBudgetMin(String(Math.max(0, Math.round(parsed))));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Ngân sách đến (VNĐ)"
-            type="number"
-            min={0}
-            value={budgetMax}
-            onChange={(e) => {
-              setBudgetMax(e.target.value);
-            }}
-            onBlur={() => {
-              const parsed = parseOptionalNumber(budgetMax);
-              if (typeof parsed !== "number") {
-                setBudgetMax("");
-                return;
-              }
-
-              setBudgetMax(String(Math.max(0, Math.round(parsed))));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-          <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value as SortBy);
-              setPage(1);
-            }}
-          >
-            {Object.entries(SORT_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                Sắp xếp theo: {label}
-              </option>
+        {appliedFilterChips.length === 0 ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Chưa có điều kiện lọc nào đang được áp dụng.
+          </p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {appliedFilterChips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                onClick={() => removeAppliedFilterChip(chip.id)}
+                title="Bấm để bỏ điều kiện này"
+              >
+                {chip.label} ×
+              </button>
             ))}
-          </select>
-          <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-            value={sortOrder}
-            onChange={(e) => {
-              setSortOrder(e.target.value as SortOrder);
-              setPage(1);
-            }}
-          >
-            <option value="desc">Thứ tự giảm dần</option>
-            <option value="asc">Thứ tự tăng dần</option>
-          </select>
-          <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-            value={limit}
-            onChange={(e) => {
-              setLimit(parsePositiveInt(e.target.value, 20));
-              setPage(1);
-            }}
-          >
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
-                {size} dòng/trang
-              </option>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={keyword}
+          placeholder="Từ khóa (có thể nhập nhiều cụm, ngăn cách bằng dấu phẩy)"
+          onChange={(e) => {
+            setKeyword(e.target.value);
+          }}
+          onKeyDown={handleApplyOnEnter}
+        />
+        <MultiSelectDropdown
+          label="Tỉnh/Thành"
+          options={provinceOptions}
+          selected={provinces}
+          onChange={setProvinces}
+          emptyLabel="Chọn tỉnh/thành"
+        />
+        <MultiSelectDropdown
+          label="Lĩnh vực"
+          options={categoryOptions}
+          selected={categories}
+          onChange={setCategories}
+          emptyLabel="Chọn lĩnh vực"
+        />
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="Điểm match tối thiểu (0-100)"
+          type="number"
+          min={0}
+          max={100}
+          step={5}
+          value={minMatchScore}
+          onChange={(e) => {
+            const next = Number.parseInt(e.target.value, 10);
+            setMinMatchScore(
+              Number.isNaN(next) ? 0 : Math.max(0, Math.min(100, next)),
+            );
+          }}
+          onKeyDown={handleApplyOnEnter}
+        />
+      </div>
+
+      <p className="mt-2 text-xs text-slate-500">
+        Bộ lọc nhiều lựa chọn hỗ trợ tìm nhanh, chọn tất cả và bỏ chọn ngay
+        trong danh sách.
+      </p>
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-medium text-slate-700">
+          Gợi ý từ khóa nhanh (bấm để thêm):
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {keywordOptions.slice(0, 20).map((item) => (
+            <button
+              key={item}
+              type="button"
+              className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              onClick={() => {
+                setKeyword((prev) => {
+                  const terms = prev
+                    .split(",")
+                    .map((term) => term.trim())
+                    .filter(Boolean);
+
+                  if (
+                    terms.some(
+                      (term) => term.toLowerCase() === item.toLowerCase(),
+                    )
+                  ) {
+                    return prev;
+                  }
+
+                  return terms.length > 0
+                    ? `${terms.join(", ")}, ${item}`
+                    : item;
+                });
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Dirty search: nhập nhiều cụm bằng dấu phẩy, hệ thống sẽ tìm nếu khớp
+          ít nhất một cụm.
+        </p>
+        {keywordTerms.length > 0 ? (
+          <p className="mt-2 text-xs text-slate-600">
+            Đang áp dụng {keywordTerms.length} cụm từ khóa.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="Ngân sách từ (VNĐ)"
+          type="number"
+          min={0}
+          value={budgetMin}
+          onChange={(e) => {
+            setBudgetMin(e.target.value);
+          }}
+          onBlur={() => {
+            const parsed = parseOptionalNumber(budgetMin);
+            if (typeof parsed !== "number") {
+              setBudgetMin("");
+              return;
+            }
+
+            setBudgetMin(String(Math.max(0, Math.round(parsed))));
+          }}
+          onKeyDown={handleApplyOnEnter}
+        />
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="Ngân sách đến (VNĐ)"
+          type="number"
+          min={0}
+          value={budgetMax}
+          onChange={(e) => {
+            setBudgetMax(e.target.value);
+          }}
+          onBlur={() => {
+            const parsed = parseOptionalNumber(budgetMax);
+            if (typeof parsed !== "number") {
+              setBudgetMax("");
+              return;
+            }
+
+            setBudgetMax(String(Math.max(0, Math.round(parsed))));
+          }}
+          onKeyDown={handleApplyOnEnter}
+        />
+        <select
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          value={sortBy}
+          onChange={(e) => {
+            setSortBy(e.target.value as SortBy);
+            setPage(1);
+          }}
+        >
+          {Object.entries(SORT_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              Sắp xếp theo: {label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          value={sortOrder}
+          onChange={(e) => {
+            setSortOrder(e.target.value as SortOrder);
+            setPage(1);
+          }}
+        >
+          <option value="desc">Thứ tự giảm dần</option>
+          <option value="asc">Thứ tự tăng dần</option>
+        </select>
+        <select
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          value={limit}
+          onChange={(e) => {
+            setLimit(parsePositiveInt(e.target.value, 20));
+            setPage(1);
+          }}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size} dòng/trang
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {budgetNegativeError ? (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          Ngân sách không được âm.
+        </p>
+      ) : null}
+
+      {budgetRangeError ? (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
+        </p>
+      ) : null}
+
+      <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
+        <Button
+          variant="primary"
+          className="w-full sm:w-auto"
+          onClick={applyDraftFilters}
+          disabled={
+            budgetRangeError || budgetNegativeError || !hasPendingFilterChanges
+          }
+        >
+          Áp dụng bộ lọc
+        </Button>
+        <Button
+          variant="secondary"
+          className="w-full sm:w-auto"
+          isLoading={saveFilter.isPending}
+          disabled={budgetRangeError || budgetNegativeError}
+          onClick={() => {
+            setSaveError(null);
+            saveFilter.mutate({
+              name: `Bộ lọc ${new Date().toLocaleTimeString("vi-VN")}`,
+              keyword,
+              provinces,
+              categories,
+              budgetMin: parsedBudgetMin,
+              budgetMax: parsedBudgetMax,
+              notificationFrequency: "daily",
+            });
+          }}
+        >
+          {saveFilter.isPending ? "Đang lưu..." : "Lưu bộ lọc"}
+        </Button>
+        <Button
+          variant="primary"
+          className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
+          isLoading={saveSelectedPackages.isPending}
+          disabled={selectedItems.length === 0}
+          onClick={() => {
+            setSaveSelectedMessage(null);
+            saveSelectedPackages.mutate({
+              items: selectedItems.map((item) => ({
+                externalId: item.externalId,
+                title: item.title,
+                inviter: item.inviter,
+                province: item.province,
+                category: item.category,
+                budget: item.budget,
+                publishedAt: item.publishedAt,
+                matchScore: item.matchScore,
+              })),
+            });
+          }}
+        >
+          {saveSelectedPackages.isPending
+            ? "Đang lưu các gói đã chọn..."
+            : `Lưu ${selectedItems.length} gói đã chọn vào DB`}
+        </Button>
+        <Button
+          variant="ghost"
+          className="w-full border border-slate-300 sm:w-auto"
+          onClick={() => {
+            setAppliedAndDraftFilters({
+              keyword: "",
+              provinces: [],
+              categories: [],
+              budgetMin: "",
+              budgetMax: "",
+              minMatchScore: 0,
+            });
+            setSortBy("publishedAt");
+            setSortOrder("desc");
+            setLimit(20);
+            setPage(1);
+            setSelectedExternalIds(new Set<string>());
+            setSaveSelectedMessage(null);
+          }}
+        >
+          Đặt lại bộ lọc
+        </Button>
+      </div>
+
+      {saveError ? (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {saveError}
+        </p>
+      ) : null}
+
+      {saveSelectedMessage ? (
+        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {saveSelectedMessage}
+        </p>
+      ) : null}
+
+      <div className="mt-6 w-full max-w-full overflow-x-auto rounded-lg border border-slate-300 shadow-sm">
+        <table className="w-full min-w-[1180px] divide-y divide-slate-200 text-xs">
+          <thead className="sticky top-0 z-10 bg-slate-900 text-left text-xs font-bold tracking-widest text-white uppercase">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id} className="px-2 py-2">
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                  </th>
+                ))}
+              </tr>
             ))}
-          </select>
-        </div>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+            {table.getRowModel().rows.map((row) => {
+              const statusBadges = getImportantStatuses(row.original);
+              const hasCritical = statusBadges.some(
+                (badge) => badge.level === "critical",
+              );
 
-        {budgetNegativeError ? (
-          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            Ngân sách không được âm.
-          </p>
-        ) : null}
-
-        {budgetRangeError ? (
-          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
-          </p>
-        ) : null}
-
-        <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
-          <button
-            type="button"
-            className="w-full rounded-lg bg-gradient-to-r from-cyan-700 to-sky-700 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            onClick={applyDraftFilters}
-            disabled={budgetRangeError || budgetNegativeError || !hasPendingFilterChanges}
-          >
-            Áp dụng bộ lọc
-          </button>
-          <button
-            type="button"
-            className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white sm:w-auto"
-            onClick={() => {
-              setSaveError(null);
-              saveFilter.mutate({
-                name: `Bộ lọc ${new Date().toLocaleTimeString("vi-VN")}`,
-                keyword,
-                provinces,
-                categories,
-                budgetMin: parsedBudgetMin,
-                budgetMax: parsedBudgetMax,
-                notificationFrequency: "daily",
-              });
-            }}
-            disabled={saveFilter.isPending || budgetRangeError || budgetNegativeError}
-          >
-            {saveFilter.isPending ? "Đang lưu..." : "Lưu bộ lọc"}
-          </button>
-          <button
-            type="button"
-            className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            disabled={selectedItems.length === 0 || saveSelectedPackages.isPending}
-            onClick={() => {
-              setSaveSelectedMessage(null);
-              saveSelectedPackages.mutate({
-                items: selectedItems.map((item) => ({
-                  externalId: item.externalId,
-                  title: item.title,
-                  inviter: item.inviter,
-                  province: item.province,
-                  category: item.category,
-                  budget: item.budget,
-                  publishedAt: item.publishedAt,
-                  matchScore: item.matchScore,
-                })),
-              });
-            }}
-          >
-            {saveSelectedPackages.isPending
-              ? "Đang lưu các gói đã chọn..."
-              : `Lưu ${selectedItems.length} gói đã chọn vào DB`}
-          </button>
-          <button
-            type="button"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium sm:w-auto"
-            onClick={() => {
-              setAppliedAndDraftFilters({
-                keyword: "",
-                provinces: [],
-                categories: [],
-                budgetMin: "",
-                budgetMax: "",
-                minMatchScore: 0,
-              });
-              setSortBy("publishedAt");
-              setSortOrder("desc");
-              setLimit(20);
-              setPage(1);
-              setSelectedExternalIds(new Set<string>());
-              setSaveSelectedMessage(null);
-            }}
-          >
-            Đặt lại bộ lọc
-          </button>
-        </div>
-
-        {saveError ? (
-          <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {saveError}
-          </p>
-        ) : null}
-
-        {saveSelectedMessage ? (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            {saveSelectedMessage}
-          </p>
-        ) : null}
-
-        <div className="mt-6 w-full max-w-full overflow-x-auto rounded-lg border border-slate-300 shadow-sm">
-          <table className="min-w-[1180px] w-full divide-y divide-slate-200 text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-900 text-left text-[10px] font-bold uppercase tracking-widest text-white">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th key={header.id} className="px-2 py-2">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </th>
+              return (
+                <tr
+                  key={row.id}
+                  className={`border-l-4 transition-colors ${
+                    hasCritical
+                      ? "border-l-rose-500 bg-rose-50/70 hover:bg-rose-100/50"
+                      : "border-l-transparent hover:bg-slate-50"
+                  }`}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-2 py-2 align-middle">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </td>
                   ))}
                 </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-              {table.getRowModel().rows.map((row) => {
-                const statusBadges = getImportantStatuses(row.original);
-                const hasCritical = statusBadges.some(
-                  (badge) => badge.level === "critical",
-                );
+              );
+            })}
+            {packages.length === 0 ? (
+              <tr>
+                <td
+                  className="px-2 py-6 text-center text-xs text-slate-500"
+                  colSpan={10}
+                >
+                  Không tìm thấy gói thầu phù hợp với bộ lọc hiện tại.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-                return (
-                  <tr
-                    key={row.id}
-                    className={`border-l-4 transition-colors ${
-                      hasCritical
-                        ? "border-l-rose-500 bg-rose-50/70 hover:bg-rose-100/50"
-                        : "border-l-transparent hover:bg-slate-50"
-                    }`}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-2 py-2 align-middle">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-              {packages.length === 0 ? (
-                <tr>
-                  <td className="px-2 py-6 text-center text-xs text-slate-500" colSpan={10}>
-                    Không tìm thấy gói thầu phù hợp với bộ lọc hiện tại.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">
+          Trang {page} / {totalPages} • Đã chọn {selectedItems.length} gói thầu
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={page <= 1}
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          >
+            Trước
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={page >= totalPages}
+            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          >
+            Sau
+          </button>
         </div>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-600">
-            Trang {page} / {totalPages} • Đã chọn {selectedItems.length} gói thầu
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={page <= 1}
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            >
-              Trước
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            >
-              Sau
-            </button>
-          </div>
-        </div>
+      </div>
     </section>
   );
 }

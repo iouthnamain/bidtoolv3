@@ -15,32 +15,34 @@ import {
 } from "~/server/services/bidwinner-detail";
 import { searchBidWinnerLive } from "~/server/services/bidwinner-search";
 
-const searchInputSchema = z.object({
-  keyword: z.string().optional(),
-  provinces: z.array(z.string()).default([]),
-  categories: z.array(z.string()).default([]),
-  budgetMin: z.number().optional(),
-  budgetMax: z.number().optional(),
-  minMatchScore: z.number().min(0).max(100).default(0),
-  sortBy: z
-    .enum(["publishedAt", "budget", "matchScore", "title", "inviter"])
-    .default("publishedAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
-  offset: z.number().min(0).default(0),
-  limit: z.number().min(1).max(100).default(20),
-}).refine(
-  ({ budgetMin, budgetMax }) => {
-    if (typeof budgetMin !== "number" || typeof budgetMax !== "number") {
-      return true;
-    }
+const searchInputSchema = z
+  .object({
+    keyword: z.string().optional(),
+    provinces: z.array(z.string()).default([]),
+    categories: z.array(z.string()).default([]),
+    budgetMin: z.number().optional(),
+    budgetMax: z.number().optional(),
+    minMatchScore: z.number().min(0).max(100).default(0),
+    sortBy: z
+      .enum(["publishedAt", "budget", "matchScore", "title", "inviter"])
+      .default("publishedAt"),
+    sortOrder: z.enum(["asc", "desc"]).default("desc"),
+    offset: z.number().min(0).default(0),
+    limit: z.number().min(1).max(100).default(20),
+  })
+  .refine(
+    ({ budgetMin, budgetMax }) => {
+      if (typeof budgetMin !== "number" || typeof budgetMax !== "number") {
+        return true;
+      }
 
-    return budgetMin <= budgetMax;
-  },
-  {
-    message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
-    path: ["budgetMax"],
-  },
-);
+      return budgetMin <= budgetMax;
+    },
+    {
+      message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
+      path: ["budgetMax"],
+    },
+  );
 
 export const searchRouter = createTRPCRouter({
   queryPackages: publicProcedure
@@ -174,27 +176,33 @@ export const searchRouter = createTRPCRouter({
 
   saveFilter: publicProcedure
     .input(
-      z.object({
-        name: z.string().min(1),
-        keyword: z.string().default(""),
-        provinces: z.array(z.string()).default([]),
-        categories: z.array(z.string()).default([]),
-        budgetMin: z.number().optional(),
-        budgetMax: z.number().optional(),
-        notificationFrequency: z.enum(["daily", "weekly"]).default("daily"),
-      }).refine(
-        ({ budgetMin, budgetMax }) => {
-          if (typeof budgetMin !== "number" || typeof budgetMax !== "number") {
-            return true;
-          }
+      z
+        .object({
+          name: z.string().min(1),
+          keyword: z.string().default(""),
+          provinces: z.array(z.string()).default([]),
+          categories: z.array(z.string()).default([]),
+          budgetMin: z.number().optional(),
+          budgetMax: z.number().optional(),
+          notificationFrequency: z.enum(["daily", "weekly"]).default("daily"),
+        })
+        .refine(
+          ({ budgetMin, budgetMax }) => {
+            if (
+              typeof budgetMin !== "number" ||
+              typeof budgetMax !== "number"
+            ) {
+              return true;
+            }
 
-          return budgetMin <= budgetMax;
-        },
-        {
-            message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
-          path: ["budgetMax"],
-        },
-      ),
+            return budgetMin <= budgetMax;
+          },
+          {
+            message:
+              "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
+            path: ["budgetMax"],
+          },
+        ),
     )
     .mutation(async ({ ctx, input }) => {
       try {

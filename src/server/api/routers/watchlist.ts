@@ -18,10 +18,10 @@ export const watchlistRouter = createTRPCRouter({
       const [newItem] = await ctx.db
         .insert(watchlistItems)
         .values({
-        type: input.type,
-        refKey: input.refKey,
-        label: input.label,
-      })
+          type: input.type,
+          refKey: input.refKey,
+          label: input.label,
+        })
         .returning();
 
       return newItem;

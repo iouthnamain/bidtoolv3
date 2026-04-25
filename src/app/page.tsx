@@ -1,16 +1,17 @@
 import Link from "next/link";
 
-import { api } from "~/trpc/server";
+import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
+
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const summary = await api.insight.getDashboardSummary();
-  const latestAlerts = await api.notification.list({ limit: 3 });
+  const { summary, latestAlerts, isDegraded } = await getDashboardSnapshot();
 
   return (
     <main className="min-h-screen px-4 py-8 text-slate-900">
       <div className="mx-auto w-full max-w-[1320px] space-y-6">
         <section className="rounded-3xl border border-cyan-100 bg-gradient-to-r from-cyan-950 via-sky-900 to-teal-900 p-8 text-white shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-cyan-100">
+          <p className="text-xs tracking-[0.2em] text-cyan-100 uppercase">
             BidTool v3
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
@@ -37,21 +38,42 @@ export default async function Home() {
           </div>
         </section>
 
+        {isDegraded ? (
+          <section className="panel border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Không tải được dữ liệu dashboard từ database. Kiểm tra Postgres và
+            chạy migration trước khi dùng dữ liệu thật.
+          </section>
+        ) : null}
+
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <article className="panel p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Tổng gói thầu</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.totalPackages}</p>
+            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+              Tổng gói thầu
+            </p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight">
+              {summary.totalPackages}
+            </p>
           </article>
           <article className="panel p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Cảnh báo chưa đọc</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.unreadAlerts}</p>
+            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+              Cảnh báo chưa đọc
+            </p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight">
+              {summary.unreadAlerts}
+            </p>
           </article>
           <article className="panel p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Workflow đang bật</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">{summary.activeWorkflows}</p>
+            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+              Workflow đang bật
+            </p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight">
+              {summary.activeWorkflows}
+            </p>
           </article>
           <article className="panel p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Tỷ lệ thành công workflow</p>
+            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+              Tỷ lệ thành công workflow
+            </p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">
               {summary.workflowSuccessRate}%
             </p>
@@ -93,8 +115,13 @@ export default async function Home() {
             <h2 className="text-lg font-semibold">Cảnh báo mới nhất</h2>
             <ul className="mt-3 space-y-2">
               {latestAlerts.map((alert) => (
-                <li key={alert.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-sm font-medium text-slate-900">{alert.title}</p>
+                <li
+                  key={alert.id}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                >
+                  <p className="text-sm font-medium text-slate-900">
+                    {alert.title}
+                  </p>
                   <p className="mt-1 text-xs text-slate-600">{alert.body}</p>
                 </li>
               ))}

@@ -26,7 +26,7 @@ export function AlertCard({ title, body, severity }: AlertCardProps) {
         <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere]">
           {title}
         </p>
-        <span className="shrink-0 rounded bg-white/60 px-1.5 py-0.5 text-[10px] font-semibold">
+        <span className="shrink-0 rounded bg-white/60 px-1.5 py-0.5 text-xs font-semibold">
           {severityLabel[severity]}
         </span>
       </div>
