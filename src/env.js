@@ -12,16 +12,13 @@ export const env = createEnv({
     BIDWINNER_BASE_URL: z.string().url().default("https://bidwinner.info"),
     BIDWINNER_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
     PRODUCT_WEB_SEARCH_PROVIDER: z
-      .enum(["auto", "searxng", "tavily"])
+      .enum(["auto", "searxng"])
       .default("auto"),
     SEARXNG_BASE_URL: z.string().url().optional(),
     SEARXNG_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
     SEARXNG_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(8),
     SEARXNG_LANGUAGE: z.string().min(2).default("vi-VN"),
     SEARXNG_ENGINES: z.string().optional(),
-    TAVILY_API_KEY: z.string().optional(),
-    TAVILY_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
-    TAVILY_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(8),
     ENABLE_DEMO_SEED: z.enum(["true", "false"]).optional().default("false"),
   },
 
@@ -49,9 +46,6 @@ export const env = createEnv({
     SEARXNG_MAX_RESULTS: process.env.SEARXNG_MAX_RESULTS,
     SEARXNG_LANGUAGE: process.env.SEARXNG_LANGUAGE,
     SEARXNG_ENGINES: process.env.SEARXNG_ENGINES,
-    TAVILY_API_KEY: process.env.TAVILY_API_KEY,
-    TAVILY_TIMEOUT_MS: process.env.TAVILY_TIMEOUT_MS,
-    TAVILY_MAX_RESULTS: process.env.TAVILY_MAX_RESULTS,
     ENABLE_DEMO_SEED: process.env.ENABLE_DEMO_SEED,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },

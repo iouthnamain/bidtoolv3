@@ -37,7 +37,7 @@ npm run dev
 
 ## Local SearXNG Search
 
-Start the search profile when using `PRODUCT_WEB_SEARCH_PROVIDER=auto` with a local `SEARXNG_BASE_URL`:
+Start the search profile when using SearXNG with a local `SEARXNG_BASE_URL`:
 
 ```bash
 docker compose -p bidtoolv3 --profile search up -d searxng
@@ -47,6 +47,7 @@ Then set:
 
 ```env
 SEARXNG_BASE_URL="http://localhost:8080"
+PRODUCT_WEB_SEARCH_PROVIDER="searxng"
 ```
 
 The local JSON API can be checked with:

@@ -17,7 +17,7 @@ In scope:
 - Optional mapped fields: spec/description, unit, quantity, target price, currency, vendor hint, origin hint, notes.
 - Import normalized product rows while preserving original row data.
 - Let users review and edit parsed rows before search.
-- Search web candidates with Tavily general search.
+- Search web candidates with SearXNG search.
 - Show candidate cards with confidence, reasons, source, image, spec, price, origin, vendor, and evidence.
 - Require human selection or manual match for each row.
 - Export an enriched `.xlsx` that keeps original columns and appends match/evidence fields.
@@ -76,7 +76,7 @@ Export is rejected while any included row has `match_status = unmatched` or `can
 - `enriched_snapshot_json`
 - `match_status`
 
-`web_product_candidates` stores Tavily/manual candidates and evidence:
+`web_product_candidates` stores SearXNG/manual candidates and evidence:
 
 - provider, query, title, URL, domain, snippet/raw evidence, image URL
 - extracted spec JSON
@@ -100,29 +100,21 @@ Export is rejected while any included row has `match_status = unmatched` or `can
 - `exportEnrichedExcel({ workspaceId })`
 - `transitionState({ id, to })`
 
-## Tavily Search
+## SearXNG Search
 
-V1 uses Tavily only.
+V1 uses SearXNG only.
 
 Search query format:
 
 `{product name} {spec text} {unit} {budget/vendor/origin hints} gia thong so Viet Nam`
 
-Defaults:
-
-- `topic=general`
-- `country=vietnam`
-- `search_depth=basic`
-- `max_results=8`
-- `include_raw_content=text`
-- `include_images=true`
-- `include_answer=false`
-
 Env:
 
-- `TAVILY_API_KEY`
-- `TAVILY_TIMEOUT_MS=15000`
-- `TAVILY_MAX_RESULTS=8`
+- `SEARXNG_BASE_URL=http://localhost:8080`
+- `SEARXNG_TIMEOUT_MS=15000`
+- `SEARXNG_MAX_RESULTS=8`
+- `SEARXNG_LANGUAGE=vi-VN`
+- `SEARXNG_ENGINES`
 
 ## Export Fields
 
@@ -152,5 +144,5 @@ The enriched workbook preserves original columns and appends:
   3. Confirm/fix mappings.
   4. Review parsed rows.
   5. Search candidates for several rows.
-  6. Choose one Tavily match and one manual match.
+  6. Choose one SearXNG match and one manual match.
   7. Export enriched Excel and verify original columns plus appended match fields.

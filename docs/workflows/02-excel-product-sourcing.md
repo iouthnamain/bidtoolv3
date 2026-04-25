@@ -35,7 +35,6 @@ Target flow:
   - notes
 - Web search provider:
   - SearXNG when `SEARXNG_BASE_URL` is configured.
-  - Tavily fallback when `TAVILY_API_KEY` is configured.
   - Manual match when web search cannot produce usable evidence.
 
 ## Status Flow

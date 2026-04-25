@@ -26,7 +26,7 @@ The original workbook is not mutated. Export creates a new `.xlsx` with original
   - `import`: upload `.xls` or `.xlsx`.
   - `map`: choose sheet and map product/spec/unit/quantity/price columns.
   - `review`: fix parsed rows before web search.
-  - `find`: search Tavily candidates and choose or manually enter matches.
+  - `find`: search SearXNG candidates and choose or manually enter matches.
   - `export`: download enriched Excel when all rows are matched.
 
 ## Data Model
@@ -65,7 +65,7 @@ Imported row fields:
 Candidate fields:
 
 - `workspace_item_id`
-- provider (`tavily` or `manual`)
+- provider (`searxng`, `material`, or `manual`)
 - query, title, URL, domain
 - snippet/raw evidence
 - image URL
@@ -76,7 +76,7 @@ Candidate fields:
 
 ## Matching
 
-V1 uses Tavily general search with Vietnam-focused queries. Search combines product name, spec text, unit, optional price/vendor/origin hints, and Vietnamese product-search terms.
+V1 uses SearXNG search with Vietnam-focused queries. Search combines product name, spec text, unit, optional price/vendor/origin hints, and Vietnamese product-search terms.
 
 The scoring is deterministic and heuristic:
 
@@ -85,7 +85,6 @@ The scoring is deterministic and heuristic:
 - Vietnam/supplier relevance
 - detected price
 - origin match when provided
-- Tavily result score
 
 The system never auto-selects. The user must choose a candidate or create a manual match.
 

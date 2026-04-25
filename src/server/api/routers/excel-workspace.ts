@@ -7,6 +7,7 @@ import {
   ilike,
   inArray,
   isNull,
+  not,
   or,
   sql,
 } from "drizzle-orm";
@@ -352,7 +353,7 @@ function materialCandidateValues(input: {
     imageUrl: null,
     extractedSpecJson: spec,
     confidenceScore: input.confidenceScore,
-    tavilyScore: null,
+    legacySearchScore: null,
     matchReasons: input.matchReasons,
     isSelected: true,
     fetchedAt: input.now,
@@ -751,7 +752,9 @@ export const excelWorkspaceRouter = createTRPCRouter({
           .where(
             and(
               eq(webProductCandidates.workspaceItemId, row.item.id),
-              inArray(webProductCandidates.provider, ["searxng", "tavily"]),
+              not(
+                inArray(webProductCandidates.provider, ["manual", "material"]),
+              ),
             ),
           );
 
@@ -793,7 +796,7 @@ export const excelWorkspaceRouter = createTRPCRouter({
               imageUrl: candidate.imageUrl,
               extractedSpecJson: candidate.extractedSpec,
               confidenceScore: candidate.confidenceScore,
-              tavilyScore: candidate.tavilyScore,
+              legacySearchScore: null,
               matchReasons: candidate.matchReasons,
               fetchedAt: now,
               createdAt: now,
@@ -1112,7 +1115,7 @@ export const excelWorkspaceRouter = createTRPCRouter({
             imageUrl: spec.imageUrl ?? null,
             extractedSpecJson: spec,
             confidenceScore: 100,
-            tavilyScore: null,
+            legacySearchScore: null,
             matchReasons: ["Người dùng nhập thủ công"],
             isSelected: true,
             fetchedAt: now,

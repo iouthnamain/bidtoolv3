@@ -43,6 +43,13 @@
       "when": 1777153285357,
       "tag": "0005_nervous_goliath",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777159153652,
+      "tag": "0006_freezing_shadow_king",
+      "breakpoints": true
     }
   ]
 }

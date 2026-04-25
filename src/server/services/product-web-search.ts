@@ -27,7 +27,7 @@ export type ExtractedProductSpec = {
   evidenceText: string;
 };
 
-export type ProductSearchProvider = "searxng" | "tavily";
+export type ProductSearchProvider = "searxng";
 
 export type ProductCandidate = {
   provider: ProductSearchProvider;
@@ -40,7 +40,6 @@ export type ProductCandidate = {
   imageUrl: string | null;
   extractedSpec: ExtractedProductSpec;
   confidenceScore: number;
-  tavilyScore: number | null;
   matchReasons: string[];
 };
 
@@ -48,22 +47,6 @@ export type ProductWebSearchResult = {
   query: string;
   candidates: ProductCandidate[];
   warning?: string;
-};
-
-type TavilyImage = string | { url?: string; description?: string };
-
-type TavilySearchResult = {
-  title?: string;
-  url?: string;
-  content?: string;
-  raw_content?: string | null;
-  score?: number;
-  images?: TavilyImage[];
-};
-
-type TavilyResponse = {
-  results?: TavilySearchResult[];
-  images?: TavilyImage[];
 };
 
 type SearxngSearchResult = {
@@ -112,19 +95,6 @@ function safeDomain(url: string): string {
   } catch {
     return "";
   }
-}
-
-function firstImage(result: TavilySearchResult): string | null {
-  const image = result.images?.[0];
-  if (!image) {
-    return null;
-  }
-
-  if (typeof image === "string") {
-    return image;
-  }
-
-  return image.url ?? null;
 }
 
 function buildSearxngSearchUrl(query: string): URL {
@@ -316,7 +286,6 @@ export function extractProductSpec(input: {
 export function scoreProductCandidate(input: {
   requirement: ProductSearchRequirement;
   spec: ExtractedProductSpec;
-  tavilyScore?: number | null;
 }): { confidenceScore: number; reasons: string[] } {
   const reasons: string[] = [];
   const targetTokens = uniqueStrings([
@@ -395,10 +364,6 @@ export function scoreProductCandidate(input: {
     reasons.push("Có mã mẫu");
   }
 
-  if (input.tavilyScore != null) {
-    score += Math.round(Math.max(0, Math.min(1, input.tavilyScore)) * 15);
-  }
-
   if (reasons.length === 0) {
     reasons.push("Cần kiểm tra thủ công");
   }
@@ -418,7 +383,7 @@ async function searchSearxngProductCandidates(
       query,
       candidates: [],
       warning:
-        "Chưa cấu hình SEARXNG_BASE_URL. Có thể dùng Tavily hoặc nhập kết quả thủ công.",
+        "Chưa cấu hình SEARXNG_BASE_URL. Có thể nhập kết quả thủ công để lưu nguồn.",
     };
   }
 
@@ -481,7 +446,6 @@ async function searchSearxngProductCandidates(
           imageUrl,
           extractedSpec: spec,
           confidenceScore: scored.confidenceScore,
-          tavilyScore: null,
           matchReasons: scored.reasons,
         };
       })
@@ -502,126 +466,8 @@ async function searchSearxngProductCandidates(
   }
 }
 
-async function searchTavilyProductCandidates(
-  requirement: ProductSearchRequirement,
-): Promise<ProductWebSearchResult> {
-  const query = buildProductSearchQuery(requirement);
-
-  if (!env.TAVILY_API_KEY) {
-    return {
-      query,
-      candidates: [],
-      warning:
-        "Chưa cấu hình TAVILY_API_KEY. Có thể nhập kết quả thủ công để lưu nguồn.",
-    };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), env.TAVILY_TIMEOUT_MS);
-
-  try {
-    const response = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.TAVILY_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query,
-        topic: "general",
-        country: "vietnam",
-        search_depth: "basic",
-        max_results: env.TAVILY_MAX_RESULTS,
-        include_raw_content: "text",
-        include_images: true,
-        include_answer: false,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      return {
-        query,
-        candidates: [],
-        warning: `Tavily trả về lỗi ${response.status}. Có thể thử lại hoặc nhập kết quả thủ công.`,
-      };
-    }
-
-    const payload = (await response.json()) as TavilyResponse;
-    const candidates = (payload.results ?? [])
-      .filter((result) => result.url && result.title)
-      .map((result) => {
-        const imageUrl = firstImage(result);
-        const spec = extractProductSpec({
-          title: result.title ?? requirement.productName,
-          url: result.url ?? "",
-          snippet: result.content ?? "",
-          rawContent: result.raw_content,
-          imageUrl,
-          requirement,
-        });
-        const scored = scoreProductCandidate({
-          requirement,
-          spec,
-          tavilyScore: result.score ?? null,
-        });
-
-        return {
-          provider: "tavily" as const,
-          query,
-          title: result.title ?? requirement.productName,
-          url: result.url ?? "",
-          domain: safeDomain(result.url ?? ""),
-          snippet: result.content ?? "",
-          rawEvidence: compactEvidence(result.content, result.raw_content),
-          imageUrl,
-          extractedSpec: spec,
-          confidenceScore: scored.confidenceScore,
-          tavilyScore: result.score ?? null,
-          matchReasons: scored.reasons,
-        };
-      })
-      .sort((a, b) => b.confidenceScore - a.confidenceScore);
-
-    return { query, candidates };
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Lỗi không xác định";
-    return {
-      query,
-      candidates: [],
-      warning: `Không thể tìm gợi ý trên mạng: ${message}. Có thể thử lại hoặc nhập kết quả thủ công.`,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function searchProductCandidates(
   requirement: ProductSearchRequirement,
 ): Promise<ProductWebSearchResult> {
-  if (env.PRODUCT_WEB_SEARCH_PROVIDER === "searxng") {
-    return searchSearxngProductCandidates(requirement);
-  }
-
-  if (env.PRODUCT_WEB_SEARCH_PROVIDER === "tavily") {
-    return searchTavilyProductCandidates(requirement);
-  }
-
-  if (env.SEARXNG_BASE_URL) {
-    const searxngResult = await searchSearxngProductCandidates(requirement);
-    if (searxngResult.candidates.length > 0 || !env.TAVILY_API_KEY) {
-      return searxngResult;
-    }
-
-    const tavilyResult = await searchTavilyProductCandidates(requirement);
-    return {
-      ...tavilyResult,
-      warning: searxngResult.warning
-        ? `${searxngResult.warning} Đã chuyển sang Tavily.`
-        : "SearXNG không trả về gợi ý phù hợp. Đã chuyển sang Tavily.",
-    };
-  }
-
-  return searchTavilyProductCandidates(requirement);
+  return searchSearxngProductCandidates(requirement);
 }

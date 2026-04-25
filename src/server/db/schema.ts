@@ -328,7 +328,7 @@ export const webProductCandidates = pgTable(
     workspaceItemId: integer("workspace_item_id")
       .notNull()
       .references(() => excelWorkspaceItems.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull().default("tavily"),
+    provider: text("provider").notNull().default("searxng"),
     query: text("query").notNull(),
     title: text("title").notNull(),
     url: text("url").notNull(),
@@ -341,7 +341,7 @@ export const webProductCandidates = pgTable(
       .notNull()
       .default({}),
     confidenceScore: integer("confidence_score").notNull().default(0),
-    tavilyScore: numeric("tavily_score", {
+    legacySearchScore: numeric("tavily_score", {
       precision: 8,
       scale: 4,
       mode: "number",

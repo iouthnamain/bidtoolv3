@@ -1,0 +1,1 @@
+ALTER TABLE "web_product_candidates" ALTER COLUMN "provider" SET DEFAULT 'searxng';

@@ -23,4 +23,4 @@ Mỗi workflow cố gắng trả lời 5 câu hỏi:
 - Dữ liệu public/realtime chỉ lưu khi người dùng chủ động chọn, lưu bộ lọc, match sản phẩm hoặc tạo workflow.
 - Mỗi workflow có trạng thái rõ ràng để có thể tiếp tục sau khi refresh hoặc quay lại sau.
 - Mọi bước xuất file phải giữ được nguồn chứng cứ: URL, snippet/evidence, thời điểm lấy dữ liệu và người thao tác.
-- Lỗi từ nguồn ngoài như BidWinner, SearXNG hoặc Tavily phải có hướng xử lý thủ công.
+- Lỗi từ nguồn ngoài như BidWinner hoặc SearXNG phải có hướng xử lý thủ công.

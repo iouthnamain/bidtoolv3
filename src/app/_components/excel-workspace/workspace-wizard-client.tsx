@@ -1477,8 +1477,8 @@ function ExportStep({ payload }: { payload: WorkspacePayload }) {
             Xuất dòng gốc kèm bằng chứng sản phẩm đã chọn
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Chỉ xuất được khi mọi dòng đã có gợi ý Tavily được chọn hoặc kết quả
-            nhập thủ công.
+            Chỉ xuất được khi mọi dòng đã có nguồn web, danh mục hoặc kết quả
+            nhập thủ công được chọn.
           </p>
         </div>
         <button

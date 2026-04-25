@@ -4,13 +4,12 @@ Cập nhật: 2026-04-26
 
 ## Kết luận áp dụng
 
-BidTool nên dùng SearXNG ở lớp `product-web-search` cho flow `excel workspace -> search product`, vì nhu cầu hiện tại là tìm candidate sản phẩm công khai, lưu evidence, rồi để user review. Đây là metasearch phù hợp để tự host và giảm phụ thuộc API SaaS.
+BidTool dùng SearXNG ở lớp `product-web-search` cho flow `excel workspace -> search product`, vì nhu cầu hiện tại là tìm candidate sản phẩm công khai, lưu evidence, rồi để user review. Đây là metasearch phù hợp để tự host và giảm phụ thuộc API SaaS.
 
-Tavily vẫn nên giữ làm fallback vì có raw content, image option và score riêng. Provider hiện tại:
+Luồng tìm sản phẩm hiện chỉ dùng SearXNG. Provider hiện tại:
 
-- `PRODUCT_WEB_SEARCH_PROVIDER=auto`: ưu tiên SearXNG nếu có `SEARXNG_BASE_URL`, fallback Tavily nếu có `TAVILY_API_KEY`.
-- `PRODUCT_WEB_SEARCH_PROVIDER=searxng`: chỉ dùng SearXNG.
-- `PRODUCT_WEB_SEARCH_PROVIDER=tavily`: chỉ dùng Tavily.
+- `PRODUCT_WEB_SEARCH_PROVIDER=searxng`: dùng SearXNG.
+- `PRODUCT_WEB_SEARCH_PROVIDER=auto`: tương thích cấu hình cũ, vẫn dùng SearXNG.
 
 ## Cấu hình local
 
@@ -23,7 +22,7 @@ docker compose --profile search up -d searxng
 2. Cấu hình app:
 
 ```env
-PRODUCT_WEB_SEARCH_PROVIDER="auto"
+PRODUCT_WEB_SEARCH_PROVIDER="searxng"
 SEARXNG_BASE_URL="http://localhost:8080"
 SEARXNG_TIMEOUT_MS="15000"
 SEARXNG_MAX_RESULTS="8"
@@ -45,7 +44,7 @@ Nếu trả về 403, kiểm tra `deploy/searxng/settings.yml` có `search.forma
 - SearXNG gọi tiếp các search engine bên ngoài; vẫn cần tôn trọng robots/chính sách nguồn và giới hạn tần suất.
 - Local compose đang tắt `server.limiter` để app gọi JSON API trực tiếp qua localhost; nếu public qua reverse proxy thì bật lại limiter và cấu hình IP headers/rate limit rõ ràng.
 - `outgoing.request_timeout` đang đặt 5s để tránh làm chậm thao tác review dòng Excel.
-- Kết quả SearXNG thường chỉ có title/url/snippet; nếu cần raw page text sâu hơn, dùng Tavily hoặc thêm crawler riêng sau bước user chọn nguồn.
+- Kết quả SearXNG thường chỉ có title/url/snippet; nếu cần raw page text sâu hơn, thêm crawler riêng sau bước user chọn nguồn.
 
 ## Nguồn chính
 
