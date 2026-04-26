@@ -143,7 +143,7 @@ export const searchRouter = createTRPCRouter({
       const normalizedInput = normalizeSearchSelections({
         ...input,
         sortBy: "publishedAt" as const,
-        sortOrder: "desc" as const,
+        sortOrder: input.sortOrder,
       });
 
       try {
@@ -160,6 +160,10 @@ export const searchRouter = createTRPCRouter({
           visibleCount: 0,
           offset: normalizedInput.offset,
           limit: normalizedInput.limit,
+          windowBudgetRange: {
+            min: 0,
+            max: 0,
+          },
           source: "bidwinner_live" as const,
           fetchedAt: new Date().toISOString(),
           warning:

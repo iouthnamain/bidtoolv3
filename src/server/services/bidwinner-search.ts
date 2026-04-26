@@ -100,6 +100,10 @@ export type LiveSearchResult = {
   visibleCount: number;
   offset: number;
   limit: number;
+  windowBudgetRange: {
+    min: number;
+    max: number;
+  };
   source: "bidwinner_live";
   fetchedAt: string;
   warning?: string;
@@ -688,7 +692,8 @@ export async function searchBidWinnerLive(
 ): Promise<LiveSearchResult> {
   const normalizedInput = normalizeSearchSelections(input);
   const sortBy: SortBy = "publishedAt";
-  const sortOrder: SortOrder = "desc";
+  const sortOrder: SortOrder =
+    normalizedInput.sortOrder === "asc" ? "asc" : "desc";
   const limit = Math.max(normalizedInput.limit, 1);
   const warnings: string[] = [];
 
@@ -712,6 +717,10 @@ export async function searchBidWinnerLive(
       visibleCount: 0,
       offset: normalizedInput.offset,
       limit: normalizedInput.limit,
+      windowBudgetRange: {
+        min: 0,
+        max: 0,
+      },
       source: "bidwinner_live",
       fetchedAt: new Date().toISOString(),
       warning:
@@ -860,6 +869,20 @@ export async function searchBidWinnerLive(
     );
   }
 
+  const windowBudgetValues = windowItems
+    .map((item) => item.budget)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const windowBudgetRange =
+    windowBudgetValues.length > 0
+      ? {
+          min: Math.min(...windowBudgetValues),
+          max: Math.max(...windowBudgetValues),
+        }
+      : {
+          min: 0,
+          max: 0,
+        };
+
   const { items: refined, fields } = applyLocalRefinement(
     windowItems,
     normalizedInput,
@@ -872,6 +895,7 @@ export async function searchBidWinnerLive(
     visibleCount: sorted.length,
     offset: normalizedInput.offset,
     limit: normalizedInput.limit,
+    windowBudgetRange,
     source: "bidwinner_live",
     fetchedAt: new Date().toISOString(),
     warning: warnings.length > 0 ? warnings.join(" ") : undefined,

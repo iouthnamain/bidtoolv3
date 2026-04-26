@@ -332,6 +332,12 @@ function readFiltersFromSearchParams(
   });
 }
 
+function readSortOrderFromSearchParams(
+  searchParams: ReadonlyURLSearchParams,
+): SortOrder {
+  return searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
+}
+
 function usesLegacySort(value: string | null): boolean {
   return Boolean(value && LEGACY_SORT_FIELDS.includes(value as SortBy));
 }
@@ -339,10 +345,47 @@ function usesLegacySort(value: string | null): boolean {
 function usesUnsupportedSourceSortParams(
   searchParams: ReadonlyURLSearchParams,
 ): boolean {
-  return (
-    usesLegacySort(searchParams.get("sortBy")) ||
-    searchParams.get("sortOrder") === "asc"
+  return usesLegacySort(searchParams.get("sortBy"));
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function computeBudgetSliderStep(maxBudget: number): number {
+  if (maxBudget <= 100_000_000) {
+    return 1_000_000;
+  }
+  if (maxBudget <= 1_000_000_000) {
+    return 10_000_000;
+  }
+  if (maxBudget <= 10_000_000_000) {
+    return 100_000_000;
+  }
+  if (maxBudget <= 50_000_000_000) {
+    return 500_000_000;
+  }
+  return 1_000_000_000;
+}
+
+function computeBudgetSliderCeiling(values: Array<number | undefined>): number {
+  const candidates = values.filter(
+    (value): value is number => typeof value === "number" && value > 0,
   );
+  const highest = Math.max(100_000_000, ...candidates);
+  const step = computeBudgetSliderStep(highest);
+
+  return Math.ceil(highest / step) * step;
+}
+
+function formatCompactBudget(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${Number((value / 1_000_000_000).toFixed(1)).toLocaleString("vi-VN")} tỷ`;
+  }
+  if (value >= 1_000_000) {
+    return `${Number((value / 1_000_000).toFixed(1)).toLocaleString("vi-VN")} triệu`;
+  }
+  return `${value.toLocaleString("vi-VN")} đ`;
 }
 
 function hasExactFilterChanges(
@@ -599,7 +642,12 @@ export function SearchPageClient() {
   const [sortDowngraded, setSortDowngraded] = useState<boolean>(() =>
     usesUnsupportedSourceSortParams(searchParams),
   );
-  const sortOrder: SortOrder = "desc";
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() =>
+    readSortOrderFromSearchParams(searchParams),
+  );
+  const [appliedSortOrder, setAppliedSortOrder] = useState<SortOrder>(() =>
+    readSortOrderFromSearchParams(searchParams),
+  );
   const [page, setPage] = useState(() =>
     parsePositiveInt(searchParams.get("page"), 1),
   );
@@ -665,6 +713,9 @@ export function SearchPageClient() {
     if (appliedFilters.minMatchScore > 0) {
       params.set("minMatchScore", String(appliedFilters.minMatchScore));
     }
+    if (appliedSortOrder === "asc") {
+      params.set("sortOrder", "asc");
+    }
 
     if (activeSavedFilterId !== null) {
       params.set("savedFilterId", String(activeSavedFilterId));
@@ -676,7 +727,15 @@ export function SearchPageClient() {
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
     });
-  }, [activeSavedFilterId, appliedFilters, limit, page, pathname, router]);
+  }, [
+    activeSavedFilterId,
+    appliedFilters,
+    appliedSortOrder,
+    limit,
+    page,
+    pathname,
+    router,
+  ]);
 
   // Sync state from URL when query params change externally (back/forward,
   // Smart View apply). The state→URL effect above handles the reverse direction.
@@ -697,10 +756,10 @@ export function SearchPageClient() {
     setPublishedTo(next.publishedTo);
     setMinMatchScore(next.minMatchScore);
     setAppliedFilters(next);
+    setSortOrder(readSortOrderFromSearchParams(searchParams));
+    setAppliedSortOrder(readSortOrderFromSearchParams(searchParams));
 
-    if (usesUnsupportedSourceSortParams(searchParams)) {
-      setSortDowngraded(true);
-    }
+    setSortDowngraded(usesUnsupportedSourceSortParams(searchParams));
 
     setPage(parsePositiveInt(searchParams.get("page"), 1));
     setLimit(parsePositiveInt(searchParams.get("limit"), 20));
@@ -750,7 +809,7 @@ export function SearchPageClient() {
       publishedTo: parsedAppliedPublishedTo,
       minMatchScore: appliedFilters.minMatchScore,
       sortBy,
-      sortOrder,
+      sortOrder: appliedSortOrder,
       offset: (page - 1) * limit,
       limit,
     }),
@@ -762,8 +821,8 @@ export function SearchPageClient() {
       parsedAppliedBudgetMin,
       parsedAppliedPublishedFrom,
       parsedAppliedPublishedTo,
+      appliedSortOrder,
       sortBy,
-      sortOrder,
     ],
   );
 
@@ -773,6 +832,53 @@ export function SearchPageClient() {
   const total = packagesResult.total;
   const liveOptions = packagesResult.options;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const budgetSliderCeiling = useMemo(
+    () =>
+      computeBudgetSliderCeiling([
+        packagesResult.windowBudgetRange.max,
+        parsedBudgetMin,
+        parsedBudgetMax,
+        parsedAppliedBudgetMin,
+        parsedAppliedBudgetMax,
+      ]),
+    [
+      packagesResult.windowBudgetRange.max,
+      parsedAppliedBudgetMax,
+      parsedAppliedBudgetMin,
+      parsedBudgetMax,
+      parsedBudgetMin,
+    ],
+  );
+  const budgetSliderStep = useMemo(
+    () => computeBudgetSliderStep(budgetSliderCeiling),
+    [budgetSliderCeiling],
+  );
+  const budgetSliderMinValue = useMemo(
+    () =>
+      typeof parsedBudgetMin === "number"
+        ? clampNumber(parsedBudgetMin, 0, budgetSliderCeiling)
+        : 0,
+    [budgetSliderCeiling, parsedBudgetMin],
+  );
+  const budgetSliderMaxValue = useMemo(
+    () =>
+      typeof parsedBudgetMax === "number"
+        ? clampNumber(parsedBudgetMax, budgetSliderMinValue, budgetSliderCeiling)
+        : budgetSliderCeiling,
+    [budgetSliderCeiling, budgetSliderMinValue, parsedBudgetMax],
+  );
+  const budgetRangeHelper = useMemo(() => {
+    if (packagesResult.windowBudgetRange.max <= 0) {
+      return "Trang nguồn hiện tại chưa có dữ liệu ngân sách để kéo thanh lọc.";
+    }
+
+    return `Khoảng ngân sách trong trang hiện tại: ${formatCompactBudget(
+      packagesResult.windowBudgetRange.min,
+    )} - ${formatCompactBudget(packagesResult.windowBudgetRange.max)}.`;
+  }, [
+    packagesResult.windowBudgetRange.max,
+    packagesResult.windowBudgetRange.min,
+  ]);
 
   const keywordOptions = useMemo(
     () => mergeSelectOptions(KEYWORD_OPTIONS, liveOptions.keywords),
@@ -895,7 +1001,7 @@ export function SearchPageClient() {
   const hasPendingSearchFilterChanges = !areSameSearchFilters(
     draftFilters,
     appliedFilters,
-  );
+  ) || sortOrder !== appliedSortOrder;
   const hasPendingPersistableFilterChanges = !areSamePersistableFilters(
     draftFilters,
     appliedFilters,
@@ -937,6 +1043,7 @@ export function SearchPageClient() {
       setPublishedTo(normalizedNext.publishedTo);
       setMinMatchScore(normalizedNext.minMatchScore);
       setAppliedFilters(normalizedNext);
+      setAppliedSortOrder(sortOrder);
       if (hasExactFilterChanges(appliedFilters, normalizedNext)) {
         setPage(1);
       }
@@ -945,7 +1052,7 @@ export function SearchPageClient() {
       setSaveSelectedSuccess(null);
       setSaveSelectedError(null);
     },
-    [appliedFilters],
+    [appliedFilters, sortOrder],
   );
 
   useEffect(() => {
@@ -1157,6 +1264,50 @@ export function SearchPageClient() {
     }
 
     setAppliedAndDraftFilters(next);
+  };
+
+  const handleBudgetMinSliderChange = (nextValue: number) => {
+    const clamped = clampNumber(nextValue, 0, budgetSliderMaxValue);
+    setBudgetMin(clamped <= 0 ? "" : String(clamped));
+  };
+
+  const handleBudgetMaxSliderChange = (nextValue: number) => {
+    const clamped = clampNumber(
+      nextValue,
+      budgetSliderMinValue,
+      budgetSliderCeiling,
+    );
+    setBudgetMax(clamped >= budgetSliderCeiling ? "" : String(clamped));
+  };
+
+  const handleBudgetMinBlur = () => {
+    const parsed = parseOptionalNumber(budgetMin);
+    if (typeof parsed !== "number" || parsed <= 0) {
+      setBudgetMin("");
+      return;
+    }
+
+    const clamped = clampNumber(
+      Math.round(parsed),
+      0,
+      typeof parsedBudgetMax === "number" ? parsedBudgetMax : budgetSliderCeiling,
+    );
+    setBudgetMin(clamped <= 0 ? "" : String(clamped));
+  };
+
+  const handleBudgetMaxBlur = () => {
+    const parsed = parseOptionalNumber(budgetMax);
+    if (typeof parsed !== "number") {
+      setBudgetMax("");
+      return;
+    }
+
+    const clamped = clampNumber(
+      Math.round(parsed),
+      typeof parsedBudgetMin === "number" ? parsedBudgetMin : 0,
+      budgetSliderCeiling,
+    );
+    setBudgetMax(clamped >= budgetSliderCeiling ? "" : String(clamped));
   };
 
   const handleApplyOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1448,8 +1599,8 @@ export function SearchPageClient() {
 
       {sortDowngraded ? (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Tham số sắp xếp cũ hoặc `sortOrder=asc` đã được hạ về chế độ nguồn hỗ
-          trợ: ngày đăng mới nhất trước.
+          Tham số sắp xếp cũ đã được hạ về chế độ hỗ trợ hiện tại: sắp xếp theo
+          ngày đăng trong trang kết quả.
         </div>
       ) : null}
 
@@ -1606,54 +1757,110 @@ export function SearchPageClient() {
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <FilterField label="Ngân sách từ" htmlFor="filter-budget-min">
-          <input
-            id="filter-budget-min"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            placeholder="VNĐ"
-            type="number"
-            min={0}
-            value={budgetMin}
-            onChange={(e) => {
-              setBudgetMin(e.target.value);
-            }}
-            onBlur={() => {
-              const parsed = parseOptionalNumber(budgetMin);
-              if (typeof parsed !== "number") {
-                setBudgetMin("");
-                return;
-              }
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+        <FilterField
+          label="Ngân sách"
+          helper={budgetRangeHelper}
+          className="sm:col-span-2 xl:col-span-4"
+        >
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                Từ:{" "}
+                {budgetSliderMinValue > 0
+                  ? formatCompactBudget(budgetSliderMinValue)
+                  : "0 đ"}
+              </span>
+              <span className="text-xs text-slate-400">→</span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                Đến:{" "}
+                {budgetSliderMaxValue < budgetSliderCeiling
+                  ? formatCompactBudget(budgetSliderMaxValue)
+                  : "Không giới hạn"}
+              </span>
+            </div>
 
-              setBudgetMin(String(Math.max(0, Math.round(parsed))));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-        </FilterField>
-        <FilterField label="Ngân sách đến" htmlFor="filter-budget-max">
-          <input
-            id="filter-budget-max"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            placeholder="VNĐ"
-            type="number"
-            min={0}
-            value={budgetMax}
-            onChange={(e) => {
-              setBudgetMax(e.target.value);
-            }}
-            onBlur={() => {
-              const parsed = parseOptionalNumber(budgetMax);
-              if (typeof parsed !== "number") {
-                setBudgetMax("");
-                return;
-              }
+            <div className="mt-3 grid gap-3">
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
+                  <span>Kéo mốc từ</span>
+                  <span>{formatCompactBudget(budgetSliderMinValue)}</span>
+                </div>
+                <input
+                  id="filter-budget-min"
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-sky-600"
+                  type="range"
+                  min={0}
+                  max={budgetSliderCeiling}
+                  step={budgetSliderStep}
+                  value={budgetSliderMinValue}
+                  onChange={(e) => {
+                    handleBudgetMinSliderChange(Number(e.target.value));
+                  }}
+                />
+              </div>
 
-              setBudgetMax(String(Math.max(0, Math.round(parsed))));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
+              <div>
+                <div className="mb-1 flex items-center justify-between text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
+                  <span>Kéo mốc đến</span>
+                  <span>
+                    {budgetSliderMaxValue < budgetSliderCeiling
+                      ? formatCompactBudget(budgetSliderMaxValue)
+                      : "Không giới hạn"}
+                  </span>
+                </div>
+                <input
+                  id="filter-budget-max"
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-emerald-600"
+                  type="range"
+                  min={0}
+                  max={budgetSliderCeiling}
+                  step={budgetSliderStep}
+                  value={budgetSliderMaxValue}
+                  onChange={(e) => {
+                    handleBudgetMaxSliderChange(Number(e.target.value));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                placeholder="Ngân sách từ"
+                type="number"
+                min={0}
+                max={budgetSliderCeiling}
+                step={budgetSliderStep}
+                value={budgetMin}
+                onChange={(e) => {
+                  setBudgetMin(e.target.value);
+                }}
+                onBlur={handleBudgetMinBlur}
+                onKeyDown={handleApplyOnEnter}
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                placeholder="Ngân sách đến"
+                type="number"
+                min={0}
+                max={budgetSliderCeiling}
+                step={budgetSliderStep}
+                value={budgetMax}
+                onChange={(e) => {
+                  setBudgetMax(e.target.value);
+                }}
+                onBlur={handleBudgetMaxBlur}
+                onKeyDown={handleApplyOnEnter}
+              />
+            </div>
+          </div>
         </FilterField>
-        <FilterField label="Ngày đăng từ" htmlFor="filter-published-from">
+        <FilterField
+          label="Ngày đăng từ"
+          htmlFor="filter-published-from"
+          className="xl:col-span-2"
+        >
           <input
             id="filter-published-from"
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -1665,7 +1872,11 @@ export function SearchPageClient() {
             onKeyDown={handleApplyOnEnter}
           />
         </FilterField>
-        <FilterField label="Ngày đăng đến" htmlFor="filter-published-to">
+        <FilterField
+          label="Ngày đăng đến"
+          htmlFor="filter-published-to"
+          className="xl:col-span-2"
+        >
           <input
             id="filter-published-to"
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -1678,19 +1889,30 @@ export function SearchPageClient() {
           />
         </FilterField>
         <FilterField
-          label="Thứ tự (theo ngày đăng)"
+          label="Thứ tự ngày đăng"
           htmlFor="filter-sort-order"
+          helper="Đổi thứ tự ngay trong trang hiện tại."
+          className="xl:col-span-2"
         >
           <select
             id="filter-sort-order"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             value={sortOrder}
-            disabled
+            onChange={(e) => {
+              const nextSortOrder = e.target.value as SortOrder;
+              setSortOrder(nextSortOrder);
+              setAppliedSortOrder(nextSortOrder);
+            }}
           >
             <option value="desc">Mới nhất trước</option>
+            <option value="asc">Cũ nhất trước</option>
           </select>
         </FilterField>
-        <FilterField label="Số dòng/trang" htmlFor="filter-page-size">
+        <FilterField
+          label="Số dòng/trang"
+          htmlFor="filter-page-size"
+          className="xl:col-span-2"
+        >
           <select
             id="filter-page-size"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
