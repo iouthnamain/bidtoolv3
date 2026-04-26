@@ -50,6 +50,13 @@
       "when": 1777159153652,
       "tag": "0006_freezing_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777170470221,
+      "tag": "0007_funny_mindworm",
+      "breakpoints": true
     }
   ]
 }

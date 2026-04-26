@@ -140,7 +140,7 @@ export function ExcelWorkspaceListClient() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <Link
-                    href={`/excel-workspace/${workspace.id}?step=import`}
+                    href={`/excel-workspace/${workspace.id}?step=${workspace.routeMeta.nextStep}`}
                     className="font-semibold text-slate-900 hover:text-slate-700"
                   >
                     {displayWorkspaceName(workspace.name)}
@@ -148,13 +148,17 @@ export function ExcelWorkspaceListClient() {
                   <p className="mt-1 text-xs text-slate-500">
                     {workspace.sourceFileName ?? "Chưa có tệp"} •{" "}
                     {workspace.sourceSheetName ?? "Chưa chọn trang tính"} •{" "}
-                    {workspace.rowCount.toLocaleString("vi-VN")} dòng •{" "}
-                    {statusLabels[workspace.status]}
+                    {workspace.routeMeta.importedItemCount.toLocaleString("vi-VN")}{" "}
+                    dòng đã nhập • {statusLabels[workspace.status]}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Bước tiếp theo: {workspace.routeMeta.nextStep} • Còn mở:{" "}
+                    {workspace.routeMeta.openItemCount.toLocaleString("vi-VN")}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Link
-                    href={`/excel-workspace/${workspace.id}?step=find`}
+                    href={`/excel-workspace/${workspace.id}?step=${workspace.routeMeta.nextStep}`}
                     className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold hover:bg-slate-100"
                   >
                     Mở

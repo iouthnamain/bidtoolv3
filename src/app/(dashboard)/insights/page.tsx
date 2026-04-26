@@ -3,8 +3,12 @@ import { KpiCard } from "~/app/_components/dashboard/kpi-card";
 import { api } from "~/trpc/server";
 
 export default async function InsightsPage() {
-  const summary = await api.insight.getDashboardSummary();
-  const trend = await api.insight.getMarketTrend({ days: 7 });
+  const [summary, trend, workflowHealth, topSignals] = await Promise.all([
+    api.insight.getDashboardSummary(),
+    api.insight.getMarketTrend({ days: 7 }),
+    api.insight.getWorkflowHealth(),
+    api.insight.getTopTenderSignals({ limit: 5 }),
+  ]);
   const maxPackages = Math.max(1, ...trend.map((row) => row.newPackages));
   const latestVsPrev =
     (trend[0]?.newPackages ?? 0) - (trend[1]?.newPackages ?? 0);
@@ -75,6 +79,83 @@ export default async function InsightsPage() {
             );
           })}
         </ul>
+      </section>
+
+      <section className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+        <article className="panel p-4">
+          <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">
+            Sức khoẻ workflow
+          </h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {workflowHealth.healthy} workflow ổn định
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {workflowHealth.inactive} workflow tạm dừng
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {workflowHealth.attention} workflow cần xem lại
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+              {workflowHealth.neverRan} workflow chưa từng chạy
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Tỷ lệ thành công toàn hệ thống: {workflowHealth.successRate}%
+          </p>
+        </article>
+
+        <article className="panel p-4">
+          <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">
+            Top tín hiệu thị trường
+          </h2>
+
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <div>
+              <h3 className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+                Bên mời thầu nổi bật
+              </h3>
+              <ul className="mt-2 space-y-2">
+                {topSignals.inviters.map((item) => (
+                  <li
+                    key={item.name}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <p className="text-sm font-semibold text-slate-900">
+                      {item.name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.packageCount} gói •{" "}
+                      {item.totalBudget.toLocaleString("vi-VN")} VNĐ
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+                Lĩnh vực nổi bật
+              </h3>
+              <ul className="mt-2 space-y-2">
+                {topSignals.categories.map((item) => (
+                  <li
+                    key={item.name}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <p className="text-sm font-semibold text-slate-900">
+                      {item.name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.packageCount} gói •{" "}
+                      {item.totalBudget.toLocaleString("vi-VN")} VNĐ
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </article>
       </section>
     </DashboardShell>
   );

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import {
@@ -59,12 +59,17 @@ export const searchRouter = createTRPCRouter({
         return {
           items: [],
           total: 0,
+          visibleCount: 0,
           offset: input.offset,
           limit: input.limit,
           source: "bidwinner_live" as const,
           fetchedAt: new Date().toISOString(),
           warning:
             "Nguồn realtime BidWinner tạm thời không ổn định. Dữ liệu hiện tại có thể trống, vui lòng thử lại sau vài phút.",
+          localRefinement: {
+            active: false,
+            fields: [],
+          },
           options: {
             provinces: [...PROVINCE_OPTIONS],
             categories: [...CATEGORY_OPTIONS],
@@ -120,6 +125,8 @@ export const searchRouter = createTRPCRouter({
               category: z.string().min(1),
               budget: z.number().nonnegative(),
               publishedAt: z.string().min(1),
+              closingAt: z.string().nullish(),
+              sourceUrl: z.string().min(1),
               matchScore: z.number().min(0).max(100),
             }),
           )
@@ -134,13 +141,7 @@ export const searchRouter = createTRPCRouter({
         const [existing] = await ctx.db
           .select({ id: tenderPackages.id })
           .from(tenderPackages)
-          .where(
-            and(
-              eq(tenderPackages.title, item.title),
-              eq(tenderPackages.inviter, item.inviter),
-              eq(tenderPackages.publishedAt, item.publishedAt),
-            ),
-          )
+          .where(eq(tenderPackages.externalId, item.externalId))
           .limit(1);
 
         if (existing) {
@@ -152,12 +153,15 @@ export const searchRouter = createTRPCRouter({
         const [created] = await ctx.db
           .insert(tenderPackages)
           .values({
+            externalId: item.externalId,
             title: item.title,
             inviter: item.inviter,
             province: item.province,
             category: item.category,
             budget: Math.round(item.budget),
             publishedAt: item.publishedAt,
+            closingAt: item.closingAt ?? null,
+            sourceUrl: item.sourceUrl,
             matchScore: Math.round(item.matchScore),
           })
           .returning({ id: tenderPackages.id });
@@ -184,6 +188,7 @@ export const searchRouter = createTRPCRouter({
           categories: z.array(z.string()).default([]),
           budgetMin: z.number().optional(),
           budgetMax: z.number().optional(),
+          minMatchScore: z.number().min(0).max(100).default(0),
           notificationFrequency: z.enum(["daily", "weekly"]).default("daily"),
         })
         .refine(
@@ -215,6 +220,7 @@ export const searchRouter = createTRPCRouter({
             categories: input.categories,
             budgetMin: input.budgetMin,
             budgetMax: input.budgetMax,
+            minMatchScore: input.minMatchScore,
             notificationFrequency: input.notificationFrequency,
           })
           .returning();

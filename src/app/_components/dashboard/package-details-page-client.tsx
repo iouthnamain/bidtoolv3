@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { Button, EmptyState } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
 
 type PackageDetailsPageClientProps = {
@@ -9,7 +10,11 @@ type PackageDetailsPageClientProps = {
   sourceUrl?: string;
 };
 
-function formatDateTime(value: string): string {
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "-";
@@ -74,10 +79,43 @@ export function PackageDetailsPageClient({
   externalId,
   sourceUrl,
 }: PackageDetailsPageClientProps) {
-  const [details] = api.search.getPackageDetails.useSuspenseQuery({
+  const utils = api.useUtils();
+  const detailsQuery = api.search.getPackageDetails.useQuery({
     externalId,
     sourceUrl: sourceUrl?.trim() ? sourceUrl : undefined,
   });
+  const addWatchlist = api.watchlist.addItem.useMutation({
+    onSuccess: async () => {
+      await utils.watchlist.listItems.invalidate();
+    },
+  });
+
+  if (detailsQuery.isLoading) {
+    return (
+      <div className="panel p-5 text-sm text-slate-600">
+        Đang tải chi tiết gói thầu...
+      </div>
+    );
+  }
+
+  if (detailsQuery.isError || !detailsQuery.data) {
+    return (
+      <EmptyState
+        title="Không tải được chi tiết gói thầu"
+        description={
+          detailsQuery.error?.message ??
+          "Trang nguồn có thể tạm thời không truy cập được hoặc dữ liệu không hợp lệ."
+        }
+        cta={
+          <Button variant="primary" onClick={() => detailsQuery.refetch()}>
+            Thử lại
+          </Button>
+        }
+      />
+    );
+  }
+
+  const details = detailsQuery.data;
 
   const showCommodityEvidence =
     details.requiredTablesEvidence.commodityCategories.length > 0 &&
@@ -120,12 +158,35 @@ export function PackageDetailsPageClient({
             </p>
           </div>
 
-          <Link
-            href="/search"
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            Quay lại Search
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={addWatchlist.isPending}
+              onClick={() =>
+                addWatchlist.mutate({
+                  type: "package",
+                  refKey: externalId,
+                  label: details.pageTitle,
+                })
+              }
+            >
+              Theo dõi gói này
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => detailsQuery.refetch()}
+            >
+              Làm mới
+            </Button>
+            <Link
+              href="/search"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              Quay lại Search
+            </Link>
+          </div>
         </div>
 
         <h2 className="mt-3 text-lg font-semibold text-slate-900">

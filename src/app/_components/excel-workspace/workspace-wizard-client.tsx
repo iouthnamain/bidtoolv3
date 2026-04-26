@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  isExcelWorkspaceStepAccessible,
+  type ExcelWorkspaceStepId,
+} from "~/lib/excel-workspace-steps";
+import { EmptyState } from "~/app/_components/ui";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type WorkspacePayload = RouterOutputs["excelWorkspace"]["getWorkspace"];
@@ -14,7 +19,7 @@ type MaterialCandidate =
 type SheetPreview =
   RouterOutputs["excelWorkspace"]["previewWorkbookSheets"][number];
 
-type StepId = "import" | "map" | "review" | "find" | "export";
+type StepId = ExcelWorkspaceStepId;
 type MappingKey =
   | "productName"
   | "specText"
@@ -1524,18 +1529,25 @@ function ExportStep({ payload }: { payload: WorkspacePayload }) {
 
 export function ExcelWorkspaceWizardClient({
   workspaceId,
+  initialData,
 }: {
   workspaceId: number;
+  initialData?: WorkspacePayload;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const stepParam = searchParams.get("step") as StepId | null;
-  const activeStep = steps.some((step) => step.id === stepParam)
-    ? stepParam!
-    : "import";
-  const workspaceQuery = api.excelWorkspace.getWorkspace.useQuery({
-    id: workspaceId,
-  });
+  const requestedStep = steps.some((step) => step.id === stepParam)
+    ? stepParam
+    : null;
+  const workspaceQuery = api.excelWorkspace.getWorkspace.useQuery(
+    {
+      id: workspaceId,
+    },
+    {
+      initialData,
+    },
+  );
   const payload = workspaceQuery.data;
 
   const setStep = (step: StepId) => {
@@ -1544,9 +1556,54 @@ export function ExcelWorkspaceWizardClient({
     });
   };
 
+  useEffect(() => {
+    if (!payload) {
+      return;
+    }
+
+    if (
+      !requestedStep ||
+      !isExcelWorkspaceStepAccessible(requestedStep, payload.routeMeta.maxStep)
+    ) {
+      router.replace(
+        `/excel-workspace/${workspaceId}?step=${payload.routeMeta.nextStep}`,
+        {
+          scroll: false,
+        },
+      );
+    }
+  }, [payload, requestedStep, router, workspaceId]);
+
+  if (workspaceQuery.isError) {
+    return (
+      <EmptyState
+        title="Không tải được workspace"
+        description={
+          workspaceQuery.error.message ||
+          "Không gian Excel có thể đã bị xoá hoặc chưa sẵn sàng."
+        }
+        cta={
+          <button
+            type="button"
+            className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            onClick={() => workspaceQuery.refetch()}
+          >
+            Tải lại
+          </button>
+        }
+      />
+    );
+  }
+
   if (!payload) {
     return <div className="panel p-5 text-sm text-slate-600">Đang tải...</div>;
   }
+
+  const activeStep =
+    requestedStep &&
+    isExcelWorkspaceStepAccessible(requestedStep, payload.routeMeta.maxStep)
+      ? requestedStep
+      : payload.routeMeta.nextStep;
 
   const matchedCount = payload.items.filter(
     (item) => item.matchStatus === "matched" || item.matchStatus === "manual",
@@ -1573,8 +1630,9 @@ export function ExcelWorkspaceWizardClient({
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {payload.items.length.toLocaleString("vi-VN")} dòng •{" "}
-            {matchedCount.toLocaleString("vi-VN")} đã khớp
+            {payload.routeMeta.importedItemCount.toLocaleString("vi-VN")} dòng
+            đã nhập • {matchedCount.toLocaleString("vi-VN")} đã khớp • Bước
+            tiếp theo: {payload.routeMeta.nextStep}
           </div>
         </div>
       </section>

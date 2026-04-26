@@ -35,7 +35,17 @@ type BidWinnerRawItem = {
 
 type BidWinnerPayload = {
   current_page?: number;
+  per_page?: number;
+  last_page?: number;
+  total?: number;
   data: BidWinnerRawItem[];
+};
+
+type BidWinnerProvinceEntry = {
+  matp?: number | string;
+  ten_tinh?: string;
+  name?: string;
+  ten?: string;
 };
 
 export type LivePackageItem = {
@@ -52,14 +62,27 @@ export type LivePackageItem = {
   sourceUrl: string;
 };
 
+export type LocalRefinementField =
+  | "keyword"
+  | "categories"
+  | "budget"
+  | "minMatchScore";
+
+export type LocalRefinementMeta = {
+  active: boolean;
+  fields: LocalRefinementField[];
+};
+
 export type LiveSearchResult = {
   items: LivePackageItem[];
   total: number;
+  visibleCount: number;
   offset: number;
   limit: number;
   source: "bidwinner_live";
   fetchedAt: string;
   warning?: string;
+  localRefinement: LocalRefinementMeta;
   options: {
     provinces: string[];
     categories: string[];
@@ -79,7 +102,9 @@ const DEFAULT_HEADERS = {
 };
 
 const SEARCH_PAYLOAD_REGEX = /<bid-search[^>]*:hsmts="([^"]+)"/i;
+const PROVINCE_PAYLOAD_REGEX = /<bid-search[^>]*:ttp="([^"]+)"/i;
 const MAX_FETCH_ATTEMPTS = 3;
+const BIDWINNER_PER_PAGE = 20;
 
 const STOP_WORDS = new Set([
   "goi",
@@ -217,6 +242,68 @@ function parseBidSearchPayload(html: string): BidWinnerPayload {
   return parsed;
 }
 
+function parseProvincePayload(
+  html: string,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const match = PROVINCE_PAYLOAD_REGEX.exec(html);
+  if (!match?.[1]) {
+    return map;
+  }
+
+  try {
+    const payloadJson = decodeHtmlEntities(match[1]);
+    const parsed = JSON.parse(payloadJson) as
+      | BidWinnerProvinceEntry[]
+      | { data?: BidWinnerProvinceEntry[] };
+    const entries: BidWinnerProvinceEntry[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.data)
+        ? parsed.data
+        : [];
+
+    for (const entry of entries) {
+      const code =
+        entry.matp !== undefined && entry.matp !== null
+          ? String(entry.matp).trim()
+          : "";
+      const name = entry.ten_tinh ?? entry.name ?? entry.ten ?? "";
+      if (!code || !name) {
+        continue;
+      }
+      map.set(normalizeProvince(name), code);
+    }
+  } catch {
+    // ignore malformed ttp payload
+  }
+
+  return map;
+}
+
+let cachedProvinceCodeMap: Map<string, string> | null = null;
+
+function rememberProvinceCodeMap(map: Map<string, string>) {
+  if (map.size === 0) {
+    return;
+  }
+  cachedProvinceCodeMap = map;
+}
+
+function resolveProvinceCodes(
+  selected: string[],
+  map: Map<string, string>,
+): string[] {
+  const codes: string[] = [];
+  for (const value of selected) {
+    const key = normalizeProvince(value);
+    const code = map.get(key) ?? cachedProvinceCodeMap?.get(key);
+    if (code) {
+      codes.push(code);
+    }
+  }
+  return Array.from(new Set(codes));
+}
+
 function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
   if (!raw.id || !raw.ten_goi_thau) {
     return null;
@@ -253,38 +340,35 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
   };
 }
 
-function applyLocalFilters(
+function applyLocalRefinement(
   items: LivePackageItem[],
   input: SearchOptions,
-): LivePackageItem[] {
+): { items: LivePackageItem[]; fields: LocalRefinementField[] } {
   const keywords = (input.keyword ?? "")
     .split(",")
     .map((term) => normalizeText(term))
     .filter(Boolean);
-  const provinces = input.provinces.map((value) => normalizeProvince(value));
   const categories = input.categories.map((value) => normalizeText(value));
 
-  return items.filter((item) => {
+  const fields: LocalRefinementField[] = [];
+  if (keywords.length > 0) fields.push("keyword");
+  if (categories.length > 0) fields.push("categories");
+  if (
+    typeof input.budgetMin === "number" ||
+    typeof input.budgetMax === "number"
+  )
+    fields.push("budget");
+  if (input.minMatchScore > 0) fields.push("minMatchScore");
+
+  const filtered = items.filter((item) => {
     if (keywords.length > 0) {
       const haystack = normalizeText(`${item.title} ${item.inviter}`);
-      const matched = keywords.some((term) => haystack.includes(term));
-      if (!matched) {
-        return false;
-      }
-    }
-
-    if (provinces.length > 0) {
-      const itemProvince = normalizeProvince(item.province);
-      if (!provinces.includes(itemProvince)) {
-        return false;
-      }
+      if (!keywords.some((term) => haystack.includes(term))) return false;
     }
 
     if (categories.length > 0) {
       const itemCategory = normalizeText(item.category);
-      if (!categories.includes(itemCategory)) {
-        return false;
-      }
+      if (!categories.includes(itemCategory)) return false;
     }
 
     if (typeof input.budgetMin === "number" && item.budget < input.budgetMin) {
@@ -295,12 +379,12 @@ function applyLocalFilters(
       return false;
     }
 
-    if (item.matchScore < input.minMatchScore) {
-      return false;
-    }
+    if (item.matchScore < input.minMatchScore) return false;
 
     return true;
   });
+
+  return { items: filtered, fields };
 }
 
 function sortItems(
@@ -391,9 +475,15 @@ function summarizeHtmlFailure(html: string): string {
   return `unexpected HTML: ${normalized}`;
 }
 
-async function fetchBidWinnerPage(page: number): Promise<string> {
+async function fetchBidWinnerPage(
+  page: number,
+  provinceCodes: string[] = [],
+): Promise<string> {
   const url = new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL);
   url.searchParams.set("page", String(page));
+  for (const code of provinceCodes) {
+    url.searchParams.append("matp", code);
+  }
 
   let lastError: unknown;
 
@@ -447,43 +537,93 @@ async function fetchBidWinnerPage(page: number): Promise<string> {
 export async function searchBidWinnerLive(
   input: SearchOptions,
 ): Promise<LiveSearchResult> {
-  const basePage = Math.max(
-    1,
-    Math.floor(input.offset / Math.max(input.limit, 1)) + 1,
-  );
-  const pages = new Set([basePage, basePage + 1]);
+  // Sort is downgraded to publishedAt at the API boundary; only sortOrder is honored.
+  const sortBy: SortBy = "publishedAt";
+
+  // Compute the remote page window required for the requested local offset/limit
+  // against BidWinner's fixed per_page=20.
+  const limit = Math.max(input.limit, 1);
+  const startRemotePage =
+    Math.floor(input.offset / BIDWINNER_PER_PAGE) + 1;
+  const endRemotePage =
+    Math.floor((input.offset + limit - 1) / BIDWINNER_PER_PAGE) + 1;
+  const pageNumbers: number[] = [];
+  for (let p = startRemotePage; p <= endRemotePage; p += 1) {
+    pageNumbers.push(p);
+  }
+
+  // Resolve province → matp using cached map first; fetch page 1 once if needed.
+  let provinceCodeMap = cachedProvinceCodeMap ?? new Map<string, string>();
+  if (provinceCodeMap.size === 0 && input.provinces.length > 0) {
+    try {
+      const html = await fetchBidWinnerPage(1, []);
+      provinceCodeMap = parseProvincePayload(html);
+      rememberProvinceCodeMap(provinceCodeMap);
+    } catch {
+      // ignore; we'll fall back below
+    }
+  }
+
+  const provinceCodes = resolveProvinceCodes(input.provinces, provinceCodeMap);
 
   const htmlPages = await Promise.all(
-    Array.from(pages).map((page) => fetchBidWinnerPage(page)),
+    pageNumbers.map((page) => fetchBidWinnerPage(page, provinceCodes)),
   );
-  const allItems: LivePackageItem[] = [];
+
+  let sourceTotal = 0;
+  let sourcePerPage = BIDWINNER_PER_PAGE;
+  const fetchedItems: LivePackageItem[] = [];
+  const seen = new Set<string>();
 
   for (const html of htmlPages) {
     const payload = parseBidSearchPayload(html);
+    if (typeof payload.total === "number" && payload.total >= 0) {
+      sourceTotal = payload.total;
+    }
+    if (typeof payload.per_page === "number" && payload.per_page > 0) {
+      sourcePerPage = payload.per_page;
+    }
+
+    // Refresh province code map opportunistically.
+    if (provinceCodeMap.size === 0) {
+      const ttp = parseProvincePayload(html);
+      if (ttp.size > 0) {
+        provinceCodeMap = ttp;
+        rememberProvinceCodeMap(ttp);
+      }
+    }
+
     const mapped = payload.data
       .map((item) => toLivePackageItem(item))
       .filter((item): item is LivePackageItem => item !== null);
 
     for (const item of mapped) {
-      if (
-        !allItems.some((existing) => existing.externalId === item.externalId)
-      ) {
-        allItems.push(item);
-      }
+      if (seen.has(item.externalId)) continue;
+      seen.add(item.externalId);
+      fetchedItems.push(item);
     }
   }
 
-  const filtered = applyLocalFilters(allItems, input);
-  const sorted = sortItems(filtered, input.sortBy, input.sortOrder);
-  const paginated = sorted.slice(input.offset, input.offset + input.limit);
+  // Window: local offset within the fetched span.
+  const spanStart = (startRemotePage - 1) * sourcePerPage;
+  const localStart = Math.max(0, input.offset - spanStart);
+  const windowItems = fetchedItems.slice(localStart, localStart + limit);
+
+  const { items: refined, fields } = applyLocalRefinement(windowItems, input);
+  const sorted = sortItems(refined, sortBy, input.sortOrder);
 
   return {
-    items: paginated,
-    total: sorted.length,
+    items: sorted,
+    total: sourceTotal,
+    visibleCount: sorted.length,
     offset: input.offset,
     limit: input.limit,
     source: "bidwinner_live",
     fetchedAt: new Date().toISOString(),
-    options: buildOptions(allItems),
+    localRefinement: {
+      active: fields.length > 0,
+      fields,
+    },
+    options: buildOptions(fetchedItems),
   };
 }

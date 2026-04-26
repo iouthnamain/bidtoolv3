@@ -13,6 +13,9 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
+import {
+  resolveExcelWorkspaceStepState,
+} from "~/lib/excel-workspace-steps";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { type db as appDb } from "~/server/db";
 import {
@@ -108,6 +111,39 @@ function parseWorkbookJson(value: Record<string, unknown>): ParsedWorkbook {
   }
 
   return value as ParsedWorkbook;
+}
+
+function hasWorkbookData(workspace: typeof excelWorkspaces.$inferSelect) {
+  return (
+    !!workspace.sourceFileName &&
+    Array.isArray(workspace.workbookJson.sheets)
+  );
+}
+
+function hasProductNameMapping(workspace: typeof excelWorkspaces.$inferSelect) {
+  const mapping = workspace.columnMappingJson as ColumnMapping;
+  return !!mapping.productName?.trim();
+}
+
+function buildWorkspaceRouteMeta(input: {
+  workspace: typeof excelWorkspaces.$inferSelect;
+  importedItemCount: number;
+  openItemCount: number;
+}) {
+  const { nextStep, maxStep } = resolveExcelWorkspaceStepState({
+    hasWorkbook: hasWorkbookData(input.workspace),
+    hasMapping: hasProductNameMapping(input.workspace),
+    importedItemCount: input.importedItemCount,
+    openItemCount: input.openItemCount,
+  });
+
+  return {
+    importedItemCount: input.importedItemCount,
+    matchedItemCount: Math.max(0, input.importedItemCount - input.openItemCount),
+    openItemCount: input.openItemCount,
+    nextStep,
+    maxStep,
+  };
 }
 
 async function getWorkspaceOrThrow(db: DbExecutor, id: number) {
@@ -371,13 +407,68 @@ export const excelWorkspaceRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      return ctx.db
+      const workspaceRows = await ctx.db
         .select()
         .from(excelWorkspaces)
         .where(
           input?.status ? eq(excelWorkspaces.status, input.status) : undefined,
         )
         .orderBy(desc(excelWorkspaces.updatedAt));
+
+      if (workspaceRows.length === 0) {
+        return [];
+      }
+
+      const itemRows = await ctx.db
+        .select({
+          workspaceId: excelWorkspaceItems.workspaceId,
+          matchStatus: excelWorkspaceItems.matchStatus,
+        })
+        .from(excelWorkspaceItems)
+        .where(
+          inArray(
+            excelWorkspaceItems.workspaceId,
+            workspaceRows.map((workspace) => workspace.id),
+          ),
+        );
+
+      const countsByWorkspaceId = new Map<
+        number,
+        { importedItemCount: number; openItemCount: number }
+      >();
+
+      for (const item of itemRows) {
+        const current = countsByWorkspaceId.get(item.workspaceId) ?? {
+          importedItemCount: 0,
+          openItemCount: 0,
+        };
+
+        current.importedItemCount += 1;
+        if (
+          item.matchStatus === "unmatched" ||
+          item.matchStatus === "candidates_found"
+        ) {
+          current.openItemCount += 1;
+        }
+
+        countsByWorkspaceId.set(item.workspaceId, current);
+      }
+
+      return workspaceRows.map((workspace) => {
+        const counts = countsByWorkspaceId.get(workspace.id) ?? {
+          importedItemCount: 0,
+          openItemCount: 0,
+        };
+
+        return {
+          ...workspace,
+          routeMeta: buildWorkspaceRouteMeta({
+            workspace,
+            importedItemCount: counts.importedItemCount,
+            openItemCount: counts.openItemCount,
+          }),
+        };
+      });
     }),
 
   createWorkspace: publicProcedure
@@ -438,12 +529,22 @@ export const excelWorkspaceRouter = createTRPCRouter({
           .where(eq(excelWorkspaceEvents.workspaceId, input.id))
           .orderBy(desc(excelWorkspaceEvents.at)),
       ]);
+      const openItemCount = items.filter(
+        (item) =>
+          item.matchStatus === "unmatched" ||
+          item.matchStatus === "candidates_found",
+      ).length;
 
       return {
         workspace,
         items,
         candidates: candidates.map((row) => row.web_product_candidates),
         events,
+        routeMeta: buildWorkspaceRouteMeta({
+          workspace,
+          importedItemCount: items.length,
+          openItemCount,
+        }),
       };
     }),
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -15,6 +15,21 @@ export const watchlistRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select()
+        .from(watchlistItems)
+        .where(
+          and(
+            eq(watchlistItems.type, input.type),
+            eq(watchlistItems.refKey, input.refKey),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        return existing;
+      }
+
       const [newItem] = await ctx.db
         .insert(watchlistItems)
         .values({

@@ -71,16 +71,27 @@ export const productMatchStatusEnum = pgEnum("product_match_status", [
   "manual",
 ]);
 
-export const tenderPackages = pgTable("tender_packages", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  inviter: text("inviter").notNull(),
-  province: text("province").notNull(),
-  category: text("category").notNull(),
-  budget: bigint("budget", { mode: "number" }).notNull(),
-  publishedAt: text("published_at").notNull(),
-  matchScore: integer("match_score").notNull(),
-});
+export const tenderPackages = pgTable(
+  "tender_packages",
+  {
+    id: serial("id").primaryKey(),
+    externalId: text("external_id").notNull().default(""),
+    title: text("title").notNull(),
+    inviter: text("inviter").notNull(),
+    province: text("province").notNull(),
+    category: text("category").notNull(),
+    budget: bigint("budget", { mode: "number" }).notNull(),
+    publishedAt: text("published_at").notNull(),
+    closingAt: text("closing_at"),
+    sourceUrl: text("source_url").notNull().default(""),
+    matchScore: integer("match_score").notNull(),
+  },
+  (table) => ({
+    externalIdUnique: uniqueIndex("tender_packages_external_id_unique").on(
+      table.externalId,
+    ),
+  }),
+);
 
 export const savedFilters = pgTable("saved_filters", {
   id: serial("id").primaryKey(),
@@ -90,6 +101,7 @@ export const savedFilters = pgTable("saved_filters", {
   categories: jsonb("categories").$type<string[]>().notNull().default([]),
   budgetMin: bigint("budget_min", { mode: "number" }),
   budgetMax: bigint("budget_max", { mode: "number" }),
+  minMatchScore: integer("min_match_score").notNull().default(0),
   notificationFrequency: notificationFrequencyEnum("notification_frequency")
     .notNull()
     .default("daily"),

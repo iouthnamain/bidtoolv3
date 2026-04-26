@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
@@ -11,6 +12,7 @@ function buildSavedFilterHref(filter: {
   categories: string[];
   budgetMin: number | null;
   budgetMax: number | null;
+  minMatchScore: number;
 }) {
   const params = new URLSearchParams();
 
@@ -34,6 +36,10 @@ function buildSavedFilterHref(filter: {
     params.set("budgetMax", String(filter.budgetMax));
   }
 
+  if (filter.minMatchScore > 0) {
+    params.set("minMatchScore", String(filter.minMatchScore));
+  }
+
   return `/search${params.toString() ? `?${params.toString()}` : ""}`;
 }
 
@@ -43,6 +49,7 @@ function renderCriteriaList(filter: {
   categories: string[];
   budgetMin: number | null;
   budgetMax: number | null;
+  minMatchScore: number;
 }) {
   const chips: string[] = [];
 
@@ -75,6 +82,10 @@ function renderCriteriaList(filter: {
     );
   }
 
+  if (filter.minMatchScore > 0) {
+    chips.push(`Match tối thiểu: ${filter.minMatchScore}%`);
+  }
+
   if (chips.length === 0) {
     chips.push("Bộ lọc chung");
   }
@@ -83,6 +94,7 @@ function renderCriteriaList(filter: {
 }
 
 export function SavedItemsPageClient() {
+  const router = useRouter();
   const [savedFilters] = api.search.listSavedFilters.useSuspenseQuery();
   const [watchlist] = api.watchlist.listItems.useSuspenseQuery();
   const utils = api.useUtils();
@@ -99,9 +111,22 @@ export function SavedItemsPageClient() {
     },
   });
 
+  const createWorkflow = api.workflow.createFromSavedFilter.useMutation({
+    onSuccess: async (workflow) => {
+      await Promise.all([
+        utils.workflow.list.invalidate(),
+        utils.insight.getWorkflowHealth.invalidate(),
+        utils.insight.getDashboardSummary.invalidate(),
+      ]);
+      if (workflow) {
+        router.push(`/workflows/${workflow.id}`);
+      }
+    },
+  });
+
   return (
     <div className="grid gap-3 lg:grid-cols-2">
-      <section className="panel p-4">
+      <section id="smart-views" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <h2 className="text-sm font-bold">Smart Views</h2>
           <Badge count={savedFilters.length} />
@@ -168,12 +193,27 @@ export function SavedItemsPageClient() {
                   </div>
 
                   <div className="mt-2">
-                    <Link
-                      href={buildSavedFilterHref(filter)}
-                      className="inline-flex items-center justify-center rounded-md bg-sky-700 px-2.5 py-1 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-                    >
-                      Áp dụng
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        href={buildSavedFilterHref(filter)}
+                        className="inline-flex items-center justify-center rounded-md bg-sky-700 px-2.5 py-1 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                      >
+                        Áp dụng
+                      </Link>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isLoading={
+                          createWorkflow.isPending &&
+                          createWorkflow.variables?.savedFilterId === filter.id
+                        }
+                        onClick={() =>
+                          createWorkflow.mutate({ savedFilterId: filter.id })
+                        }
+                      >
+                        Tạo workflow
+                      </Button>
+                    </div>
                   </div>
                 </li>
               );
@@ -182,7 +222,7 @@ export function SavedItemsPageClient() {
         )}
       </section>
 
-      <section className="panel p-4">
+      <section id="watchlist" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <h2 className="text-sm font-bold">Watchlist</h2>
           <Badge count={watchlist.length} />
