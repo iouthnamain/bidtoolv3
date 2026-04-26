@@ -1,113 +1,88 @@
 # BidTool v3
 
-BidTool v3 is a Next.js dashboard for tender discovery workflows, Excel-based material review, and product candidate matching. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, Tailwind CSS, and optional self-hosted SearXNG search.
+BidTool v3 is a Next.js dashboard for tender discovery workflows, Excel-based material review, and product candidate matching. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, Tailwind CSS, and self-hosted SearXNG search for Excel product sourcing.
 
 ## Requirements
 
 - Node.js `20+` and Bun
 - Docker Engine with the Docker Compose plugin
 
-The app can boot locally with PostgreSQL only. SearXNG is optional and is only needed for the Excel product web search flow.
+The local workflow starts PostgreSQL and SearXNG through Docker Compose. PostgreSQL powers the app database; SearXNG powers the Excel product web search flow.
 
-## Quick Start
+## Local Workflow
 
-For a first boot on a new machine:
-
-```bash
-bun install
-cp .env.example .env
-docker compose up -d postgres
-bun run db:migrate
-bun run dev
-```
-
-Then open `http://localhost:3000`.
-
-If you want demo data, set `ENABLE_DEMO_SEED="true"` in `.env` and run:
+Use these three commands on every machine:
 
 ```bash
-bun run db:seed
+bun run dev:install
+bun run dev:update
+bun run dev:run
 ```
 
-## One-Command Bootstrap
+### `bun run dev:install`
 
-There is also a shortcut for first-time local setup:
+Use this once on a new machine or fresh clone.
 
 ```bash
-bun run dev:one-time
+bun run dev:install
 ```
 
-It installs dependencies, copies `.env.example` if `.env` does not exist, starts Docker services, runs migrations, attempts the optional seed, and launches Next.js. If PostgreSQL is still starting when the migration runs, wait a few seconds and rerun `bun run db:migrate`.
+It installs dependencies, creates `.env` from `.env.example` only if missing, starts the local PostgreSQL and SearXNG containers, waits for readiness, and applies migrations. It does not seed demo data and it does not overwrite an existing `.env`.
 
-## Manual Setup
+### `bun run dev:update`
 
-1. Install dependencies:
+Use this after you already ran `git pull`.
 
 ```bash
-bun install
+git pull
+bun run dev:update
 ```
 
-2. Create your local env file:
+It refreshes dependencies, preserves your local `.env`, ensures PostgreSQL and SearXNG are running, and applies any new migrations. It does not run `git pull` for you.
+
+### `bun run dev:run`
+
+Use this for normal daily startup.
 
 ```bash
-cp .env.example .env
+bun run dev:run
 ```
 
-3. Start PostgreSQL:
+It ensures `.env` exists, starts PostgreSQL and SearXNG if needed, waits for readiness, applies migrations, and then starts the Next.js dev server. After it boots, open `http://localhost:3000`.
 
-```bash
-docker compose up -d postgres
-```
+## Windows Quick Launch
 
-4. Apply database migrations:
+If you want a double-click launcher from File Explorer on Windows:
 
-```bash
-bun run db:migrate
-```
+- `launch-maintenance.bat` starts the app and opens `http://localhost:3000/maintenance` when ready. If dependencies are missing, it falls back to the one-time install + run flow automatically.
+- `update-maintenance.bat` is the same idea for after `git pull`: it runs `bun run dev:update`, then starts the app, then opens `/maintenance`.
 
-5. Optionally seed demo data:
+Keep the PowerShell window that opens in the background running while you use the app. These launchers still require Bun on `PATH` and Docker Desktop running.
 
-```bash
-# first set ENABLE_DEMO_SEED="true" in .env
-bun run db:seed
-```
+### Optional Demo Data
 
-6. Start the app:
+Install, update, and run never seed automatically. If you want demo data:
 
-```bash
-bun run dev
-```
+1. Set `ENABLE_DEMO_SEED="true"` in `.env`.
+2. Run `bun run db:seed`.
 
-## Updating After `git pull`
+### Legacy Shortcut
 
-If you pull newer code later, run the migration again before using the app:
+`bun run dev:one-time` still works as a backward-compatible install-plus-run shortcut, but `dev:install`, `dev:update`, and `dev:run` are now the primary workflow.
 
-```bash
-bun run db:migrate
-```
-
-This is especially important before opening `/saved-items`, Smart Views, or workflows that depend on the latest schema.
+Older aliases `bun run setup`, `bun run start:dev`, and `bun run update` also point to the new workflow for compatibility.
 
 ## Local SearXNG Search
 
-Use this only when you want the Excel product search flow to call a local SearXNG instance.
-
-1. Start the search profile:
+The main dev workflow now starts SearXNG automatically:
 
 ```bash
-docker compose --profile search up -d searxng
+bun run dev:run
 ```
 
-2. Update `.env`:
+New `.env` files use `SEARXNG_BASE_URL="http://localhost:8080"` from `.env.example`. If your `.env` was created before this default existed, add it manually.
 
-```env
-SEARXNG_BASE_URL="http://localhost:8080"
-PRODUCT_WEB_SEARCH_PROVIDER="searxng"
-```
-
-3. Restart `bun run dev` if it is already running.
-
-4. Check the local JSON API:
+Check the local JSON API:
 
 ```bash
 curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
@@ -115,15 +90,21 @@ curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
 
 ## Troubleshooting
 
-- If startup fails with env validation, recreate `.env` from the latest `.env.example` and re-apply your local changes.
-- If you see a Smart View schema warning after pulling new code, run `bun run db:migrate` and reload the page.
-- If `bun run db:seed` prints that demo seed was skipped, set `ENABLE_DEMO_SEED="true"` in `.env` first.
-- If `bun run db:migrate` cannot connect, PostgreSQL is usually still starting; wait a few seconds and run it again.
+- If Docker commands fail, make sure Docker Desktop or the Docker daemon is running before `dev:install`, `dev:update`, or `dev:run`.
+- If `/maintenance` shows Postgres or SearXNG not running, click `Khởi động Docker` or rerun `bun run dev:run`.
+- If PostgreSQL is still starting, rerun `bun run dev:run` or `bun run db:migrate` after a few seconds.
+- If you see a Smart View schema warning after pulling new code, run `bun run dev:update` or `bun run db:migrate`, then reload the page.
+- If startup fails with env validation, refresh `.env` from the latest `.env.example` and re-apply your local changes.
+- If `bun run db:seed` says demo seed was skipped, set `ENABLE_DEMO_SEED="true"` in `.env` first.
 
 ## Scripts
 
-- `bun run dev` - start Next.js in development mode.
-- `bun run dev:one-time` - install deps, bootstrap `.env`, Docker, migrations, optional seed, and dev server.
+- `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, SearXNG, and migrations.
+- `bun run dev:update` - post-pull sync: deps, PostgreSQL, SearXNG, and migrations.
+- `bun run dev:run` - daily startup with env, PostgreSQL, SearXNG, and migration checks before Next.js.
+- `bun run dev:one-time` - backward-compatible alias for install plus run.
+- `bun run dev:kill` - stop Docker Compose services and BidTool local dev processes when ports are stuck; it uses stop-only Docker commands and does not delete containers or volumes.
+- `bun run dev` - start Next.js only, without local stack checks.
 - `bun run build` - create a production build.
 - `bun run start` - run the production server after `bun run build`.
 - `bun run preview` - build and start production locally in one command.

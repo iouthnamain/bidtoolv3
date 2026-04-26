@@ -16,7 +16,8 @@ type IconName =
   | "workflow"
   | "insight"
   | "notification"
-  | "help";
+  | "help"
+  | "tools";
 
 type SubNavItem = {
   href: string;
@@ -36,6 +37,8 @@ type NavSection = {
   title: string;
   items: NavItem[];
 };
+
+const isDevEnvironment = process.env.NODE_ENV === "development";
 
 const navSections: NavSection[] = [
   {
@@ -83,16 +86,31 @@ const navSections: NavSection[] = [
         label: "Trợ giúp",
         icon: "help",
         subItems: [
+          { href: "/help#bat-dau", label: "Bắt đầu" },
+          { href: "/help#windows-launch", label: "Windows" },
           { href: "/help#tim-kiem", label: "Tìm kiếm" },
           { href: "/help#smart-view", label: "Smart Views" },
-          { href: "/help#quy-trinh", label: "Quy trình" },
           { href: "/help#excel-workspace", label: "Excel Workspace" },
-          { href: "/help#thong-bao", label: "Thông báo" },
-          { href: "/help#phim-tat", label: "Phím tắt" },
+          { href: "/help#khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
       },
     ],
   },
+  ...(isDevEnvironment
+    ? [
+        {
+          id: "system",
+          title: "Hệ thống",
+          items: [
+            {
+              href: "/maintenance",
+              label: "Bảo trì cục bộ",
+              icon: "tools" as const,
+            },
+          ],
+        } satisfies NavSection,
+      ]
+    : []),
 ];
 
 function NavItemIcon({
@@ -187,6 +205,12 @@ function NavItemIcon({
           <path d="m4.5 15.5 7.5 4.5 7.5-4.5" />
         </svg>
       );
+    case "tools":
+      return (
+        <svg {...common}>
+          <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2 2.5-2.5Z" />
+        </svg>
+      );
   }
 }
 
@@ -237,7 +261,9 @@ function NavLink({
     <div className="flex flex-col">
       <div
         className={`group relative flex items-center rounded-lg text-sm font-medium transition-colors duration-150 ${
-          isActive ? "bg-sky-700 text-white" : "text-slate-700 hover:bg-slate-100"
+          isActive
+            ? "bg-sky-700 text-white"
+            : "text-slate-700 hover:bg-slate-100"
         } ${collapsed ? "justify-center" : ""}`}
       >
         <Link
@@ -246,19 +272,21 @@ function NavLink({
           title={collapsed ? item.label : undefined}
           aria-current={isActive ? "page" : undefined}
           aria-label={collapsed ? item.label : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+          className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
             collapsed ? "justify-center" : ""
           }`}
         >
           <span
             className={`relative flex h-7 w-7 shrink-0 items-center justify-center ${
-              isActive ? "text-white" : "text-slate-500 group-hover:text-slate-700"
+              isActive
+                ? "text-white"
+                : "text-slate-500 group-hover:text-slate-700"
             }`}
           >
             <NavItemIcon icon={item.icon} className="h-5 w-5" />
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
-                className={`absolute -top-1 -right-1 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none ${
+                className={`absolute -top-1 -right-1 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold ${
                   isActive ? "bg-white text-sky-700" : "bg-rose-600 text-white"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
@@ -275,7 +303,7 @@ function NavLink({
             onClick={onToggleExpand}
             aria-label={expanded ? "Thu gọn mục con" : "Mở rộng mục con"}
             aria-expanded={expanded}
-            className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 ${
+            className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
               isActive
                 ? "text-white/80 hover:bg-white/15"
                 : "text-slate-500 hover:bg-slate-200"
@@ -293,7 +321,7 @@ function NavLink({
               <Link
                 href={sub.href}
                 onClick={onNavigate}
-                className="block rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1"
+                className="block rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               >
                 {sub.label}
               </Link>
@@ -379,7 +407,7 @@ function CollapseToggle({
       onClick={onToggle}
       aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
       title={`${collapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
-      className={`flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${className}`}
+      className={`flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
     >
       <svg
         viewBox="0 0 24 24"
@@ -391,11 +419,7 @@ function CollapseToggle({
         strokeLinejoin="round"
         aria-hidden
       >
-        {collapsed ? (
-          <path d="m9 6 6 6-6 6" />
-        ) : (
-          <path d="m15 6-6 6 6 6" />
-        )}
+        {collapsed ? <path d="m9 6 6 6-6 6" /> : <path d="m15 6-6 6 6 6" />}
       </svg>
     </button>
   );
@@ -405,7 +429,7 @@ function BrandHeader({ collapsed }: { collapsed: boolean }) {
   return (
     <Link
       href="/dashboard"
-      className="flex items-center gap-2.5 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+      className="flex items-center gap-2.5 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
       aria-label="BidTool v3 — về trang tổng quan"
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-700 via-sky-800 to-teal-800 text-white shadow-sm">
@@ -521,7 +545,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Mở menu điều hướng"
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <svg
               viewBox="0 0 24 24"
@@ -566,7 +590,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Đóng menu"
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <svg
                   viewBox="0 0 24 24"

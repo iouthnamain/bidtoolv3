@@ -1231,6 +1231,31 @@ export function SearchPageClient() {
             {packagesResult.visibleCount}
             {packagesResult.localRefinement?.active ? `/${limit}` : ""}
           </p>
+          <button
+            type="button"
+            onClick={() => packagesQuery.refetch()}
+            disabled={packagesQuery.isFetching}
+            aria-label="Tải lại kết quả tìm kiếm"
+            title="Tải lại kết quả tìm kiếm"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-3.5 w-3.5 ${packagesQuery.isFetching ? "animate-spin" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+              <path d="M3 21v-5h5" />
+            </svg>
+            {packagesQuery.isFetching ? "Đang tải..." : "Tải lại"}
+          </button>
           <Link
             href="/saved-items"
             className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"

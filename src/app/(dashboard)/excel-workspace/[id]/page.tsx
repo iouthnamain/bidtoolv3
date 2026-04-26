@@ -5,7 +5,6 @@ import {
   isExcelWorkspaceStepAccessible,
   type ExcelWorkspaceStepId,
 } from "~/lib/excel-workspace-steps";
-import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { ExcelWorkspaceWizardClient } from "~/app/_components/excel-workspace/workspace-wizard-client";
 import { api } from "~/trpc/server";
 
@@ -50,14 +49,9 @@ export default async function ExcelWorkspaceDetailPage({
   }
 
   return (
-    <DashboardShell
-      title="Không gian Excel"
-      description="Nhập tệp → Ghép cột → Duyệt dòng → Tìm sản phẩm → Xuất tệp"
-    >
-      <ExcelWorkspaceWizardClient
-        workspaceId={workspaceId}
-        initialData={initialData}
-      />
-    </DashboardShell>
+    <ExcelWorkspaceWizardClient
+      workspaceId={workspaceId}
+      initialData={initialData}
+    />
   );
 }
