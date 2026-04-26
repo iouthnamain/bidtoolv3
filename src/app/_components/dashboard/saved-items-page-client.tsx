@@ -223,7 +223,7 @@ function SavedFiltersSection() {
             {savedFiltersQuery.error.message}
           </p>
           <p className="mt-2 text-xs text-amber-800">
-            Nếu bạn vừa pull code mới, hãy chạy `npm run db:migrate` rồi tải lại
+            Nếu bạn vừa pull code mới, hãy chạy `bun run db:migrate` rồi tải lại
             trang này.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">

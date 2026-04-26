@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 
 export const SAVED_FILTER_SCHEMA_DRIFT_MESSAGE =
-  "Smart View đang dùng schema mới hơn database hiện tại. Hãy chạy `npm run db:migrate` rồi tải lại trang.";
+  "Smart View đang dùng schema mới hơn database hiện tại. Hãy chạy `bun run db:migrate` rồi tải lại trang.";
 
 function readErrorCause(error: unknown): unknown {
   if (!error || typeof error !== "object" || !("cause" in error)) {
