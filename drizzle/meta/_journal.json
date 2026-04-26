@@ -57,6 +57,13 @@
       "when": 1777170470221,
       "tag": "0007_funny_mindworm",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777185694378,
+      "tag": "0008_nostalgic_stryfe",
+      "breakpoints": true
     }
   ]
 }

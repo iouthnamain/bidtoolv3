@@ -7,6 +7,7 @@ import {
   KEYWORD_OPTIONS,
   PROVINCE_OPTIONS,
 } from "~/constants/search-options";
+import { normalizeSearchSelections } from "~/lib/search-filter-utils";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { savedFilters, tenderPackages } from "~/server/db/schema";
 import {
@@ -14,6 +15,10 @@ import {
   InvalidSourceUrlError,
 } from "~/server/services/bidwinner-detail";
 import { searchBidWinnerLive } from "~/server/services/bidwinner-search";
+import {
+  isSavedFilterSchemaDriftError,
+  throwSavedFilterSchemaDriftError,
+} from "~/server/lib/saved-filter-schema-errors";
 
 const searchInputSchema = z
   .object({
@@ -44,15 +49,84 @@ const searchInputSchema = z
     },
   );
 
+const savedFilterInputBaseSchema = z.object({
+  name: z.string().trim().min(1),
+  keyword: z.string().default(""),
+  provinces: z.array(z.string()).default([]),
+  categories: z.array(z.string()).default([]),
+  budgetMin: z.number().optional(),
+  budgetMax: z.number().optional(),
+  minMatchScore: z.number().min(0).max(100).default(0),
+  notificationFrequency: z.enum(["daily", "weekly"]).default("daily"),
+});
+
+const savedFilterInputSchema = savedFilterInputBaseSchema.refine(
+  ({ budgetMin, budgetMax }) => {
+    if (typeof budgetMin !== "number" || typeof budgetMax !== "number") {
+      return true;
+    }
+
+    return budgetMin <= budgetMax;
+  },
+  {
+    message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
+    path: ["budgetMax"],
+  },
+);
+
+const savedFilterUpdateInputSchema = savedFilterInputBaseSchema
+  .extend({
+    id: z.number().int().positive(),
+  })
+  .refine(
+    ({ budgetMin, budgetMax }) => {
+      if (typeof budgetMin !== "number" || typeof budgetMax !== "number") {
+        return true;
+      }
+
+      return budgetMin <= budgetMax;
+    },
+    {
+      message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
+      path: ["budgetMax"],
+    },
+  );
+
+function normalizeSavedFilterInput(
+  input: z.infer<typeof savedFilterInputBaseSchema>,
+) {
+  return normalizeSearchSelections({
+    ...input,
+    name: input.name.trim(),
+    keyword: input.keyword.trim(),
+  });
+}
+
+function mapSavedFilterRow(row: typeof savedFilters.$inferSelect) {
+  return normalizeSearchSelections({
+    ...row,
+    name: row.name.trim(),
+    keyword: row.keyword.trim(),
+    provinces: row.provinces,
+    categories: row.categories,
+  });
+}
+
 export const searchRouter = createTRPCRouter({
   queryPackages: publicProcedure
     .input(searchInputSchema)
     .query(async ({ input }) => {
+      const normalizedInput = normalizeSearchSelections({
+        ...input,
+        sortBy: "publishedAt" as const,
+        sortOrder: "desc" as const,
+      });
+
       try {
-        return await searchBidWinnerLive(input);
+        return await searchBidWinnerLive(normalizedInput);
       } catch (error) {
         console.error("BidWinner live search failed", {
-          input,
+          input: normalizedInput,
           error,
         });
 
@@ -60,8 +134,8 @@ export const searchRouter = createTRPCRouter({
           items: [],
           total: 0,
           visibleCount: 0,
-          offset: input.offset,
-          limit: input.limit,
+          offset: normalizedInput.offset,
+          limit: normalizedInput.limit,
           source: "bidwinner_live" as const,
           fetchedAt: new Date().toISOString(),
           warning:
@@ -179,49 +253,24 @@ export const searchRouter = createTRPCRouter({
     }),
 
   saveFilter: publicProcedure
-    .input(
-      z
-        .object({
-          name: z.string().min(1),
-          keyword: z.string().default(""),
-          provinces: z.array(z.string()).default([]),
-          categories: z.array(z.string()).default([]),
-          budgetMin: z.number().optional(),
-          budgetMax: z.number().optional(),
-          minMatchScore: z.number().min(0).max(100).default(0),
-          notificationFrequency: z.enum(["daily", "weekly"]).default("daily"),
-        })
-        .refine(
-          ({ budgetMin, budgetMax }) => {
-            if (
-              typeof budgetMin !== "number" ||
-              typeof budgetMax !== "number"
-            ) {
-              return true;
-            }
-
-            return budgetMin <= budgetMax;
-          },
-          {
-            message:
-              "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
-            path: ["budgetMax"],
-          },
-        ),
-    )
+    .input(savedFilterInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const normalizedInput = normalizeSavedFilterInput(input);
+      const now = new Date().toISOString();
+
       try {
         const [newFilter] = await ctx.db
           .insert(savedFilters)
           .values({
-            name: input.name,
-            keyword: input.keyword,
-            provinces: input.provinces,
-            categories: input.categories,
-            budgetMin: input.budgetMin,
-            budgetMax: input.budgetMax,
-            minMatchScore: input.minMatchScore,
-            notificationFrequency: input.notificationFrequency,
+            name: normalizedInput.name,
+            keyword: normalizedInput.keyword,
+            provinces: normalizedInput.provinces,
+            categories: normalizedInput.categories,
+            budgetMin: normalizedInput.budgetMin,
+            budgetMax: normalizedInput.budgetMax,
+            minMatchScore: normalizedInput.minMatchScore,
+            notificationFrequency: normalizedInput.notificationFrequency,
+            updatedAt: now,
           })
           .returning();
 
@@ -232,8 +281,12 @@ export const searchRouter = createTRPCRouter({
           });
         }
 
-        return newFilter;
+        return mapSavedFilterRow(newFilter);
       } catch (error) {
+        if (isSavedFilterSchemaDriftError(error)) {
+          throwSavedFilterSchemaDriftError(error);
+        }
+
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
@@ -243,12 +296,88 @@ export const searchRouter = createTRPCRouter({
       }
     }),
 
+  getSavedFilter: publicProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        const [savedFilter] = await ctx.db
+          .select()
+          .from(savedFilters)
+          .where(eq(savedFilters.id, input.id))
+          .limit(1);
+
+        if (!savedFilter) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Smart View không tồn tại.",
+          });
+        }
+
+        return mapSavedFilterRow(savedFilter);
+      } catch (error) {
+        if (isSavedFilterSchemaDriftError(error)) {
+          throwSavedFilterSchemaDriftError(error);
+        }
+
+        throw error;
+      }
+    }),
+
   listSavedFilters: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db
-      .select()
-      .from(savedFilters)
-      .orderBy(desc(savedFilters.createdAt));
+    try {
+      const rows = await ctx.db
+        .select()
+        .from(savedFilters)
+        .orderBy(desc(savedFilters.updatedAt), desc(savedFilters.createdAt));
+
+      return rows.map((row) => mapSavedFilterRow(row));
+    } catch (error) {
+      if (isSavedFilterSchemaDriftError(error)) {
+        throwSavedFilterSchemaDriftError(error);
+      }
+
+      throw error;
+    }
   }),
+
+  updateSavedFilter: publicProcedure
+    .input(savedFilterUpdateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const normalizedInput = normalizeSavedFilterInput(input);
+
+      try {
+        const [updatedFilter] = await ctx.db
+          .update(savedFilters)
+          .set({
+            name: normalizedInput.name,
+            keyword: normalizedInput.keyword,
+            provinces: normalizedInput.provinces,
+            categories: normalizedInput.categories,
+            budgetMin: normalizedInput.budgetMin,
+            budgetMax: normalizedInput.budgetMax,
+            minMatchScore: normalizedInput.minMatchScore,
+            notificationFrequency: normalizedInput.notificationFrequency,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(savedFilters.id, input.id))
+          .returning();
+
+        if (!updatedFilter) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Smart View không tồn tại.",
+          });
+        }
+
+        return mapSavedFilterRow(updatedFilter);
+      } catch (error) {
+        if (isSavedFilterSchemaDriftError(error)) {
+          throwSavedFilterSchemaDriftError(error);
+        }
+
+        throw error;
+      }
+    }),
 
   deleteSavedFilter: publicProcedure
     .input(z.object({ id: z.number().int().positive() }))

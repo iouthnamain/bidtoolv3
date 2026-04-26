@@ -2,22 +2,111 @@ import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
 import { api } from "~/trpc/server";
 
+export const dynamic = "force-dynamic";
+
+const emptySummary = {
+  totalPackages: 0,
+  unreadAlerts: 0,
+  activeWorkflows: 0,
+  workflowSuccessRate: 0,
+};
+
+const emptyWorkflowHealth = {
+  total: 0,
+  active: 0,
+  inactive: 0,
+  neverRan: 0,
+  attention: 0,
+  healthy: 0,
+  running: 0,
+  successRate: 0,
+};
+
+const emptyTopSignals = {
+  inviters: [] as Array<{
+    name: string;
+    packageCount: number;
+    totalBudget: number;
+  }>,
+  categories: [] as Array<{
+    name: string;
+    packageCount: number;
+    totalBudget: number;
+  }>,
+};
+
+const describeError = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 export default async function InsightsPage() {
-  const [summary, trend, workflowHealth, topSignals] = await Promise.all([
-    api.insight.getDashboardSummary(),
-    api.insight.getMarketTrend({ days: 7 }),
-    api.insight.getWorkflowHealth(),
-    api.insight.getTopTenderSignals({ limit: 5 }),
-  ]);
+  const [summaryResult, trendResult, workflowHealthResult, topSignalsResult] =
+    await Promise.allSettled([
+      api.insight.getDashboardSummary(),
+      api.insight.getMarketTrend({ days: 7 }),
+      api.insight.getWorkflowHealth(),
+      api.insight.getTopTenderSignals({ limit: 5 }),
+    ]);
+
+  const isDegraded =
+    summaryResult.status === "rejected" ||
+    trendResult.status === "rejected" ||
+    workflowHealthResult.status === "rejected" ||
+    topSignalsResult.status === "rejected";
+
+  if (summaryResult.status === "rejected") {
+    console.warn(
+      `Failed to load insights summary: ${describeError(summaryResult.reason)}`,
+    );
+  }
+
+  if (trendResult.status === "rejected") {
+    console.warn(
+      `Failed to load market trend: ${describeError(trendResult.reason)}`,
+    );
+  }
+
+  if (workflowHealthResult.status === "rejected") {
+    console.warn(
+      `Failed to load workflow health: ${describeError(workflowHealthResult.reason)}`,
+    );
+  }
+
+  if (topSignalsResult.status === "rejected") {
+    console.warn(
+      `Failed to load top tender signals: ${describeError(topSignalsResult.reason)}`,
+    );
+  }
+
+  const summary =
+    summaryResult.status === "fulfilled" ? summaryResult.value : emptySummary;
+  const trend = trendResult.status === "fulfilled" ? trendResult.value : [];
+  const workflowHealth =
+    workflowHealthResult.status === "fulfilled"
+      ? workflowHealthResult.value
+      : emptyWorkflowHealth;
+  const topSignals =
+    topSignalsResult.status === "fulfilled"
+      ? topSignalsResult.value
+      : emptyTopSignals;
+
   const maxPackages = Math.max(1, ...trend.map((row) => row.newPackages));
+  const latestTrend = trend[trend.length - 1];
+  const previousTrend = trend[trend.length - 2];
   const latestVsPrev =
-    (trend[0]?.newPackages ?? 0) - (trend[1]?.newPackages ?? 0);
+    (latestTrend?.newPackages ?? 0) - (previousTrend?.newPackages ?? 0);
 
   return (
     <DashboardShell
       title="Insights & Xu hướng"
       description="Tổng quan thị trường và chỉ số vận hành"
     >
+      {isDegraded ? (
+        <section className="panel mb-3 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Một phần dữ liệu insights chưa tải được. Trang đang hiển thị phần dữ
+          liệu còn khả dụng để tránh trắng trang.
+        </section>
+      ) : null}
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Tổng gói thầu"
@@ -42,7 +131,11 @@ export default async function InsightsPage() {
             const prevRow = idx > 0 ? trend[idx - 1] : null;
             const change = prevRow ? row.newPackages - prevRow.newPackages : 0;
             const pctChange = prevRow
-              ? Math.round((change / prevRow.newPackages) * 100)
+              ? prevRow.newPackages === 0
+                ? row.newPackages > 0
+                  ? 100
+                  : 0
+                : Math.round((change / prevRow.newPackages) * 100)
               : 0;
             return (
               <li

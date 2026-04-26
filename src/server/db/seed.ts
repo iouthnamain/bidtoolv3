@@ -64,6 +64,7 @@ async function seed() {
       budgetMax: 3_000_000_000,
       notificationFrequency: "daily",
       createdAt: "2026-04-01T08:00:00.000Z",
+      updatedAt: "2026-04-01T08:00:00.000Z",
     })
     .onConflictDoNothing();
 

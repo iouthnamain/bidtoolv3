@@ -23,8 +23,13 @@ import {
   type SortBy,
   type SortOrder,
 } from "~/constants/search-options";
+import {
+  normalizeCategoryFilterValues,
+  normalizeProvinceFilterValues,
+  normalizeSearchSelections,
+} from "~/lib/search-filter-utils";
 import { Button, EmptyState, FilterField } from "~/app/_components/ui";
-import { api } from "~/trpc/react";
+import { type RouterOutputs, api } from "~/trpc/react";
 
 type FilterState = {
   keyword: string;
@@ -34,6 +39,8 @@ type FilterState = {
   budgetMax: string;
   minMatchScore: number;
 };
+
+type SavedFilterRecord = RouterOutputs["search"]["getSavedFilter"];
 
 type AppliedFilterChipId =
   | "keyword"
@@ -47,6 +54,26 @@ type AppliedFilterChip = {
   label: string;
 };
 
+const LEGACY_SORT_FIELDS: SortBy[] = [
+  "budget",
+  "matchScore",
+  "title",
+  "inviter",
+];
+
+const LOCAL_REFINEMENT_LABELS: Record<AppliedFilterChipId, string> = {
+  keyword: "từ khóa",
+  provinces: "tỉnh/thành",
+  categories: "lĩnh vực",
+  budget: "ngân sách",
+  minMatchScore: "điểm match",
+};
+
+const smartViewFrequencyLabels = {
+  daily: "Hằng ngày",
+  weekly: "Hằng tuần",
+} as const;
+
 function parsePositiveInt(value: string | null, fallback: number): number {
   if (!value) {
     return fallback;
@@ -55,6 +82,19 @@ function parsePositiveInt(value: string | null, fallback: number): number {
   if (!Number.isFinite(parsed) || parsed < 1) {
     return fallback;
   }
+  return parsed;
+}
+
+function parsePositiveId(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
   return parsed;
 }
 
@@ -81,6 +121,29 @@ function parseOptionalNumber(value: string): number | undefined {
     return undefined;
   }
   return parsed;
+}
+
+function buildFilterStateFromSavedFilter(
+  filter: Pick<
+    SavedFilterRecord,
+    | "keyword"
+    | "provinces"
+    | "categories"
+    | "budgetMin"
+    | "budgetMax"
+    | "minMatchScore"
+  >,
+): FilterState {
+  return normalizeSearchSelections({
+    keyword: filter.keyword,
+    provinces: filter.provinces,
+    categories: filter.categories,
+    budgetMin:
+      typeof filter.budgetMin === "number" ? String(filter.budgetMin) : "",
+    budgetMax:
+      typeof filter.budgetMax === "number" ? String(filter.budgetMax) : "",
+    minMatchScore: Math.max(0, Math.min(100, filter.minMatchScore)),
+  });
 }
 
 function parseCsvList(value: string): string[] {
@@ -149,16 +212,16 @@ function formatCurrency(value: number): string {
 }
 
 function formatDate(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = value instanceof Date ? value : parseBidWinnerDateTime(value);
+  if (!date) {
     return "-";
   }
   return date.toLocaleDateString("vi-VN");
 }
 
 function formatDateTime(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const date = value instanceof Date ? value : parseBidWinnerDateTime(value);
+  if (!date) {
     return "-";
   }
   return date.toLocaleString("vi-VN");
@@ -176,6 +239,39 @@ function parseBidWinnerDateTime(value?: string | null): Date | null {
   }
 
   return parsed;
+}
+
+function readFiltersFromSearchParams(
+  searchParams: ReadonlyURLSearchParams,
+): FilterState {
+  return normalizeSearchSelections({
+    keyword: searchParams.get("keyword") ?? "",
+    provinces: parseMultiValueParam(searchParams, "province"),
+    categories: parseMultiValueParam(searchParams, "category"),
+    budgetMin: searchParams.get("budgetMin") ?? "",
+    budgetMax: searchParams.get("budgetMax") ?? "",
+    minMatchScore: parseMinMatch(searchParams.get("minMatchScore")),
+  });
+}
+
+function usesLegacySort(value: string | null): boolean {
+  return Boolean(value && LEGACY_SORT_FIELDS.includes(value as SortBy));
+}
+
+function usesUnsupportedSourceSortParams(
+  searchParams: ReadonlyURLSearchParams,
+): boolean {
+  return (
+    usesLegacySort(searchParams.get("sortBy")) ||
+    searchParams.get("sortOrder") === "asc"
+  );
+}
+
+function hasExactFilterChanges(
+  current: FilterState,
+  next: FilterState,
+): boolean {
+  return !areSameStringLists(current.provinces, next.provinces);
 }
 
 type StatusBadge = {
@@ -404,14 +500,8 @@ export function SearchPageClient() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const initialFilters: FilterState = {
-    keyword: searchParams.get("keyword") ?? "",
-    provinces: parseMultiValueParam(searchParams, "province"),
-    categories: parseMultiValueParam(searchParams, "category"),
-    budgetMin: searchParams.get("budgetMin") ?? "",
-    budgetMax: searchParams.get("budgetMax") ?? "",
-    minMatchScore: parseMinMatch(searchParams.get("minMatchScore")),
-  };
+  const initialFilters = readFiltersFromSearchParams(searchParams);
+  const activeSavedFilterId = parsePositiveId(searchParams.get("savedFilterId"));
 
   const [keyword, setKeyword] = useState(initialFilters.keyword);
   const [provinces, setProvinces] = useState(initialFilters.provinces);
@@ -423,22 +513,11 @@ export function SearchPageClient() {
   );
   const [appliedFilters, setAppliedFilters] =
     useState<FilterState>(initialFilters);
-  const [sortBy, setSortBy] = useState<SortBy>("publishedAt");
-  const [sortDowngraded, setSortDowngraded] = useState<boolean>(() => {
-    const value = searchParams.get("sortBy");
-    return Boolean(
-      value &&
-        value !== "publishedAt" &&
-        (value === "budget" ||
-          value === "matchScore" ||
-          value === "title" ||
-          value === "inviter"),
-    );
-  });
-  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-    const value = searchParams.get("sortOrder");
-    return value === "asc" || value === "desc" ? value : "desc";
-  });
+  const sortBy: SortBy = "publishedAt";
+  const [sortDowngraded, setSortDowngraded] = useState<boolean>(() =>
+    usesUnsupportedSourceSortParams(searchParams),
+  );
+  const sortOrder: SortOrder = "desc";
   const [page, setPage] = useState(() =>
     parsePositiveInt(searchParams.get("page"), 1),
   );
@@ -446,6 +525,7 @@ export function SearchPageClient() {
     parsePositiveInt(searchParams.get("limit"), 20),
   );
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [smartViewSuccess, setSmartViewSuccess] = useState<string | null>(null);
   const [saveSelectedSuccess, setSaveSelectedSuccess] = useState<string | null>(
     null,
   );
@@ -458,6 +538,22 @@ export function SearchPageClient() {
   >("daily");
   const [selectedExternalIds, setSelectedExternalIds] = useState<Set<string>>(
     () => new Set<string>(),
+  );
+  const handleProvinceChange = useCallback((next: string[]) => {
+    setProvinces(normalizeProvinceFilterValues(next));
+  }, []);
+  const handleCategoryChange = useCallback((next: string[]) => {
+    setCategories(normalizeCategoryFilterValues(next));
+  }, []);
+  const hydratedSavedFilterKeyRef = useRef<string>("");
+  const isEditingSmartView = activeSavedFilterId !== null;
+  const savedFilterQuery = api.search.getSavedFilter.useQuery(
+    { id: activeSavedFilterId ?? 0 },
+    {
+      enabled: activeSavedFilterId !== null,
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
   );
 
   useEffect(() => {
@@ -482,7 +578,9 @@ export function SearchPageClient() {
       params.set("minMatchScore", String(appliedFilters.minMatchScore));
     }
 
-    params.set("sortOrder", sortOrder);
+    if (activeSavedFilterId !== null) {
+      params.set("savedFilterId", String(activeSavedFilterId));
+    }
     params.set("page", String(page));
     params.set("limit", String(limit));
 
@@ -490,7 +588,7 @@ export function SearchPageClient() {
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
     });
-  }, [appliedFilters, limit, page, pathname, router, sortOrder]);
+  }, [activeSavedFilterId, appliedFilters, limit, page, pathname, router]);
 
   // Sync state from URL when query params change externally (back/forward,
   // Smart View apply). The state→URL effect above handles the reverse direction.
@@ -500,14 +598,7 @@ export function SearchPageClient() {
     if (key === lastParamsKeyRef.current) return;
     lastParamsKeyRef.current = key;
 
-    const next: FilterState = {
-      keyword: searchParams.get("keyword") ?? "",
-      provinces: parseMultiValueParam(searchParams, "province"),
-      categories: parseMultiValueParam(searchParams, "category"),
-      budgetMin: searchParams.get("budgetMin") ?? "",
-      budgetMax: searchParams.get("budgetMax") ?? "",
-      minMatchScore: parseMinMatch(searchParams.get("minMatchScore")),
-    };
+    const next = readFiltersFromSearchParams(searchParams);
 
     setKeyword(next.keyword);
     setProvinces(next.provinces);
@@ -517,20 +608,7 @@ export function SearchPageClient() {
     setMinMatchScore(next.minMatchScore);
     setAppliedFilters(next);
 
-    const sortOrderRaw = searchParams.get("sortOrder");
-    if (sortOrderRaw === "asc" || sortOrderRaw === "desc") {
-      setSortOrder(sortOrderRaw);
-    }
-
-    const sortByRaw = searchParams.get("sortBy");
-    if (
-      sortByRaw &&
-      sortByRaw !== "publishedAt" &&
-      (sortByRaw === "budget" ||
-        sortByRaw === "matchScore" ||
-        sortByRaw === "title" ||
-        sortByRaw === "inviter")
-    ) {
+    if (usesUnsupportedSourceSortParams(searchParams)) {
       setSortDowngraded(true);
     }
 
@@ -590,6 +668,9 @@ export function SearchPageClient() {
     () => mergeSelectOptions(KEYWORD_OPTIONS, liveOptions.keywords),
     [liveOptions.keywords],
   );
+  const localRefinementSummary = packagesResult.localRefinement.fields
+    .map((field) => LOCAL_REFINEMENT_LABELS[field])
+    .join(", ");
   const keywordTerms = useMemo(
     () =>
       keyword
@@ -618,12 +699,32 @@ export function SearchPageClient() {
   }, [page, totalPages]);
 
   const saveFilter = api.search.saveFilter.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (savedFilter) => {
       setSaveError(null);
+      setSmartViewSuccess(`Đã lưu Smart View "${savedFilter.name}".`);
+      setSmartViewName("");
       await utils.search.listSavedFilters.invalidate();
     },
     onError: (error) => {
+      setSmartViewSuccess(null);
       setSaveError(error.message || "Không thể lưu bộ lọc.");
+    },
+  });
+  const updateSavedFilter = api.search.updateSavedFilter.useMutation({
+    onSuccess: async (savedFilter) => {
+      setSaveError(null);
+      setSmartViewSuccess(`Đã cập nhật Smart View "${savedFilter.name}".`);
+      setSmartViewName(savedFilter.name);
+      setSmartViewFrequency(savedFilter.notificationFrequency);
+      hydratedSavedFilterKeyRef.current = `${savedFilter.id}:${savedFilter.updatedAt}`;
+      await Promise.all([
+        utils.search.listSavedFilters.invalidate(),
+        utils.search.getSavedFilter.invalidate({ id: savedFilter.id }),
+      ]);
+    },
+    onError: (error) => {
+      setSmartViewSuccess(null);
+      setSaveError(error.message || "Không thể cập nhật Smart View.");
     },
   });
 
@@ -670,7 +771,7 @@ export function SearchPageClient() {
       return;
     }
 
-    setAppliedFilters({
+    const nextFilters = normalizeSearchSelections({
       keyword,
       provinces,
       categories,
@@ -678,22 +779,139 @@ export function SearchPageClient() {
       budgetMax,
       minMatchScore,
     });
-    setPage(1);
-    setSaveSelectedSuccess(null);
-    setSaveSelectedError(null);
+
+    setAppliedAndDraftFilters(nextFilters);
   };
 
-  const setAppliedAndDraftFilters = (next: FilterState) => {
-    setKeyword(next.keyword);
-    setProvinces(next.provinces);
-    setCategories(next.categories);
-    setBudgetMin(next.budgetMin);
-    setBudgetMax(next.budgetMax);
-    setMinMatchScore(next.minMatchScore);
-    setAppliedFilters(next);
+  const setAppliedAndDraftFilters = useCallback(
+    (next: FilterState) => {
+      const normalizedNext = normalizeSearchSelections(next);
+
+      setKeyword(normalizedNext.keyword);
+      setProvinces(normalizedNext.provinces);
+      setCategories(normalizedNext.categories);
+      setBudgetMin(normalizedNext.budgetMin);
+      setBudgetMax(normalizedNext.budgetMax);
+      setMinMatchScore(normalizedNext.minMatchScore);
+      setAppliedFilters(normalizedNext);
+      if (hasExactFilterChanges(appliedFilters, normalizedNext)) {
+        setPage(1);
+      }
+      setSaveError(null);
+      setSmartViewSuccess(null);
+      setSaveSelectedSuccess(null);
+      setSaveSelectedError(null);
+    },
+    [appliedFilters],
+  );
+
+  useEffect(() => {
+    if (activeSavedFilterId === null) {
+      hydratedSavedFilterKeyRef.current = "";
+      setSmartViewName("");
+      setSmartViewFrequency("daily");
+      setSaveError(null);
+      setSmartViewSuccess(null);
+      return;
+    }
+
+    hydratedSavedFilterKeyRef.current = "";
+    setSmartViewName("");
+    setSmartViewFrequency("daily");
+    setSaveError(null);
+    setSmartViewSuccess(null);
+  }, [activeSavedFilterId]);
+
+  useEffect(() => {
+    if (activeSavedFilterId === null || !savedFilterQuery.data) {
+      return;
+    }
+
+    const hydratedKey = `${savedFilterQuery.data.id}:${savedFilterQuery.data.updatedAt}`;
+    if (hydratedSavedFilterKeyRef.current === hydratedKey) {
+      return;
+    }
+
+    hydratedSavedFilterKeyRef.current = hydratedKey;
+    setSmartViewName(savedFilterQuery.data.name);
+    setSmartViewFrequency(savedFilterQuery.data.notificationFrequency);
+    setAppliedAndDraftFilters(
+      buildFilterStateFromSavedFilter(savedFilterQuery.data),
+    );
     setPage(1);
-    setSaveSelectedSuccess(null);
-    setSaveSelectedError(null);
+  }, [activeSavedFilterId, savedFilterQuery.data, setAppliedAndDraftFilters]);
+
+  const appliedSmartViewPayload = useMemo(
+    () => ({
+      keyword: appliedFilters.keyword,
+      provinces: appliedFilters.provinces,
+      categories: appliedFilters.categories,
+      budgetMin: parsedAppliedBudgetMin,
+      budgetMax: parsedAppliedBudgetMax,
+      minMatchScore: appliedFilters.minMatchScore,
+    }),
+    [
+      appliedFilters.categories,
+      appliedFilters.keyword,
+      appliedFilters.minMatchScore,
+      appliedFilters.provinces,
+      parsedAppliedBudgetMax,
+      parsedAppliedBudgetMin,
+    ],
+  );
+  const isLoadingSmartView = isEditingSmartView && savedFilterQuery.isPending;
+  const smartViewLoadError = isEditingSmartView
+    ? savedFilterQuery.error?.message ?? null
+    : null;
+  const isSavingSmartView =
+    saveFilter.isPending || updateSavedFilter.isPending;
+  const canPersistSmartView =
+    !budgetRangeError &&
+    !budgetNegativeError &&
+    !hasPendingFilterChanges &&
+    !isLoadingSmartView &&
+    !isSavingSmartView &&
+    (!isEditingSmartView || Boolean(savedFilterQuery.data));
+
+  const cancelSmartViewEditing = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("savedFilterId");
+    const query = params.toString();
+
+    setSaveError(null);
+    setSmartViewSuccess(null);
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
+
+  const persistSmartView = () => {
+    if (!canPersistSmartView) {
+      return;
+    }
+
+    setSaveError(null);
+    setSmartViewSuccess(null);
+
+    const fallbackName =
+      isEditingSmartView && savedFilterQuery.data
+        ? savedFilterQuery.data.name
+        : `Smart View ${new Date().toLocaleTimeString("vi-VN")}`;
+    const payload = {
+      name: smartViewName.trim() || fallbackName,
+      ...appliedSmartViewPayload,
+      notificationFrequency: smartViewFrequency,
+    };
+
+    if (isEditingSmartView && activeSavedFilterId !== null) {
+      updateSavedFilter.mutate({
+        id: activeSavedFilterId,
+        ...payload,
+      });
+      return;
+    }
+
+    saveFilter.mutate(payload);
   };
 
   const appliedFilterChips = useMemo<AppliedFilterChip[]>(() => {
@@ -787,16 +1005,6 @@ export function SearchPageClient() {
     applyDraftFilters();
   };
 
-  const handleSortByHeader = useCallback(
-    (field: SortBy) => {
-      // Only publishedAt is a source-backed sort; other column headers no-op.
-      if (field !== "publishedAt") return;
-      setPage(1);
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    },
-    [],
-  );
-
   const allCurrentPageSelected =
     packages.length > 0 &&
     packages.every((item) => selectedExternalIds.has(item.externalId));
@@ -862,15 +1070,7 @@ export function SearchPageClient() {
       },
       {
         accessorKey: "title",
-        header: () => (
-          <button
-            type="button"
-            onClick={() => handleSortByHeader("title")}
-            className="font-semibold"
-          >
-            Tên {sortBy === "title" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-          </button>
-        ),
+        header: () => <span className="font-semibold">Tên</span>,
         cell: ({ row }) => (
           <p className="max-w-[320px] min-w-[240px] leading-tight font-semibold [overflow-wrap:anywhere] text-slate-900">
             {row.original.title}
@@ -879,16 +1079,7 @@ export function SearchPageClient() {
       },
       {
         accessorKey: "inviter",
-        header: () => (
-          <button
-            type="button"
-            onClick={() => handleSortByHeader("inviter")}
-            className="font-semibold"
-          >
-            Bên mời{" "}
-            {sortBy === "inviter" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-          </button>
-        ),
+        header: () => <span className="font-semibold">Bên mời</span>,
         cell: ({ row }) => (
           <p className="max-w-[240px] text-xs [overflow-wrap:anywhere]">
             {row.original.inviter}
@@ -916,14 +1107,9 @@ export function SearchPageClient() {
       {
         accessorKey: "budget",
         header: () => (
-          <button
-            type="button"
-            onClick={() => handleSortByHeader("budget")}
-            className="w-full text-right font-semibold"
-          >
-            Ngân sách{" "}
-            {sortBy === "budget" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-          </button>
+          <span className="block w-full text-right font-semibold">
+            Ngân sách
+          </span>
         ),
         cell: ({ row }) => (
           <p className="text-right font-mono font-semibold whitespace-nowrap">
@@ -933,16 +1119,7 @@ export function SearchPageClient() {
       },
       {
         accessorKey: "publishedAt",
-        header: () => (
-          <button
-            type="button"
-            onClick={() => handleSortByHeader("publishedAt")}
-            className="font-semibold"
-          >
-            Ngày đăng{" "}
-            {sortBy === "publishedAt" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-          </button>
-        ),
+        header: () => <span className="font-semibold">Ngày đăng ↓</span>,
         cell: ({ row }) => (
           <span className="text-xs whitespace-nowrap">
             {formatDate(row.original.publishedAt)}
@@ -952,14 +1129,7 @@ export function SearchPageClient() {
       {
         accessorKey: "matchScore",
         header: () => (
-          <button
-            type="button"
-            onClick={() => handleSortByHeader("matchScore")}
-            className="w-full text-right font-semibold"
-          >
-            Match{" "}
-            {sortBy === "matchScore" ? (sortOrder === "asc" ? "↑" : "↓") : ""}
-          </button>
+          <span className="block w-full text-right font-semibold">Match</span>
         ),
         cell: ({ row }) => (
           <p
@@ -1040,11 +1210,8 @@ export function SearchPageClient() {
     [
       addWatchlist,
       allCurrentPageSelected,
-      handleSortByHeader,
       packages,
       selectedExternalIds,
-      sortBy,
-      sortOrder,
     ],
   );
 
@@ -1060,11 +1227,9 @@ export function SearchPageClient() {
         <h2 className="text-lg font-semibold">Kho dữ liệu gói thầu realtime</h2>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
           <p className="text-sm whitespace-nowrap text-slate-600">
-            Tổng nguồn: {total.toLocaleString("vi-VN")} • Hiển thị{" "}
-            {packages.length}
-            {packagesResult.localRefinement?.active
-              ? ` (sau tinh lọc: ${packagesResult.visibleCount})`
-              : ""}
+            Tổng nguồn: {total.toLocaleString("vi-VN")} • Hiển thị trang này:{" "}
+            {packagesResult.visibleCount}
+            {packagesResult.localRefinement?.active ? `/${limit}` : ""}
           </p>
           <Link
             href="/saved-items"
@@ -1087,17 +1252,16 @@ export function SearchPageClient() {
 
       {packagesResult.localRefinement?.active ? (
         <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-          Bạn đang tinh lọc trong trang nguồn hiện tại (
-          {packagesResult.localRefinement.fields.join(", ")}). Có thể còn kết
-          quả khớp ở các trang nguồn khác — chỉ tỉnh/thành và phân trang được
-          tìm trực tiếp trên BidWinner.
+          Bạn đang tinh lọc trong trang nguồn hiện tại ({localRefinementSummary}
+          ). Có thể còn kết quả khớp ở các trang nguồn khác — chỉ tỉnh/thành và
+          phân trang được tìm trực tiếp trên BidWinner.
         </div>
       ) : null}
 
       {sortDowngraded ? (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Tham số sắp xếp cũ đã được hạ xuống về theo ngày đăng. BidWinner chỉ
-          hỗ trợ sắp xếp theo ngày đăng.
+          Tham số sắp xếp cũ hoặc `sortOrder=asc` đã được hạ về chế độ nguồn hỗ
+          trợ: ngày đăng mới nhất trước.
         </div>
       ) : null}
 
@@ -1151,7 +1315,7 @@ export function SearchPageClient() {
         <FilterField label="Từ khóa" htmlFor="filter-keyword">
           <input
             id="filter-keyword"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             value={keyword}
             placeholder="Từ khóa (có thể nhập nhiều cụm, ngăn cách bằng dấu phẩy)"
             onChange={(e) => {
@@ -1166,8 +1330,8 @@ export function SearchPageClient() {
             ariaLabel="Tỉnh/Thành"
             options={provinceOptions}
             selected={provinces}
-            onChange={setProvinces}
-            emptyLabel="Chọn tỉnh/thành"
+            onChange={handleProvinceChange}
+            emptyLabel="Tất cả tỉnh/thành"
           />
         </FilterField>
         <FilterField label="Lĩnh vực" htmlFor="filter-categories">
@@ -1176,14 +1340,14 @@ export function SearchPageClient() {
             ariaLabel="Lĩnh vực"
             options={categoryOptions}
             selected={categories}
-            onChange={setCategories}
-            emptyLabel="Chọn lĩnh vực"
+            onChange={handleCategoryChange}
+            emptyLabel="Tất cả lĩnh vực"
           />
         </FilterField>
         <FilterField label="Điểm match tối thiểu" htmlFor="filter-min-match">
           <input
             id="filter-min-match"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             placeholder="0–100"
             type="number"
             min={0}
@@ -1202,8 +1366,8 @@ export function SearchPageClient() {
       </div>
 
       <p className="mt-2 text-xs text-slate-500">
-        Bộ lọc nhiều lựa chọn hỗ trợ tìm nhanh, chọn tất cả và bỏ chọn ngay
-        trong danh sách.
+        Chọn tất cả ở Tỉnh/Thành hoặc Lĩnh vực sẽ được chuẩn hóa về không lọc
+        cho trường đó để giữ kết quả nguồn chính xác.
       </p>
 
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1256,7 +1420,7 @@ export function SearchPageClient() {
         <FilterField label="Ngân sách từ" htmlFor="filter-budget-min">
           <input
             id="filter-budget-min"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             placeholder="VNĐ"
             type="number"
             min={0}
@@ -1279,7 +1443,7 @@ export function SearchPageClient() {
         <FilterField label="Ngân sách đến" htmlFor="filter-budget-max">
           <input
             id="filter-budget-max"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             placeholder="VNĐ"
             type="number"
             min={0}
@@ -1305,21 +1469,17 @@ export function SearchPageClient() {
         >
           <select
             id="filter-sort-order"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             value={sortOrder}
-            onChange={(e) => {
-              setSortOrder(e.target.value as SortOrder);
-              setPage(1);
-            }}
+            disabled
           >
-            <option value="desc">Giảm dần</option>
-            <option value="asc">Tăng dần</option>
+            <option value="desc">Mới nhất trước</option>
           </select>
         </FilterField>
         <FilterField label="Số dòng/trang" htmlFor="filter-page-size">
           <select
             id="filter-page-size"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             value={limit}
             onChange={(e) => {
               setLimit(parsePositiveInt(e.target.value, 20));
@@ -1347,21 +1507,52 @@ export function SearchPageClient() {
         </p>
       ) : null}
 
+      {isEditingSmartView ? (
+        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-sky-900">
+                {isLoadingSmartView
+                  ? "Đang tải Smart View để chỉnh sửa"
+                  : smartViewLoadError
+                    ? "Không mở được Smart View"
+                    : "Đang chỉnh sửa Smart View"}
+              </p>
+              <p className="mt-1 text-xs text-sky-800">
+                {isLoadingSmartView
+                  ? "Đang nạp điều kiện đã lưu, tên và tần suất thông báo."
+                  : smartViewLoadError ??
+                    "Cập nhật sẽ chỉ thay đổi Smart View này. Workflow đã tạo trước đó vẫn giữ bộ lọc snapshot hiện tại."}
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={cancelSmartViewEditing}>
+              Hủy chỉnh sửa
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
         <FilterField label="Tên Smart View" htmlFor="smart-view-name">
           <input
             id="smart-view-name"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
-            placeholder="Để trống để tự sinh tên theo giờ hiện tại"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            placeholder={
+              isEditingSmartView
+                ? "Để trống để giữ nguyên tên Smart View hiện tại"
+                : "Để trống để tự sinh tên theo giờ hiện tại"
+            }
             value={smartViewName}
+            disabled={isLoadingSmartView}
             onChange={(e) => setSmartViewName(e.target.value)}
           />
         </FilterField>
         <FilterField label="Tần suất thông báo" htmlFor="smart-view-frequency">
           <select
             id="smart-view-frequency"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             value={smartViewFrequency}
+            disabled={isLoadingSmartView}
             onChange={(e) =>
               setSmartViewFrequency(e.target.value as "daily" | "weekly")
             }
@@ -1371,6 +1562,20 @@ export function SearchPageClient() {
           </select>
         </FilterField>
       </div>
+
+      {hasPendingFilterChanges ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Hãy bấm &quot;Áp dụng bộ lọc&quot; trước khi lưu Smart View để điều kiện
+          lưu ra khớp đúng với kết quả đang hiển thị.
+        </p>
+      ) : null}
+
+      {!hasPendingFilterChanges && isEditingSmartView && !smartViewLoadError ? (
+        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          Smart View đang chỉnh sửa sẽ lưu bộ lọc đã áp dụng và tần suất{" "}
+          {smartViewFrequencyLabels[smartViewFrequency].toLowerCase()}.
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
         <Button
@@ -1386,25 +1591,17 @@ export function SearchPageClient() {
         <Button
           variant="secondary"
           className="w-full sm:w-auto"
-          isLoading={saveFilter.isPending}
-          disabled={budgetRangeError || budgetNegativeError}
-          onClick={() => {
-            setSaveError(null);
-            saveFilter.mutate({
-              name:
-                smartViewName.trim() ||
-                `Smart View ${new Date().toLocaleTimeString("vi-VN")}`,
-              keyword,
-              provinces,
-              categories,
-              budgetMin: parsedBudgetMin,
-              budgetMax: parsedBudgetMax,
-              minMatchScore,
-              notificationFrequency: smartViewFrequency,
-            });
-          }}
+          isLoading={isSavingSmartView}
+          disabled={!canPersistSmartView}
+          onClick={persistSmartView}
         >
-          {saveFilter.isPending ? "Đang lưu..." : "Lưu bộ lọc"}
+          {isEditingSmartView
+            ? isSavingSmartView
+              ? "Đang cập nhật..."
+              : "Cập nhật Smart View"
+            : isSavingSmartView
+              ? "Đang lưu..."
+              : "Lưu bộ lọc"}
         </Button>
         <Button
           variant="primary"
@@ -1413,7 +1610,7 @@ export function SearchPageClient() {
           disabled={selectedItems.length === 0}
           onClick={() => {
             setSaveSelectedSuccess(null);
-    setSaveSelectedError(null);
+            setSaveSelectedError(null);
             saveSelectedPackages.mutate({
               items: selectedItems.map((item) => ({
                 externalId: item.externalId,
@@ -1446,13 +1643,11 @@ export function SearchPageClient() {
               budgetMax: "",
               minMatchScore: 0,
             });
-            setSortBy("publishedAt");
-            setSortOrder("desc");
             setLimit(20);
             setPage(1);
             setSelectedExternalIds(new Set<string>());
             setSaveSelectedSuccess(null);
-    setSaveSelectedError(null);
+            setSaveSelectedError(null);
           }}
         >
           Đặt lại bộ lọc
@@ -1462,6 +1657,12 @@ export function SearchPageClient() {
       {saveError ? (
         <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {saveError}
+        </p>
+      ) : null}
+
+      {smartViewSuccess ? (
+        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {smartViewSuccess}
         </p>
       ) : null}
 
@@ -1484,7 +1685,10 @@ export function SearchPageClient() {
           description="Hãy nới bộ lọc, đổi từ khóa hoặc thử tải lại dữ liệu realtime từ BidWinner."
           cta={
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="secondary" onClick={() => packagesQuery.refetch()}>
+              <Button
+                variant="secondary"
+                onClick={() => packagesQuery.refetch()}
+              >
                 Thử lại
               </Button>
               <Button
@@ -1496,10 +1700,8 @@ export function SearchPageClient() {
                     categories: [],
                     budgetMin: "",
                     budgetMax: "",
-                    minMatchScore: 0,
-                  });
-                  setSortBy("publishedAt");
-                  setSortOrder("desc");
+                  minMatchScore: 0,
+                });
                   setLimit(20);
                   setPage(1);
                 }}
@@ -1578,7 +1780,9 @@ export function SearchPageClient() {
                 variant="secondary"
                 size="sm"
                 disabled={page >= totalPages}
-                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                onClick={() =>
+                  setPage((prev) => Math.min(totalPages, prev + 1))
+                }
               >
                 Sau
               </Button>

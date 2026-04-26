@@ -1,4 +1,4 @@
-import { and, count, eq, gte, lte } from "drizzle-orm";
+import { count, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -10,6 +10,24 @@ import {
 } from "~/server/db/schema";
 
 const dayLabel = (date: Date) => date.toISOString().slice(0, 10);
+
+function extractPublishedDayLabel(value: string): string | null {
+  const trimmed = value.trim();
+  const directMatch = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
+  if (directMatch?.[1]) {
+    return directMatch[1];
+  }
+
+  const normalized = trimmed.includes("T")
+    ? trimmed
+    : trimmed.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return dayLabel(parsed);
+}
 
 function summarizeWorkflowHealth(input: {
   workflows: Array<typeof workflows.$inferSelect>;
@@ -107,20 +125,21 @@ export const insightRouter = createTRPCRouter({
       const start = new Date(now);
       start.setDate(now.getDate() - (input.days - 1));
       const startDate = dayLabel(start);
+      const endDate = dayLabel(now);
 
       const packages = await ctx.db
         .select({ publishedAt: tenderPackages.publishedAt })
         .from(tenderPackages)
-        .where(
-          and(
-            gte(tenderPackages.publishedAt, startDate),
-            lte(tenderPackages.publishedAt, dayLabel(now)),
-          ),
-        );
+        .where(gte(tenderPackages.publishedAt, startDate));
 
       const byDay = new Map<string, number>();
       for (const row of packages) {
-        byDay.set(row.publishedAt, (byDay.get(row.publishedAt) ?? 0) + 1);
+        const label = extractPublishedDayLabel(row.publishedAt);
+        if (!label || label < startDate || label > endDate) {
+          continue;
+        }
+
+        byDay.set(label, (byDay.get(label) ?? 0) + 1);
       }
 
       return Array.from({ length: input.days }).map((_, index) => {
@@ -182,7 +201,11 @@ export const insightRouter = createTRPCRouter({
       }
 
       const sortRows = (
-        rows: Iterable<{ name: string; packageCount: number; totalBudget: number }>,
+        rows: Iterable<{
+          name: string;
+          packageCount: number;
+          totalBudget: number;
+        }>,
       ) =>
         Array.from(rows)
           .sort((a, b) => {

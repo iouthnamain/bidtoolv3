@@ -6,6 +6,10 @@ import {
   type SortOrder,
 } from "~/constants/search-options";
 import { env } from "~/env";
+import {
+  normalizeProvinceKey,
+  normalizeSearchSelections,
+} from "~/lib/search-filter-utils";
 
 type SearchOptions = {
   keyword?: string;
@@ -46,6 +50,20 @@ type BidWinnerProvinceEntry = {
   ten_tinh?: string;
   name?: string;
   ten?: string;
+};
+
+type ParsedBidWinnerPage = {
+  payload: BidWinnerPayload;
+  items: LivePackageItem[];
+  provinceCodeMap: Map<string, string>;
+};
+
+type ProvinceStream = {
+  code: string;
+  currentPage: number;
+  lastPage: number;
+  buffer: LivePackageItem[];
+  nextIndex: number;
 };
 
 export type LivePackageItem = {
@@ -144,11 +162,13 @@ function normalizeText(input: string): string {
 }
 
 function normalizeProvince(input: string): string {
-  return normalizeText(input)
-    .replace(/^thanh pho\s+/, "")
-    .replace(/^tinh\s+/, "")
-    .replace(/^tp\.?\s*/, "")
-    .trim();
+  return normalizeProvinceKey(input);
+}
+
+function parseBidWinnerTimestamp(value: string): number {
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const parsed = new Date(normalized).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -242,9 +262,7 @@ function parseBidSearchPayload(html: string): BidWinnerPayload {
   return parsed;
 }
 
-function parseProvincePayload(
-  html: string,
-): Map<string, string> {
+function parseProvincePayload(html: string): Map<string, string> {
   const map = new Map<string, string>();
   const match = PROVINCE_PAYLOAD_REGEX.exec(html);
   if (!match?.[1]) {
@@ -289,19 +307,45 @@ function rememberProvinceCodeMap(map: Map<string, string>) {
   cachedProvinceCodeMap = map;
 }
 
-function resolveProvinceCodes(
+function resolveProvinceSelection(
   selected: string[],
   map: Map<string, string>,
-): string[] {
-  const codes: string[] = [];
+): { codes: string[]; unresolved: string[] } {
+  const codes = new Set<string>();
+  const unresolved: string[] = [];
+
   for (const value of selected) {
     const key = normalizeProvince(value);
     const code = map.get(key) ?? cachedProvinceCodeMap?.get(key);
     if (code) {
-      codes.push(code);
+      codes.add(code);
+    } else {
+      unresolved.push(value);
     }
   }
-  return Array.from(new Set(codes));
+
+  return {
+    codes: Array.from(codes),
+    unresolved,
+  };
+}
+
+function buildBidWinnerSourceUrl(raw: BidWinnerRawItem): string {
+  if (raw.id) {
+    return new URL(
+      `/4.0/chi-tiet-goi-thau/${raw.id}`,
+      env.BIDWINNER_BASE_URL,
+    ).toString();
+  }
+
+  const soTbmt = String(raw.so_tbmt ?? "").trim();
+  if (soTbmt) {
+    const url = new URL("/4.0/search-tbmt/", env.BIDWINNER_BASE_URL);
+    url.searchParams.set("so_tbmt", soTbmt);
+    return url.toString();
+  }
+
+  return new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL).toString();
 }
 
 function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
@@ -316,12 +360,6 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
   const budget = Number(raw.dt_goi_thau_vnd ?? 0);
   const category = inferCategory(raw.ten_goi_thau);
   const matchScore = Number(raw.competitive_score ?? 65);
-  const soTbmt = String(raw.so_tbmt ?? "").trim();
-  const sourceUrl = raw.id
-    ? `https://bidwinner.info/4.0/chi-tiet-goi-thau/${raw.id}`
-    : soTbmt
-      ? `https://bidwinner.info/4.0/search-tbmt/?so_tbmt=${encodeURIComponent(soTbmt)}`
-      : "https://bidwinner.info/4.0/tim-kiem-goi-thau";
 
   return {
     id: raw.id,
@@ -336,7 +374,7 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
     matchScore: Number.isFinite(matchScore)
       ? Math.max(0, Math.min(100, matchScore))
       : 0,
-    sourceUrl,
+    sourceUrl: buildBidWinnerSourceUrl(raw),
   };
 }
 
@@ -397,8 +435,8 @@ function sortItems(
   return [...items].sort((a, b) => {
     if (sortBy === "publishedAt") {
       return (
-        (new Date(a.publishedAt).getTime() -
-          new Date(b.publishedAt).getTime()) *
+        (parseBidWinnerTimestamp(a.publishedAt) -
+          parseBidWinnerTimestamp(b.publishedAt)) *
         direction
       );
     }
@@ -419,21 +457,31 @@ function sortItems(
   });
 }
 
+function comparePackagesByPublishedAtDesc(
+  a: LivePackageItem,
+  b: LivePackageItem,
+) {
+  const timeDiff =
+    parseBidWinnerTimestamp(b.publishedAt) -
+    parseBidWinnerTimestamp(a.publishedAt);
+
+  if (timeDiff !== 0) {
+    return timeDiff;
+  }
+
+  const externalIdDiff = a.externalId.localeCompare(b.externalId, "vi");
+  if (externalIdDiff !== 0) {
+    return externalIdDiff;
+  }
+
+  return a.sourceUrl.localeCompare(b.sourceUrl, "vi");
+}
+
 function buildOptions(items: LivePackageItem[]) {
-  const dynamicProvinces = new Set(
-    items.map((item) => item.province).filter(Boolean),
-  );
-  const dynamicCategories = new Set(
-    items.map((item) => item.category).filter(Boolean),
-  );
   const dynamicKeywords = extractDynamicKeywords(items);
 
-  const provinces = Array.from(
-    new Set([...PROVINCE_OPTIONS, ...dynamicProvinces]),
-  ).sort((a, b) => a.localeCompare(b, "vi"));
-  const categories = Array.from(
-    new Set([...CATEGORY_OPTIONS, ...dynamicCategories]),
-  ).sort((a, b) => a.localeCompare(b, "vi"));
+  const provinces = [...PROVINCE_OPTIONS];
+  const categories = [...CATEGORY_OPTIONS];
   const keywords = Array.from(
     new Set([...KEYWORD_OPTIONS, ...dynamicKeywords]),
   ).sort((a, b) => a.localeCompare(b, "vi"));
@@ -477,12 +525,12 @@ function summarizeHtmlFailure(html: string): string {
 
 async function fetchBidWinnerPage(
   page: number,
-  provinceCodes: string[] = [],
+  provinceCode?: string,
 ): Promise<string> {
   const url = new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL);
   url.searchParams.set("page", String(page));
-  for (const code of provinceCodes) {
-    url.searchParams.append("matp", code);
+  if (provinceCode) {
+    url.searchParams.set("matp", provinceCode);
   }
 
   let lastError: unknown;
@@ -534,96 +582,259 @@ async function fetchBidWinnerPage(
   );
 }
 
+async function fetchParsedBidWinnerPage(
+  page: number,
+  provinceCode?: string,
+): Promise<ParsedBidWinnerPage> {
+  const html = await fetchBidWinnerPage(page, provinceCode);
+  const payload = parseBidSearchPayload(html);
+  const provinceCodeMap = parseProvincePayload(html);
+  const items = payload.data
+    .map((item) => toLivePackageItem(item))
+    .filter((item): item is LivePackageItem => item !== null)
+    .sort(comparePackagesByPublishedAtDesc);
+
+  if (provinceCodeMap.size > 0) {
+    rememberProvinceCodeMap(provinceCodeMap);
+  }
+
+  return {
+    payload,
+    items,
+    provinceCodeMap,
+  };
+}
+
+async function ensureProvinceStreamHasItem(
+  stream: ProvinceStream,
+  keywordItems: LivePackageItem[],
+) {
+  while (stream.nextIndex >= stream.buffer.length) {
+    if (stream.currentPage >= stream.lastPage) {
+      return false;
+    }
+
+    const nextPage = stream.currentPage + 1;
+    const parsedPage = await fetchParsedBidWinnerPage(nextPage, stream.code);
+
+    stream.currentPage =
+      typeof parsedPage.payload.current_page === "number"
+        ? parsedPage.payload.current_page
+        : nextPage;
+    stream.lastPage =
+      typeof parsedPage.payload.last_page === "number" &&
+      parsedPage.payload.last_page > 0
+        ? parsedPage.payload.last_page
+        : stream.currentPage;
+    stream.buffer = parsedPage.items;
+    stream.nextIndex = 0;
+
+    keywordItems.push(...parsedPage.items);
+
+    if (stream.buffer.length === 0 && stream.currentPage >= stream.lastPage) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export async function searchBidWinnerLive(
   input: SearchOptions,
 ): Promise<LiveSearchResult> {
-  // Sort is downgraded to publishedAt at the API boundary; only sortOrder is honored.
+  const normalizedInput = normalizeSearchSelections(input);
   const sortBy: SortBy = "publishedAt";
+  const sortOrder: SortOrder = "desc";
+  const limit = Math.max(normalizedInput.limit, 1);
+  const warnings: string[] = [];
 
-  // Compute the remote page window required for the requested local offset/limit
-  // against BidWinner's fixed per_page=20.
-  const limit = Math.max(input.limit, 1);
-  const startRemotePage =
-    Math.floor(input.offset / BIDWINNER_PER_PAGE) + 1;
-  const endRemotePage =
-    Math.floor((input.offset + limit - 1) / BIDWINNER_PER_PAGE) + 1;
-  const pageNumbers: number[] = [];
-  for (let p = startRemotePage; p <= endRemotePage; p += 1) {
-    pageNumbers.push(p);
-  }
-
-  // Resolve province → matp using cached map first; fetch page 1 once if needed.
   let provinceCodeMap = cachedProvinceCodeMap ?? new Map<string, string>();
-  if (provinceCodeMap.size === 0 && input.provinces.length > 0) {
+  if (provinceCodeMap.size === 0 && normalizedInput.provinces.length > 0) {
     try {
-      const html = await fetchBidWinnerPage(1, []);
-      provinceCodeMap = parseProvincePayload(html);
-      rememberProvinceCodeMap(provinceCodeMap);
+      const parsedPage = await fetchParsedBidWinnerPage(1);
+      provinceCodeMap = parsedPage.provinceCodeMap;
     } catch {
-      // ignore; we'll fall back below
+      // ignore; we will fail closed below if the selected provinces stay unresolved
     }
   }
 
-  const provinceCodes = resolveProvinceCodes(input.provinces, provinceCodeMap);
+  const { codes: provinceCodes, unresolved: unresolvedProvinces } =
+    resolveProvinceSelection(normalizedInput.provinces, provinceCodeMap);
 
-  const htmlPages = await Promise.all(
-    pageNumbers.map((page) => fetchBidWinnerPage(page, provinceCodes)),
-  );
+  if (unresolvedProvinces.length > 0) {
+    return {
+      items: [],
+      total: 0,
+      visibleCount: 0,
+      offset: normalizedInput.offset,
+      limit: normalizedInput.limit,
+      source: "bidwinner_live",
+      fetchedAt: new Date().toISOString(),
+      warning:
+        "Không thể ánh xạ chính xác toàn bộ tỉnh/thành đã chọn sang mã nguồn BidWinner. Hãy bỏ các tỉnh không hợp lệ rồi thử lại.",
+      localRefinement: {
+        active: false,
+        fields: [],
+      },
+      options: buildOptions([]),
+    };
+  }
 
+  const keywordItems: LivePackageItem[] = [];
+  let windowItems: LivePackageItem[] = [];
   let sourceTotal = 0;
-  let sourcePerPage = BIDWINNER_PER_PAGE;
-  const fetchedItems: LivePackageItem[] = [];
-  const seen = new Set<string>();
 
-  for (const html of htmlPages) {
-    const payload = parseBidSearchPayload(html);
-    if (typeof payload.total === "number" && payload.total >= 0) {
-      sourceTotal = payload.total;
-    }
-    if (typeof payload.per_page === "number" && payload.per_page > 0) {
-      sourcePerPage = payload.per_page;
+  if (provinceCodes.length <= 1) {
+    const selectedProvinceCode = provinceCodes[0];
+    const startRemotePage =
+      Math.floor(normalizedInput.offset / BIDWINNER_PER_PAGE) + 1;
+    const endRemotePage =
+      Math.floor((normalizedInput.offset + limit - 1) / BIDWINNER_PER_PAGE) + 1;
+    const pageNumbers: number[] = [];
+    for (let page = startRemotePage; page <= endRemotePage; page += 1) {
+      pageNumbers.push(page);
     }
 
-    // Refresh province code map opportunistically.
-    if (provinceCodeMap.size === 0) {
-      const ttp = parseProvincePayload(html);
-      if (ttp.size > 0) {
-        provinceCodeMap = ttp;
-        rememberProvinceCodeMap(ttp);
+    const parsedPages = await Promise.all(
+      pageNumbers.map((page) => fetchParsedBidWinnerPage(page, selectedProvinceCode)),
+    );
+
+    let sourcePerPage = BIDWINNER_PER_PAGE;
+    const fetchedItems: LivePackageItem[] = [];
+    const seen = new Set<string>();
+
+    for (const parsedPage of parsedPages) {
+      if (
+        typeof parsedPage.payload.total === "number" &&
+        parsedPage.payload.total >= 0
+      ) {
+        sourceTotal = parsedPage.payload.total;
+      }
+
+      if (
+        typeof parsedPage.payload.per_page === "number" &&
+        parsedPage.payload.per_page > 0
+      ) {
+        sourcePerPage = parsedPage.payload.per_page;
+      }
+
+      keywordItems.push(...parsedPage.items);
+
+      for (const item of parsedPage.items) {
+        if (seen.has(item.externalId)) {
+          continue;
+        }
+
+        seen.add(item.externalId);
+        fetchedItems.push(item);
       }
     }
 
-    const mapped = payload.data
-      .map((item) => toLivePackageItem(item))
-      .filter((item): item is LivePackageItem => item !== null);
+    const spanStart = (startRemotePage - 1) * sourcePerPage;
+    const localStart = Math.max(0, normalizedInput.offset - spanStart);
+    windowItems = fetchedItems.slice(localStart, localStart + limit);
+  } else {
+    const firstPages = await Promise.all(
+      provinceCodes.map((code) => fetchParsedBidWinnerPage(1, code)),
+    );
 
-    for (const item of mapped) {
-      if (seen.has(item.externalId)) continue;
-      seen.add(item.externalId);
-      fetchedItems.push(item);
+    const streams: ProvinceStream[] = [];
+    for (const [index, parsedPage] of firstPages.entries()) {
+      keywordItems.push(...parsedPage.items);
+
+      sourceTotal +=
+        typeof parsedPage.payload.total === "number" && parsedPage.payload.total > 0
+          ? parsedPage.payload.total
+          : 0;
+
+      streams.push({
+        code: provinceCodes[index] ?? "",
+        currentPage:
+          typeof parsedPage.payload.current_page === "number" &&
+          parsedPage.payload.current_page > 0
+            ? parsedPage.payload.current_page
+            : 1,
+        lastPage:
+          typeof parsedPage.payload.last_page === "number" &&
+          parsedPage.payload.last_page > 0
+            ? parsedPage.payload.last_page
+            : 1,
+        buffer: parsedPage.items,
+        nextIndex: 0,
+      });
     }
+
+    const targetUniqueCount = normalizedInput.offset + limit;
+    const mergedItems: LivePackageItem[] = [];
+    const seen = new Set<string>();
+
+    while (mergedItems.length < targetUniqueCount) {
+      let bestStreamIndex = -1;
+      let bestItem: LivePackageItem | null = null;
+
+      for (const [index, stream] of streams.entries()) {
+        const hasItem = await ensureProvinceStreamHasItem(stream, keywordItems);
+        if (!hasItem) {
+          continue;
+        }
+
+        const candidate = stream.buffer[stream.nextIndex] ?? null;
+        if (!candidate) {
+          continue;
+        }
+
+        if (
+          !bestItem ||
+          comparePackagesByPublishedAtDesc(candidate, bestItem) < 0
+        ) {
+          bestItem = candidate;
+          bestStreamIndex = index;
+        }
+      }
+
+      if (bestStreamIndex < 0 || !bestItem) {
+        break;
+      }
+
+      const stream = streams[bestStreamIndex];
+      if (!stream) {
+        break;
+      }
+
+      stream.nextIndex += 1;
+      if (seen.has(bestItem.externalId)) {
+        continue;
+      }
+
+      seen.add(bestItem.externalId);
+      mergedItems.push(bestItem);
+    }
+
+    windowItems = mergedItems.slice(
+      normalizedInput.offset,
+      normalizedInput.offset + limit,
+    );
   }
 
-  // Window: local offset within the fetched span.
-  const spanStart = (startRemotePage - 1) * sourcePerPage;
-  const localStart = Math.max(0, input.offset - spanStart);
-  const windowItems = fetchedItems.slice(localStart, localStart + limit);
-
-  const { items: refined, fields } = applyLocalRefinement(windowItems, input);
-  const sorted = sortItems(refined, sortBy, input.sortOrder);
+  const { items: refined, fields } = applyLocalRefinement(
+    windowItems,
+    normalizedInput,
+  );
+  const sorted = sortItems(refined, sortBy, sortOrder);
 
   return {
     items: sorted,
     total: sourceTotal,
     visibleCount: sorted.length,
-    offset: input.offset,
-    limit: input.limit,
+    offset: normalizedInput.offset,
+    limit: normalizedInput.limit,
     source: "bidwinner_live",
     fetchedAt: new Date().toISOString(),
+    warning: warnings.length > 0 ? warnings.join(" ") : undefined,
     localRefinement: {
       active: fields.length > 0,
       fields,
     },
-    options: buildOptions(fetchedItems),
+    options: buildOptions(keywordItems),
   };
 }

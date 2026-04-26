@@ -108,6 +108,9 @@ export const savedFilters = pgTable("saved_filters", {
   createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
     .notNull()
     .defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const watchlistItems = pgTable("watchlist_items", {

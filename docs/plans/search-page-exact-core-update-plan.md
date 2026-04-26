@@ -41,7 +41,9 @@ Changes:
   - `hsmts` payload for `current_page`, `per_page`, `last_page`, `total`, `data`
   - `ttp` payload for province code/name mapping
 - Add a province normalization helper that maps current UI labels to BidWinner `matp` codes by normalized Vietnamese name.
-- Build source requests with repeated `matp` params for multi-select provinces.
+- For multi-select provinces, issue one source request per province code and
+  merge the result streams in app code; repeated `matp` params are not a stable
+  OR contract on BidWinner.
 - Stop using the current two-page fetch-and-slice approach.
 - Compute the remote page window required for the requested local `offset/limit` against BidWinner’s fixed `per_page=20`.
 - Return exact `total` from BidWinner metadata, not from locally filtered page slices.
@@ -187,7 +189,9 @@ Changes:
 ## Assumptions and Defaults
 
 - BidWinner HTML route `/4.0/tim-kiem-goi-thau` remains the stable source of truth.
-- Province source filtering uses `matp`; repeated values work and will be the canonical request format.
+- Province source filtering uses `matp`, but multi-select exact search must fan
+  out into one request per province and merge the streams in app code because
+  repeated `matp` values are not a stable OR contract on BidWinner.
 - Current category labels remain heuristic app-local labels; native BidWinner category taxonomy redesign is deferred.
 - Keyword and budget are not treated as exact source filters in this pass because the public HTML contract was not validated as reliable for them.
 - Existing dirty changes in search-related files must be merged carefully; no reset/revert of user work.

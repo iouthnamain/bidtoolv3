@@ -6,6 +6,7 @@ import {
   normalizeWorkflowFilterConfig,
   summarizeWorkflowFilterConfig,
 } from "~/lib/workflow-config";
+import { normalizeSearchSelections } from "~/lib/search-filter-utils";
 import { type db as appDb } from "~/server/db";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import {
@@ -14,6 +15,10 @@ import {
   workflowRuns,
   workflows,
 } from "~/server/db/schema";
+import {
+  isSavedFilterSchemaDriftError,
+  throwSavedFilterSchemaDriftError,
+} from "~/server/lib/saved-filter-schema-errors";
 
 type AppDb = typeof appDb;
 type WorkflowRow = typeof workflows.$inferSelect;
@@ -160,11 +165,23 @@ export const workflowRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const [savedFilter] = await ctx.db
-        .select()
-        .from(savedFilters)
-        .where(eq(savedFilters.id, input.savedFilterId))
-        .limit(1);
+      let savedFilter:
+        | (typeof savedFilters.$inferSelect)
+        | undefined;
+
+      try {
+        [savedFilter] = await ctx.db
+          .select()
+          .from(savedFilters)
+          .where(eq(savedFilters.id, input.savedFilterId))
+          .limit(1);
+      } catch (error) {
+        if (isSavedFilterSchemaDriftError(error)) {
+          throwSavedFilterSchemaDriftError(error);
+        }
+
+        throw error;
+      }
 
       if (!savedFilter) {
         throw new TRPCError({
@@ -173,22 +190,23 @@ export const workflowRouter = createTRPCRouter({
         });
       }
 
+      const normalizedSavedFilter = normalizeSearchSelections(savedFilter);
       const triggerConfig = parseTriggerConfig({
-        savedFilterId: savedFilter.id,
-        savedFilterName: savedFilter.name,
-        keyword: savedFilter.keyword,
-        provinces: savedFilter.provinces,
-        categories: savedFilter.categories,
-        budgetMin: savedFilter.budgetMin,
-        budgetMax: savedFilter.budgetMax,
-        minMatchScore: savedFilter.minMatchScore,
-        notificationFrequency: savedFilter.notificationFrequency,
+        savedFilterId: normalizedSavedFilter.id,
+        savedFilterName: normalizedSavedFilter.name,
+        keyword: normalizedSavedFilter.keyword,
+        provinces: normalizedSavedFilter.provinces,
+        categories: normalizedSavedFilter.categories,
+        budgetMin: normalizedSavedFilter.budgetMin,
+        budgetMax: normalizedSavedFilter.budgetMax,
+        minMatchScore: normalizedSavedFilter.minMatchScore,
+        notificationFrequency: normalizedSavedFilter.notificationFrequency,
       });
       const now = new Date().toISOString();
       const requestedName = input.name?.trim();
       const normalizedRequestedName =
         requestedName && requestedName.length > 0 ? requestedName : null;
-      const savedFilterName = savedFilter.name.trim() || "Smart View";
+      const savedFilterName = normalizedSavedFilter.name.trim() || "Smart View";
 
       const [created] = await ctx.db
         .insert(workflows)
@@ -199,7 +217,7 @@ export const workflowRouter = createTRPCRouter({
           actionType: "in_app",
           actionConfig: {
             source: "saved_filter",
-            savedFilterId: savedFilter.id,
+            savedFilterId: normalizedSavedFilter.id,
           },
           isActive: true,
           createdAt: now,

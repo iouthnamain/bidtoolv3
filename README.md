@@ -29,6 +29,9 @@ npm run db:migrate
 npm run db:seed
 ```
 
+If you pull newer code later, run `npm run db:migrate` again before opening
+`/saved-items` or creating Smart Views/workflows from saved filters.
+
 5. Start the app:
 
 ```bash

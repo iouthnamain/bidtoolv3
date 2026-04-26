@@ -1,3 +1,8 @@
+import {
+  normalizeCategoryFilterValues,
+  normalizeProvinceFilterValues,
+} from "~/lib/search-filter-utils";
+
 export type WorkflowNotificationFrequency = "daily" | "weekly";
 
 export type WorkflowFilterConfig = {
@@ -76,8 +81,10 @@ export function normalizeWorkflowFilterConfig(
         : null,
     savedFilterName: readString(input.savedFilterName) || null,
     keyword: readString(input.keyword),
-    provinces: readStringArray(input.provinces),
-    categories: readStringArray(input.categories),
+    provinces: normalizeProvinceFilterValues(readStringArray(input.provinces)),
+    categories: normalizeCategoryFilterValues(
+      readStringArray(input.categories),
+    ),
     budgetMin: readNumber(input.budgetMin),
     budgetMax: readNumber(input.budgetMax),
     minMatchScore: (() => {
