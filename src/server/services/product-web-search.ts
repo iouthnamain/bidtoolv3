@@ -5,6 +5,9 @@ export type ProductSearchRequirement = {
   unit?: string | null;
   specText?: string | null;
   searchKeywords?: string[];
+  extraOriginHints?: string[];
+  requirePrice?: boolean;
+  maxResults?: number;
   vendorHint?: string | null;
   originHint?: string | null;
   targetPrice?: number | null;
@@ -97,7 +100,7 @@ function safeDomain(url: string): string {
   }
 }
 
-function buildSearxngSearchUrl(query: string): URL {
+function buildSearxngSearchUrl(query: string, page = 1): URL {
   const baseUrl = env.SEARXNG_BASE_URL;
   if (!baseUrl) {
     throw new Error("SEARXNG_BASE_URL is not configured");
@@ -114,7 +117,7 @@ function buildSearxngSearchUrl(query: string): URL {
   searchUrl.searchParams.set("categories", "general");
   searchUrl.searchParams.set("language", env.SEARXNG_LANGUAGE);
   searchUrl.searchParams.set("safesearch", "1");
-  searchUrl.searchParams.set("pageno", "1");
+  searchUrl.searchParams.set("pageno", String(page));
 
   if (env.SEARXNG_ENGINES) {
     searchUrl.searchParams.set("engines", env.SEARXNG_ENGINES);
@@ -153,7 +156,9 @@ export function buildProductSearchQuery(
     ...(input.searchKeywords ?? []),
     input.vendorHint ?? "",
     input.originHint ?? "",
+    ...(input.extraOriginHints ?? []),
     input.targetPrice ? `${input.targetPrice} ${input.currency ?? "VND"}` : "",
+    input.requirePrice ? "bao gia gia ban price" : "",
     "gia",
     "thong so",
     "Viet Nam",
@@ -378,6 +383,11 @@ async function searchSearxngProductCandidates(
   requirement: ProductSearchRequirement,
 ): Promise<ProductWebSearchResult> {
   const query = buildProductSearchQuery(requirement);
+  const maxResults = Math.max(
+    env.SEARXNG_MAX_RESULTS,
+    Math.min(requirement.maxResults ?? env.SEARXNG_MAX_RESULTS, 20),
+  );
+  const maxPages = maxResults > env.SEARXNG_MAX_RESULTS ? 3 : 1;
   if (!env.SEARXNG_BASE_URL) {
     return {
       query,
@@ -391,26 +401,51 @@ async function searchSearxngProductCandidates(
   const timeout = setTimeout(() => controller.abort(), env.SEARXNG_TIMEOUT_MS);
 
   try {
-    const response = await fetch(buildSearxngSearchUrl(query), {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
+    const results: SearxngSearchResult[] = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+      const response = await fetch(buildSearxngSearchUrl(query, page), {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const hint =
-        response.status === 403
-          ? " Kiểm tra `search.formats` của SearXNG đã bật `json`."
-          : "";
-      return {
-        query,
-        candidates: [],
-        warning: `SearXNG trả về lỗi ${response.status}.${hint} Có thể thử lại hoặc nhập kết quả thủ công.`,
-      };
+      if (!response.ok) {
+        const hint =
+          response.status === 403
+            ? " Kiểm tra `search.formats` của SearXNG đã bật `json`."
+            : "";
+        if (page === 1) {
+          return {
+            query,
+            candidates: [],
+            warning: `SearXNG trả về lỗi ${response.status}.${hint} Có thể thử lại hoặc nhập kết quả thủ công.`,
+          };
+        }
+        break;
+      }
+
+      const payload = (await response.json()) as SearxngResponse;
+      const pageResults = payload.results ?? [];
+      if (pageResults.length === 0) {
+        break;
+      }
+
+      results.push(...pageResults);
+      if (results.length >= maxResults) {
+        break;
+      }
     }
 
-    const payload = (await response.json()) as SearxngResponse;
-    const candidates = (payload.results ?? [])
-      .slice(0, env.SEARXNG_MAX_RESULTS)
+    const seenUrls = new Set<string>();
+    const candidates = results
+      .filter((result) => {
+        const url = normalizeCandidateUrl(result.url);
+        if (!url || seenUrls.has(url)) {
+          return false;
+        }
+        seenUrls.add(url);
+        return true;
+      })
+      .slice(0, maxResults)
       .map((result): ProductCandidate | null => {
         const url = normalizeCandidateUrl(result.url);
         const imageUrl = normalizeCandidateUrl(

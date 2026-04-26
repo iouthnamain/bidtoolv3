@@ -13,9 +13,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import {
-  resolveExcelWorkspaceStepState,
-} from "~/lib/excel-workspace-steps";
+import { resolveExcelWorkspaceStepState } from "~/lib/excel-workspace-steps";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { type db as appDb } from "~/server/db";
 import {
@@ -102,6 +100,18 @@ const specSchema = z.object({
   evidenceText: z.string().default(""),
 });
 
+const webSearchFilterSchema = z
+  .object({
+    keywords: z.array(z.string().trim().min(1)).max(12).default([]),
+    origins: z.array(z.string().trim().min(1)).max(10).default([]),
+    requirePrice: z.boolean().default(false),
+    minConfidence: z
+      .union([z.literal(0), z.literal(50), z.literal(70)])
+      .default(0),
+  })
+  .partial()
+  .optional();
+
 function parseWorkbookJson(value: Record<string, unknown>): ParsedWorkbook {
   if (!Array.isArray(value.sheets)) {
     throw new TRPCError({
@@ -115,8 +125,7 @@ function parseWorkbookJson(value: Record<string, unknown>): ParsedWorkbook {
 
 function hasWorkbookData(workspace: typeof excelWorkspaces.$inferSelect) {
   return (
-    !!workspace.sourceFileName &&
-    Array.isArray(workspace.workbookJson.sheets)
+    !!workspace.sourceFileName && Array.isArray(workspace.workbookJson.sheets)
   );
 }
 
@@ -139,7 +148,10 @@ function buildWorkspaceRouteMeta(input: {
 
   return {
     importedItemCount: input.importedItemCount,
-    matchedItemCount: Math.max(0, input.importedItemCount - input.openItemCount),
+    matchedItemCount: Math.max(
+      0,
+      input.importedItemCount - input.openItemCount,
+    ),
     openItemCount: input.openItemCount,
     nextStep,
     maxStep,
@@ -822,7 +834,12 @@ export const excelWorkspaceRouter = createTRPCRouter({
     }),
 
   searchWebCandidates: publicProcedure
-    .input(z.object({ rowId: z.number().int().positive() }))
+    .input(
+      z.object({
+        rowId: z.number().int().positive(),
+        filters: webSearchFilterSchema,
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const row = await getRowWithWorkspace(ctx.db, input.rowId);
       const [selectedCandidate] = row.item.selectedCandidateId
@@ -835,11 +852,26 @@ export const excelWorkspaceRouter = createTRPCRouter({
       const keepsSelectedCandidate =
         selectedCandidate?.provider === "manual" ||
         selectedCandidate?.provider === "material";
+      const filters = input.filters ?? {};
+      const filterKeywords = filters.keywords ?? [];
+      const filterOrigins = filters.origins ?? [];
+      const hasFilterSearchHints =
+        filterKeywords.length > 0 ||
+        filterOrigins.length > 0 ||
+        !!filters.requirePrice ||
+        (filters.minConfidence ?? 0) > 0;
       const result = await searchProductCandidates({
         productName: row.item.productName,
         specText: row.item.specText,
         unit: row.item.unit,
-        searchKeywords: row.item.searchKeywords,
+        searchKeywords: [
+          ...row.item.searchKeywords,
+          ...filterKeywords,
+          ...(filters.requirePrice ? ["giá", "báo giá", "price"] : []),
+        ],
+        extraOriginHints: filterOrigins,
+        requirePrice: filters.requirePrice,
+        maxResults: hasFilterSearchHints ? 20 : undefined,
         vendorHint: row.item.vendorHint,
         originHint: row.item.originHint,
         targetPrice: row.item.targetPrice,
@@ -910,6 +942,14 @@ export const excelWorkspaceRouter = createTRPCRouter({
         rowId: row.item.id,
         query: result.query,
         count: candidates.length,
+        filters: hasFilterSearchHints
+          ? {
+              keywords: filterKeywords,
+              origins: filterOrigins,
+              requirePrice: !!filters.requirePrice,
+              minConfidence: filters.minConfidence ?? 0,
+            }
+          : null,
       });
 
       return { query: result.query, candidates, warning: result.warning };

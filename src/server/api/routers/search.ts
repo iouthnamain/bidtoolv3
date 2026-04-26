@@ -20,6 +20,8 @@ import {
   throwSavedFilterSchemaDriftError,
 } from "~/server/lib/saved-filter-schema-errors";
 
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 const searchInputSchema = z
   .object({
     keyword: z.string().optional(),
@@ -27,6 +29,14 @@ const searchInputSchema = z
     categories: z.array(z.string()).default([]),
     budgetMin: z.number().optional(),
     budgetMax: z.number().optional(),
+    publishedFrom: z
+      .string()
+      .regex(DATE_ONLY_REGEX, "Ngày đăng từ phải theo định dạng YYYY-MM-DD.")
+      .optional(),
+    publishedTo: z
+      .string()
+      .regex(DATE_ONLY_REGEX, "Ngày đăng đến phải theo định dạng YYYY-MM-DD.")
+      .optional(),
     minMatchScore: z.number().min(0).max(100).default(0),
     sortBy: z
       .enum(["publishedAt", "budget", "matchScore", "title", "inviter"])
@@ -46,6 +56,20 @@ const searchInputSchema = z
     {
       message: "Khoảng ngân sách không hợp lệ (budgetMin phải <= budgetMax).",
       path: ["budgetMax"],
+    },
+  )
+  .refine(
+    ({ publishedFrom, publishedTo }) => {
+      if (!publishedFrom || !publishedTo) {
+        return true;
+      }
+
+      return publishedFrom <= publishedTo;
+    },
+    {
+      message:
+        "Khoảng ngày đăng không hợp lệ (publishedFrom phải <= publishedTo).",
+      path: ["publishedTo"],
     },
   );
 

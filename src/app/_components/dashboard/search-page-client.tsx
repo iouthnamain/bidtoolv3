@@ -37,6 +37,8 @@ type FilterState = {
   categories: string[];
   budgetMin: string;
   budgetMax: string;
+  publishedFrom: string;
+  publishedTo: string;
   minMatchScore: number;
 };
 
@@ -47,6 +49,7 @@ type AppliedFilterChipId =
   | "provinces"
   | "categories"
   | "budget"
+  | "publishedAt"
   | "minMatchScore";
 
 type AppliedFilterChip = {
@@ -66,6 +69,7 @@ const LOCAL_REFINEMENT_LABELS: Record<AppliedFilterChipId, string> = {
   provinces: "tỉnh/thành",
   categories: "lĩnh vực",
   budget: "ngân sách",
+  publishedAt: "ngày đăng",
   minMatchScore: "điểm match",
 };
 
@@ -73,6 +77,8 @@ const smartViewFrequencyLabels = {
   daily: "Hằng ngày",
   weekly: "Hằng tuần",
 } as const;
+
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function parsePositiveInt(value: string | null, fallback: number): number {
   if (!value) {
@@ -123,6 +129,55 @@ function parseOptionalNumber(value: string): number | undefined {
   return parsed;
 }
 
+function isValidDateFilterValue(value: string): boolean {
+  if (!DATE_ONLY_REGEX.test(value)) {
+    return false;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+  );
+}
+
+function normalizeDateFilterValue(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+
+  return isValidDateFilterValue(trimmed) ? trimmed : "";
+}
+
+function parseOptionalDateFilter(value: string): string | undefined {
+  const normalized = normalizeDateFilterValue(value);
+  return normalized || undefined;
+}
+
+function formatDateFilterValue(value: string): string {
+  const normalized = normalizeDateFilterValue(value);
+  if (!normalized) {
+    return value;
+  }
+
+  const [yearText = "", monthText = "", dayText = ""] = normalized.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+
+  return new Date(year, month - 1, day).toLocaleDateString("vi-VN");
+}
+
+function normalizeFilterState(input: FilterState): FilterState {
+  const normalized = normalizeSearchSelections(input);
+
+  return {
+    ...normalized,
+    publishedFrom: normalizeDateFilterValue(input.publishedFrom),
+    publishedTo: normalizeDateFilterValue(input.publishedTo),
+  };
+}
+
 function buildFilterStateFromSavedFilter(
   filter: Pick<
     SavedFilterRecord,
@@ -134,7 +189,7 @@ function buildFilterStateFromSavedFilter(
     | "minMatchScore"
   >,
 ): FilterState {
-  return normalizeSearchSelections({
+  return normalizeFilterState({
     keyword: filter.keyword,
     provinces: filter.provinces,
     categories: filter.categories,
@@ -142,6 +197,8 @@ function buildFilterStateFromSavedFilter(
       typeof filter.budgetMin === "number" ? String(filter.budgetMin) : "",
     budgetMax:
       typeof filter.budgetMax === "number" ? String(filter.budgetMax) : "",
+    publishedFrom: "",
+    publishedTo: "",
     minMatchScore: Math.max(0, Math.min(100, filter.minMatchScore)),
   });
 }
@@ -168,6 +225,25 @@ function areSameStringLists(a: string[], b: string[]): boolean {
   }
 
   return na.every((value, index) => value === nb[index]);
+}
+
+function areSamePersistableFilters(a: FilterState, b: FilterState): boolean {
+  return (
+    a.keyword === b.keyword &&
+    areSameStringLists(a.provinces, b.provinces) &&
+    areSameStringLists(a.categories, b.categories) &&
+    a.budgetMin === b.budgetMin &&
+    a.budgetMax === b.budgetMax &&
+    a.minMatchScore === b.minMatchScore
+  );
+}
+
+function areSameSearchFilters(a: FilterState, b: FilterState): boolean {
+  return (
+    areSamePersistableFilters(a, b) &&
+    a.publishedFrom === b.publishedFrom &&
+    a.publishedTo === b.publishedTo
+  );
 }
 
 function parseMultiValueParam(
@@ -244,12 +320,14 @@ function parseBidWinnerDateTime(value?: string | null): Date | null {
 function readFiltersFromSearchParams(
   searchParams: ReadonlyURLSearchParams,
 ): FilterState {
-  return normalizeSearchSelections({
+  return normalizeFilterState({
     keyword: searchParams.get("keyword") ?? "",
     provinces: parseMultiValueParam(searchParams, "province"),
     categories: parseMultiValueParam(searchParams, "category"),
     budgetMin: searchParams.get("budgetMin") ?? "",
     budgetMax: searchParams.get("budgetMax") ?? "",
+    publishedFrom: searchParams.get("publishedFrom") ?? "",
+    publishedTo: searchParams.get("publishedTo") ?? "",
     minMatchScore: parseMinMatch(searchParams.get("minMatchScore")),
   });
 }
@@ -508,6 +586,10 @@ export function SearchPageClient() {
   const [categories, setCategories] = useState(initialFilters.categories);
   const [budgetMin, setBudgetMin] = useState(initialFilters.budgetMin);
   const [budgetMax, setBudgetMax] = useState(initialFilters.budgetMax);
+  const [publishedFrom, setPublishedFrom] = useState(
+    initialFilters.publishedFrom,
+  );
+  const [publishedTo, setPublishedTo] = useState(initialFilters.publishedTo);
   const [minMatchScore, setMinMatchScore] = useState(
     initialFilters.minMatchScore,
   );
@@ -574,6 +656,12 @@ export function SearchPageClient() {
     if (appliedFilters.budgetMax.trim()) {
       params.set("budgetMax", appliedFilters.budgetMax.trim());
     }
+    if (appliedFilters.publishedFrom) {
+      params.set("publishedFrom", appliedFilters.publishedFrom);
+    }
+    if (appliedFilters.publishedTo) {
+      params.set("publishedTo", appliedFilters.publishedTo);
+    }
     if (appliedFilters.minMatchScore > 0) {
       params.set("minMatchScore", String(appliedFilters.minMatchScore));
     }
@@ -605,6 +693,8 @@ export function SearchPageClient() {
     setCategories(next.categories);
     setBudgetMin(next.budgetMin);
     setBudgetMax(next.budgetMax);
+    setPublishedFrom(next.publishedFrom);
+    setPublishedTo(next.publishedTo);
     setMinMatchScore(next.minMatchScore);
     setAppliedFilters(next);
 
@@ -632,6 +722,22 @@ export function SearchPageClient() {
     () => parseOptionalNumber(appliedFilters.budgetMax),
     [appliedFilters.budgetMax],
   );
+  const parsedAppliedPublishedFrom = useMemo(
+    () => parseOptionalDateFilter(appliedFilters.publishedFrom),
+    [appliedFilters.publishedFrom],
+  );
+  const parsedAppliedPublishedTo = useMemo(
+    () => parseOptionalDateFilter(appliedFilters.publishedTo),
+    [appliedFilters.publishedTo],
+  );
+  const normalizedDraftPublishedFrom = useMemo(
+    () => normalizeDateFilterValue(publishedFrom),
+    [publishedFrom],
+  );
+  const normalizedDraftPublishedTo = useMemo(
+    () => normalizeDateFilterValue(publishedTo),
+    [publishedTo],
+  );
 
   const queryInput = useMemo(
     () => ({
@@ -640,6 +746,8 @@ export function SearchPageClient() {
       categories: appliedFilters.categories,
       budgetMin: parsedAppliedBudgetMin,
       budgetMax: parsedAppliedBudgetMax,
+      publishedFrom: parsedAppliedPublishedFrom,
+      publishedTo: parsedAppliedPublishedTo,
       minMatchScore: appliedFilters.minMatchScore,
       sortBy,
       sortOrder,
@@ -652,6 +760,8 @@ export function SearchPageClient() {
       page,
       parsedAppliedBudgetMax,
       parsedAppliedBudgetMin,
+      parsedAppliedPublishedFrom,
+      parsedAppliedPublishedTo,
       sortBy,
       sortOrder,
     ],
@@ -754,29 +864,60 @@ export function SearchPageClient() {
     typeof parsedBudgetMax === "number" &&
     parsedBudgetMin > parsedBudgetMax;
 
-  const hasPendingFilterChanges =
-    keyword !== appliedFilters.keyword ||
-    !areSameStringLists(provinces, appliedFilters.provinces) ||
-    !areSameStringLists(categories, appliedFilters.categories) ||
-    budgetMin !== appliedFilters.budgetMin ||
-    budgetMax !== appliedFilters.budgetMax ||
-    minMatchScore !== appliedFilters.minMatchScore;
+  const publishedDateRangeError =
+    Boolean(normalizedDraftPublishedFrom) &&
+    Boolean(normalizedDraftPublishedTo) &&
+    normalizedDraftPublishedFrom > normalizedDraftPublishedTo;
+
+  const draftFilters = useMemo<FilterState>(
+    () => ({
+      keyword,
+      provinces,
+      categories,
+      budgetMin,
+      budgetMax,
+      publishedFrom,
+      publishedTo,
+      minMatchScore,
+    }),
+    [
+      budgetMax,
+      budgetMin,
+      categories,
+      keyword,
+      minMatchScore,
+      provinces,
+      publishedFrom,
+      publishedTo,
+    ],
+  );
+
+  const hasPendingSearchFilterChanges = !areSameSearchFilters(
+    draftFilters,
+    appliedFilters,
+  );
+  const hasPendingPersistableFilterChanges = !areSamePersistableFilters(
+    draftFilters,
+    appliedFilters,
+  );
 
   const budgetNegativeError =
     (typeof parsedBudgetMin === "number" && parsedBudgetMin < 0) ||
     (typeof parsedBudgetMax === "number" && parsedBudgetMax < 0);
 
   const applyDraftFilters = () => {
-    if (budgetRangeError || budgetNegativeError) {
+    if (budgetRangeError || budgetNegativeError || publishedDateRangeError) {
       return;
     }
 
-    const nextFilters = normalizeSearchSelections({
+    const nextFilters = normalizeFilterState({
       keyword,
       provinces,
       categories,
       budgetMin,
       budgetMax,
+      publishedFrom,
+      publishedTo,
       minMatchScore,
     });
 
@@ -785,13 +926,15 @@ export function SearchPageClient() {
 
   const setAppliedAndDraftFilters = useCallback(
     (next: FilterState) => {
-      const normalizedNext = normalizeSearchSelections(next);
+      const normalizedNext = normalizeFilterState(next);
 
       setKeyword(normalizedNext.keyword);
       setProvinces(normalizedNext.provinces);
       setCategories(normalizedNext.categories);
       setBudgetMin(normalizedNext.budgetMin);
       setBudgetMax(normalizedNext.budgetMax);
+      setPublishedFrom(normalizedNext.publishedFrom);
+      setPublishedTo(normalizedNext.publishedTo);
       setMinMatchScore(normalizedNext.minMatchScore);
       setAppliedFilters(normalizedNext);
       if (hasExactFilterChanges(appliedFilters, normalizedNext)) {
@@ -868,7 +1011,7 @@ export function SearchPageClient() {
   const canPersistSmartView =
     !budgetRangeError &&
     !budgetNegativeError &&
-    !hasPendingFilterChanges &&
+    !hasPendingPersistableFilterChanges &&
     !isLoadingSmartView &&
     !isSavingSmartView &&
     (!isEditingSmartView || Boolean(savedFilterQuery.data));
@@ -955,6 +1098,21 @@ export function SearchPageClient() {
       });
     }
 
+    if (appliedFilters.publishedFrom || appliedFilters.publishedTo) {
+      chips.push({
+        id: "publishedAt",
+        label: `Ngày đăng: ${
+          appliedFilters.publishedFrom
+            ? formatDateFilterValue(appliedFilters.publishedFrom)
+            : "không giới hạn"
+        } - ${
+          appliedFilters.publishedTo
+            ? formatDateFilterValue(appliedFilters.publishedTo)
+            : "không giới hạn"
+        }`,
+      });
+    }
+
     if (appliedFilters.minMatchScore > 0) {
       chips.push({
         id: "minMatchScore",
@@ -987,6 +1145,11 @@ export function SearchPageClient() {
     if (chipId === "budget") {
       next.budgetMin = "";
       next.budgetMax = "";
+    }
+
+    if (chipId === "publishedAt") {
+      next.publishedFrom = "";
+      next.publishedTo = "";
     }
 
     if (chipId === "minMatchScore") {
@@ -1306,6 +1469,8 @@ export function SearchPageClient() {
                   categories: [],
                   budgetMin: "",
                   budgetMax: "",
+                  publishedFrom: "",
+                  publishedTo: "",
                   minMatchScore: 0,
                 });
               }}
@@ -1441,7 +1606,7 @@ export function SearchPageClient() {
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <FilterField label="Ngân sách từ" htmlFor="filter-budget-min">
           <input
             id="filter-budget-min"
@@ -1488,6 +1653,30 @@ export function SearchPageClient() {
             onKeyDown={handleApplyOnEnter}
           />
         </FilterField>
+        <FilterField label="Ngày đăng từ" htmlFor="filter-published-from">
+          <input
+            id="filter-published-from"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            type="date"
+            value={publishedFrom}
+            onChange={(e) => {
+              setPublishedFrom(normalizeDateFilterValue(e.target.value));
+            }}
+            onKeyDown={handleApplyOnEnter}
+          />
+        </FilterField>
+        <FilterField label="Ngày đăng đến" htmlFor="filter-published-to">
+          <input
+            id="filter-published-to"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            type="date"
+            value={publishedTo}
+            onChange={(e) => {
+              setPublishedTo(normalizeDateFilterValue(e.target.value));
+            }}
+            onKeyDown={handleApplyOnEnter}
+          />
+        </FilterField>
         <FilterField
           label="Thứ tự (theo ngày đăng)"
           htmlFor="filter-sort-order"
@@ -1529,6 +1718,12 @@ export function SearchPageClient() {
       {budgetRangeError ? (
         <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
+        </p>
+      ) : null}
+
+      {publishedDateRangeError ? (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          Ngày đăng đến phải lớn hơn hoặc bằng ngày đăng từ.
         </p>
       ) : null}
 
@@ -1588,14 +1783,21 @@ export function SearchPageClient() {
         </FilterField>
       </div>
 
-      {hasPendingFilterChanges ? (
+      <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        Ngày đăng chỉ tinh lọc trang kết quả hiện tại và sẽ không được lưu vào
+        Smart View hoặc workflow.
+      </p>
+
+      {hasPendingPersistableFilterChanges ? (
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Hãy bấm &quot;Áp dụng bộ lọc&quot; trước khi lưu Smart View để điều kiện
           lưu ra khớp đúng với kết quả đang hiển thị.
         </p>
       ) : null}
 
-      {!hasPendingFilterChanges && isEditingSmartView && !smartViewLoadError ? (
+      {!hasPendingPersistableFilterChanges &&
+      isEditingSmartView &&
+      !smartViewLoadError ? (
         <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
           Smart View đang chỉnh sửa sẽ lưu bộ lọc đã áp dụng và tần suất{" "}
           {smartViewFrequencyLabels[smartViewFrequency].toLowerCase()}.
@@ -1608,7 +1810,10 @@ export function SearchPageClient() {
           className="w-full sm:w-auto"
           onClick={applyDraftFilters}
           disabled={
-            budgetRangeError || budgetNegativeError || !hasPendingFilterChanges
+            budgetRangeError ||
+            budgetNegativeError ||
+            publishedDateRangeError ||
+            !hasPendingSearchFilterChanges
           }
         >
           Áp dụng bộ lọc
@@ -1666,6 +1871,8 @@ export function SearchPageClient() {
               categories: [],
               budgetMin: "",
               budgetMax: "",
+              publishedFrom: "",
+              publishedTo: "",
               minMatchScore: 0,
             });
             setLimit(20);
@@ -1725,8 +1932,10 @@ export function SearchPageClient() {
                     categories: [],
                     budgetMin: "",
                     budgetMax: "",
-                  minMatchScore: 0,
-                });
+                    publishedFrom: "",
+                    publishedTo: "",
+                    minMatchScore: 0,
+                  });
                   setLimit(20);
                   setPage(1);
                 }}

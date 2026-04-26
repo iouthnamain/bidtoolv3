@@ -171,7 +171,7 @@ const sections: Section[] = [
       "Tạo workspace mới, đặt tên dễ nhận biết và upload file `.xls` hoặc `.xlsx`.",
       "Chọn sheet, map cột sản phẩm/spec/đơn vị/số lượng/giá/vendor/origin.",
       "Review và sửa dòng đã parse trước khi tìm nguồn web.",
-      "Ở bước Find, chọn candidate phù hợp hoặc tạo manual match.",
+      "Ở bước Find, dùng bộ lọc gợi ý để tinh lọc kết quả. Khi bộ lọc đang bật, bấm `Tìm thêm theo bộ lọc` để tìm web với nhiều kết quả hơn.",
       "Khi mọi dòng đã matched/manual, export file enriched `.xlsx`.",
     ],
     notes: [

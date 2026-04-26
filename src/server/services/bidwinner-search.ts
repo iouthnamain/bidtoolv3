@@ -17,6 +17,8 @@ type SearchOptions = {
   categories: string[];
   budgetMin?: number;
   budgetMax?: number;
+  publishedFrom?: string;
+  publishedTo?: string;
   minMatchScore: number;
   sortBy: SortBy;
   sortOrder: SortOrder;
@@ -84,6 +86,7 @@ export type LocalRefinementField =
   | "keyword"
   | "categories"
   | "budget"
+  | "publishedAt"
   | "minMatchScore";
 
 export type LocalRefinementMeta = {
@@ -169,6 +172,29 @@ function parseBidWinnerTimestamp(value: string): number {
   const normalized = value.includes("T") ? value : value.replace(" ", "T");
   const parsed = new Date(normalized).getTime();
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function parseBidWinnerDateKey(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  if (match?.[1]) {
+    return match[1];
+  }
+
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return [
+    parsed.getFullYear(),
+    String(parsed.getMonth() + 1).padStart(2, "0"),
+    String(parsed.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -387,6 +413,8 @@ function applyLocalRefinement(
     .map((term) => normalizeText(term))
     .filter(Boolean);
   const categories = input.categories.map((value) => normalizeText(value));
+  const publishedFrom = input.publishedFrom?.trim();
+  const publishedTo = input.publishedTo?.trim();
 
   const fields: LocalRefinementField[] = [];
   if (keywords.length > 0) fields.push("keyword");
@@ -396,6 +424,7 @@ function applyLocalRefinement(
     typeof input.budgetMax === "number"
   )
     fields.push("budget");
+  if (publishedFrom || publishedTo) fields.push("publishedAt");
   if (input.minMatchScore > 0) fields.push("minMatchScore");
 
   const filtered = items.filter((item) => {
@@ -415,6 +444,21 @@ function applyLocalRefinement(
 
     if (typeof input.budgetMax === "number" && item.budget > input.budgetMax) {
       return false;
+    }
+
+    if (publishedFrom || publishedTo) {
+      const itemPublishedDate = parseBidWinnerDateKey(item.publishedAt);
+      if (!itemPublishedDate) {
+        return false;
+      }
+
+      if (publishedFrom && itemPublishedDate < publishedFrom) {
+        return false;
+      }
+
+      if (publishedTo && itemPublishedDate > publishedTo) {
+        return false;
+      }
     }
 
     if (item.matchScore < input.minMatchScore) return false;
