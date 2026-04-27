@@ -1605,14 +1605,29 @@ export function SearchPageClient() {
       ) : null}
 
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium tracking-[0.12em] text-slate-500 uppercase">
-            Bộ lọc đang áp dụng ({appliedFilterChips.length})
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-3.5 w-3.5 text-slate-500"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" />
+            </svg>
+            Bộ lọc đang áp dụng
+            <span className="ml-0.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-slate-200 px-1.5 text-[11px] font-bold text-slate-700">
+              {appliedFilterChips.length}
+            </span>
           </p>
           {appliedFilterChips.length > 0 ? (
             <button
               type="button"
-              className="text-xs font-medium text-slate-600 hover:text-slate-900"
+              className="rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               onClick={() => {
                 setAppliedAndDraftFilters({
                   keyword: "",
@@ -1633,26 +1648,54 @@ export function SearchPageClient() {
 
         {appliedFilterChips.length === 0 ? (
           <p className="mt-2 text-xs text-slate-500">
-            Chưa có điều kiện lọc nào đang được áp dụng.
+            Chưa có điều kiện lọc nào đang được áp dụng. Soạn bộ lọc bên dưới rồi
+            bấm <span className="font-semibold text-slate-700">Áp dụng bộ lọc</span>.
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {appliedFilterChips.map((chip) => (
-              <button
+              <span
                 key={chip.id}
-                type="button"
-                className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
-                onClick={() => removeAppliedFilterChip(chip.id)}
-                title="Bấm để bỏ điều kiện này"
+                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-slate-700 shadow-sm"
               >
-                {chip.label} ×
-              </button>
+                <span>{chip.label}</span>
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-rose-100 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+                  onClick={() => removeAppliedFilterChip(chip.id)}
+                  aria-label={`Bỏ điều kiện ${chip.label}`}
+                  title="Bỏ điều kiện này"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3 w-3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </span>
             ))}
           </div>
         )}
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+          Soạn bộ lọc
+        </p>
+        <p className="text-[11px] text-slate-500">
+          Nhấn <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[10px] text-slate-600">Enter</kbd>{" "}
+          trong ô để áp dụng nhanh
+        </p>
+      </div>
+
+      <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <FilterField label="Từ khóa" htmlFor="filter-keyword">
           <input
             id="filter-keyword"
@@ -1703,6 +1746,30 @@ export function SearchPageClient() {
             }}
             onKeyDown={handleApplyOnEnter}
           />
+          <div
+            className="mt-1 flex flex-wrap gap-1"
+            role="group"
+            aria-label="Mức điểm match tối thiểu nhanh"
+          >
+            {[0, 50, 70, 85].map((preset) => {
+              const isActive = minMatchScore === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
+                    isActive
+                      ? "border-sky-500 bg-sky-600 text-white"
+                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                  }`}
+                  onClick={() => setMinMatchScore(preset)}
+                  aria-pressed={isActive}
+                >
+                  {preset === 0 ? "Bỏ qua" : `≥ ${preset}%`}
+                </button>
+              );
+            })}
+          </div>
         </FilterField>
       </div>
 
@@ -1889,24 +1956,47 @@ export function SearchPageClient() {
           />
         </FilterField>
         <FilterField
-          label="Thứ tự ngày đăng"
-          htmlFor="filter-sort-order"
-          helper="Đổi thứ tự ngay trong trang hiện tại."
+          label="Sắp xếp theo ngày đăng"
+          helper="Áp dụng ngay trên trang hiện tại."
           className="xl:col-span-2"
         >
-          <select
+          <div
             id="filter-sort-order"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            value={sortOrder}
-            onChange={(e) => {
-              const nextSortOrder = e.target.value as SortOrder;
-              setSortOrder(nextSortOrder);
-              setAppliedSortOrder(nextSortOrder);
-            }}
+            role="radiogroup"
+            aria-label="Sắp xếp theo ngày đăng"
+            className="inline-flex w-full overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm shadow-sm"
           >
-            <option value="desc">Mới nhất trước</option>
-            <option value="asc">Cũ nhất trước</option>
-          </select>
+            {(
+              [
+                { value: "desc", label: "Mới nhất", arrow: "↓" },
+                { value: "asc", label: "Cũ nhất", arrow: "↑" },
+              ] as const
+            ).map((option) => {
+              const isActive = sortOrder === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
+                    isActive
+                      ? "bg-sky-700 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  onClick={() => {
+                    setSortOrder(option.value);
+                    setAppliedSortOrder(option.value);
+                  }}
+                >
+                  <span aria-hidden className="font-bold">
+                    {option.arrow}
+                  </span>
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </FilterField>
         <FilterField
           label="Số dòng/trang"
@@ -2038,6 +2128,12 @@ export function SearchPageClient() {
             !hasPendingSearchFilterChanges
           }
         >
+          {hasPendingSearchFilterChanges ? (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-amber-300"
+              aria-hidden
+            />
+          ) : null}
           Áp dụng bộ lọc
         </Button>
         <Button
