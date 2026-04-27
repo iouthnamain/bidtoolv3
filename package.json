@@ -13,7 +13,7 @@
     "dev:run": "bun run ./scripts/local-dev.ts run",
     "dev:update": "bun run ./scripts/local-dev.ts update",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",

@@ -75,20 +75,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function formatCommandFailure(
-  command: string,
-  args: readonly string[],
-  stderr: string,
-  stdout: string,
-): string {
-  const details = [trimOutput(stderr), trimOutput(stdout)].filter(Boolean);
-  if (details.length === 0) {
-    return `Command failed: ${commandLabel(command, args)}`;
-  }
-
-  return `${commandLabel(command, args)}\n${details.join("\n")}`;
-}
-
 async function runCommand(
   command: string,
   args: string[],
@@ -349,16 +335,10 @@ async function runMigrations(): Promise<void> {
         : `Retrying database migrations (${attempt}/${migrationAttempts})`,
     );
 
-    const result = await runCommand(bunExecutable, ["run", "db:migrate"]);
+    const result = await runCommand(bunExecutable, ["run", "db:migrate"], {
+      inheritStdio: true,
+    });
     if (result.code === 0) {
-      const stdout = trimOutput(result.stdout);
-      const stderr = trimOutput(result.stderr);
-      if (stdout) {
-        console.log(stdout);
-      }
-      if (stderr) {
-        console.error(stderr);
-      }
       return;
     }
 
@@ -368,12 +348,7 @@ async function runMigrations(): Promise<void> {
     }
 
     throw new Error(
-      `Database migration failed after ${migrationAttempts} attempts.\n${formatCommandFailure(
-        bunExecutable,
-        ["run", "db:migrate"],
-        result.stderr,
-        result.stdout,
-      )}`,
+      `Database migration failed after ${migrationAttempts} attempts.`,
     );
   }
 }
