@@ -1,7 +1,22 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set OUT=diagnose-db.txt
 
+call :run > "%OUT%" 2>&1
+
+echo.
+echo ============================================================
+echo  Output saved to: %cd%\%OUT%
+echo ============================================================
+echo.
+type "%OUT%"
+echo.
+pause
+endlocal
+exit /b
+
+:run
 echo ============================================================
 echo  [1/4] Process listening on port 5432
 echo ============================================================
@@ -35,9 +50,4 @@ echo  [4/4] Test password inside the container
 echo ============================================================
 docker exec bidtoolv3-postgres psql -U bidtool -d bidtoolv3 -c "select 1 as ok"
 
-echo.
-echo ============================================================
-echo  Done. Copy this whole window and paste it back.
-echo ============================================================
-pause
-endlocal
+exit /b
