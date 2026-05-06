@@ -9,7 +9,14 @@ export const watchlistRouter = createTRPCRouter({
   addItem: publicProcedure
     .input(
       z.object({
-        type: z.enum(["package", "inviter", "competitor", "commodity"]),
+        type: z.enum([
+          "package",
+          "plan",
+          "project",
+          "inviter",
+          "competitor",
+          "commodity",
+        ]),
         refKey: z.string().min(1),
         label: z.string().min(1),
       }),
@@ -65,7 +72,14 @@ export const watchlistRouter = createTRPCRouter({
       z
         .object({
           type: z
-            .enum(["package", "inviter", "competitor", "commodity"])
+            .enum([
+              "package",
+              "plan",
+              "project",
+              "inviter",
+              "competitor",
+              "commodity",
+            ])
             .optional(),
         })
         .optional(),

@@ -117,7 +117,7 @@ export function WorkflowsPageClient() {
             onClick={() => {
               createWorkflow.mutate({
                 name: `Workflow mới ${workflows.length + 1}`,
-                triggerType: "new_package",
+                triggerType: "new_search_result",
                 actionType: "in_app",
                 triggerConfig: {},
                 actionConfig: {},

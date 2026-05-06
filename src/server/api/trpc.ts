@@ -6,7 +6,7 @@
  * TL;DR - This is where all the tRPC server stuff is created and plugged in. The pieces you will
  * need to use are documented accordingly near the end.
  */
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "~/server/db";
@@ -96,10 +96,50 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 });
 
 /**
- * Public (unauthenticated) procedure
- *
- * This is the base piece you use to build new queries and mutations on your tRPC API. It does not
- * guarantee that a user querying is authorized, but you can still access user session data if they
- * are logged in.
+ * Global rate-limit. BidTool is single-user (no auth — see CLAUDE.md), so this is a coarse
+ * safety net against runaway client loops, not a per-user quota. Burst-friendly token bucket
+ * shared across all paths.
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+const RATE_LIMIT_CAPACITY = 200;
+const RATE_LIMIT_REFILL_PER_SEC = 50;
+
+let rateBucketTokens = RATE_LIMIT_CAPACITY;
+let rateBucketLastRefill = Date.now();
+
+function takeRateLimitToken(): boolean {
+  const now = Date.now();
+  const elapsedSec = (now - rateBucketLastRefill) / 1000;
+  if (elapsedSec > 0) {
+    rateBucketTokens = Math.min(
+      RATE_LIMIT_CAPACITY,
+      rateBucketTokens + elapsedSec * RATE_LIMIT_REFILL_PER_SEC,
+    );
+    rateBucketLastRefill = now;
+  }
+
+  if (rateBucketTokens < 1) {
+    return false;
+  }
+
+  rateBucketTokens -= 1;
+  return true;
+}
+
+const rateLimitMiddleware = t.middleware(async ({ next, path }) => {
+  if (!takeRateLimitToken()) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Quá nhiều yêu cầu (${path}). Vui lòng thử lại sau.`,
+    });
+  }
+
+  return next();
+});
+
+/**
+ * Public procedure. BidTool intentionally has no authentication (see CLAUDE.md) — this is the
+ * only procedure type and is used everywhere.
+ */
+export const publicProcedure = t.procedure
+  .use(rateLimitMiddleware)
+  .use(timingMiddleware);

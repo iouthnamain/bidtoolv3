@@ -103,19 +103,19 @@ const sections: Section[] = [
     eyebrow: "Nguồn thầu",
     title: "Tìm kiếm gói thầu",
     intro:
-      "Trang Tìm kiếm lấy dữ liệu realtime từ BidWinner, sau đó cho phép tinh lọc cục bộ trên trang kết quả hiện tại. Bộ lọc và sắp xếp được chia thành ba khu vực rõ ràng: chip điều kiện đang áp dụng, ô soạn bộ lọc, và nhóm sắp xếp/phân trang.",
+      "Trang Tìm kiếm giờ là một hub chung cho 5 chế độ BidWinner public: Gói thầu, Theo địa phương, Ngành nghề & địa phương, KHLCNT, và Dự án đầu tư phát triển. Mỗi tab đều hiển thị rõ trường nào lấy chính xác từ nguồn public và trường nào chỉ tinh lọc trong cửa sổ dữ liệu đang tải.",
     steps: [
-      "Chọn Tỉnh/Thành và phân trang để truy vấn trực tiếp nguồn BidWinner — đây là hai trường tinh lọc chạy ngược về nguồn, các trường còn lại tinh lọc cục bộ trong trang hiện tại.",
-      "Soạn bộ lọc: nhập Từ khóa (nhiều cụm cách nhau bằng dấu phẩy — dirty search khớp ít nhất một cụm), chọn Lĩnh vực, kéo Ngân sách hoặc bấm preset Điểm match (≥ 50/70/85%).",
-      "Đổi Sắp xếp ngày đăng bằng segmented control Mới nhất ↓ / Cũ nhất ↑ — đổi xong áp dụng ngay, không cần bấm Áp dụng.",
-      "Khi đã ưng bộ lọc, bấm Áp dụng bộ lọc (chấm vàng cảnh báo có thay đổi chưa áp). Để tinh chỉnh tiếp, bấm chip × ở khu vực \"Bộ lọc đang áp dụng\" hoặc Xóa tất cả.",
-      "Chọn các gói phù hợp rồi bấm Lưu vào DB; hệ thống dedup theo `externalId`. Lưu Smart View để tái dùng bộ lọc về sau.",
+      "Chọn tab đúng nhu cầu trước: Gói thầu cho tìm kiếm package chung, Theo địa phương cho chế độ province-first, Ngành nghề & địa phương cho taxonomy classify public, KHLCNT cho kế hoạch lựa chọn nhà thầu, và Dự án cho danh sách dự án đầu tư phát triển.",
+      "Soạn bộ lọc theo tab đang mở: từ khóa, tỉnh/thành, ngân sách, ngày và các trường đặc thù như HTLCNT, nhóm dự án hoặc classify ngành nghề.",
+      "Xem banner nguồn ngay trên kết quả để biết trường nào chạy chính xác trên BidWinner public, trường nào chỉ đang refine trong app, và tab nào bị giới hạn vì BidWinner không public endpoint JSON tương ứng.",
+      "Khi đã ưng bộ lọc, bấm Áp dụng bộ lọc rồi lưu Smart View nếu muốn dùng lại hoặc tạo workflow cảnh báo sau này.",
+      "Chọn các dòng phù hợp rồi bấm Lưu để persist vào database; package, KHLCNT và dự án đều có detail page riêng trong app.",
     ],
     notes: [
-      "Chip ở khu vực \"Bộ lọc đang áp dụng\" có nút × riêng — bấm để bỏ một điều kiện cụ thể mà không phải thao tác lại các trường còn lại.",
-      "Ngày đăng (từ/đến) chỉ tinh lọc trang kết quả hiện tại và không được lưu vào Smart View hay workflow.",
-      "Khi banner tinh lọc xuất hiện, kết quả khớp có thể vẫn nằm ở trang nguồn khác — đổi trang hoặc nới Tỉnh/Thành để mở rộng.",
-      "Chọn tất cả ở Tỉnh/Thành hoặc Lĩnh vực được chuẩn hóa về \"không lọc\" để giữ tổng kết quả nguồn chính xác.",
+      "Theo địa phương chỉ chọn chính xác một tỉnh/thành tại một thời điểm để bám cách BidWinner public đang hoạt động.",
+      "Ngành nghề & địa phương dùng taxonomy public `classifies`, nhưng kết quả tab này vẫn là local refinement trên cửa sổ package public hiện tại vì BidWinner không public endpoint kết quả tương ứng.",
+      "KHLCNT và Dự án luôn lấy tổng số/phân trang từ trang public gốc, nhưng các refine như từ khóa, tỉnh, ngân sách, ngày và field đặc thù vẫn chạy trong app.",
+      "Smart View và workflow giờ lưu kèm `mode`, nên khi mở lại sẽ quay đúng tab tương ứng trên `/search`.",
       "Nếu BidWinner chậm hoặc lỗi, thử giảm bộ lọc hoặc chuyển trang sau vài giây.",
     ],
     links: [{ href: "/search", label: "Mở Tìm kiếm" }],
@@ -131,7 +131,7 @@ const sections: Section[] = [
     eyebrow: "Theo dõi",
     title: "Smart Views & Watchlist",
     intro:
-      "Smart View lưu lại bộ lọc để dùng lại hoặc làm đầu vào cho workflow. Watchlist lưu từng gói thầu cụ thể cần theo dõi.",
+      "Smart View lưu lại mode + criteria của trang Tìm kiếm để dùng lại hoặc làm đầu vào cho workflow. Watchlist lưu các package, KHLCNT hoặc dự án cụ thể cần theo dõi.",
     steps: [
       "Từ trang Tìm kiếm, đặt tên Smart View và chọn tần suất thông báo.",
       "Mở `/saved-items` để xem lại Smart View hoặc Watchlist đã lưu.",

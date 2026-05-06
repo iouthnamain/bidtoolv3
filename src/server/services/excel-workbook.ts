@@ -1,50 +1,66 @@
 import * as XLSX from "xlsx";
 
+import {
+  standardColumnKeys,
+  type StandardColumnKey,
+  type StandardColumnMapping,
+  type WorkspaceTerm,
+} from "~/lib/excel-workspace-standard";
 import type { ExtractedProductSpec } from "~/server/services/product-web-search";
 
-export const columnKeys = [
-  "productName",
-  "specText",
-  "unit",
-  "quantity",
-  "targetPrice",
-  "currency",
-  "vendorHint",
-  "originHint",
-  "notes",
-] as const;
+export const MAX_IMPORT_ROWS = 5000;
+export const MAX_IMPORT_COLS = 80;
+const HEADER_SCAN_ROWS = 40;
 
-export type ColumnKey = (typeof columnKeys)[number];
-export type ColumnMapping = Partial<Record<ColumnKey, string | null>>;
+export const columnKeys = standardColumnKeys;
+export type ColumnKey = StandardColumnKey;
+export type ColumnMapping = StandardColumnMapping;
+
+export type ParsedWorkbookRow = {
+  originalRowIndex: number;
+  values: Record<string, string>;
+};
 
 export type ParsedWorkbookSheet = {
   name: string;
+  detectedHeaderRowIndex: number;
+  activeHeaderRowIndex: number;
   headerRowIndex: number;
+  rawRows: string[][];
   headers: string[];
-  rows: Array<{
-    originalRowIndex: number;
-    values: Record<string, string>;
-  }>;
+  rows: ParsedWorkbookRow[];
   previewRows: Array<Record<string, string>>;
-  suggestedMapping: ColumnMapping;
+  suggestedMapping: StandardColumnMapping;
+  warnings: string[];
 };
 
 export type ParsedWorkbook = {
   sheets: ParsedWorkbookSheet[];
+  warnings: string[];
 };
 
 export type ImportedWorkbookRow = {
   originalRowIndex: number;
   originalDataJson: Record<string, string>;
   productName: string;
+  materialName: string;
   specText: string;
   unit: string;
+  term: WorkspaceTerm;
   quantity: number | null;
   targetPrice: number | null;
   currency: string;
   vendorHint: string | null;
   originHint: string | null;
   notes: string;
+  qtyTotal: number | null;
+  qtyInStock: number | null;
+  depreciation: number;
+  reusePct: number;
+  inspectionQtyTerm1: number | null;
+  inspectionQtyTerm2: number | null;
+  unitPrice: number | null;
+  sourceUrl: string | null;
   searchKeywords: string[];
 };
 
@@ -59,7 +75,92 @@ type ExportRowInput = {
   } | null;
 };
 
-const REQUIRED_PRODUCT_KEY: ColumnKey = "productName";
+const REQUIRED_PRODUCT_KEY: StandardColumnKey = "materialName";
+
+const aliases: Record<StandardColumnKey, string[]> = {
+  materialName: [
+    "product",
+    "product name",
+    "item",
+    "item name",
+    "name",
+    "ten",
+    "ten hang",
+    "ten san pham",
+    "ten vat tu",
+    "ten qui cach vat tu",
+    "ten quy cach vat tu",
+    "hang hoa",
+    "vat tu",
+  ],
+  specText: [
+    "description",
+    "desc",
+    "spec",
+    "specification",
+    "quy cach",
+    "qui cach",
+    "thong so",
+    "thong so ky thuat",
+    "thong so ki thuat",
+    "mo ta",
+  ],
+  unit: ["unit", "uom", "don vi", "don vi tinh", "dvt"],
+  term: ["term", "hoc ky", "hocky", "semester", "ky"],
+  qtyTotal: [
+    "qty",
+    "quantity",
+    "so luong",
+    "sl",
+    "so luong tong hop",
+    "tong hop",
+    "so luong can mua",
+  ],
+  qtyInStock: [
+    "ton",
+    "ton kho",
+    "con ton",
+    "so luong con ton",
+    "sl ton",
+    "inventory",
+    "stock",
+  ],
+  depreciation: ["khau hao", "depreciation"],
+  reusePct: ["su dung lai", "% su dung lai", "reuse", "reuse pct"],
+  inspectionQtyTerm1: [
+    "kiem tra ky i",
+    "kiem tra hoc ky i",
+    "bb ky i",
+    "sl kiem tra ky i",
+    "inspection term 1",
+  ],
+  inspectionQtyTerm2: [
+    "kiem tra ky ii",
+    "kiem tra hoc ky ii",
+    "bb ky ii",
+    "sl kiem tra ky ii",
+    "inspection term 2",
+  ],
+  unitPrice: [
+    "price",
+    "target price",
+    "budget",
+    "don gia",
+    "gia",
+    "don gia goc",
+    "don gia da giam",
+  ],
+  vendorHint: [
+    "vendor",
+    "supplier",
+    "nha cung cap",
+    "nha san xuat",
+    "manufacturer",
+  ],
+  originHint: ["origin", "xuat xu", "nuoc san xuat"],
+  sourceUrl: ["link", "url", "source", "nguon", "link sp"],
+  notes: ["note", "notes", "ghi chu", "luu y"],
+};
 
 function normalizeHeader(value: unknown): string {
   if (value == null) {
@@ -78,12 +179,14 @@ function normalizeHeader(value: unknown): string {
   return "";
 }
 
-function normalizeToken(value: string): string {
+export function normalizeToken(value: string): string {
   return value
+    .replace(/[đĐ]/g, (match) => (match === "Đ" ? "D" : "d"))
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^a-z0-9%]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -105,7 +208,7 @@ function cleanCell(value: unknown): string {
   return "";
 }
 
-function parseOptionalNumber(value: string): number | null {
+export function parseOptionalNumber(value: string): number | null {
   const cleaned = value.replace(/[^\d,.-]/g, "").replace(/,/g, "");
   if (!cleaned) {
     return null;
@@ -129,19 +232,15 @@ function rowHasData(row: unknown[]): boolean {
   return row.some((cell) => cleanCell(cell).length > 0);
 }
 
-function detectHeaderIndex(rows: unknown[][]): number {
-  const index = rows.findIndex((row) => row.filter(Boolean).length >= 2);
-  return index >= 0 ? index : 0;
-}
-
 function matchHeader(headers: string[], keywords: string[]): string | null {
   const normalized = headers.map((header) => ({
     raw: header,
     normalized: normalizeToken(header),
   }));
 
+  const normalizedKeywords = keywords.map(normalizeToken);
   const exact = normalized.find((header) =>
-    keywords.some((keyword) => header.normalized === normalizeToken(keyword)),
+    normalizedKeywords.some((keyword) => header.normalized === keyword),
   );
   if (exact) {
     return exact.raw;
@@ -149,49 +248,99 @@ function matchHeader(headers: string[], keywords: string[]): string | null {
 
   return (
     normalized.find((header) =>
-      keywords.some((keyword) =>
-        header.normalized.includes(normalizeToken(keyword)),
-      ),
+      normalizedKeywords.some((keyword) => header.normalized.includes(keyword)),
     )?.raw ?? null
   );
 }
 
-export function suggestColumnMapping(headers: string[]): ColumnMapping {
+function headerScore(row: unknown[]): number {
+  const headers = uniqueHeaders(row);
+  const mapping = suggestColumnMapping(headers);
+  const mappedCount = Object.values(mapping).filter(Boolean).length;
+  const hasName = mapping.materialName ? 4 : 0;
+  const hasUnit = mapping.unit ? 2 : 0;
+  const hasQty = mapping.qtyTotal ? 2 : 0;
+  const nonEmpty = row.filter((cell) => cleanCell(cell).length > 0).length;
+  return mappedCount * 5 + hasName + hasUnit + hasQty + Math.min(nonEmpty, 8);
+}
+
+export function detectHeaderIndex(rows: unknown[][]): number {
+  let bestIndex = 0;
+  let bestScore = -1;
+
+  rows.slice(0, HEADER_SCAN_ROWS).forEach((row, index) => {
+    const score = headerScore(row);
+    if (score > bestScore) {
+      bestIndex = index;
+      bestScore = score;
+    }
+  });
+
+  if (bestScore <= 0) {
+    const fallback = rows.findIndex((row) => row.filter(Boolean).length >= 2);
+    return fallback >= 0 ? fallback : 0;
+  }
+
+  return bestIndex;
+}
+
+export function suggestColumnMapping(headers: string[]): StandardColumnMapping {
+  return Object.fromEntries(
+    standardColumnKeys.map((key) => [key, matchHeader(headers, aliases[key])]),
+  ) as StandardColumnMapping;
+}
+
+function buildSheetFromMatrix(input: {
+  name: string;
+  matrix: string[][];
+  detectedHeaderIndex: number;
+  activeHeaderIndex?: number;
+  warnings?: string[];
+}): ParsedWorkbookSheet {
+  const activeHeaderIndex = Math.max(
+    0,
+    Math.min(
+      input.activeHeaderIndex ?? input.detectedHeaderIndex,
+      input.matrix.length - 1,
+    ),
+  );
+  const headers = uniqueHeaders(input.matrix[activeHeaderIndex] ?? []);
+  const rows = input.matrix
+    .slice(activeHeaderIndex + 1)
+    .map((row, index) => ({
+      originalRowIndex: activeHeaderIndex + index + 2,
+      values: headers.reduce<Record<string, string>>((record, header, i) => {
+        record[header] = cleanCell(row[i]);
+        return record;
+      }, {}),
+    }))
+    .filter((row) => rowHasData(Object.values(row.values)));
+
   return {
-    productName: matchHeader(headers, [
-      "product",
-      "product name",
-      "item",
-      "item name",
-      "name",
-      "ten hang",
-      "ten san pham",
-      "hang hoa",
-      "vat tu",
-    ]),
-    specText: matchHeader(headers, [
-      "description",
-      "desc",
-      "spec",
-      "specification",
-      "quy cach",
-      "thong so",
-      "mo ta",
-    ]),
-    unit: matchHeader(headers, ["unit", "uom", "don vi", "dvt"]),
-    quantity: matchHeader(headers, ["qty", "quantity", "so luong", "sl"]),
-    targetPrice: matchHeader(headers, [
-      "price",
-      "target price",
-      "budget",
-      "don gia",
-      "gia",
-    ]),
-    currency: matchHeader(headers, ["currency", "tien te"]),
-    vendorHint: matchHeader(headers, ["vendor", "supplier", "nha cung cap"]),
-    originHint: matchHeader(headers, ["origin", "xuat xu"]),
-    notes: matchHeader(headers, ["note", "notes", "ghi chu"]),
+    name: input.name,
+    detectedHeaderRowIndex: input.detectedHeaderIndex + 1,
+    activeHeaderRowIndex: activeHeaderIndex + 1,
+    headerRowIndex: activeHeaderIndex + 1,
+    rawRows: input.matrix,
+    headers,
+    rows,
+    previewRows: rows.slice(0, 20).map((row) => row.values),
+    suggestedMapping: suggestColumnMapping(headers),
+    warnings: input.warnings ?? [],
   };
+}
+
+export function rebuildSheetWithHeaderRow(
+  sheet: ParsedWorkbookSheet,
+  headerRowIndex: number,
+): ParsedWorkbookSheet {
+  return buildSheetFromMatrix({
+    name: sheet.name,
+    matrix: sheet.rawRows,
+    detectedHeaderIndex: Math.max(0, sheet.detectedHeaderRowIndex - 1),
+    activeHeaderIndex: Math.max(0, headerRowIndex - 1),
+    warnings: sheet.warnings,
+  });
 }
 
 export function parseWorkbookBase64(
@@ -205,88 +354,134 @@ export function parseWorkbookBase64(
     type: "buffer",
     cellDates: false,
   });
+  const workbookWarnings: string[] = [];
 
   const sheets = workbook.SheetNames.map((name) => {
     const sheet = workbook.Sheets[name];
-    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet!, {
+    const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(sheet!, {
       header: 1,
       raw: false,
       defval: "",
-      blankrows: false,
+      blankrows: true,
     });
-    const headerRowIndex = detectHeaderIndex(matrix);
-    const headers = uniqueHeaders(matrix[headerRowIndex] ?? []);
-    const rows = matrix
-      .slice(headerRowIndex + 1)
-      .map((row, index) => ({
-        originalRowIndex: headerRowIndex + index + 2,
-        values: headers.reduce<Record<string, string>>((record, header, i) => {
-          record[header] = cleanCell(row[i]);
-          return record;
-        }, {}),
-      }))
-      .filter((row) => rowHasData(Object.values(row.values)));
+    const warnings: string[] = [];
+    if (rawMatrix.length > MAX_IMPORT_ROWS) {
+      warnings.push(
+        `Trang tính ${name} có hơn ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng; chỉ đọc ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng đầu.`,
+      );
+    }
 
-    return {
+    const matrix = rawMatrix.slice(0, MAX_IMPORT_ROWS).map((row) => {
+      if (row.length > MAX_IMPORT_COLS) {
+        warnings.push(
+          `Trang tính ${name} có hơn ${MAX_IMPORT_COLS} cột; chỉ đọc ${MAX_IMPORT_COLS} cột đầu.`,
+        );
+      }
+      return row.slice(0, MAX_IMPORT_COLS).map(cleanCell);
+    });
+
+    const detectedHeaderIndex = detectHeaderIndex(matrix);
+    return buildSheetFromMatrix({
       name,
-      headerRowIndex: headerRowIndex + 1,
-      headers,
-      rows,
-      previewRows: rows.slice(0, 20).map((row) => row.values),
-      suggestedMapping: suggestColumnMapping(headers),
-    };
+      matrix,
+      detectedHeaderIndex,
+      warnings: Array.from(new Set(warnings)),
+    });
   });
 
   if (sheets.length === 0) {
     throw new Error(`No readable sheets found in ${fileName}.`);
   }
 
-  return { sheets };
+  for (const sheet of sheets) {
+    workbookWarnings.push(...sheet.warnings);
+  }
+
+  return { sheets, warnings: Array.from(new Set(workbookWarnings)) };
+}
+
+function normalizeTerm(value: string): WorkspaceTerm {
+  const normalized = normalizeToken(value);
+  if (
+    normalized.includes("ii") ||
+    normalized.includes("2") ||
+    normalized.includes("term 2") ||
+    normalized.includes("hk2")
+  ) {
+    return "term_2";
+  }
+  return "term_1";
 }
 
 export function rowsFromMapping(
   sheet: ParsedWorkbookSheet,
-  mapping: ColumnMapping,
+  mapping: StandardColumnMapping,
 ): ImportedWorkbookRow[] {
   const productColumn = mapping[REQUIRED_PRODUCT_KEY];
   if (!productColumn) {
-    throw new Error("Product name column is required.");
+    throw new Error("Material name column is required.");
   }
 
   return sheet.rows
     .map((row) => {
-      const get = (key: ColumnKey) => {
+      const get = (key: StandardColumnKey) => {
         const column = mapping[key];
         return column ? (row.values[column] ?? "") : "";
       };
-      const productName = get("productName");
+      const materialName = get("materialName");
       const specText = get("specText");
       const unit = get("unit");
       const vendorHint = get("vendorHint");
       const originHint = get("originHint");
       const notes = get("notes");
-      const currency = get("currency") || "VND";
+      const qtyTotal = parseOptionalNumber(get("qtyTotal"));
+      const unitPrice = parseOptionalNumber(get("unitPrice"));
 
       return {
         originalRowIndex: row.originalRowIndex,
         originalDataJson: row.values,
-        productName,
+        productName: materialName,
+        materialName,
         specText,
         unit,
-        quantity: parseOptionalNumber(get("quantity")),
-        targetPrice: parseOptionalNumber(get("targetPrice")),
-        currency,
+        term: normalizeTerm(get("term")),
+        quantity: qtyTotal,
+        targetPrice: unitPrice,
+        currency: "VND",
         vendorHint: vendorHint || null,
         originHint: originHint || null,
         notes,
-        searchKeywords: [productName, specText, unit]
+        qtyTotal,
+        qtyInStock: parseOptionalNumber(get("qtyInStock")) ?? 0,
+        depreciation: parseOptionalNumber(get("depreciation")) ?? 1,
+        reusePct: parseOptionalNumber(get("reusePct")) ?? 0,
+        inspectionQtyTerm1: parseOptionalNumber(get("inspectionQtyTerm1")),
+        inspectionQtyTerm2: parseOptionalNumber(get("inspectionQtyTerm2")),
+        unitPrice,
+        sourceUrl: get("sourceUrl") || null,
+        searchKeywords: [materialName, specText, unit]
           .join(" ")
           .split(/[,;/\n]/)
           .map((value) => value.trim())
           .filter(Boolean),
       };
     })
-    .filter((row) => row.productName.trim().length > 0);
+    .filter((row) => {
+      if (row.productName.trim().length === 0) {
+        return false;
+      }
+
+      const hasMappedText = [
+        row.unit,
+        row.specText,
+        row.vendorHint ?? "",
+        row.originHint ?? "",
+        row.notes,
+        row.sourceUrl ?? "",
+      ].some((value) => value.trim().length > 0);
+
+      return hasMappedText || row.qtyTotal != null || row.unitPrice != null;
+    });
 }
 
 export function buildEnrichedWorkbookBase64(rows: ExportRowInput[]): string {

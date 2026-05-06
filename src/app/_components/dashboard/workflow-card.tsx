@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { Badge, Button } from "~/app/_components/ui";
+import { formatDateTime } from "~/lib/datetime";
 
 type WorkflowLatestRun = {
   status: "success" | "failed" | "running";
@@ -10,19 +11,6 @@ type WorkflowLatestRun = {
   finishedAt: string | null;
   message: string;
 };
-
-function formatDateTime(value: string | null) {
-  if (!value) {
-    return "Chưa có";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("vi-VN");
-}
 
 function runTone(
   status: WorkflowLatestRun["status"] | null,
@@ -50,6 +38,22 @@ function runLabel(status: WorkflowLatestRun["status"] | null) {
     return "Đang chạy";
   }
   return "Chưa chạy";
+}
+
+function formatTriggerLabel(triggerLabel: string) {
+  if (triggerLabel === "new_search_result") {
+    return "Kết quả tìm kiếm mới";
+  }
+
+  if (triggerLabel === "new_package") {
+    return "Gói thầu mới";
+  }
+
+  if (triggerLabel === "schedule") {
+    return "Theo lịch";
+  }
+
+  return triggerLabel;
 }
 
 interface WorkflowCardProps {
@@ -96,7 +100,7 @@ export function WorkflowCard({
           </div>
 
           <p className="mt-1 text-xs text-slate-500">
-            Trigger: {triggerLabel} • {runCount} lần chạy
+            Trigger: {formatTriggerLabel(triggerLabel)} • {runCount} lần chạy
           </p>
 
           <div className="mt-2 flex flex-wrap gap-1.5">

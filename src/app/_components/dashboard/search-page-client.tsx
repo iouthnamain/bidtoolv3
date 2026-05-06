@@ -1,40 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   usePathname,
   useRouter,
   useSearchParams,
   type ReadonlyURLSearchParams,
 } from "next/navigation";
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-} from "@tanstack/react-table";
 
+import { PAGE_SIZE_OPTIONS, type SortOrder } from "~/constants/search-options";
 import {
-  CATEGORY_OPTIONS,
-  KEYWORD_OPTIONS,
-  PAGE_SIZE_OPTIONS,
-  PROVINCE_OPTIONS,
-  type SortBy,
-  type SortOrder,
-} from "~/constants/search-options";
+  buildSearchUrlParams,
+  emptySearchCriteria,
+  normalizeSearchCriteria,
+  normalizeStringList,
+  parseOptionalNumber,
+  parsePositiveId,
+  parsePositiveInt,
+  readSearchCriteriaFromSearchParams,
+  readSearchModeFromSearchParams,
+  summarizeSearchCriteria,
+  type SearchCriteria,
+} from "~/lib/search-criteria";
 import {
-  normalizeCategoryFilterValues,
-  normalizeProvinceFilterValues,
-  normalizeSearchSelections,
-} from "~/lib/search-filter-utils";
+  SEARCH_ENTITY_LABELS,
+  SEARCH_MODE_DESCRIPTIONS,
+  SEARCH_MODE_LABELS,
+  type SearchMode,
+} from "~/lib/search-modes";
 import { Button, EmptyState, FilterField } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
-type FilterState = {
+type SearchResult = RouterOutputs["search"]["querySearchResults"];
+type SearchItem = SearchResult["items"][number];
+
+type FormState = {
   keyword: string;
   provinces: string[];
-  categories: string[];
+  packageCategories: string[];
+  classifyIds: number[];
+  planFields: string[];
+  procurementMethods: string[];
+  projectGroups: string[];
   budgetMin: string;
   budgetMax: string;
   publishedFrom: string;
@@ -42,440 +57,98 @@ type FilterState = {
   minMatchScore: number;
 };
 
-type SavedFilterRecord = RouterOutputs["search"]["getSavedFilter"];
-
-type AppliedFilterChipId =
-  | "keyword"
-  | "provinces"
-  | "categories"
-  | "budget"
-  | "publishedAt"
-  | "minMatchScore";
-
-type AppliedFilterChip = {
-  id: AppliedFilterChipId;
-  label: string;
-};
-
-const LEGACY_SORT_FIELDS: SortBy[] = [
-  "budget",
-  "matchScore",
-  "title",
-  "inviter",
-];
-
-const LOCAL_REFINEMENT_LABELS: Record<AppliedFilterChipId, string> = {
+const LOCAL_REFINEMENT_LABELS = {
   keyword: "từ khóa",
   provinces: "tỉnh/thành",
-  categories: "lĩnh vực",
+  packageCategories: "lĩnh vực gói",
+  classifyIds: "ngành nghề",
   budget: "ngân sách",
-  publishedAt: "ngày đăng",
-  minMatchScore: "điểm match",
-};
+  publishedAt: "ngày",
+  minMatchScore: "match score",
+  planFields: "lĩnh vực KHLCNT",
+  procurementMethods: "HTLCNT",
+  projectGroups: "nhóm dự án",
+} as const;
 
 const smartViewFrequencyLabels = {
   daily: "Hằng ngày",
   weekly: "Hằng tuần",
 } as const;
 
-const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
-function parsePositiveInt(value: string | null, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return fallback;
-  }
-  return parsed;
-}
-
-function parsePositiveId(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseMinMatch(value: string | null): number {
-  if (!value) {
-    return 0;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, parsed));
-}
-
-function parseOptionalNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) {
-    return undefined;
-  }
-  return parsed;
-}
-
-function isValidDateFilterValue(value: string): boolean {
-  if (!DATE_ONLY_REGEX.test(value)) {
-    return false;
-  }
-
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
-  );
-}
-
-function normalizeDateFilterValue(value: string | null | undefined): string {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) {
-    return "";
-  }
-
-  return isValidDateFilterValue(trimmed) ? trimmed : "";
-}
-
-function parseOptionalDateFilter(value: string): string | undefined {
-  const normalized = normalizeDateFilterValue(value);
-  return normalized || undefined;
-}
-
-function formatDateFilterValue(value: string): string {
-  const normalized = normalizeDateFilterValue(value);
-  if (!normalized) {
-    return value;
-  }
-
-  const [yearText = "", monthText = "", dayText = ""] = normalized.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-
-  return new Date(year, month - 1, day).toLocaleDateString("vi-VN");
-}
-
-function normalizeFilterState(input: FilterState): FilterState {
-  const normalized = normalizeSearchSelections(input);
-
-  return {
-    ...normalized,
-    publishedFrom: normalizeDateFilterValue(input.publishedFrom),
-    publishedTo: normalizeDateFilterValue(input.publishedTo),
-  };
-}
-
-function buildFilterStateFromSavedFilter(
-  filter: Pick<
-    SavedFilterRecord,
-    | "keyword"
-    | "provinces"
-    | "categories"
-    | "budgetMin"
-    | "budgetMax"
-    | "minMatchScore"
-  >,
-): FilterState {
-  return normalizeFilterState({
-    keyword: filter.keyword,
-    provinces: filter.provinces,
-    categories: filter.categories,
-    budgetMin:
-      typeof filter.budgetMin === "number" ? String(filter.budgetMin) : "",
-    budgetMax:
-      typeof filter.budgetMax === "number" ? String(filter.budgetMax) : "",
-    publishedFrom: "",
-    publishedTo: "",
-    minMatchScore: Math.max(0, Math.min(100, filter.minMatchScore)),
-  });
-}
-
-function parseCsvList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function normalizeStringList(values: string[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value.trim()).filter(Boolean)),
-  ).sort((a, b) => a.localeCompare(b, "vi"));
-}
-
-function areSameStringLists(a: string[], b: string[]): boolean {
-  const na = normalizeStringList(a);
-  const nb = normalizeStringList(b);
-
-  if (na.length !== nb.length) {
-    return false;
-  }
-
-  return na.every((value, index) => value === nb[index]);
-}
-
-function areSamePersistableFilters(a: FilterState, b: FilterState): boolean {
-  return (
-    a.keyword === b.keyword &&
-    areSameStringLists(a.provinces, b.provinces) &&
-    areSameStringLists(a.categories, b.categories) &&
-    a.budgetMin === b.budgetMin &&
-    a.budgetMax === b.budgetMax &&
-    a.minMatchScore === b.minMatchScore
-  );
-}
-
-function areSameSearchFilters(a: FilterState, b: FilterState): boolean {
-  return (
-    areSamePersistableFilters(a, b) &&
-    a.publishedFrom === b.publishedFrom &&
-    a.publishedTo === b.publishedTo
-  );
-}
-
-function parseMultiValueParam(
-  searchParams: ReadonlyURLSearchParams,
-  key: string,
-): string[] {
-  const repeated = searchParams
-    .getAll(key)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (repeated.length > 1) {
-    return normalizeStringList(repeated);
-  }
-
-  if (repeated.length === 1) {
-    const only = repeated[0] ?? "";
-    // Backward compatible for previous CSV query format.
-    return normalizeStringList(parseCsvList(only));
-  }
-
-  const legacy = searchParams.get(key);
-  if (!legacy) {
-    return [];
-  }
-
-  return normalizeStringList(parseCsvList(legacy));
-}
-
-function appendMultiValueParams(
-  params: URLSearchParams,
-  key: string,
-  values: string[],
-) {
-  for (const value of normalizeStringList(values)) {
-    params.append(key, value);
-  }
-}
-
-function formatCurrency(value: number): string {
+function formatCurrency(value: number) {
   return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
 }
 
-function formatDate(value: Date | string): string {
-  const date = value instanceof Date ? value : parseBidWinnerDateTime(value);
-  if (!date) {
-    return "-";
-  }
-  return date.toLocaleDateString("vi-VN");
-}
-
-function formatDateTime(value: Date | string): string {
-  const date = value instanceof Date ? value : parseBidWinnerDateTime(value);
-  if (!date) {
-    return "-";
-  }
-  return date.toLocaleString("vi-VN");
-}
-
-function parseBidWinnerDateTime(value?: string | null): Date | null {
+function formatDate(value?: string | null) {
   if (!value) {
-    return null;
+    return "-";
   }
 
   const normalized = value.includes("T") ? value : value.replace(" ", "T");
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) {
-    return null;
+    return value;
   }
 
-  return parsed;
+  return parsed.toLocaleDateString("vi-VN");
 }
 
-function readFiltersFromSearchParams(
-  searchParams: ReadonlyURLSearchParams,
-): FilterState {
-  return normalizeFilterState({
-    keyword: searchParams.get("keyword") ?? "",
-    provinces: parseMultiValueParam(searchParams, "province"),
-    categories: parseMultiValueParam(searchParams, "category"),
-    budgetMin: searchParams.get("budgetMin") ?? "",
-    budgetMax: searchParams.get("budgetMax") ?? "",
-    publishedFrom: searchParams.get("publishedFrom") ?? "",
-    publishedTo: searchParams.get("publishedTo") ?? "",
-    minMatchScore: parseMinMatch(searchParams.get("minMatchScore")),
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString("vi-VN");
+}
+
+function buildFormState(criteria: SearchCriteria): FormState {
+  return {
+    keyword: criteria.keyword,
+    provinces: criteria.provinces,
+    packageCategories: criteria.packageCategories,
+    classifyIds: criteria.classifyIds,
+    planFields: criteria.planFields,
+    procurementMethods: criteria.procurementMethods,
+    projectGroups: criteria.projectGroups,
+    budgetMin: criteria.budgetMin !== null ? String(criteria.budgetMin) : "",
+    budgetMax: criteria.budgetMax !== null ? String(criteria.budgetMax) : "",
+    publishedFrom: criteria.publishedFrom,
+    publishedTo: criteria.publishedTo,
+    minMatchScore: criteria.minMatchScore,
+  };
+}
+
+function buildCriteriaFromForm(formState: FormState): SearchCriteria {
+  return normalizeSearchCriteria({
+    keyword: formState.keyword,
+    provinces: formState.provinces,
+    packageCategories: formState.packageCategories,
+    classifyIds: formState.classifyIds,
+    planFields: formState.planFields,
+    procurementMethods: formState.procurementMethods,
+    projectGroups: formState.projectGroups,
+    budgetMin: parseOptionalNumber(formState.budgetMin),
+    budgetMax: parseOptionalNumber(formState.budgetMax),
+    publishedFrom: formState.publishedFrom,
+    publishedTo: formState.publishedTo,
+    minMatchScore: formState.minMatchScore,
   });
+}
+
+function serializeCriteria(criteria: SearchCriteria) {
+  return JSON.stringify(normalizeSearchCriteria(criteria));
 }
 
 function readSortOrderFromSearchParams(
   searchParams: ReadonlyURLSearchParams,
 ): SortOrder {
   return searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
-}
-
-function usesLegacySort(value: string | null): boolean {
-  return Boolean(value && LEGACY_SORT_FIELDS.includes(value as SortBy));
-}
-
-function usesUnsupportedSourceSortParams(
-  searchParams: ReadonlyURLSearchParams,
-): boolean {
-  return usesLegacySort(searchParams.get("sortBy"));
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function computeBudgetSliderStep(maxBudget: number): number {
-  if (maxBudget <= 100_000_000) {
-    return 1_000_000;
-  }
-  if (maxBudget <= 1_000_000_000) {
-    return 10_000_000;
-  }
-  if (maxBudget <= 10_000_000_000) {
-    return 100_000_000;
-  }
-  if (maxBudget <= 50_000_000_000) {
-    return 500_000_000;
-  }
-  return 1_000_000_000;
-}
-
-function computeBudgetSliderCeiling(values: Array<number | undefined>): number {
-  const candidates = values.filter(
-    (value): value is number => typeof value === "number" && value > 0,
-  );
-  const highest = Math.max(100_000_000, ...candidates);
-  const step = computeBudgetSliderStep(highest);
-
-  return Math.ceil(highest / step) * step;
-}
-
-function formatCompactBudget(value: number): string {
-  if (value >= 1_000_000_000) {
-    return `${Number((value / 1_000_000_000).toFixed(1)).toLocaleString("vi-VN")} tỷ`;
-  }
-  if (value >= 1_000_000) {
-    return `${Number((value / 1_000_000).toFixed(1)).toLocaleString("vi-VN")} triệu`;
-  }
-  return `${value.toLocaleString("vi-VN")} đ`;
-}
-
-function hasExactFilterChanges(
-  current: FilterState,
-  next: FilterState,
-): boolean {
-  return !areSameStringLists(current.provinces, next.provinces);
-}
-
-type StatusBadge = {
-  label: string;
-  className: string;
-  level: "normal" | "important" | "critical";
-};
-
-function getImportantStatuses(item: {
-  budget: number;
-  matchScore: number;
-  publishedAt: string;
-  closingAt: string | null;
-}): StatusBadge[] {
-  const badges: StatusBadge[] = [];
-
-  if (item.matchScore >= 85) {
-    badges.push({
-      label: "Match cao",
-      className:
-        "border-emerald-300 bg-emerald-100 text-emerald-700 font-semibold",
-      level: "important",
-    });
-  }
-
-  if (item.budget >= 10_000_000_000) {
-    badges.push({
-      label: "Gói lớn",
-      className: "border-amber-300 bg-amber-100 text-amber-700 font-semibold",
-      level: "important",
-    });
-  }
-
-  const publishedAt = parseBidWinnerDateTime(item.publishedAt);
-  if (publishedAt) {
-    const hoursFromPublish =
-      (Date.now() - publishedAt.getTime()) / (1000 * 60 * 60);
-    if (hoursFromPublish <= 24) {
-      badges.push({
-        label: "Mới đăng",
-        className: "border-blue-300 bg-blue-100 text-blue-700",
-        level: "normal",
-      });
-    }
-  }
-
-  const closingAt = parseBidWinnerDateTime(item.closingAt);
-  if (closingAt) {
-    const hoursToClose = (closingAt.getTime() - Date.now()) / (1000 * 60 * 60);
-
-    if (hoursToClose < 0) {
-      badges.push({
-        label: "Đã đóng",
-        className: "border-slate-300 bg-slate-100 text-slate-600",
-        level: "normal",
-      });
-    } else if (hoursToClose <= 48) {
-      badges.push({
-        label: "Sắp đóng",
-        className: "border-rose-400 bg-rose-100 text-rose-700 font-bold",
-        level: "critical",
-      });
-    }
-  }
-
-  return badges;
-}
-
-function mergeSelectOptions(
-  staticOptions: readonly string[],
-  dynamicOptions: string[] = [],
-  selected: string[] = [],
-) {
-  const merged = new Set<string>([
-    ...normalizeStringList([...staticOptions]),
-    ...normalizeStringList(dynamicOptions),
-  ]);
-  for (const value of selected) {
-    if (value.trim()) {
-      merged.add(value.trim());
-    }
-  }
-  return Array.from(merged).sort((a, b) => a.localeCompare(b, "vi"));
 }
 
 function summarizeSelected(values: string[], fallback: string): string {
@@ -557,9 +230,7 @@ function MultiSelectDropdown({
         className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
-        <span className="truncate">
-          {summarizeSelected(selected, emptyLabel)}
-        </span>
+        <span className="truncate">{summarizeSelected(selected, emptyLabel)}</span>
         <span className="ml-2 shrink-0 text-xs text-slate-500">
           {selected.length}
         </span>
@@ -571,7 +242,7 @@ function MultiSelectDropdown({
             className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
             placeholder="Tìm nhanh..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
           />
 
           <div className="mt-2 flex items-center justify-between text-xs">
@@ -616,43 +287,345 @@ function MultiSelectDropdown({
   );
 }
 
+function detailHrefForItem(item: SearchItem) {
+  if (item.entityType === "plan") {
+    return `/plan-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
+  }
+
+  if (item.entityType === "project") {
+    return `/project-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
+  }
+
+  return `/package-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
+}
+
+function entityLabelForItems(items: SearchItem[]) {
+  const entityType = items[0]?.entityType ?? "package";
+  return SEARCH_ENTITY_LABELS[entityType];
+}
+
+function selectedKey(item: SearchItem) {
+  return `${item.entityType}:${item.externalId}`;
+}
+
+function toSavePayload(item: SearchItem) {
+  if (item.entityType === "plan") {
+    return {
+      entityType: "plan" as const,
+      externalId: item.externalId,
+      title: item.title,
+      owner: item.owner,
+      province: item.province,
+      field: item.field,
+      procurementMethod: item.procurementMethod,
+      budget: item.budget,
+      publishedAt: item.publishedAt,
+      timeline: item.timeline,
+      sourceUrl: item.sourceUrl,
+    };
+  }
+
+  if (item.entityType === "project") {
+    return {
+      entityType: "project" as const,
+      externalId: item.externalId,
+      title: item.title,
+      owner: item.owner,
+      province: item.province,
+      projectGroup: item.projectGroup,
+      budget: item.budget,
+      publishedAt: item.publishedAt,
+      approvedAt: item.approvedAt,
+      relatedPlanCount: item.relatedPlanCount,
+      sourceUrl: item.sourceUrl,
+    };
+  }
+
+  return {
+    entityType: "package" as const,
+    externalId: item.externalId,
+    title: item.title,
+    inviter: item.inviter,
+    province: item.province,
+    category: item.category,
+    budget: item.budget,
+    publishedAt: item.publishedAt,
+    closingAt: item.closingAt,
+    sourceUrl: item.sourceUrl,
+    matchScore: item.matchScore,
+  };
+}
+
+function SourceMetaBanner({ result }: { result: SearchResult }) {
+  const exactFields = result.sourceMeta.exactFields
+    .map((field) => LOCAL_REFINEMENT_LABELS[field])
+    .join(", ");
+  const localFields = result.localRefinement.fields
+    .map((field) => LOCAL_REFINEMENT_LABELS[field])
+    .join(", ");
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        <p>
+          Nguồn public:{" "}
+          <a
+            href={result.sourceMeta.pageUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-sky-700 hover:underline"
+          >
+            {result.sourceMeta.pageUrl}
+          </a>
+        </p>
+        <p className="mt-1">
+          Chính xác từ nguồn:{" "}
+          {exactFields.length > 0 ? exactFields : "phân trang/tổng số cơ bản"}
+        </p>
+        <p className="mt-1">
+          Tinh lọc trong app: {localFields.length > 0 ? localFields : "không có"}
+        </p>
+      </div>
+
+      {result.sourceMeta.notices.map((notice) => (
+        <div
+          key={notice}
+          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
+        >
+          {notice}
+        </div>
+      ))}
+
+      {result.warning ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {result.warning}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ResultsTable(props: {
+  items: SearchItem[];
+  selectedKeys: Set<string>;
+  setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
+  addWatchlist: ReturnType<typeof api.watchlist.addItem.useMutation>;
+}) {
+  const allSelected =
+    props.items.length > 0 &&
+    props.items.every((item) => props.selectedKeys.has(selectedKey(item)));
+
+  const toggleAll = (checked: boolean) => {
+    props.setSelectedKeys(
+      checked
+        ? new Set(props.items.map((item) => selectedKey(item)))
+        : new Set<string>(),
+    );
+  };
+
+  const toggleOne = (item: SearchItem, checked: boolean) => {
+    props.setSelectedKeys((previous) => {
+      const next = new Set(previous);
+      const key = selectedKey(item);
+
+      if (checked) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+
+      return next;
+    });
+  };
+
+  if (props.items.length === 0) {
+    return null;
+  }
+
+  const entityType = props.items[0]?.entityType ?? "package";
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+      <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+          <tr>
+            <th className="px-3 py-3">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={(event) => toggleAll(event.target.checked)}
+                aria-label="Chọn tất cả"
+              />
+            </th>
+            <th className="px-3 py-3">Tên</th>
+            <th className="px-3 py-3">
+              {entityType === "package"
+                ? "Bên mời / chủ đầu tư"
+                : entityType === "plan"
+                  ? "Chủ đầu tư"
+                  : "Đơn vị"}
+            </th>
+            <th className="px-3 py-3">Tỉnh</th>
+            <th className="px-3 py-3">
+              {entityType === "plan"
+                ? "Lĩnh vực / HTLCNT"
+                : entityType === "project"
+                  ? "Nhóm dự án"
+                  : "Lĩnh vực"}
+            </th>
+            <th className="px-3 py-3 text-right">Ngân sách</th>
+            <th className="px-3 py-3">Ngày</th>
+            <th className="px-3 py-3">Hành động</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {props.items.map((item) => (
+            <tr key={selectedKey(item)} className="align-top">
+              <td className="px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={props.selectedKeys.has(selectedKey(item))}
+                  onChange={(event) => toggleOne(item, event.target.checked)}
+                  aria-label={`Chọn ${item.externalId}`}
+                />
+              </td>
+              <td className="px-3 py-3">
+                <div className="max-w-[340px]">
+                  <p className="font-semibold text-slate-900">{item.title}</p>
+                  {item.entityType === "plan" ? (
+                    <p className="mt-1 text-xs text-slate-500">{item.planName}</p>
+                  ) : null}
+                  {item.entityType === "project" &&
+                  item.relatedPlans.length > 0 ? (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs text-slate-500">
+                        KHLCNT liên quan: {item.relatedPlanCount}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {item.relatedPlans.slice(0, 2).map((plan) => (
+                          <a
+                            key={plan.externalId}
+                            href={plan.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
+                          >
+                            {plan.title}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </td>
+              <td className="px-3 py-3 text-xs text-slate-700">
+                {item.entityType === "package"
+                  ? item.inviter
+                  : item.owner}
+              </td>
+              <td className="px-3 py-3 text-xs text-slate-700">{item.province}</td>
+              <td className="px-3 py-3 text-xs text-slate-700">
+                {item.entityType === "plan" ? (
+                  <div>
+                    <p>{item.field}</p>
+                    <p className="mt-1 text-slate-500">{item.procurementMethod}</p>
+                  </div>
+                ) : item.entityType === "project" ? (
+                  item.projectGroup
+                ) : (
+                  item.category
+                )}
+              </td>
+              <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
+                {formatCurrency(item.budget)}
+              </td>
+              <td className="px-3 py-3 text-xs text-slate-700">
+                {item.entityType === "project" ? (
+                  <div>
+                    <p>Đăng: {formatDate(item.publishedAt)}</p>
+                    <p className="mt-1 text-slate-500">
+                      Duyệt: {formatDate(item.approvedAt)}
+                    </p>
+                  </div>
+                ) : item.entityType === "plan" ? (
+                  <div>
+                    <p>Đăng: {formatDate(item.publishedAt)}</p>
+                    <p className="mt-1 text-slate-500">
+                      Tiến độ: {item.timeline ?? "-"}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <p>Đăng: {formatDate(item.publishedAt)}</p>
+                    <p className="mt-1 text-slate-500">
+                      Match: {item.matchScore}%
+                    </p>
+                  </div>
+                )}
+              </td>
+              <td className="px-3 py-3">
+                <div className="flex min-w-[180px] flex-wrap gap-1">
+                  <Link
+                    href={detailHrefForItem(item)}
+                    className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+                  >
+                    Chi tiết
+                  </Link>
+                  <a
+                    href={item.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+                  >
+                    Nguồn
+                  </a>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="px-1.5 py-1"
+                    onClick={() =>
+                      props.addWatchlist.mutate({
+                        type: item.entityType,
+                        refKey: item.externalId,
+                        label: item.title,
+                      })
+                    }
+                  >
+                    Theo dõi
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function SearchPageClient() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
 
-  const initialFilters = readFiltersFromSearchParams(searchParams);
-  const activeSavedFilterId = parsePositiveId(searchParams.get("savedFilterId"));
+  const initialMode = readSearchModeFromSearchParams(searchParams);
+  const initialCriteria = readSearchCriteriaFromSearchParams(searchParams);
+  const initialSavedFilterId = parsePositiveId(searchParams.get("savedFilterId"));
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialLimit = parsePositiveInt(searchParams.get("limit"), 20);
+  const initialSortOrder = readSortOrderFromSearchParams(searchParams);
 
-  const [keyword, setKeyword] = useState(initialFilters.keyword);
-  const [provinces, setProvinces] = useState(initialFilters.provinces);
-  const [categories, setCategories] = useState(initialFilters.categories);
-  const [budgetMin, setBudgetMin] = useState(initialFilters.budgetMin);
-  const [budgetMax, setBudgetMax] = useState(initialFilters.budgetMax);
-  const [publishedFrom, setPublishedFrom] = useState(
-    initialFilters.publishedFrom,
+  const [mode, setMode] = useState<SearchMode>(initialMode);
+  const [formState, setFormState] = useState<FormState>(
+    buildFormState(initialCriteria),
   );
-  const [publishedTo, setPublishedTo] = useState(initialFilters.publishedTo);
-  const [minMatchScore, setMinMatchScore] = useState(
-    initialFilters.minMatchScore,
-  );
-  const [appliedFilters, setAppliedFilters] =
-    useState<FilterState>(initialFilters);
-  const sortBy: SortBy = "publishedAt";
-  const [sortDowngraded, setSortDowngraded] = useState<boolean>(() =>
-    usesUnsupportedSourceSortParams(searchParams),
-  );
-  const [sortOrder, setSortOrder] = useState<SortOrder>(() =>
-    readSortOrderFromSearchParams(searchParams),
-  );
-  const [appliedSortOrder, setAppliedSortOrder] = useState<SortOrder>(() =>
-    readSortOrderFromSearchParams(searchParams),
-  );
-  const [page, setPage] = useState(() =>
-    parsePositiveInt(searchParams.get("page"), 1),
-  );
-  const [limit, setLimit] = useState(() =>
-    parsePositiveInt(searchParams.get("limit"), 20),
+  const [appliedCriteria, setAppliedCriteria] =
+    useState<SearchCriteria>(initialCriteria);
+  const [page, setPage] = useState(initialPage);
+  const [limit, setLimit] = useState(initialLimit);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(initialSortOrder);
+  const [savedFilterId, setSavedFilterId] = useState<number | null>(
+    initialSavedFilterId,
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [smartViewSuccess, setSmartViewSuccess] = useState<string | null>(null);
@@ -666,247 +639,80 @@ export function SearchPageClient() {
   const [smartViewFrequency, setSmartViewFrequency] = useState<
     "daily" | "weekly"
   >("daily");
-  const [selectedExternalIds, setSelectedExternalIds] = useState<Set<string>>(
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set<string>(),
   );
-  const handleProvinceChange = useCallback((next: string[]) => {
-    setProvinces(normalizeProvinceFilterValues(next));
-  }, []);
-  const handleCategoryChange = useCallback((next: string[]) => {
-    setCategories(normalizeCategoryFilterValues(next));
-  }, []);
   const hydratedSavedFilterKeyRef = useRef<string>("");
-  const isEditingSmartView = activeSavedFilterId !== null;
-  const savedFilterQuery = api.search.getSavedFilter.useQuery(
-    { id: activeSavedFilterId ?? 0 },
-    {
-      enabled: activeSavedFilterId !== null,
-      retry: false,
-      refetchOnWindowFocus: false,
-    },
-  );
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-
-    if (appliedFilters.keyword.trim()) {
-      params.set("keyword", appliedFilters.keyword.trim());
-    }
-    if (appliedFilters.provinces.length > 0) {
-      appendMultiValueParams(params, "province", appliedFilters.provinces);
-    }
-    if (appliedFilters.categories.length > 0) {
-      appendMultiValueParams(params, "category", appliedFilters.categories);
-    }
-    if (appliedFilters.budgetMin.trim()) {
-      params.set("budgetMin", appliedFilters.budgetMin.trim());
-    }
-    if (appliedFilters.budgetMax.trim()) {
-      params.set("budgetMax", appliedFilters.budgetMax.trim());
-    }
-    if (appliedFilters.publishedFrom) {
-      params.set("publishedFrom", appliedFilters.publishedFrom);
-    }
-    if (appliedFilters.publishedTo) {
-      params.set("publishedTo", appliedFilters.publishedTo);
-    }
-    if (appliedFilters.minMatchScore > 0) {
-      params.set("minMatchScore", String(appliedFilters.minMatchScore));
-    }
-    if (appliedSortOrder === "asc") {
-      params.set("sortOrder", "asc");
-    }
-
-    if (activeSavedFilterId !== null) {
-      params.set("savedFilterId", String(activeSavedFilterId));
-    }
-    params.set("page", String(page));
-    params.set("limit", String(limit));
-
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, {
-      scroll: false,
-    });
-  }, [
-    activeSavedFilterId,
-    appliedFilters,
-    appliedSortOrder,
-    limit,
-    page,
-    pathname,
-    router,
-  ]);
-
-  // Sync state from URL when query params change externally (back/forward,
-  // Smart View apply). The state→URL effect above handles the reverse direction.
   const lastParamsKeyRef = useRef<string>(searchParams.toString());
-  useEffect(() => {
-    const key = searchParams.toString();
-    if (key === lastParamsKeyRef.current) return;
-    lastParamsKeyRef.current = key;
 
-    const next = readFiltersFromSearchParams(searchParams);
-
-    setKeyword(next.keyword);
-    setProvinces(next.provinces);
-    setCategories(next.categories);
-    setBudgetMin(next.budgetMin);
-    setBudgetMax(next.budgetMax);
-    setPublishedFrom(next.publishedFrom);
-    setPublishedTo(next.publishedTo);
-    setMinMatchScore(next.minMatchScore);
-    setAppliedFilters(next);
-    setSortOrder(readSortOrderFromSearchParams(searchParams));
-    setAppliedSortOrder(readSortOrderFromSearchParams(searchParams));
-
-    setSortDowngraded(usesUnsupportedSourceSortParams(searchParams));
-
-    setPage(parsePositiveInt(searchParams.get("page"), 1));
-    setLimit(parsePositiveInt(searchParams.get("limit"), 20));
-  }, [searchParams]);
-
-  const parsedBudgetMin = useMemo(
-    () => parseOptionalNumber(budgetMin),
-    [budgetMin],
-  );
-  const parsedBudgetMax = useMemo(
-    () => parseOptionalNumber(budgetMax),
-    [budgetMax],
-  );
-  const parsedAppliedBudgetMin = useMemo(
-    () => parseOptionalNumber(appliedFilters.budgetMin),
-    [appliedFilters.budgetMin],
-  );
-  const parsedAppliedBudgetMax = useMemo(
-    () => parseOptionalNumber(appliedFilters.budgetMax),
-    [appliedFilters.budgetMax],
-  );
-  const parsedAppliedPublishedFrom = useMemo(
-    () => parseOptionalDateFilter(appliedFilters.publishedFrom),
-    [appliedFilters.publishedFrom],
-  );
-  const parsedAppliedPublishedTo = useMemo(
-    () => parseOptionalDateFilter(appliedFilters.publishedTo),
-    [appliedFilters.publishedTo],
-  );
-  const normalizedDraftPublishedFrom = useMemo(
-    () => normalizeDateFilterValue(publishedFrom),
-    [publishedFrom],
-  );
-  const normalizedDraftPublishedTo = useMemo(
-    () => normalizeDateFilterValue(publishedTo),
-    [publishedTo],
+  const draftCriteria = useMemo(
+    () => buildCriteriaFromForm(formState),
+    [formState],
   );
 
   const queryInput = useMemo(
     () => ({
-      keyword: appliedFilters.keyword,
-      provinces: appliedFilters.provinces,
-      categories: appliedFilters.categories,
-      budgetMin: parsedAppliedBudgetMin,
-      budgetMax: parsedAppliedBudgetMax,
-      publishedFrom: parsedAppliedPublishedFrom,
-      publishedTo: parsedAppliedPublishedTo,
-      minMatchScore: appliedFilters.minMatchScore,
-      sortBy,
-      sortOrder: appliedSortOrder,
+      mode,
+      keyword: appliedCriteria.keyword,
+      provinces: appliedCriteria.provinces,
+      packageCategories: appliedCriteria.packageCategories,
+      classifyIds: appliedCriteria.classifyIds,
+      planFields: appliedCriteria.planFields,
+      procurementMethods: appliedCriteria.procurementMethods,
+      projectGroups: appliedCriteria.projectGroups,
+      budgetMin: appliedCriteria.budgetMin,
+      budgetMax: appliedCriteria.budgetMax,
+      publishedFrom: appliedCriteria.publishedFrom
+        ? appliedCriteria.publishedFrom
+        : undefined,
+      publishedTo: appliedCriteria.publishedTo
+        ? appliedCriteria.publishedTo
+        : undefined,
+      minMatchScore: appliedCriteria.minMatchScore,
+      sortOrder,
       offset: (page - 1) * limit,
       limit,
     }),
-    [
-      appliedFilters,
-      limit,
-      page,
-      parsedAppliedBudgetMax,
-      parsedAppliedBudgetMin,
-      parsedAppliedPublishedFrom,
-      parsedAppliedPublishedTo,
-      appliedSortOrder,
-      sortBy,
-    ],
+    [appliedCriteria, limit, mode, page, sortOrder],
   );
 
-  const [packagesResult, packagesQuery] =
-    api.search.queryPackages.useSuspenseQuery(queryInput);
-  const packages = packagesResult.items;
-  const total = packagesResult.total;
-  const liveOptions = packagesResult.options;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  const budgetSliderCeiling = useMemo(
-    () =>
-      computeBudgetSliderCeiling([
-        packagesResult.windowBudgetRange.max,
-        parsedBudgetMin,
-        parsedBudgetMax,
-        parsedAppliedBudgetMin,
-        parsedAppliedBudgetMax,
-      ]),
-    [
-      packagesResult.windowBudgetRange.max,
-      parsedAppliedBudgetMax,
-      parsedAppliedBudgetMin,
-      parsedBudgetMax,
-      parsedBudgetMin,
-    ],
-  );
-  const budgetSliderStep = useMemo(
-    () => computeBudgetSliderStep(budgetSliderCeiling),
-    [budgetSliderCeiling],
-  );
-  const budgetSliderMinValue = useMemo(
-    () =>
-      typeof parsedBudgetMin === "number"
-        ? clampNumber(parsedBudgetMin, 0, budgetSliderCeiling)
-        : 0,
-    [budgetSliderCeiling, parsedBudgetMin],
-  );
-  const budgetSliderMaxValue = useMemo(
-    () =>
-      typeof parsedBudgetMax === "number"
-        ? clampNumber(parsedBudgetMax, budgetSliderMinValue, budgetSliderCeiling)
-        : budgetSliderCeiling,
-    [budgetSliderCeiling, budgetSliderMinValue, parsedBudgetMax],
-  );
-  const budgetRangeHelper = useMemo(() => {
-    if (packagesResult.windowBudgetRange.max <= 0) {
-      return "Trang nguồn hiện tại chưa có dữ liệu ngân sách để kéo thanh lọc.";
-    }
+  const [result, resultQuery] =
+    api.search.querySearchResults.useSuspenseQuery(queryInput);
+  const items = result.items;
+  const totalPages = Math.max(1, Math.ceil(result.total / limit));
+  const entityLabel = entityLabelForItems(items);
 
-    return `Khoảng ngân sách trong trang hiện tại: ${formatCompactBudget(
-      packagesResult.windowBudgetRange.min,
-    )} - ${formatCompactBudget(packagesResult.windowBudgetRange.max)}.`;
-  }, [
-    packagesResult.windowBudgetRange.max,
-    packagesResult.windowBudgetRange.min,
-  ]);
+  const draftCriteriaKey = useMemo(
+    () => serializeCriteria(draftCriteria),
+    [draftCriteria],
+  );
+  const appliedCriteriaKey = useMemo(
+    () => serializeCriteria(appliedCriteria),
+    [appliedCriteria],
+  );
+  const hasPendingSearchFilterChanges =
+    mode !== readSearchModeFromSearchParams(searchParams) ||
+    draftCriteriaKey !== appliedCriteriaKey;
 
-  const keywordOptions = useMemo(
-    () => mergeSelectOptions(KEYWORD_OPTIONS, liveOptions.keywords),
-    [liveOptions.keywords],
-  );
-  const localRefinementSummary = packagesResult.localRefinement.fields
-    .map((field) => LOCAL_REFINEMENT_LABELS[field])
-    .join(", ");
-  const keywordTerms = useMemo(
-    () =>
-      keyword
-        .split(",")
-        .map((term) => term.trim())
-        .filter(Boolean),
-    [keyword],
-  );
-  const provinceOptions = useMemo(
-    () =>
-      mergeSelectOptions(PROVINCE_OPTIONS, liveOptions.provinces, provinces),
-    [liveOptions.provinces, provinces],
-  );
-  const categoryOptions = useMemo(
-    () =>
-      mergeSelectOptions(CATEGORY_OPTIONS, liveOptions.categories, categories),
-    [categories, liveOptions.categories],
-  );
+  const budgetRangeError =
+    draftCriteria.budgetMin !== null &&
+    draftCriteria.budgetMax !== null &&
+    draftCriteria.budgetMin > draftCriteria.budgetMax;
+  const publishedDateRangeError =
+    Boolean(draftCriteria.publishedFrom) &&
+    Boolean(draftCriteria.publishedTo) &&
+    draftCriteria.publishedFrom > draftCriteria.publishedTo;
 
   const utils = api.useUtils();
+
+  const savedFilterQuery = api.search.getSavedFilter.useQuery(
+    { id: savedFilterId ?? 0 },
+    {
+      enabled: savedFilterId !== null,
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  );
 
   useEffect(() => {
     if (page > totalPages) {
@@ -914,18 +720,55 @@ export function SearchPageClient() {
     }
   }, [page, totalPages]);
 
+  useEffect(() => {
+    const params = buildSearchUrlParams({
+      mode,
+      criteria: appliedCriteria,
+      page,
+      limit,
+      sortOrder,
+      savedFilterId,
+    });
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  }, [appliedCriteria, limit, mode, page, pathname, router, savedFilterId, sortOrder]);
+
+  useEffect(() => {
+    const key = searchParams.toString();
+    if (key === lastParamsKeyRef.current) {
+      return;
+    }
+    lastParamsKeyRef.current = key;
+
+    const nextMode = readSearchModeFromSearchParams(searchParams);
+    const nextCriteria = readSearchCriteriaFromSearchParams(searchParams);
+    setMode(nextMode);
+    setFormState(buildFormState(nextCriteria));
+    setAppliedCriteria(nextCriteria);
+    setPage(parsePositiveInt(searchParams.get("page"), 1));
+    setLimit(parsePositiveInt(searchParams.get("limit"), 20));
+    setSortOrder(readSortOrderFromSearchParams(searchParams));
+    setSavedFilterId(parsePositiveId(searchParams.get("savedFilterId")));
+  }, [searchParams]);
+
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
       setSmartViewSuccess(`Đã lưu Smart View "${savedFilter.name}".`);
-      setSmartViewName("");
+      setSmartViewName(savedFilter.name);
+      setSavedFilterId(savedFilter.id);
+      setSmartViewFrequency(savedFilter.notificationFrequency);
       await utils.search.listSavedFilters.invalidate();
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message || "Không thể lưu bộ lọc.");
+      setSaveError(error.message ?? "Không thể lưu Smart View.");
     },
   });
+
   const updateSavedFilter = api.search.updateSavedFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
@@ -940,7 +783,7 @@ export function SearchPageClient() {
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message || "Không thể cập nhật Smart View.");
+      setSaveError(error.message ?? "Không thể cập nhật Smart View.");
     },
   });
 
@@ -950,113 +793,40 @@ export function SearchPageClient() {
     },
   });
 
-  const saveSelectedPackages = api.search.saveSelectedPackages.useMutation({
-    onSuccess: async (result) => {
+  const saveSelectedResults = api.search.saveSelectedResults.useMutation({
+    onSuccess: async (saveResult) => {
       setSaveSelectedError(null);
       setSaveSelectedSuccess(
-        `Đã lưu ${result.savedCount} gói thầu, bỏ qua ${result.skippedCount} gói trùng.`,
+        `Đã lưu ${saveResult.savedCount} mục, bỏ qua ${saveResult.skippedCount} mục trùng.`,
       );
-      setSelectedExternalIds(new Set<string>());
+      setSelectedKeys(new Set<string>());
       await utils.insight.getDashboardSummary.invalidate();
     },
     onError: (error) => {
       setSaveSelectedSuccess(null);
-      setSaveSelectedError(error.message || "Không thể lưu gói thầu đã chọn.");
+      setSaveSelectedError(
+        error.message ?? "Không thể lưu các mục đã chọn.",
+      );
     },
   });
 
-  const budgetRangeError =
-    typeof parsedBudgetMin === "number" &&
-    typeof parsedBudgetMax === "number" &&
-    parsedBudgetMin > parsedBudgetMax;
+  useEffect(() => {
+    setSelectedKeys((previous) => {
+      const visible = new Set(items.map((item) => selectedKey(item)));
+      const next = new Set<string>();
 
-  const publishedDateRangeError =
-    Boolean(normalizedDraftPublishedFrom) &&
-    Boolean(normalizedDraftPublishedTo) &&
-    normalizedDraftPublishedFrom > normalizedDraftPublishedTo;
+      previous.forEach((value) => {
+        if (visible.has(value)) {
+          next.add(value);
+        }
+      });
 
-  const draftFilters = useMemo<FilterState>(
-    () => ({
-      keyword,
-      provinces,
-      categories,
-      budgetMin,
-      budgetMax,
-      publishedFrom,
-      publishedTo,
-      minMatchScore,
-    }),
-    [
-      budgetMax,
-      budgetMin,
-      categories,
-      keyword,
-      minMatchScore,
-      provinces,
-      publishedFrom,
-      publishedTo,
-    ],
-  );
-
-  const hasPendingSearchFilterChanges = !areSameSearchFilters(
-    draftFilters,
-    appliedFilters,
-  ) || sortOrder !== appliedSortOrder;
-  const hasPendingPersistableFilterChanges = !areSamePersistableFilters(
-    draftFilters,
-    appliedFilters,
-  );
-
-  const budgetNegativeError =
-    (typeof parsedBudgetMin === "number" && parsedBudgetMin < 0) ||
-    (typeof parsedBudgetMax === "number" && parsedBudgetMax < 0);
-
-  const applyDraftFilters = () => {
-    if (budgetRangeError || budgetNegativeError || publishedDateRangeError) {
-      return;
-    }
-
-    const nextFilters = normalizeFilterState({
-      keyword,
-      provinces,
-      categories,
-      budgetMin,
-      budgetMax,
-      publishedFrom,
-      publishedTo,
-      minMatchScore,
+      return next;
     });
-
-    setAppliedAndDraftFilters(nextFilters);
-  };
-
-  const setAppliedAndDraftFilters = useCallback(
-    (next: FilterState) => {
-      const normalizedNext = normalizeFilterState(next);
-
-      setKeyword(normalizedNext.keyword);
-      setProvinces(normalizedNext.provinces);
-      setCategories(normalizedNext.categories);
-      setBudgetMin(normalizedNext.budgetMin);
-      setBudgetMax(normalizedNext.budgetMax);
-      setPublishedFrom(normalizedNext.publishedFrom);
-      setPublishedTo(normalizedNext.publishedTo);
-      setMinMatchScore(normalizedNext.minMatchScore);
-      setAppliedFilters(normalizedNext);
-      setAppliedSortOrder(sortOrder);
-      if (hasExactFilterChanges(appliedFilters, normalizedNext)) {
-        setPage(1);
-      }
-      setSaveError(null);
-      setSmartViewSuccess(null);
-      setSaveSelectedSuccess(null);
-      setSaveSelectedError(null);
-    },
-    [appliedFilters, sortOrder],
-  );
+  }, [items]);
 
   useEffect(() => {
-    if (activeSavedFilterId === null) {
+    if (savedFilterId === null) {
       hydratedSavedFilterKeyRef.current = "";
       setSmartViewName("");
       setSmartViewFrequency("daily");
@@ -1065,15 +835,7 @@ export function SearchPageClient() {
       return;
     }
 
-    hydratedSavedFilterKeyRef.current = "";
-    setSmartViewName("");
-    setSmartViewFrequency("daily");
-    setSaveError(null);
-    setSmartViewSuccess(null);
-  }, [activeSavedFilterId]);
-
-  useEffect(() => {
-    if (activeSavedFilterId === null || !savedFilterQuery.data) {
+    if (!savedFilterQuery.data) {
       return;
     }
 
@@ -1083,79 +845,49 @@ export function SearchPageClient() {
     }
 
     hydratedSavedFilterKeyRef.current = hydratedKey;
+    setMode(savedFilterQuery.data.mode);
+    setFormState(buildFormState(savedFilterQuery.data.criteria));
+    setAppliedCriteria(savedFilterQuery.data.criteria);
     setSmartViewName(savedFilterQuery.data.name);
     setSmartViewFrequency(savedFilterQuery.data.notificationFrequency);
-    setAppliedAndDraftFilters(
-      buildFilterStateFromSavedFilter(savedFilterQuery.data),
-    );
     setPage(1);
-  }, [activeSavedFilterId, savedFilterQuery.data, setAppliedAndDraftFilters]);
+  }, [savedFilterId, savedFilterQuery.data]);
 
-  const appliedSmartViewPayload = useMemo(
-    () => ({
-      keyword: appliedFilters.keyword,
-      provinces: appliedFilters.provinces,
-      categories: appliedFilters.categories,
-      budgetMin: parsedAppliedBudgetMin,
-      budgetMax: parsedAppliedBudgetMax,
-      minMatchScore: appliedFilters.minMatchScore,
-    }),
-    [
-      appliedFilters.categories,
-      appliedFilters.keyword,
-      appliedFilters.minMatchScore,
-      appliedFilters.provinces,
-      parsedAppliedBudgetMax,
-      parsedAppliedBudgetMin,
-    ],
-  );
-  const isLoadingSmartView = isEditingSmartView && savedFilterQuery.isPending;
-  const smartViewLoadError = isEditingSmartView
-    ? savedFilterQuery.error?.message ?? null
-    : null;
-  const isSavingSmartView =
-    saveFilter.isPending || updateSavedFilter.isPending;
-  const canPersistSmartView =
-    !budgetRangeError &&
-    !budgetNegativeError &&
-    !hasPendingPersistableFilterChanges &&
-    !isLoadingSmartView &&
-    !isSavingSmartView &&
-    (!isEditingSmartView || Boolean(savedFilterQuery.data));
-
-  const cancelSmartViewEditing = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("savedFilterId");
-    const query = params.toString();
-
-    setSaveError(null);
-    setSmartViewSuccess(null);
-    router.replace(query ? `${pathname}?${query}` : pathname, {
-      scroll: false,
-    });
-  };
+  const selectedItems = items.filter((item) => selectedKeys.has(selectedKey(item)));
+  const appliedChips = summarizeSearchCriteria(mode, appliedCriteria);
 
   const persistSmartView = () => {
-    if (!canPersistSmartView) {
+    if (budgetRangeError || publishedDateRangeError) {
       return;
     }
 
-    setSaveError(null);
-    setSmartViewSuccess(null);
-
-    const fallbackName =
-      isEditingSmartView && savedFilterQuery.data
-        ? savedFilterQuery.data.name
-        : `Smart View ${new Date().toLocaleTimeString("vi-VN")}`;
     const payload = {
-      name: smartViewName.trim() || fallbackName,
-      ...appliedSmartViewPayload,
+      name:
+        smartViewName.trim() ||
+        `Smart View ${new Date().toLocaleTimeString("vi-VN")}`,
+      mode,
+      keyword: appliedCriteria.keyword,
+      provinces: appliedCriteria.provinces,
+      packageCategories: appliedCriteria.packageCategories,
+      classifyIds: appliedCriteria.classifyIds,
+      planFields: appliedCriteria.planFields,
+      procurementMethods: appliedCriteria.procurementMethods,
+      projectGroups: appliedCriteria.projectGroups,
+      budgetMin: appliedCriteria.budgetMin,
+      budgetMax: appliedCriteria.budgetMax,
+      publishedFrom: appliedCriteria.publishedFrom
+        ? appliedCriteria.publishedFrom
+        : undefined,
+      publishedTo: appliedCriteria.publishedTo
+        ? appliedCriteria.publishedTo
+        : undefined,
+      minMatchScore: appliedCriteria.minMatchScore,
       notificationFrequency: smartViewFrequency,
     };
 
-    if (isEditingSmartView && activeSavedFilterId !== null) {
+    if (savedFilterId !== null) {
       updateSavedFilter.mutate({
-        id: activeSavedFilterId,
+        id: savedFilterId,
         ...payload,
       });
       return;
@@ -1164,879 +896,379 @@ export function SearchPageClient() {
     saveFilter.mutate(payload);
   };
 
-  const appliedFilterChips = useMemo<AppliedFilterChip[]>(() => {
-    const chips: AppliedFilterChip[] = [];
-
-    if (appliedFilters.keyword.trim()) {
-      chips.push({
-        id: "keyword",
-        label: `Từ khóa: ${appliedFilters.keyword.trim()}`,
-      });
-    }
-
-    if (appliedFilters.provinces.length > 0) {
-      chips.push({
-        id: "provinces",
-        label: `Tỉnh/Thành: ${appliedFilters.provinces.length} mục`,
-      });
-    }
-
-    if (appliedFilters.categories.length > 0) {
-      chips.push({
-        id: "categories",
-        label: `Lĩnh vực: ${appliedFilters.categories.length} mục`,
-      });
-    }
-
-    const appliedMin = parseOptionalNumber(appliedFilters.budgetMin);
-    const appliedMax = parseOptionalNumber(appliedFilters.budgetMax);
-    if (typeof appliedMin === "number" || typeof appliedMax === "number") {
-      chips.push({
-        id: "budget",
-        label: `Ngân sách: ${
-          typeof appliedMin === "number"
-            ? appliedMin.toLocaleString("vi-VN")
-            : "0"
-        } - ${
-          typeof appliedMax === "number"
-            ? appliedMax.toLocaleString("vi-VN")
-            : "không giới hạn"
-        }`,
-      });
-    }
-
-    if (appliedFilters.publishedFrom || appliedFilters.publishedTo) {
-      chips.push({
-        id: "publishedAt",
-        label: `Ngày đăng: ${
-          appliedFilters.publishedFrom
-            ? formatDateFilterValue(appliedFilters.publishedFrom)
-            : "không giới hạn"
-        } - ${
-          appliedFilters.publishedTo
-            ? formatDateFilterValue(appliedFilters.publishedTo)
-            : "không giới hạn"
-        }`,
-      });
-    }
-
-    if (appliedFilters.minMatchScore > 0) {
-      chips.push({
-        id: "minMatchScore",
-        label: `Match tối thiểu: ${appliedFilters.minMatchScore}%`,
-      });
-    }
-
-    return chips;
-  }, [appliedFilters]);
-
-  const removeAppliedFilterChip = (chipId: AppliedFilterChipId) => {
-    const next: FilterState = {
-      ...appliedFilters,
-      provinces: [...appliedFilters.provinces],
-      categories: [...appliedFilters.categories],
-    };
-
-    if (chipId === "keyword") {
-      next.keyword = "";
-    }
-
-    if (chipId === "provinces") {
-      next.provinces = [];
-    }
-
-    if (chipId === "categories") {
-      next.categories = [];
-    }
-
-    if (chipId === "budget") {
-      next.budgetMin = "";
-      next.budgetMax = "";
-    }
-
-    if (chipId === "publishedAt") {
-      next.publishedFrom = "";
-      next.publishedTo = "";
-    }
-
-    if (chipId === "minMatchScore") {
-      next.minMatchScore = 0;
-    }
-
-    setAppliedAndDraftFilters(next);
-  };
-
-  const handleBudgetMinSliderChange = (nextValue: number) => {
-    const clamped = clampNumber(nextValue, 0, budgetSliderMaxValue);
-    setBudgetMin(clamped <= 0 ? "" : String(clamped));
-  };
-
-  const handleBudgetMaxSliderChange = (nextValue: number) => {
-    const clamped = clampNumber(
-      nextValue,
-      budgetSliderMinValue,
-      budgetSliderCeiling,
-    );
-    setBudgetMax(clamped >= budgetSliderCeiling ? "" : String(clamped));
-  };
-
-  const handleBudgetMinBlur = () => {
-    const parsed = parseOptionalNumber(budgetMin);
-    if (typeof parsed !== "number" || parsed <= 0) {
-      setBudgetMin("");
+  const applyDraftFilters = () => {
+    if (budgetRangeError || publishedDateRangeError) {
       return;
     }
 
-    const clamped = clampNumber(
-      Math.round(parsed),
-      0,
-      typeof parsedBudgetMax === "number" ? parsedBudgetMax : budgetSliderCeiling,
-    );
-    setBudgetMin(clamped <= 0 ? "" : String(clamped));
+    setAppliedCriteria(draftCriteria);
+    setPage(1);
+    setSaveError(null);
+    setSmartViewSuccess(null);
+    setSaveSelectedSuccess(null);
+    setSaveSelectedError(null);
   };
 
-  const handleBudgetMaxBlur = () => {
-    const parsed = parseOptionalNumber(budgetMax);
-    if (typeof parsed !== "number") {
-      setBudgetMax("");
-      return;
-    }
-
-    const clamped = clampNumber(
-      Math.round(parsed),
-      typeof parsedBudgetMin === "number" ? parsedBudgetMin : 0,
-      budgetSliderCeiling,
-    );
-    setBudgetMax(clamped >= budgetSliderCeiling ? "" : String(clamped));
+  const resetFilters = () => {
+    setFormState(buildFormState(emptySearchCriteria));
+    setAppliedCriteria({ ...emptySearchCriteria });
+    setPage(1);
+    setSelectedKeys(new Set<string>());
   };
 
-  const handleApplyOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") {
-      return;
-    }
-
-    event.preventDefault();
-    applyDraftFilters();
-  };
-
-  const allCurrentPageSelected =
-    packages.length > 0 &&
-    packages.every((item) => selectedExternalIds.has(item.externalId));
-
-  const selectedItems = packages.filter((item) =>
-    selectedExternalIds.has(item.externalId),
-  );
-
-  useEffect(() => {
-    setSelectedExternalIds((prev) => {
-      const visible = new Set(packages.map((item) => item.externalId));
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (visible.has(id)) {
-          next.add(id);
-        }
-      });
-      return next;
-    });
-  }, [packages]);
-
-  type SearchRow = (typeof packages)[number];
-
-  const columns = useMemo<ColumnDef<SearchRow>[]>(
-    () => [
-      {
-        id: "select",
-        header: () => (
-          <input
-            type="checkbox"
-            checked={allCurrentPageSelected}
-            onChange={(e) => {
-              if (e.target.checked) {
-                setSelectedExternalIds(
-                  new Set<string>(packages.map((item) => item.externalId)),
-                );
-                return;
-              }
-              setSelectedExternalIds(new Set<string>());
-            }}
-            aria-label="Chọn tất cả gói thầu trang hiện tại"
-          />
-        ),
-        cell: ({ row }) => (
-          <input
-            type="checkbox"
-            checked={selectedExternalIds.has(row.original.externalId)}
-            onChange={(e) => {
-              setSelectedExternalIds((prev) => {
-                const next = new Set(prev);
-                if (e.target.checked) {
-                  next.add(row.original.externalId);
-                } else {
-                  next.delete(row.original.externalId);
-                }
-                return next;
-              });
-            }}
-            aria-label={`Chọn gói thầu ${row.original.title}`}
-          />
-        ),
-        size: 44,
-      },
-      {
-        accessorKey: "title",
-        header: () => <span className="font-semibold">Tên</span>,
-        cell: ({ row }) => (
-          <p className="max-w-[320px] min-w-[240px] leading-tight font-semibold [overflow-wrap:anywhere] text-slate-900">
-            {row.original.title}
-          </p>
-        ),
-      },
-      {
-        accessorKey: "inviter",
-        header: () => <span className="font-semibold">Bên mời</span>,
-        cell: ({ row }) => (
-          <p className="max-w-[240px] text-xs [overflow-wrap:anywhere]">
-            {row.original.inviter}
-          </p>
-        ),
-      },
-      {
-        accessorKey: "province",
-        header: "Tỉnh",
-        cell: ({ row }) => (
-          <span className="text-xs whitespace-nowrap">
-            {row.original.province}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "category",
-        header: "Lĩnh vực",
-        cell: ({ row }) => (
-          <span className="text-xs whitespace-nowrap">
-            {row.original.category}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "budget",
-        header: () => (
-          <span className="block w-full text-right font-semibold">
-            Ngân sách
-          </span>
-        ),
-        cell: ({ row }) => (
-          <p className="text-right font-mono font-semibold whitespace-nowrap">
-            {formatCurrency(row.original.budget)}
-          </p>
-        ),
-      },
-      {
-        accessorKey: "publishedAt",
-        header: () => <span className="font-semibold">Ngày đăng ↓</span>,
-        cell: ({ row }) => (
-          <span className="text-xs whitespace-nowrap">
-            {formatDate(row.original.publishedAt)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "matchScore",
-        header: () => (
-          <span className="block w-full text-right font-semibold">Match</span>
-        ),
-        cell: ({ row }) => (
-          <p
-            className={`text-right text-sm font-bold whitespace-nowrap ${
-              row.original.matchScore >= 85
-                ? "text-emerald-700"
-                : row.original.matchScore >= 70
-                  ? "text-blue-700"
-                  : "text-slate-500"
-            }`}
-          >
-            {row.original.matchScore}%
-          </p>
-        ),
-      },
-      {
-        id: "status",
-        header: "Ưu tiên",
-        cell: ({ row }) => {
-          const statusBadges = getImportantStatuses(row.original);
-          return (
-            <div className="flex max-w-[220px] min-w-[180px] flex-wrap gap-1">
-              {statusBadges.length === 0 ? (
-                <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
-                  Bình thường
-                </span>
-              ) : (
-                statusBadges.map((badge) => (
-                  <span
-                    key={`${row.original.externalId}-${badge.label}`}
-                    className={`rounded border px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${badge.className}`}
-                  >
-                    {badge.label}
-                  </span>
-                ))
-              )}
-            </div>
-          );
-        },
-      },
-      {
-        id: "action",
-        header: "Hành động",
-        cell: ({ row }) => (
-          <div className="flex min-w-[180px] flex-wrap gap-1">
-            <Link
-              href={`/package-details/${encodeURIComponent(row.original.externalId)}?sourceUrl=${encodeURIComponent(row.original.sourceUrl)}`}
-              className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-            >
-              Chi tiết
-            </Link>
-            <a
-              href={row.original.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-            >
-              Nguồn
-            </a>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="px-1.5 py-1"
-              onClick={() => {
-                addWatchlist.mutate({
-                  type: "package",
-                  refKey: row.original.externalId,
-                  label: row.original.title,
-                });
-              }}
-            >
-              Theo dõi
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    [
-      addWatchlist,
-      allCurrentPageSelected,
-      packages,
-      selectedExternalIds,
-    ],
-  );
-
-  const table = useReactTable({
-    data: packages,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  const isEditingSmartView = savedFilterId !== null;
 
   return (
     <section className="panel p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Kho dữ liệu gói thầu realtime</h2>
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
-          <p className="text-sm whitespace-nowrap text-slate-600">
-            Tổng nguồn: {total.toLocaleString("vi-VN")} • Hiển thị trang này:{" "}
-            {packagesResult.visibleCount}
-            {packagesResult.localRefinement?.active ? `/${limit}` : ""}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Trung tâm tìm kiếm BidWinner public</h2>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương,
+            ngành nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
           </p>
-          <button
-            type="button"
-            onClick={() => packagesQuery.refetch()}
-            disabled={packagesQuery.isFetching}
-            aria-label="Tải lại kết quả tìm kiếm"
-            title="Tải lại kết quả tìm kiếm"
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            isLoading={resultQuery.isFetching}
+            onClick={() => resultQuery.refetch()}
           >
-            <svg
-              viewBox="0 0 24 24"
-              className={`h-3.5 w-3.5 ${packagesQuery.isFetching ? "animate-spin" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
-              <path d="M3 21v-5h5" />
-            </svg>
-            {packagesQuery.isFetching ? "Đang tải..." : "Tải lại"}
-          </button>
+            Tải lại
+          </Button>
           <Link
             href="/saved-items"
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
-            Mở Smart Views & Watchlist
+            Smart Views & Watchlist
           </Link>
         </div>
       </div>
 
-      <p className="mt-2 text-xs text-slate-500">
-        Nguồn: BidWinner public ({packagesResult.source}) • Cập nhật:{" "}
-        {formatDateTime(packagesResult.fetchedAt)}
-      </p>
-      {packagesResult.warning ? (
-        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {packagesResult.warning}
-        </div>
-      ) : null}
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
+          const isActive = mode === tabMode;
 
-      {packagesResult.localRefinement?.active ? (
-        <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-          Bạn đang tinh lọc trong trang nguồn hiện tại ({localRefinementSummary}
-          ). Có thể còn kết quả khớp ở các trang nguồn khác — chỉ tỉnh/thành và
-          phân trang được tìm trực tiếp trên BidWinner.
-        </div>
-      ) : null}
+          return (
+            <button
+              key={tabMode}
+              type="button"
+              className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                isActive
+                  ? "border-sky-400 bg-sky-50"
+                  : "border-slate-200 bg-white hover:border-slate-300"
+              }`}
+              onClick={() => {
+                setMode(tabMode);
+                setSavedFilterId(null);
+                if (!budgetRangeError && !publishedDateRangeError) {
+                  setAppliedCriteria(draftCriteria);
+                }
+                setPage(1);
+              }}
+            >
+              <p className="text-sm font-semibold text-slate-900">
+                {SEARCH_MODE_LABELS[tabMode]}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {SEARCH_MODE_DESCRIPTIONS[tabMode]}
+              </p>
+            </button>
+          );
+        })}
+      </div>
 
-      {sortDowngraded ? (
-        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Tham số sắp xếp cũ đã được hạ về chế độ hỗ trợ hiện tại: sắp xếp theo
-          ngày đăng trong trang kết quả.
-        </div>
-      ) : null}
-
-      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="flex items-center gap-1.5 text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-3.5 w-3.5 text-slate-500"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" />
-            </svg>
+          <p className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
             Bộ lọc đang áp dụng
-            <span className="ml-0.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-slate-200 px-1.5 text-[11px] font-bold text-slate-700">
-              {appliedFilterChips.length}
-            </span>
           </p>
-          {appliedFilterChips.length > 0 ? (
-            <button
-              type="button"
-              className="rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-              onClick={() => {
-                setAppliedAndDraftFilters({
-                  keyword: "",
-                  provinces: [],
-                  categories: [],
-                  budgetMin: "",
-                  budgetMax: "",
-                  publishedFrom: "",
-                  publishedTo: "",
-                  minMatchScore: 0,
-                });
-              }}
-            >
-              Xóa tất cả
-            </button>
-          ) : null}
-        </div>
-
-        {appliedFilterChips.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Chưa có điều kiện lọc nào đang được áp dụng. Soạn bộ lọc bên dưới rồi
-            bấm <span className="font-semibold text-slate-700">Áp dụng bộ lọc</span>.
-          </p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {appliedFilterChips.map((chip) => (
-              <span
-                key={chip.id}
-                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-slate-700 shadow-sm"
-              >
-                <span>{chip.label}</span>
-                <button
-                  type="button"
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-rose-100 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-                  onClick={() => removeAppliedFilterChip(chip.id)}
-                  aria-label={`Bỏ điều kiện ${chip.label}`}
-                  title="Bỏ điều kiện này"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-3 w-3"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
-          Soạn bộ lọc
-        </p>
-        <p className="text-[11px] text-slate-500">
-          Nhấn <kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[10px] text-slate-600">Enter</kbd>{" "}
-          trong ô để áp dụng nhanh
-        </p>
-      </div>
-
-      <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <FilterField label="Từ khóa" htmlFor="filter-keyword">
-          <input
-            id="filter-keyword"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            value={keyword}
-            placeholder="Từ khóa (có thể nhập nhiều cụm, ngăn cách bằng dấu phẩy)"
-            onChange={(e) => {
-              setKeyword(e.target.value);
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-        </FilterField>
-        <FilterField label="Tỉnh/Thành" htmlFor="filter-provinces">
-          <MultiSelectDropdown
-            id="filter-provinces"
-            ariaLabel="Tỉnh/Thành"
-            options={provinceOptions}
-            selected={provinces}
-            onChange={handleProvinceChange}
-            emptyLabel="Tất cả tỉnh/thành"
-          />
-        </FilterField>
-        <FilterField label="Lĩnh vực" htmlFor="filter-categories">
-          <MultiSelectDropdown
-            id="filter-categories"
-            ariaLabel="Lĩnh vực"
-            options={categoryOptions}
-            selected={categories}
-            onChange={handleCategoryChange}
-            emptyLabel="Tất cả lĩnh vực"
-          />
-        </FilterField>
-        <FilterField label="Điểm match tối thiểu" htmlFor="filter-min-match">
-          <input
-            id="filter-min-match"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            placeholder="0–100"
-            type="number"
-            min={0}
-            max={100}
-            step={5}
-            value={minMatchScore}
-            onChange={(e) => {
-              const next = Number.parseInt(e.target.value, 10);
-              setMinMatchScore(
-                Number.isNaN(next) ? 0 : Math.max(0, Math.min(100, next)),
-              );
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
-          <div
-            className="mt-1 flex flex-wrap gap-1"
-            role="group"
-            aria-label="Mức điểm match tối thiểu nhanh"
+          <button
+            type="button"
+            className="rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
+            onClick={resetFilters}
           >
-            {[0, 50, 70, 85].map((preset) => {
-              const isActive = minMatchScore === preset;
-              return (
-                <button
-                  key={preset}
-                  type="button"
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
-                    isActive
-                      ? "border-sky-500 bg-sky-600 text-white"
-                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
-                  }`}
-                  onClick={() => setMinMatchScore(preset)}
-                  aria-pressed={isActive}
-                >
-                  {preset === 0 ? "Bỏ qua" : `≥ ${preset}%`}
-                </button>
-              );
-            })}
-          </div>
-        </FilterField>
-      </div>
-
-      <p className="mt-2 text-xs text-slate-500">
-        Chọn tất cả ở Tỉnh/Thành hoặc Lĩnh vực sẽ được chuẩn hóa về không lọc
-        cho trường đó để giữ kết quả nguồn chính xác.
-      </p>
-
-      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-medium text-slate-700">
-          Gợi ý từ khóa nhanh (bấm để thêm):
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {keywordOptions.slice(0, 20).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
-              onClick={() => {
-                setKeyword((prev) => {
-                  const terms = prev
-                    .split(",")
-                    .map((term) => term.trim())
-                    .filter(Boolean);
-
-                  if (
-                    terms.some(
-                      (term) => term.toLowerCase() === item.toLowerCase(),
-                    )
-                  ) {
-                    return prev;
-                  }
-
-                  return terms.length > 0
-                    ? `${terms.join(", ")}, ${item}`
-                    : item;
-                });
-              }}
+            Xóa tất cả
+          </button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {appliedChips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
             >
-              {item}
-            </button>
+              {chip}
+            </span>
           ))}
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Dirty search: nhập nhiều cụm bằng dấu phẩy, hệ thống sẽ tìm nếu khớp
-          ít nhất một cụm.
-        </p>
-        {keywordTerms.length > 0 ? (
-          <p className="mt-2 text-xs text-slate-600">
-            Đang áp dụng {keywordTerms.length} cụm từ khóa.
-          </p>
-        ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-        <FilterField
-          label="Ngân sách"
-          helper={budgetRangeHelper}
-          className="sm:col-span-2 xl:col-span-4"
-        >
-          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                Từ:{" "}
-                {budgetSliderMinValue > 0
-                  ? formatCompactBudget(budgetSliderMinValue)
-                  : "0 đ"}
-              </span>
-              <span className="text-xs text-slate-400">→</span>
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                Đến:{" "}
-                {budgetSliderMaxValue < budgetSliderCeiling
-                  ? formatCompactBudget(budgetSliderMaxValue)
-                  : "Không giới hạn"}
-              </span>
-            </div>
-
-            <div className="mt-3 grid gap-3">
-              <div>
-                <div className="mb-1 flex items-center justify-between text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
-                  <span>Kéo mốc từ</span>
-                  <span>{formatCompactBudget(budgetSliderMinValue)}</span>
-                </div>
-                <input
-                  id="filter-budget-min"
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-sky-600"
-                  type="range"
-                  min={0}
-                  max={budgetSliderCeiling}
-                  step={budgetSliderStep}
-                  value={budgetSliderMinValue}
-                  onChange={(e) => {
-                    handleBudgetMinSliderChange(Number(e.target.value));
-                  }}
-                />
-              </div>
-
-              <div>
-                <div className="mb-1 flex items-center justify-between text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
-                  <span>Kéo mốc đến</span>
-                  <span>
-                    {budgetSliderMaxValue < budgetSliderCeiling
-                      ? formatCompactBudget(budgetSliderMaxValue)
-                      : "Không giới hạn"}
-                  </span>
-                </div>
-                <input
-                  id="filter-budget-max"
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-emerald-600"
-                  type="range"
-                  min={0}
-                  max={budgetSliderCeiling}
-                  step={budgetSliderStep}
-                  value={budgetSliderMaxValue}
-                  onChange={(e) => {
-                    handleBudgetMaxSliderChange(Number(e.target.value));
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-                placeholder="Ngân sách từ"
-                type="number"
-                min={0}
-                max={budgetSliderCeiling}
-                step={budgetSliderStep}
-                value={budgetMin}
-                onChange={(e) => {
-                  setBudgetMin(e.target.value);
-                }}
-                onBlur={handleBudgetMinBlur}
-                onKeyDown={handleApplyOnEnter}
-              />
-              <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-                placeholder="Ngân sách đến"
-                type="number"
-                min={0}
-                max={budgetSliderCeiling}
-                step={budgetSliderStep}
-                value={budgetMax}
-                onChange={(e) => {
-                  setBudgetMax(e.target.value);
-                }}
-                onBlur={handleBudgetMaxBlur}
-                onKeyDown={handleApplyOnEnter}
-              />
-            </div>
-          </div>
-        </FilterField>
-        <FilterField
-          label="Ngày đăng từ"
-          htmlFor="filter-published-from"
-          className="xl:col-span-2"
-        >
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <FilterField label="Từ khóa" htmlFor="search-keyword">
           <input
-            id="filter-published-from"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            type="date"
-            value={publishedFrom}
-            onChange={(e) => {
-              setPublishedFrom(normalizeDateFilterValue(e.target.value));
-            }}
-            onKeyDown={handleApplyOnEnter}
+            id="search-keyword"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={formState.keyword}
+            onChange={(event) =>
+              setFormState((previous) => ({
+                ...previous,
+                keyword: event.target.value,
+              }))
+            }
+            placeholder="Nhập nhiều cụm, phân tách bằng dấu phẩy"
           />
         </FilterField>
-        <FilterField
-          label="Ngày đăng đến"
-          htmlFor="filter-published-to"
-          className="xl:col-span-2"
-        >
-          <input
-            id="filter-published-to"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            type="date"
-            value={publishedTo}
-            onChange={(e) => {
-              setPublishedTo(normalizeDateFilterValue(e.target.value));
-            }}
-            onKeyDown={handleApplyOnEnter}
-          />
+
+        <FilterField label="Tỉnh / thành">
+          {mode === "package_location" ? (
+            <select
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              value={formState.provinces[0] ?? ""}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  provinces: event.target.value ? [event.target.value] : [],
+                }))
+              }
+            >
+              <option value="">Chọn một tỉnh/thành</option>
+              {result.options.provinces.map((province) => (
+                <option key={province} value={province}>
+                  {province}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <MultiSelectDropdown
+              ariaLabel="Tỉnh / thành"
+              options={result.options.provinces}
+              selected={formState.provinces}
+              onChange={(next) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  provinces: next,
+                }))
+              }
+              emptyLabel="Tất cả tỉnh/thành"
+            />
+          )}
         </FilterField>
-        <FilterField
-          label="Sắp xếp theo ngày đăng"
-          helper="Áp dụng ngay trên trang hiện tại."
-          className="xl:col-span-2"
-        >
-          <div
-            id="filter-sort-order"
-            role="radiogroup"
-            aria-label="Sắp xếp theo ngày đăng"
-            className="inline-flex w-full overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm shadow-sm"
+
+        {(mode === "package_keyword" || mode === "package_location") && (
+          <FilterField label="Lĩnh vực gói">
+            <MultiSelectDropdown
+              ariaLabel="Lĩnh vực gói"
+              options={result.options.packageCategories}
+              selected={formState.packageCategories}
+              onChange={(next) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  packageCategories: next,
+                }))
+              }
+              emptyLabel="Tất cả lĩnh vực gói"
+            />
+          </FilterField>
+        )}
+
+        {mode === "package_area_location" && (
+          <FilterField
+            label="Ngành nghề & địa phương"
+            helper="Chọn nhiều classify public của BidWinner. Tab này tinh lọc trên cửa sổ dữ liệu đã tải."
           >
+            <select
+              multiple
+              className="min-h-56 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              value={formState.classifyIds.map(String)}
+              onChange={(event) => {
+                const next = Array.from(event.target.selectedOptions)
+                  .map((option) => Number.parseInt(option.value, 10))
+                  .filter((value) => Number.isInteger(value) && value > 0);
+
+                setFormState((previous) => ({
+                  ...previous,
+                  classifyIds: next,
+                }));
+              }}
+            >
+              {result.options.classifies.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {`${"· ".repeat(entry.depth)}${entry.name}`}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+        )}
+
+        {mode === "plan" && (
+          <>
+            <FilterField label="Lĩnh vực KHLCNT">
+              <MultiSelectDropdown
+                ariaLabel="Lĩnh vực KHLCNT"
+                options={result.options.planFields}
+                selected={formState.planFields}
+                onChange={(next) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    planFields: next,
+                  }))
+                }
+                emptyLabel="Tất cả lĩnh vực KHLCNT"
+              />
+            </FilterField>
+            <FilterField label="HTLCNT">
+              <MultiSelectDropdown
+                ariaLabel="HTLCNT"
+                options={result.options.procurementMethods}
+                selected={formState.procurementMethods}
+                onChange={(next) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    procurementMethods: next,
+                  }))
+                }
+                emptyLabel="Tất cả HTLCNT"
+              />
+            </FilterField>
+          </>
+        )}
+
+        {mode === "project" && (
+          <FilterField label="Nhóm dự án">
+            <MultiSelectDropdown
+              ariaLabel="Nhóm dự án"
+              options={result.options.projectGroups}
+              selected={formState.projectGroups}
+              onChange={(next) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  projectGroups: next,
+                }))
+              }
+              emptyLabel="Tất cả nhóm dự án"
+            />
+          </FilterField>
+        )}
+
+        <FilterField label="Ngân sách từ" htmlFor="search-budget-min">
+          <input
+            id="search-budget-min"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            type="number"
+            min={0}
+            value={formState.budgetMin}
+            onChange={(event) =>
+              setFormState((previous) => ({
+                ...previous,
+                budgetMin: event.target.value,
+              }))
+            }
+          />
+        </FilterField>
+
+        <FilterField label="Ngân sách đến" htmlFor="search-budget-max">
+          <input
+            id="search-budget-max"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            type="number"
+            min={0}
+            value={formState.budgetMax}
+            onChange={(event) =>
+              setFormState((previous) => ({
+                ...previous,
+                budgetMax: event.target.value,
+              }))
+            }
+          />
+        </FilterField>
+
+        <FilterField label="Ngày từ" htmlFor="search-date-from">
+          <input
+            id="search-date-from"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            type="date"
+            value={formState.publishedFrom}
+            onChange={(event) =>
+              setFormState((previous) => ({
+                ...previous,
+                publishedFrom: event.target.value,
+              }))
+            }
+          />
+        </FilterField>
+
+        <FilterField label="Ngày đến" htmlFor="search-date-to">
+          <input
+            id="search-date-to"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            type="date"
+            value={formState.publishedTo}
+            onChange={(event) =>
+              setFormState((previous) => ({
+                ...previous,
+                publishedTo: event.target.value,
+              }))
+            }
+          />
+        </FilterField>
+
+        {(mode === "package_keyword" ||
+          mode === "package_location" ||
+          mode === "package_area_location") && (
+          <FilterField label="Match tối thiểu" htmlFor="search-match">
+            <input
+              id="search-match"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              type="number"
+              min={0}
+              max={100}
+              value={formState.minMatchScore}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  minMatchScore: Number.parseInt(event.target.value, 10) || 0,
+                }))
+              }
+            />
+          </FilterField>
+        )}
+
+        <FilterField label="Sắp xếp ngày đăng">
+          <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
             {(
               [
-                { value: "desc", label: "Mới nhất", arrow: "↓" },
-                { value: "asc", label: "Cũ nhất", arrow: "↑" },
+                { value: "desc", label: "Mới nhất" },
+                { value: "asc", label: "Cũ nhất" },
               ] as const
-            ).map((option) => {
-              const isActive = sortOrder === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
-                    isActive
-                      ? "bg-sky-700 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                  onClick={() => {
-                    setSortOrder(option.value);
-                    setAppliedSortOrder(option.value);
-                  }}
-                >
-                  <span aria-hidden className="font-bold">
-                    {option.arrow}
-                  </span>
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </FilterField>
-        <FilterField
-          label="Số dòng/trang"
-          htmlFor="filter-page-size"
-          className="xl:col-span-2"
-        >
-          <select
-            id="filter-page-size"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            value={limit}
-            onChange={(e) => {
-              setLimit(parsePositiveInt(e.target.value, 20));
-              setPage(1);
-            }}
-          >
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
-                {size} dòng
-              </option>
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  sortOrder === option.value
+                    ? "bg-sky-700 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                onClick={() => setSortOrder(option.value)}
+              >
+                {option.label}
+              </button>
             ))}
-          </select>
+          </div>
         </FilterField>
       </div>
 
-      {budgetNegativeError ? (
-        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          Ngân sách không được âm.
-        </p>
-      ) : null}
-
       {budgetRangeError ? (
-        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
-        </p>
+        </div>
       ) : null}
 
       {publishedDateRangeError ? (
-        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          Ngày đăng đến phải lớn hơn hoặc bằng ngày đăng từ.
-        </p>
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          Ngày đến phải lớn hơn hoặc bằng ngày từ.
+        </div>
       ) : null}
 
       {isEditingSmartView ? (
@@ -2044,20 +1276,22 @@ export function SearchPageClient() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-sky-900">
-                {isLoadingSmartView
+                {savedFilterQuery.isPending
                   ? "Đang tải Smart View để chỉnh sửa"
-                  : smartViewLoadError
+                  : savedFilterQuery.error
                     ? "Không mở được Smart View"
                     : "Đang chỉnh sửa Smart View"}
               </p>
               <p className="mt-1 text-xs text-sky-800">
-                {isLoadingSmartView
-                  ? "Đang nạp điều kiện đã lưu, tên và tần suất thông báo."
-                  : smartViewLoadError ??
-                    "Cập nhật sẽ chỉ thay đổi Smart View này. Workflow đã tạo trước đó vẫn giữ bộ lọc snapshot hiện tại."}
+                {savedFilterQuery.error?.message ??
+                  "Cập nhật Smart View sẽ không sửa workflow đã tạo trước đó."}
               </p>
             </div>
-            <Button variant="secondary" size="sm" onClick={cancelSmartViewEditing}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setSavedFilterId(null)}
+            >
               Hủy chỉnh sửa
             </Button>
           </div>
@@ -2068,25 +1302,19 @@ export function SearchPageClient() {
         <FilterField label="Tên Smart View" htmlFor="smart-view-name">
           <input
             id="smart-view-name"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            placeholder={
-              isEditingSmartView
-                ? "Để trống để giữ nguyên tên Smart View hiện tại"
-                : "Để trống để tự sinh tên theo giờ hiện tại"
-            }
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            placeholder="Đặt tên cho bộ lọc đã áp dụng"
             value={smartViewName}
-            disabled={isLoadingSmartView}
-            onChange={(e) => setSmartViewName(e.target.value)}
+            onChange={(event) => setSmartViewName(event.target.value)}
           />
         </FilterField>
         <FilterField label="Tần suất thông báo" htmlFor="smart-view-frequency">
           <select
             id="smart-view-frequency"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
             value={smartViewFrequency}
-            disabled={isLoadingSmartView}
-            onChange={(e) =>
-              setSmartViewFrequency(e.target.value as "daily" | "weekly")
+            onChange={(event) =>
+              setSmartViewFrequency(event.target.value as "daily" | "weekly")
             }
           >
             <option value="daily">Hằng ngày</option>
@@ -2095,252 +1323,138 @@ export function SearchPageClient() {
         </FilterField>
       </div>
 
-      <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-        Ngày đăng chỉ tinh lọc trang kết quả hiện tại và sẽ không được lưu vào
-        Smart View hoặc workflow.
-      </p>
-
-      {hasPendingPersistableFilterChanges ? (
-        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Hãy bấm &quot;Áp dụng bộ lọc&quot; trước khi lưu Smart View để điều kiện
-          lưu ra khớp đúng với kết quả đang hiển thị.
-        </p>
-      ) : null}
-
-      {!hasPendingPersistableFilterChanges &&
-      isEditingSmartView &&
-      !smartViewLoadError ? (
-        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Smart View đang chỉnh sửa sẽ lưu bộ lọc đã áp dụng và tần suất{" "}
-          {smartViewFrequencyLabels[smartViewFrequency].toLowerCase()}.
-        </p>
-      ) : null}
-
-      <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Button
           variant="primary"
-          className="w-full sm:w-auto"
-          onClick={applyDraftFilters}
           disabled={
-            budgetRangeError ||
-            budgetNegativeError ||
-            publishedDateRangeError ||
-            !hasPendingSearchFilterChanges
+            budgetRangeError || publishedDateRangeError || !hasPendingSearchFilterChanges
           }
+          onClick={applyDraftFilters}
         >
-          {hasPendingSearchFilterChanges ? (
-            <span
-              className="h-1.5 w-1.5 rounded-full bg-amber-300"
-              aria-hidden
-            />
-          ) : null}
           Áp dụng bộ lọc
         </Button>
         <Button
           variant="secondary"
-          className="w-full sm:w-auto"
-          isLoading={isSavingSmartView}
-          disabled={!canPersistSmartView}
+          isLoading={saveFilter.isPending || updateSavedFilter.isPending}
+          disabled={budgetRangeError || publishedDateRangeError}
           onClick={persistSmartView}
         >
-          {isEditingSmartView
-            ? isSavingSmartView
-              ? "Đang cập nhật..."
-              : "Cập nhật Smart View"
-            : isSavingSmartView
-              ? "Đang lưu..."
-              : "Lưu bộ lọc"}
+          {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
         </Button>
         <Button
           variant="primary"
-          className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
-          isLoading={saveSelectedPackages.isPending}
+          className="bg-emerald-600 hover:bg-emerald-700"
+          isLoading={saveSelectedResults.isPending}
           disabled={selectedItems.length === 0}
-          onClick={() => {
-            setSaveSelectedSuccess(null);
-            setSaveSelectedError(null);
-            saveSelectedPackages.mutate({
-              items: selectedItems.map((item) => ({
-                externalId: item.externalId,
-                title: item.title,
-                inviter: item.inviter,
-                province: item.province,
-                category: item.category,
-                budget: item.budget,
-                publishedAt: item.publishedAt,
-                closingAt: item.closingAt,
-                sourceUrl: item.sourceUrl,
-                matchScore: item.matchScore,
-              })),
-            });
-          }}
+          onClick={() =>
+            saveSelectedResults.mutate({
+              items: selectedItems.map((item) => toSavePayload(item)),
+            })
+          }
         >
-          {saveSelectedPackages.isPending
-            ? "Đang lưu các gói đã chọn..."
-            : `Lưu ${selectedItems.length} gói đã chọn vào DB`}
-        </Button>
-        <Button
-          variant="ghost"
-          className="w-full border border-slate-300 sm:w-auto"
-          onClick={() => {
-            setAppliedAndDraftFilters({
-              keyword: "",
-              provinces: [],
-              categories: [],
-              budgetMin: "",
-              budgetMax: "",
-              publishedFrom: "",
-              publishedTo: "",
-              minMatchScore: 0,
-            });
-            setLimit(20);
-            setPage(1);
-            setSelectedExternalIds(new Set<string>());
-            setSaveSelectedSuccess(null);
-            setSaveSelectedError(null);
-          }}
-        >
-          Đặt lại bộ lọc
+          {`Lưu ${selectedItems.length} ${entityLabel.toLowerCase()} đã chọn`}
         </Button>
       </div>
 
       {saveError ? (
-        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {saveError}
-        </p>
+        </div>
       ) : null}
 
       {smartViewSuccess ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {smartViewSuccess}
-        </p>
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {smartViewSuccess} • {smartViewFrequencyLabels[smartViewFrequency]}
+        </div>
       ) : null}
 
       {saveSelectedSuccess ? (
-        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           {saveSelectedSuccess}
-        </p>
+        </div>
       ) : null}
 
       {saveSelectedError ? (
-        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {saveSelectedError}
-        </p>
+        </div>
       ) : null}
 
-      {packages.length === 0 ? (
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            Kết quả {SEARCH_MODE_LABELS[mode]}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Tổng nguồn: {result.total.toLocaleString("vi-VN")} • Hiển thị cửa sổ
+            này: {result.visibleCount} • Cập nhật: {formatDateTime(result.fetchedAt)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            value={limit}
+            onChange={(event) => {
+              setLimit(parsePositiveInt(event.target.value, 20));
+              setPage(1);
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size} dòng
+              </option>
+            ))}
+          </select>
+          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              disabled={page <= 1}
+              onClick={() => setPage((previous) => Math.max(1, previous - 1))}
+            >
+              Trước
+            </button>
+            <span className="text-xs text-slate-500">
+              Trang {page}/{totalPages}
+            </span>
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              disabled={page >= totalPages}
+              onClick={() =>
+                setPage((previous) => Math.min(totalPages, previous + 1))
+              }
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <SourceMetaBanner result={result} />
+      </div>
+
+      {items.length === 0 ? (
         <EmptyState
           className="mt-6"
-          title="Không có gói thầu phù hợp"
-          description="Hãy nới bộ lọc, đổi từ khóa hoặc thử tải lại dữ liệu realtime từ BidWinner."
+          title={`Không có ${entityLabel.toLowerCase()} phù hợp`}
+          description="Hãy nới bộ lọc, đổi chế độ tìm kiếm hoặc thử tải lại nguồn public của BidWinner."
           cta={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => packagesQuery.refetch()}
-              >
-                Thử lại
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setAppliedAndDraftFilters({
-                    keyword: "",
-                    provinces: [],
-                    categories: [],
-                    budgetMin: "",
-                    budgetMax: "",
-                    publishedFrom: "",
-                    publishedTo: "",
-                    minMatchScore: 0,
-                  });
-                  setLimit(20);
-                  setPage(1);
-                }}
-              >
-                Xóa bộ lọc
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={() => resultQuery.refetch()}>
+              Tải lại dữ liệu
+            </Button>
           }
         />
       ) : (
-        <>
-          <div className="mt-6 w-full max-w-full overflow-x-auto rounded-lg border border-slate-300 shadow-sm">
-            <table className="w-full min-w-[1180px] divide-y divide-slate-200 text-xs">
-              <thead className="sticky top-0 z-10 bg-slate-900 text-left text-xs font-bold tracking-widest text-white uppercase">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <th key={header.id} className="px-2 py-2">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                {table.getRowModel().rows.map((row) => {
-                  const statusBadges = getImportantStatuses(row.original);
-                  const hasCritical = statusBadges.some(
-                    (badge) => badge.level === "critical",
-                  );
-
-                  return (
-                    <tr
-                      key={row.id}
-                      className={`border-l-4 transition-colors ${
-                        hasCritical
-                          ? "border-l-rose-500 bg-rose-50/70 hover:bg-rose-100/50"
-                          : "border-l-transparent hover:bg-slate-50"
-                      }`}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-2 py-2 align-middle">
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-slate-600">
-              Trang {page} / {totalPages} • Đã chọn {selectedItems.length} gói
-              thầu
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              >
-                Trước
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() =>
-                  setPage((prev) => Math.min(totalPages, prev + 1))
-                }
-              >
-                Sau
-              </Button>
-            </div>
-          </div>
-        </>
+        <div className="mt-4">
+          <ResultsTable
+            items={items}
+            selectedKeys={selectedKeys}
+            setSelectedKeys={setSelectedKeys}
+            addWatchlist={addWatchlist}
+          />
+        </div>
       )}
     </section>
   );

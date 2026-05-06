@@ -64,6 +64,27 @@
       "when": 1777185694378,
       "tag": "0008_nostalgic_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777262400000,
+      "tag": "0009_public_search_parity",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778457600000,
+      "tag": "0010_indexes_and_candidate_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778544000000,
+      "tag": "0011_standard_excel_workspace",
+      "breakpoints": true
     }
   ]
 }

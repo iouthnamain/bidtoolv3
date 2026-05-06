@@ -54,3 +54,8 @@ Mục tiêu của bộ tài liệu này là định nghĩa rõ sản phẩm dash
 
 1. `search -> open link -> review -> wait confirm -> receive YCKT -> export YCKT Excel`
 2. `excel workspace -> import Excel -> map columns -> review product rows -> find web candidates -> choose correct product -> export enriched Excel -> final review`
+
+
+search co khi
+
+hoan thiện add, update sản phẩm vật tư

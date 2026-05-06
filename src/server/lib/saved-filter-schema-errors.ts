@@ -58,7 +58,7 @@ export function isSavedFilterSchemaDriftError(error: unknown): boolean {
   return (
     chain.some((candidate) => readErrorCode(candidate) === "42703") &&
     chain.some((candidate) =>
-      /(min_match_score|updated_at)/i.test(
+      /(min_match_score|updated_at|mode|criteria_json)/i.test(
         `${readErrorMessage(candidate)} ${readErrorQuery(candidate)}`,
       ),
     )

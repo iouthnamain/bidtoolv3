@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-const DISMISSED_KEY = "bidtool:mobile-banner-dismissed";
+import { STORAGE_KEYS } from "~/lib/storage-keys";
+
+const DISMISSED_KEY = STORAGE_KEYS.mobileBannerDismissed;
 
 export function MobileBanner() {
   const [visible, setVisible] = useState(false);

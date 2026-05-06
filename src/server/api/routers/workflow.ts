@@ -3,10 +3,14 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  buildCriteriaFromLegacyPackageFields,
+  DATE_ONLY_REGEX,
+  normalizeSearchCriteria,
+} from "~/lib/search-criteria";
+import {
   normalizeWorkflowFilterConfig,
   summarizeWorkflowFilterConfig,
 } from "~/lib/workflow-config";
-import { normalizeSearchSelections } from "~/lib/search-filter-utils";
 import { type db as appDb } from "~/server/db";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import {
@@ -24,17 +28,57 @@ type AppDb = typeof appDb;
 type WorkflowRow = typeof workflows.$inferSelect;
 type WorkflowRunRow = typeof workflowRuns.$inferSelect;
 
+function optionalDateFilterSchema(message: string) {
+  return z
+    .string()
+    .refine((value) => value === "" || DATE_ONLY_REGEX.test(value), message)
+    .optional();
+}
+
+const workflowCriteriaInputSchema = z
+  .object({
+    keyword: z.string().optional(),
+    provinces: z.array(z.string()).optional(),
+    packageCategories: z.array(z.string()).optional(),
+    classifyIds: z.array(z.number().int().positive()).optional(),
+    planFields: z.array(z.string()).optional(),
+    procurementMethods: z.array(z.string()).optional(),
+    projectGroups: z.array(z.string()).optional(),
+    budgetMin: z.number().nonnegative().nullable().optional(),
+    budgetMax: z.number().nonnegative().nullable().optional(),
+    publishedFrom: optionalDateFilterSchema(
+      "Ngày từ phải theo định dạng YYYY-MM-DD.",
+    ),
+    publishedTo: optionalDateFilterSchema(
+      "Ngày đến phải theo định dạng YYYY-MM-DD.",
+    ),
+    minMatchScore: z.number().min(0).max(100).optional(),
+  })
+  .partial();
+
 const workflowTriggerConfigInputSchema = z
   .object({
+    searchMode: z
+      .enum([
+        "package_keyword",
+        "package_location",
+        "package_area_location",
+        "plan",
+        "project",
+      ])
+      .optional(),
+    criteria: workflowCriteriaInputSchema.optional(),
     savedFilterId: z.number().int().positive().nullable().optional(),
     savedFilterName: z.string().min(1).nullable().optional(),
+    notificationFrequency: z.enum(["daily", "weekly"]).nullable().optional(),
+
+    // Legacy package-only fields remain accepted for backward compatibility.
     keyword: z.string().optional(),
     provinces: z.array(z.string()).optional(),
     categories: z.array(z.string()).optional(),
     budgetMin: z.number().nonnegative().nullable().optional(),
     budgetMax: z.number().nonnegative().nullable().optional(),
     minMatchScore: z.number().min(0).max(100).optional(),
-    notificationFrequency: z.enum(["daily", "weekly"]).nullable().optional(),
   })
   .partial();
 
@@ -46,15 +90,41 @@ function parseTriggerConfig(input: unknown) {
 
 function assertBudgetRange(config: ReturnType<typeof parseTriggerConfig>) {
   if (
-    config.budgetMin !== null &&
-    config.budgetMax !== null &&
-    config.budgetMin > config.budgetMax
+    config.criteria.budgetMin !== null &&
+    config.criteria.budgetMax !== null &&
+    config.criteria.budgetMin > config.criteria.budgetMax
   ) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Khoảng ngân sách workflow không hợp lệ.",
     });
   }
+}
+
+function normalizeSavedFilterForWorkflow(row: typeof savedFilters.$inferSelect) {
+  const legacyCriteria = buildCriteriaFromLegacyPackageFields({
+    keyword: row.keyword,
+    provinces: row.provinces,
+    categories: row.categories,
+    budgetMin: row.budgetMin,
+    budgetMax: row.budgetMax,
+    minMatchScore: row.minMatchScore,
+  });
+
+  const criteria = normalizeSearchCriteria({
+    ...legacyCriteria,
+    ...(row.criteriaJson && typeof row.criteriaJson === "object"
+      ? row.criteriaJson
+      : {}),
+  });
+
+  return {
+    id: row.id,
+    name: row.name.trim(),
+    mode: row.mode ?? "package_keyword",
+    criteria,
+    notificationFrequency: row.notificationFrequency,
+  };
 }
 
 async function getWorkflowOrThrow(db: Pick<AppDb, "select">, id: number) {
@@ -121,7 +191,7 @@ export const workflowRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(1),
-        triggerType: z.enum(["new_package", "schedule"]),
+        triggerType: z.enum(["new_package", "new_search_result", "schedule"]),
         triggerConfig: workflowTriggerConfigInputSchema.default({}),
         actionType: z.enum(["in_app", "email"]),
         actionConfig: z.record(z.unknown()).default({}),
@@ -165,9 +235,7 @@ export const workflowRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      let savedFilter:
-        | (typeof savedFilters.$inferSelect)
-        | undefined;
+      let savedFilter: typeof savedFilters.$inferSelect | undefined;
 
       try {
         [savedFilter] = await ctx.db
@@ -190,29 +258,25 @@ export const workflowRouter = createTRPCRouter({
         });
       }
 
-      const normalizedSavedFilter = normalizeSearchSelections(savedFilter);
+      const normalizedSavedFilter = normalizeSavedFilterForWorkflow(savedFilter);
       const triggerConfig = parseTriggerConfig({
+        searchMode: normalizedSavedFilter.mode,
+        criteria: normalizedSavedFilter.criteria,
         savedFilterId: normalizedSavedFilter.id,
         savedFilterName: normalizedSavedFilter.name,
-        keyword: normalizedSavedFilter.keyword,
-        provinces: normalizedSavedFilter.provinces,
-        categories: normalizedSavedFilter.categories,
-        budgetMin: normalizedSavedFilter.budgetMin,
-        budgetMax: normalizedSavedFilter.budgetMax,
-        minMatchScore: normalizedSavedFilter.minMatchScore,
         notificationFrequency: normalizedSavedFilter.notificationFrequency,
       });
       const now = new Date().toISOString();
       const requestedName = input.name?.trim();
       const normalizedRequestedName =
         requestedName && requestedName.length > 0 ? requestedName : null;
-      const savedFilterName = normalizedSavedFilter.name.trim() || "Smart View";
+      const savedFilterName = normalizedSavedFilter.name || "Smart View";
 
       const [created] = await ctx.db
         .insert(workflows)
         .values({
           name: normalizedRequestedName ?? `Workflow • ${savedFilterName}`,
-          triggerType: "new_package",
+          triggerType: "new_search_result",
           triggerConfig,
           actionType: "in_app",
           actionConfig: {
@@ -241,7 +305,9 @@ export const workflowRouter = createTRPCRouter({
       z.object({
         id: z.number().int().positive(),
         name: z.string().min(1).optional(),
-        triggerType: z.enum(["new_package", "schedule"]).optional(),
+        triggerType: z
+          .enum(["new_package", "new_search_result", "schedule"])
+          .optional(),
         triggerConfig: workflowTriggerConfigInputSchema.optional(),
         actionConfig: z.record(z.unknown()).optional(),
         isActive: z.boolean().optional(),
@@ -265,7 +331,7 @@ export const workflowRouter = createTRPCRouter({
 
       const updateData: {
         name?: string;
-        triggerType?: "new_package" | "schedule";
+        triggerType?: "new_package" | "new_search_result" | "schedule";
         triggerConfig?: Record<string, unknown>;
         actionConfig?: Record<string, unknown>;
         isActive?: boolean;

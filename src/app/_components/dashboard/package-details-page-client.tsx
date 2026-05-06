@@ -4,10 +4,13 @@ import Link from "next/link";
 
 import { Button, EmptyState } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
+import { SEARCH_ENTITY_LABELS, type SearchEntityType } from "~/lib/search-modes";
 
 type PackageDetailsPageClientProps = {
+  entityType?: SearchEntityType;
   externalId: string;
   sourceUrl?: string;
+  backHref?: string;
 };
 
 function formatDateTime(value: string | null): string {
@@ -75,12 +78,15 @@ function EvidenceBlock(props: { title: string; items: string[] }) {
   );
 }
 
-export function PackageDetailsPageClient({
+export function BidWinnerSourceDetailsPageClient({
+  entityType = "package",
   externalId,
   sourceUrl,
+  backHref = "/search",
 }: PackageDetailsPageClientProps) {
   const utils = api.useUtils();
-  const detailsQuery = api.search.getPackageDetails.useQuery({
+  const detailsQuery = api.search.getSourceDetails.useQuery({
+    entityType,
     externalId,
     sourceUrl: sourceUrl?.trim() ? sourceUrl : undefined,
   });
@@ -93,7 +99,7 @@ export function PackageDetailsPageClient({
   if (detailsQuery.isLoading) {
     return (
       <div className="panel p-5 text-sm text-slate-600">
-        Đang tải chi tiết gói thầu...
+        Đang tải chi tiết {SEARCH_ENTITY_LABELS[entityType].toLowerCase()}...
       </div>
     );
   }
@@ -101,7 +107,9 @@ export function PackageDetailsPageClient({
   if (detailsQuery.isError || !detailsQuery.data) {
     return (
       <EmptyState
-        title="Không tải được chi tiết gói thầu"
+        title={`Không tải được chi tiết ${SEARCH_ENTITY_LABELS[
+          entityType
+        ].toLowerCase()}`}
         description={
           detailsQuery.error?.message ??
           "Trang nguồn có thể tạm thời không truy cập được hoặc dữ liệu không hợp lệ."
@@ -165,13 +173,13 @@ export function PackageDetailsPageClient({
               isLoading={addWatchlist.isPending}
               onClick={() =>
                 addWatchlist.mutate({
-                  type: "package",
+                  type: entityType,
                   refKey: externalId,
                   label: details.pageTitle,
                 })
               }
             >
-              Theo dõi gói này
+              Theo dõi mục này
             </Button>
             <Button
               variant="secondary"
@@ -181,7 +189,7 @@ export function PackageDetailsPageClient({
               Làm mới
             </Button>
             <Link
-              href="/search"
+              href={backHref}
               className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Quay lại Search
@@ -443,4 +451,8 @@ export function PackageDetailsPageClient({
       </section>
     </div>
   );
+}
+
+export function PackageDetailsPageClient(props: Omit<PackageDetailsPageClientProps, "entityType">) {
+  return <BidWinnerSourceDetailsPageClient entityType="package" {...props} />;
 }

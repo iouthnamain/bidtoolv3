@@ -2,7 +2,25 @@
   "name": "bidtoolv3",
   "version": "0.1.0",
   "private": true,
+  "description": "Single-user local dashboard for tender discovery, Excel material review, and product candidate matching against BidWinner and SearXNG.",
   "type": "module",
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.3"
+  },
+  "packageManager": "bun@1.3.11",
+  "keywords": [
+    "bidwinner",
+    "tender",
+    "procurement",
+    "vietnam",
+    "nextjs",
+    "trpc",
+    "drizzle",
+    "searxng",
+    "excel",
+    "internal-tool"
+  ],
   "scripts": {
     "build": "next build",
     "check": "eslint . && tsc --noEmit",
@@ -24,6 +42,8 @@
     "setup": "bun run dev:install",
     "start": "next start",
     "start:dev": "bun run dev:run",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "update": "bun run dev:update"
   },
@@ -35,7 +55,10 @@
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^1.14.0",
     "next": "^15.2.3",
+    "papaparse": "^5.5.3",
     "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -46,10 +69,13 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.0.15",
     "@types/node": "^20.14.10",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitest/ui": "^4.1.5",
     "dotenv": "^17.4.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.23.0",
@@ -59,7 +85,8 @@
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "^4.0.15",
     "typescript": "^5.8.2",
-    "typescript-eslint": "^8.27.0"
+    "typescript-eslint": "^8.27.0",
+    "vitest": "^4.1.5"
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"

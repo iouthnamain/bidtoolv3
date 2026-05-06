@@ -4,33 +4,26 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { formatDateTime } from "~/lib/datetime";
+import { parseCsvList } from "~/lib/search-criteria";
+import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
 import { normalizeWorkflowFilterConfig } from "~/lib/workflow-config";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type WorkflowDetail = NonNullable<RouterOutputs["workflow"]["getById"]>;
 type RunStatus = "success" | "failed" | "running" | null;
 
-function formatDateTime(value: string | null) {
-  if (!value) {
-    return "Chưa có";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("vi-VN");
-}
-
-function parseCsvList(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+function parseIntegerCsvList(value: string) {
+  return parseCsvList(value)
+    .map((item) => Number.parseInt(item, 10))
+    .filter((item) => Number.isInteger(item) && item > 0);
 }
 
 function joinList(values: string[]) {
+  return values.join(", ");
+}
+
+function joinIntegerList(values: number[]) {
   return values.join(", ");
 }
 
@@ -70,18 +63,42 @@ export function WorkflowDetailPageClient({
   const [name, setName] = useState(initialWorkflow.name);
   const [triggerType, setTriggerType] = useState(initialWorkflow.triggerType);
   const [isActive, setIsActive] = useState(initialWorkflow.isActive);
-  const [keyword, setKeyword] = useState(initialFilterConfig.keyword);
-  const [provinces, setProvinces] = useState(
-    joinList(initialFilterConfig.provinces),
+  const [searchMode, setSearchMode] = useState<SearchMode>(
+    initialFilterConfig.searchMode,
   );
-  const [categories, setCategories] = useState(
-    joinList(initialFilterConfig.categories),
+  const [keyword, setKeyword] = useState(initialFilterConfig.criteria.keyword);
+  const [provinces, setProvinces] = useState(
+    joinList(initialFilterConfig.criteria.provinces),
+  );
+  const [packageCategories, setPackageCategories] = useState(
+    joinList(initialFilterConfig.criteria.packageCategories),
+  );
+  const [classifyIds, setClassifyIds] = useState(
+    joinIntegerList(initialFilterConfig.criteria.classifyIds),
+  );
+  const [planFields, setPlanFields] = useState(
+    joinList(initialFilterConfig.criteria.planFields),
+  );
+  const [procurementMethods, setProcurementMethods] = useState(
+    joinList(initialFilterConfig.criteria.procurementMethods),
+  );
+  const [projectGroups, setProjectGroups] = useState(
+    joinList(initialFilterConfig.criteria.projectGroups),
   );
   const [budgetMin, setBudgetMin] = useState(
-    initialFilterConfig.budgetMin?.toString() ?? "",
+    initialFilterConfig.criteria.budgetMin?.toString() ?? "",
   );
   const [budgetMax, setBudgetMax] = useState(
-    initialFilterConfig.budgetMax?.toString() ?? "",
+    initialFilterConfig.criteria.budgetMax?.toString() ?? "",
+  );
+  const [publishedFrom, setPublishedFrom] = useState(
+    initialFilterConfig.criteria.publishedFrom,
+  );
+  const [publishedTo, setPublishedTo] = useState(
+    initialFilterConfig.criteria.publishedTo,
+  );
+  const [minMatchScore, setMinMatchScore] = useState(
+    String(initialFilterConfig.criteria.minMatchScore),
   );
 
   useEffect(() => {
@@ -93,11 +110,19 @@ export function WorkflowDetailPageClient({
     setName(workflow.name);
     setTriggerType(workflow.triggerType);
     setIsActive(workflow.isActive);
-    setKeyword(filterConfig.keyword);
-    setProvinces(joinList(filterConfig.provinces));
-    setCategories(joinList(filterConfig.categories));
-    setBudgetMin(filterConfig.budgetMin?.toString() ?? "");
-    setBudgetMax(filterConfig.budgetMax?.toString() ?? "");
+    setSearchMode(filterConfig.searchMode);
+    setKeyword(filterConfig.criteria.keyword);
+    setProvinces(joinList(filterConfig.criteria.provinces));
+    setPackageCategories(joinList(filterConfig.criteria.packageCategories));
+    setClassifyIds(joinIntegerList(filterConfig.criteria.classifyIds));
+    setPlanFields(joinList(filterConfig.criteria.planFields));
+    setProcurementMethods(joinList(filterConfig.criteria.procurementMethods));
+    setProjectGroups(joinList(filterConfig.criteria.projectGroups));
+    setBudgetMin(filterConfig.criteria.budgetMin?.toString() ?? "");
+    setBudgetMax(filterConfig.criteria.budgetMax?.toString() ?? "");
+    setPublishedFrom(filterConfig.criteria.publishedFrom);
+    setPublishedTo(filterConfig.criteria.publishedTo);
+    setMinMatchScore(String(filterConfig.criteria.minMatchScore));
   }, [workflow]);
 
   const updateWorkflow = api.workflow.update.useMutation({
@@ -245,8 +270,8 @@ export function WorkflowDetailPageClient({
         <div className="border-b border-slate-200 pb-3">
           <h3 className="text-sm font-bold">Chỉnh sửa workflow</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Giữ workflow ở dạng form đơn giản: tên, trigger, bộ lọc và trạng
-            thái kích hoạt.
+            Form này giữ nguyên trigger type cũ nếu cần, nhưng criteria đã dùng
+            chung cho đủ 5 chế độ tìm kiếm.
           </p>
         </div>
 
@@ -269,9 +294,37 @@ export function WorkflowDetailPageClient({
                 setTriggerType(event.target.value as typeof triggerType)
               }
             >
+              <option value="new_search_result">Kết quả tìm kiếm mới</option>
               <option value="new_package">Gói thầu mới</option>
               <option value="schedule">Theo lịch</option>
             </select>
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">Chế độ tìm kiếm</span>
+            <select
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2"
+              value={searchMode}
+              onChange={(event) => setSearchMode(event.target.value as SearchMode)}
+            >
+              {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((mode) => (
+                <option key={mode} value={mode}>
+                  {SEARCH_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">Match tối thiểu</span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={minMatchScore}
+              onChange={(event) => setMinMatchScore(event.target.value)}
+              type="number"
+              min={0}
+              max={100}
+            />
           </label>
 
           <label className="grid gap-1.5 text-sm md:col-span-2">
@@ -298,13 +351,61 @@ export function WorkflowDetailPageClient({
 
           <label className="grid gap-1.5 text-sm">
             <span className="font-medium text-slate-700">
-              Lĩnh vực (phân tách dấu phẩy)
+              Lĩnh vực gói (phân tách dấu phẩy)
             </span>
             <input
               className="rounded-lg border border-slate-300 px-3 py-2"
-              value={categories}
-              onChange={(event) => setCategories(event.target.value)}
+              value={packageCategories}
+              onChange={(event) => setPackageCategories(event.target.value)}
               placeholder="Y tế, Công nghệ thông tin"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">
+              Classify ID (phân tách dấu phẩy)
+            </span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={classifyIds}
+              onChange={(event) => setClassifyIds(event.target.value)}
+              placeholder="1, 12, 145"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">
+              Lĩnh vực KHLCNT (phân tách dấu phẩy)
+            </span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={planFields}
+              onChange={(event) => setPlanFields(event.target.value)}
+              placeholder="Xây dựng, Y tế"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">
+              HTLCNT (phân tách dấu phẩy)
+            </span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={procurementMethods}
+              onChange={(event) => setProcurementMethods(event.target.value)}
+              placeholder="Đấu thầu rộng rãi"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">
+              Nhóm dự án (phân tách dấu phẩy)
+            </span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={projectGroups}
+              onChange={(event) => setProjectGroups(event.target.value)}
+              placeholder="Nhóm A, Nhóm B"
             />
           </label>
 
@@ -327,6 +428,26 @@ export function WorkflowDetailPageClient({
               onChange={(event) => setBudgetMax(event.target.value)}
               type="number"
               min={0}
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">Ngày từ</span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              type="date"
+              value={publishedFrom}
+              onChange={(event) => setPublishedFrom(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium text-slate-700">Ngày đến</span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              type="date"
+              value={publishedTo}
+              onChange={(event) => setPublishedTo(event.target.value)}
             />
           </label>
 
@@ -353,14 +474,26 @@ export function WorkflowDetailPageClient({
                 triggerType,
                 isActive,
                 triggerConfig: {
+                  searchMode,
                   savedFilterId: filterConfig.savedFilterId,
                   savedFilterName: filterConfig.savedFilterName,
-                  keyword: keyword.trim(),
-                  provinces: parseCsvList(provinces),
-                  categories: parseCsvList(categories),
-                  budgetMin: budgetMin.trim() ? Number(budgetMin) : null,
-                  budgetMax: budgetMax.trim() ? Number(budgetMax) : null,
                   notificationFrequency: filterConfig.notificationFrequency,
+                  criteria: {
+                    keyword: keyword.trim(),
+                    provinces: parseCsvList(provinces),
+                    packageCategories: parseCsvList(packageCategories),
+                    classifyIds: parseIntegerCsvList(classifyIds),
+                    planFields: parseCsvList(planFields),
+                    procurementMethods: parseCsvList(procurementMethods),
+                    projectGroups: parseCsvList(projectGroups),
+                    budgetMin: budgetMin.trim() ? Number(budgetMin) : null,
+                    budgetMax: budgetMax.trim() ? Number(budgetMax) : null,
+                    publishedFrom: publishedFrom.trim() || undefined,
+                    publishedTo: publishedTo.trim() || undefined,
+                    minMatchScore: minMatchScore.trim()
+                      ? Number(minMatchScore)
+                      : 0,
+                  },
                 },
               })
             }

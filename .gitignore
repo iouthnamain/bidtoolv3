@@ -7,11 +7,7 @@
 
 # testing
 /coverage
-
-# database
-/prisma/db.sqlite
-/prisma/db.sqlite-journal
-db.sqlite
+.vitest-cache/
 
 # next.js
 /.next/
@@ -23,7 +19,9 @@ next-env.d.ts
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+*.log
 
 # debug
 npm-debug.log*
@@ -42,5 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# idea files
-.idea
+# editor & IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# bun
+bun.lockb

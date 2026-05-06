@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { Logo } from "~/app/_components/brand/logo";
 import { Badge, EmptyState } from "~/app/_components/ui";
 import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
 
@@ -124,23 +125,10 @@ export default async function Home() {
     <main className="min-h-screen px-4 py-5 text-slate-900 sm:py-7">
       <div className="mx-auto w-full max-w-[1440px] space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            aria-label="BidTool v3"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-700 via-sky-800 to-teal-800 text-white shadow-sm">
-              <ActionIcon name="search" />
-            </span>
-            <span>
-              <span className="block text-sm font-bold tracking-tight">
-                BidTool v3
-              </span>
-              <span className="block text-[11px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
-                Procurement OS
-              </span>
-            </span>
-          </Link>
+          <Logo
+            ariaLabel="BidTool v3"
+            tagline="Procurement OS"
+          />
           <nav className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <Link
               href="/dashboard"

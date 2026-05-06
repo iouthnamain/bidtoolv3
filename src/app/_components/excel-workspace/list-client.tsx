@@ -7,11 +7,16 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
-type WorkspaceSummary = RouterOutputs["excelWorkspace"]["listWorkspaces"][number];
+type WorkspaceSummary =
+  RouterOutputs["excelWorkspace"]["listWorkspaces"][number];
 type WorkspaceStatus = WorkspaceSummary["status"];
 type WorkspaceStatusFilter = "all" | WorkspaceStatus;
 type WorkspaceViewFilter = "all" | "active" | "ready_to_export" | "archived";
-type WorkspaceSort = "updated_desc" | "progress_desc" | "open_desc" | "name_asc";
+type WorkspaceSort =
+  | "updated_desc"
+  | "progress_desc"
+  | "open_desc"
+  | "name_asc";
 type BadgeTone = "neutral" | "success" | "warning" | "critical" | "info";
 type StatTone = "neutral" | "warning" | "success" | "info";
 
@@ -69,12 +74,15 @@ const sortLabels: Record<WorkspaceSort, string> = {
   name_asc: "Tên A-Z",
 };
 
-const nextStepLabels: Record<WorkspaceSummary["routeMeta"]["nextStep"], string> = {
-  import: "Tải tệp Excel",
-  map: "Ghép cột dữ liệu",
-  review: "Duyệt và sửa dòng",
-  find: "Tìm và chọn sản phẩm",
-  export: "Xuất tệp đã bổ sung",
+const nextStepLabels: Record<
+  WorkspaceSummary["routeMeta"]["nextStep"],
+  string
+> = {
+  setup: "Cấu hình workbook",
+  import: "Tải hoặc nhập dòng",
+  rows: "Chuẩn hóa dòng vật tư",
+  research: "Bổ sung nguồn tham khảo",
+  export: "Xuất workbook chuẩn",
 };
 
 const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
@@ -90,13 +98,11 @@ const statTileToneClass: Record<StatTone, string> = {
 };
 
 function displayWorkspaceName(name: string) {
-  return name === "Product sourcing workspace"
-    ? "Không gian tìm nguồn sản phẩm"
-    : name;
+  return name === "Product sourcing workspace" ? "Workbook vật tư chuẩn" : name;
 }
 
 function buildSuggestedWorkspaceName(count: number) {
-  return `Không gian tìm nguồn sản phẩm ${String(count).padStart(2, "0")}`;
+  return `Workbook vật tư chuẩn ${String(count).padStart(2, "0")}`;
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -117,27 +123,21 @@ function isArchivedWorkspace(workspace: WorkspaceSummary) {
 }
 
 function isReadyToExport(workspace: WorkspaceSummary) {
-  return workspace.routeMeta.nextStep === "export" && !isArchivedWorkspace(workspace);
+  return (
+    workspace.routeMeta.nextStep === "export" && !isArchivedWorkspace(workspace)
+  );
 }
 
 function getCompletionPercent(workspace: WorkspaceSummary) {
-  if (workspace.routeMeta.importedItemCount > 0) {
-    return Math.round(
-      (workspace.routeMeta.matchedItemCount /
-        workspace.routeMeta.importedItemCount) *
-        100,
-    );
-  }
-
   switch (workspace.routeMeta.nextStep) {
+    case "setup":
+      return 10;
     case "import":
-      return 0;
-    case "map":
-      return 24;
-    case "review":
-      return 48;
-    case "find":
-      return 72;
+      return workspace.routeMeta.importedItemCount > 0 ? 35 : 25;
+    case "rows":
+      return 55;
+    case "research":
+      return 75;
     case "export":
       return 100;
   }
@@ -151,24 +151,28 @@ function getWorkspaceSummary(workspace: WorkspaceSummary) {
   if (workspace.status === "exported") {
     return workspace.exportFileName
       ? `Đã xuất ${workspace.exportFileName}`
-      : "Đã xuất tệp bổ sung";
+      : "Đã xuất workbook chuẩn";
   }
 
   if (!workspace.sourceFileName) {
-    return "Chưa tải workbook nguồn";
+    return workspace.routeMeta.importedItemCount > 0
+      ? `${workspace.routeMeta.importedItemCount.toLocaleString(
+          "vi-VN",
+        )} dòng vật tư đã nhập thủ công`
+      : "Chưa tải workbook nguồn hoặc thêm dòng thủ công";
   }
 
   if (workspace.routeMeta.importedItemCount === 0) {
-    return "Đã có tệp, đang chờ ghép cột và nhập dòng";
+    return "Đã có tệp, đang chờ chọn sheet, header và map cột";
   }
 
   if (workspace.routeMeta.openItemCount > 0) {
     return `${workspace.routeMeta.openItemCount.toLocaleString(
       "vi-VN",
-    )} dòng còn cần chọn nguồn hoặc nhập tay`;
+    )} dòng chưa có evidence; vẫn có thể xuất nếu không còn lỗi dữ liệu`;
   }
 
-  return "Tất cả dòng đã khớp, có thể xuất tệp";
+  return "Dữ liệu vật tư đã sẵn sàng kiểm tra và xuất workbook";
 }
 
 function matchesViewFilter(
@@ -201,7 +205,7 @@ function StatTile({
       <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
         {label}
       </p>
-      <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-950">
+      <p className="mt-0.5 text-lg font-bold text-slate-950 tabular-nums">
         {value.toLocaleString("vi-VN")}
       </p>
     </div>
@@ -227,7 +231,7 @@ export function ExcelWorkspaceListClient() {
     onSuccess: async (workspace) => {
       setName(buildSuggestedWorkspaceName(workspaces.length + 2));
       await utils.excelWorkspace.listWorkspaces.invalidate();
-      router.push(`/excel-workspace/${workspace.id}?step=import`);
+      router.push(`/excel-workspace/${workspace.id}?step=setup`);
     },
   });
 
@@ -328,18 +332,22 @@ export function ExcelWorkspaceListClient() {
       if (sortBy === "progress_desc") {
         return (
           getCompletionPercent(right) - getCompletionPercent(left) ||
-          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+          new Date(right.updatedAt).getTime() -
+            new Date(left.updatedAt).getTime()
         );
       }
 
       if (sortBy === "open_desc") {
         return (
           right.routeMeta.openItemCount - left.routeMeta.openItemCount ||
-          new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+          new Date(right.updatedAt).getTime() -
+            new Date(left.updatedAt).getTime()
         );
       }
 
-      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+      return (
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+      );
     });
   }, [activeViewFilter, deferredKeyword, sortBy, statusFilter, workspaces]);
 
@@ -381,7 +389,7 @@ export function ExcelWorkspaceListClient() {
             <div className="mt-1.5 flex flex-wrap gap-2">
               <input
                 id="excel-workspace-name"
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
@@ -403,8 +411,9 @@ export function ExcelWorkspaceListClient() {
               </Button>
             </div>
             <p className="mt-1.5 text-xs text-slate-500">
-              Hệ thống sẽ mở bước nhập tệp ngay sau khi tạo. Pipeline: nhập tệp →
-              ghép cột → duyệt dòng → chọn nguồn → xuất tệp.
+              Hệ thống sẽ mở cấu hình workbook trước, sau đó nhập Excel hoặc
+              thêm dòng thủ công, chuẩn hóa vật tư, bổ sung nguồn nếu cần và
+              xuất các sheet đã chọn.
             </p>
           </div>
 
@@ -428,14 +437,14 @@ export function ExcelWorkspaceListClient() {
       <section className="panel p-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="min-w-[16rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className="min-w-[16rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
             placeholder="Tìm theo tên, tệp nguồn, sheet hoặc bước tiếp theo"
             aria-label="Tìm không gian Excel"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
           />
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
             value={statusFilter}
             aria-label="Lọc không gian Excel theo trạng thái"
             onChange={(event) =>
@@ -449,7 +458,7 @@ export function ExcelWorkspaceListClient() {
             ))}
           </select>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
             value={sortBy}
             aria-label="Sắp xếp danh sách workspace"
             onChange={(event) => setSortBy(event.target.value as WorkspaceSort)}
@@ -463,29 +472,31 @@ export function ExcelWorkspaceListClient() {
         </div>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          {(Object.keys(viewLabels) as WorkspaceViewFilter[]).map((filterKey) => (
-            <button
-              key={filterKey}
-              type="button"
-              onClick={() => setActiveViewFilter(filterKey)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
-                activeViewFilter === filterKey
-                  ? "border-sky-700 bg-sky-700 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-              }`}
-            >
-              <span>{viewLabels[filterKey]}</span>
-              <span
-                className={`rounded-full px-1 text-[11px] tabular-nums ${
+          {(Object.keys(viewLabels) as WorkspaceViewFilter[]).map(
+            (filterKey) => (
+              <button
+                key={filterKey}
+                type="button"
+                onClick={() => setActiveViewFilter(filterKey)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
                   activeViewFilter === filterKey
-                    ? "bg-white/20 text-white"
-                    : "bg-slate-100 text-slate-600"
+                    ? "border-sky-700 bg-sky-700 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                {viewCounts[filterKey]}
-              </span>
-            </button>
-          ))}
+                <span>{viewLabels[filterKey]}</span>
+                <span
+                  className={`rounded-full px-1 text-[11px] tabular-nums ${
+                    activeViewFilter === filterKey
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {viewCounts[filterKey]}
+                </span>
+              </button>
+            ),
+          )}
           <span className="ml-auto text-xs text-slate-500 tabular-nums">
             {filteredWorkspaces.length.toLocaleString("vi-VN")} /{" "}
             {metrics.total.toLocaleString("vi-VN")} workspace
@@ -504,7 +515,8 @@ export function ExcelWorkspaceListClient() {
           {filteredWorkspaces.map((workspace) => {
             const completionPercent = getCompletionPercent(workspace);
             const canDelete =
-              workspace.status !== "exported" && workspace.status !== "approved";
+              workspace.status !== "exported" &&
+              workspace.status !== "approved";
             const workspaceHref = `/excel-workspace/${workspace.id}?step=${workspace.routeMeta.nextStep}`;
 
             return (
@@ -566,7 +578,7 @@ export function ExcelWorkspaceListClient() {
                           {workspace.routeMeta.openItemCount.toLocaleString(
                             "vi-VN",
                           )}{" "}
-                          dòng mở
+                          dòng thiếu evidence
                         </span>
                       ) : null}
                       <span>
@@ -584,7 +596,7 @@ export function ExcelWorkspaceListClient() {
                         <span className="truncate text-slate-500">
                           {nextStepLabels[workspace.routeMeta.nextStep]}
                         </span>
-                        <span className="ml-2 font-bold tabular-nums text-slate-700">
+                        <span className="ml-2 font-bold text-slate-700 tabular-nums">
                           {completionPercent}%
                         </span>
                       </div>

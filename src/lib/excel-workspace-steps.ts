@@ -1,15 +1,15 @@
 export type ExcelWorkspaceStepId =
+  | "setup"
   | "import"
-  | "map"
-  | "review"
-  | "find"
+  | "rows"
+  | "research"
   | "export";
 
 export const excelWorkspaceSteps: ExcelWorkspaceStepId[] = [
+  "setup",
   "import",
-  "map",
-  "review",
-  "find",
+  "rows",
+  "research",
   "export",
 ];
 
@@ -26,23 +26,22 @@ export function resolveExcelWorkspaceStepState(
   nextStep: ExcelWorkspaceStepId;
   maxStep: ExcelWorkspaceStepId;
 } {
-  if (!input.hasWorkbook) {
+  if (input.importedItemCount > 0) {
+    return {
+      nextStep: input.openItemCount > 0 ? "research" : "export",
+      maxStep: "export",
+    };
+  }
+
+  if (input.hasWorkbook && input.hasMapping) {
+    return { nextStep: "import", maxStep: "rows" };
+  }
+
+  if (input.hasWorkbook) {
     return { nextStep: "import", maxStep: "import" };
   }
 
-  if (!input.hasMapping) {
-    return { nextStep: "map", maxStep: "map" };
-  }
-
-  if (input.importedItemCount === 0) {
-    return { nextStep: "map", maxStep: "map" };
-  }
-
-  if (input.openItemCount > 0) {
-    return { nextStep: "find", maxStep: "find" };
-  }
-
-  return { nextStep: "export", maxStep: "export" };
+  return { nextStep: "setup", maxStep: "rows" };
 }
 
 export function isExcelWorkspaceStepAccessible(

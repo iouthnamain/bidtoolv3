@@ -6,9 +6,18 @@ import { Be_Vietnam_Pro } from "next/font/google";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
-  title: "BidTool v3",
+  title: {
+    default: "BidTool v3",
+    template: "%s · BidTool v3",
+  },
   description: "Nền tảng điều hành, tìm kiếm và tự động hóa đấu thầu",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  applicationName: "BidTool v3",
+  openGraph: {
+    title: "BidTool v3",
+    description: "Nền tảng điều hành, tìm kiếm và tự động hóa đấu thầu",
+    locale: "vi_VN",
+    type: "website",
+  },
 };
 
 const beVietnamPro = Be_Vietnam_Pro({

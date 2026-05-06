@@ -3,16 +3,8 @@
 import { useState } from "react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { formatDateTime } from "~/lib/datetime";
 import { api } from "~/trpc/react";
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString("vi-VN");
-}
 
 function severityTone(
   severity: "high" | "medium" | "low",

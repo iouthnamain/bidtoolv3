@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
+import { STORAGE_KEYS } from "~/lib/storage-keys";
 
-const SIDEBAR_COLLAPSE_KEY = "bidtool.sidebar.collapsed";
+const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
 
 type IconName =
   | "dashboard"
@@ -426,42 +428,7 @@ function CollapseToggle({
 }
 
 function BrandHeader({ collapsed }: { collapsed: boolean }) {
-  return (
-    <Link
-      href="/dashboard"
-      className="flex items-center gap-2.5 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-      aria-label="BidTool v3 — về trang tổng quan"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-700 via-sky-800 to-teal-800 text-white shadow-sm">
-        <svg
-          viewBox="0 0 24 24"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-        >
-          <path d="M4 7h16" />
-          <path d="M4 12h10" />
-          <path d="M4 17h7" />
-          <circle cx="18" cy="16" r="3" />
-          <path d="m20.5 18.5-1-1" />
-        </svg>
-      </span>
-      {!collapsed ? (
-        <span className="flex min-w-0 flex-col leading-tight">
-          <span className="text-sm font-bold tracking-tight text-slate-900">
-            BidTool
-          </span>
-          <span className="text-[11px] font-medium tracking-[0.14em] text-slate-500 uppercase">
-            v3 • Procurement
-          </span>
-        </span>
-      ) : null}
-    </Link>
-  );
+  return <Logo collapsed={collapsed} />;
 }
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {

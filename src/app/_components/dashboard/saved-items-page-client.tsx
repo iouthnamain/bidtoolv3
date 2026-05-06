@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { normalizeSearchSelections } from "~/lib/search-filter-utils";
+import {
+  buildSearchHref,
+  summarizeSearchCriteria,
+} from "~/lib/search-criteria";
+import {
+  SEARCH_MODE_LABELS,
+  WATCHLIST_TYPE_LABELS,
+} from "~/lib/search-modes";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
@@ -35,100 +42,25 @@ function formatDateTime(value: string) {
 
 function buildSavedFilterHref(
   filter: {
-    keyword: string;
-    provinces: string[];
-    categories: string[];
-    budgetMin: number | null;
-    budgetMax: number | null;
-    minMatchScore: number;
+    mode: SavedFilterItem["mode"];
+    criteria: SavedFilterItem["criteria"];
   },
   options?: {
     savedFilterId?: number;
   },
 ) {
-  const normalizedFilter = normalizeSearchSelections(filter);
-  const params = new URLSearchParams();
-
-  if (normalizedFilter.keyword.trim()) {
-    params.set("keyword", normalizedFilter.keyword.trim());
-  }
-
-  for (const province of normalizedFilter.provinces) {
-    params.append("province", province);
-  }
-
-  for (const category of normalizedFilter.categories) {
-    params.append("category", category);
-  }
-
-  if (typeof normalizedFilter.budgetMin === "number") {
-    params.set("budgetMin", String(normalizedFilter.budgetMin));
-  }
-
-  if (typeof normalizedFilter.budgetMax === "number") {
-    params.set("budgetMax", String(normalizedFilter.budgetMax));
-  }
-
-  if (normalizedFilter.minMatchScore > 0) {
-    params.set("minMatchScore", String(normalizedFilter.minMatchScore));
-  }
-
-  if (options?.savedFilterId) {
-    params.set("savedFilterId", String(options.savedFilterId));
-  }
-
-  return `/search${params.toString() ? `?${params.toString()}` : ""}`;
+  return buildSearchHref({
+    mode: filter.mode,
+    criteria: filter.criteria,
+    savedFilterId: options?.savedFilterId ?? null,
+  });
 }
 
 function renderCriteriaList(filter: {
-  keyword: string;
-  provinces: string[];
-  categories: string[];
-  budgetMin: number | null;
-  budgetMax: number | null;
-  minMatchScore: number;
+  mode: SavedFilterItem["mode"];
+  criteria: SavedFilterItem["criteria"];
 }) {
-  const normalizedFilter = normalizeSearchSelections(filter);
-  const chips: string[] = [];
-
-  if (normalizedFilter.keyword.trim()) {
-    chips.push(`Từ khóa: ${normalizedFilter.keyword}`);
-  }
-
-  if (normalizedFilter.provinces.length > 0) {
-    chips.push(`Tỉnh: ${normalizedFilter.provinces.length} mục`);
-  }
-
-  if (normalizedFilter.categories.length > 0) {
-    chips.push(`Lĩnh vực: ${normalizedFilter.categories.length} mục`);
-  }
-
-  if (
-    typeof normalizedFilter.budgetMin === "number" ||
-    typeof normalizedFilter.budgetMax === "number"
-  ) {
-    chips.push(
-      `Ngân sách: ${
-        typeof normalizedFilter.budgetMin === "number"
-          ? normalizedFilter.budgetMin.toLocaleString("vi-VN")
-          : "0"
-      } - ${
-        typeof normalizedFilter.budgetMax === "number"
-          ? normalizedFilter.budgetMax.toLocaleString("vi-VN")
-          : "không giới hạn"
-      }`,
-    );
-  }
-
-  if (normalizedFilter.minMatchScore > 0) {
-    chips.push(`Match tối thiểu: ${normalizedFilter.minMatchScore}%`);
-  }
-
-  if (chips.length === 0) {
-    chips.push("Bộ lọc chung");
-  }
-
-  return chips;
+  return summarizeSearchCriteria(filter.mode, filter.criteria);
 }
 
 function LoadingPanel({ message }: { message: string }) {
@@ -279,6 +211,9 @@ function SavedFiltersSection() {
                       <p className="text-sm leading-tight font-semibold [overflow-wrap:anywhere] text-slate-900">
                         {filter.name}
                       </p>
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                        {SEARCH_MODE_LABELS[filter.mode]}
+                      </span>
                       <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                         {notificationFrequencyLabels[filter.notificationFrequency]}
                       </span>
@@ -392,7 +327,7 @@ function WatchlistSection() {
         <EmptyState
           className="mt-3"
           title="Chưa có mục theo dõi"
-          description="Thêm gói thầu, bên mời thầu, hoặc đối thủ vào watchlist từ trang Tìm kiếm."
+          description="Thêm gói thầu, KHLCNT, dự án, bên mời thầu hoặc đối thủ vào watchlist từ trang Tìm kiếm."
           cta={
             <Link
               href="/search"
@@ -413,7 +348,9 @@ function WatchlistSection() {
                 <p className="text-xs leading-tight font-medium [overflow-wrap:anywhere] text-slate-900">
                   {item.label}
                 </p>
-                <p className="text-xs text-slate-500">⭐ {item.type}</p>
+                <p className="text-xs text-slate-500">
+                  ⭐ {WATCHLIST_TYPE_LABELS[item.type]}
+                </p>
               </div>
               <Button
                 variant="danger"

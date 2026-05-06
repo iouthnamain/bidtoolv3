@@ -1,31 +1,30 @@
 import {
-  normalizeCategoryFilterValues,
-  normalizeProvinceFilterValues,
-} from "~/lib/search-filter-utils";
+  buildCriteriaFromLegacyPackageFields,
+  emptySearchCriteria,
+  normalizeSearchCriteria,
+  summarizeSearchCriteria,
+  type SearchCriteria,
+} from "~/lib/search-criteria";
+import {
+  SEARCH_MODE_LABELS,
+  type SearchMode,
+} from "~/lib/search-modes";
 
 export type WorkflowNotificationFrequency = "daily" | "weekly";
 
 export type WorkflowFilterConfig = {
+  searchMode: SearchMode;
+  criteria: SearchCriteria;
   savedFilterId: number | null;
   savedFilterName: string | null;
-  keyword: string;
-  provinces: string[];
-  categories: string[];
-  budgetMin: number | null;
-  budgetMax: number | null;
-  minMatchScore: number;
   notificationFrequency: WorkflowNotificationFrequency | null;
 };
 
 export const emptyWorkflowFilterConfig: WorkflowFilterConfig = {
+  searchMode: "package_keyword",
+  criteria: { ...emptySearchCriteria },
   savedFilterId: null,
   savedFilterName: null,
-  keyword: "",
-  provinces: [],
-  categories: [],
-  budgetMin: null,
-  budgetMax: null,
-  minMatchScore: 0,
   notificationFrequency: null,
 };
 
@@ -46,23 +45,41 @@ function readStringArray(value: unknown): string[] {
     return [];
   }
 
-  return Array.from(
-    new Set(
-      value
-        .map((item) => (typeof item === "string" ? item.trim() : ""))
-        .filter(Boolean),
-    ),
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function readNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is number => typeof item === "number" && Number.isInteger(item),
   );
 }
 
-function readFrequency(
-  value: unknown,
-): WorkflowNotificationFrequency | null {
+function readFrequency(value: unknown): WorkflowNotificationFrequency | null {
   if (value === "daily" || value === "weekly") {
     return value;
   }
 
   return null;
+}
+
+function readSearchMode(value: unknown): SearchMode {
+  if (
+    value === "package_keyword" ||
+    value === "package_location" ||
+    value === "package_area_location" ||
+    value === "plan" ||
+    value === "project"
+  ) {
+    return value;
+  }
+
+  return "package_keyword";
 }
 
 export function normalizeWorkflowFilterConfig(
@@ -72,26 +89,52 @@ export function normalizeWorkflowFilterConfig(
     return { ...emptyWorkflowFilterConfig };
   }
 
+  const nestedCriteria = isRecord(input.criteria) ? input.criteria : input;
+  const legacyCriteria = buildCriteriaFromLegacyPackageFields({
+    keyword: readString(input.keyword),
+    provinces: readStringArray(input.provinces),
+    categories: readStringArray(input.categories),
+    budgetMin: readNumber(input.budgetMin),
+    budgetMax: readNumber(input.budgetMax),
+    minMatchScore: readNumber(input.minMatchScore) ?? 0,
+  });
+
+  const searchMode = readSearchMode(input.searchMode);
   const savedFilterIdRaw = input.savedFilterId;
 
   return {
+    searchMode,
+    criteria: normalizeSearchCriteria({
+      ...legacyCriteria,
+      keyword: readString(nestedCriteria.keyword) || legacyCriteria.keyword,
+      provinces:
+        readStringArray(nestedCriteria.provinces).length > 0
+          ? readStringArray(nestedCriteria.provinces)
+          : legacyCriteria.provinces,
+      packageCategories:
+        readStringArray(nestedCriteria.packageCategories).length > 0
+          ? readStringArray(nestedCriteria.packageCategories)
+          : readStringArray(input.categories).length > 0
+            ? readStringArray(input.categories)
+            : legacyCriteria.packageCategories,
+      classifyIds: readNumberArray(nestedCriteria.classifyIds),
+      planFields: readStringArray(nestedCriteria.planFields),
+      procurementMethods: readStringArray(nestedCriteria.procurementMethods),
+      projectGroups: readStringArray(nestedCriteria.projectGroups),
+      budgetMin:
+        readNumber(nestedCriteria.budgetMin) ?? legacyCriteria.budgetMin,
+      budgetMax:
+        readNumber(nestedCriteria.budgetMax) ?? legacyCriteria.budgetMax,
+      publishedFrom: readString(nestedCriteria.publishedFrom),
+      publishedTo: readString(nestedCriteria.publishedTo),
+      minMatchScore:
+        readNumber(nestedCriteria.minMatchScore) ?? legacyCriteria.minMatchScore,
+    }),
     savedFilterId:
       typeof savedFilterIdRaw === "number" && Number.isInteger(savedFilterIdRaw)
         ? savedFilterIdRaw
         : null,
     savedFilterName: readString(input.savedFilterName) || null,
-    keyword: readString(input.keyword),
-    provinces: normalizeProvinceFilterValues(readStringArray(input.provinces)),
-    categories: normalizeCategoryFilterValues(
-      readStringArray(input.categories),
-    ),
-    budgetMin: readNumber(input.budgetMin),
-    budgetMax: readNumber(input.budgetMax),
-    minMatchScore: (() => {
-      const raw = readNumber(input.minMatchScore);
-      if (raw === null) return 0;
-      return Math.max(0, Math.min(100, Math.round(raw)));
-    })(),
     notificationFrequency: readFrequency(input.notificationFrequency),
   };
 }
@@ -105,38 +148,11 @@ export function summarizeWorkflowFilterConfig(
     chips.push(`Smart View: ${config.savedFilterName}`);
   }
 
-  if (config.keyword) {
-    chips.push(`Từ khóa: ${config.keyword}`);
-  }
-
-  if (config.provinces.length > 0) {
-    chips.push(`Tỉnh: ${config.provinces.length}`);
-  }
-
-  if (config.categories.length > 0) {
-    chips.push(`Lĩnh vực: ${config.categories.length}`);
-  }
-
-  if (config.budgetMin !== null || config.budgetMax !== null) {
-    chips.push(
-      `Ngân sách: ${
-        config.budgetMin !== null
-          ? config.budgetMin.toLocaleString("vi-VN")
-          : "0"
-      } - ${
-        config.budgetMax !== null
-          ? config.budgetMax.toLocaleString("vi-VN")
-          : "không giới hạn"
-      }`,
-    );
-  }
-
-  if (config.minMatchScore > 0) {
-    chips.push(`Match tối thiểu: ${config.minMatchScore}%`);
-  }
+  const modeSummary = summarizeSearchCriteria(config.searchMode, config.criteria);
+  chips.push(...modeSummary);
 
   if (chips.length === 0) {
-    chips.push("Điều kiện chung");
+    chips.push(`Chế độ: ${SEARCH_MODE_LABELS.package_keyword}`);
   }
 
   return chips;

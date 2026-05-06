@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { packageDetailsCache } from "~/server/db/schema";
+import {
+  packageDetailsCache,
+  planDetailsCache,
+  projectDetailsCache,
+} from "~/server/db/schema";
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -79,6 +83,8 @@ export type BidWinnerDetailResult = {
   fetchedAt: string;
 };
 
+export type BidWinnerDetailEntityType = "package" | "plan" | "project";
+
 type BidWinnerDetailExtractionDiagnostics = Omit<
   BidWinnerDetailResult["extractionMeta"],
   "fromCache" | "cacheAgeMs"
@@ -99,6 +105,8 @@ type BidWinnerTableSections = {
 };
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_PURGE_AGE_MS = CACHE_TTL_MS * 28;
+const CACHE_PURGE_PROBABILITY = 0.05;
 const SECTION_EVIDENCE_LIMIT = 20;
 const BIDWINNER_ALLOWED_HOSTS = new Set([
   "bidwinner.info",
@@ -779,7 +787,11 @@ function assertAllowedSourceUrl(url: URL): void {
   }
 }
 
-function buildSourceUrl(externalId: string, sourceUrl?: string): string {
+function buildSourceUrl(
+  entityType: BidWinnerDetailEntityType,
+  externalId: string,
+  sourceUrl?: string,
+): string {
   const maybeSource = sourceUrl?.trim();
   if (maybeSource) {
     const parsed = new URL(maybeSource);
@@ -794,10 +806,13 @@ function buildSourceUrl(externalId: string, sourceUrl?: string): string {
     );
   }
 
-  const fallbackUrl = new URL(
-    `/4.0/chi-tiet-goi-thau/${encodeURIComponent(id)}`,
-    "https://bidwinner.info",
-  );
+  const path =
+    entityType === "plan"
+      ? `/4.0/ke-hoach-lua-chon-nha-thau/${encodeURIComponent(id)}`
+      : entityType === "project"
+        ? `/4.0/du-an-dau-tu-phat-trien/${encodeURIComponent(id)}`
+        : `/4.0/chi-tiet-goi-thau/${encodeURIComponent(id)}`;
+  const fallbackUrl = new URL(path, "https://bidwinner.info");
   assertAllowedSourceUrl(fallbackUrl);
   return fallbackUrl.toString();
 }
@@ -920,19 +935,131 @@ export async function fetchBidWinnerDetail(input: {
   externalId: string;
   sourceUrl?: string;
 }): Promise<BidWinnerDetailResult> {
-  const resolvedSourceUrl = buildSourceUrl(input.externalId, input.sourceUrl);
-  const cacheKey = computeCacheKey(input.externalId, resolvedSourceUrl);
+  return fetchBidWinnerSourceDetail({
+    entityType: "package",
+    ...input,
+  });
+}
 
-  let cacheRow: typeof packageDetailsCache.$inferSelect | undefined;
-  try {
+async function readCacheRow(
+  entityType: BidWinnerDetailEntityType,
+  cacheKey: string,
+) {
+  if (entityType === "plan") {
     const [row] = await db
       .select()
-      .from(packageDetailsCache)
-      .where(eq(packageDetailsCache.cacheKey, cacheKey))
+      .from(planDetailsCache)
+      .where(eq(planDetailsCache.cacheKey, cacheKey))
       .limit(1);
-    cacheRow = row;
+
+    return row;
+  }
+
+  if (entityType === "project") {
+    const [row] = await db
+      .select()
+      .from(projectDetailsCache)
+      .where(eq(projectDetailsCache.cacheKey, cacheKey))
+      .limit(1);
+
+    return row;
+  }
+
+  const [row] = await db
+    .select()
+    .from(packageDetailsCache)
+    .where(eq(packageDetailsCache.cacheKey, cacheKey))
+    .limit(1);
+
+  return row;
+}
+
+async function writeCacheRow(
+  entityType: BidWinnerDetailEntityType,
+  input: {
+    externalId: string;
+    sourceUrl: string;
+    cacheKey: string;
+    payloadJson: Record<string, unknown>;
+    fetchedAt: string;
+    updatedAt: string;
+  },
+) {
+  if (entityType === "plan") {
+    await db
+      .insert(planDetailsCache)
+      .values(input)
+      .onConflictDoUpdate({
+        target: planDetailsCache.cacheKey,
+        set: input,
+      });
+    return;
+  }
+
+  if (entityType === "project") {
+    await db
+      .insert(projectDetailsCache)
+      .values(input)
+      .onConflictDoUpdate({
+        target: projectDetailsCache.cacheKey,
+        set: input,
+      });
+    return;
+  }
+
+  await db
+    .insert(packageDetailsCache)
+    .values(input)
+    .onConflictDoUpdate({
+      target: packageDetailsCache.cacheKey,
+      set: input,
+    });
+}
+
+async function purgeStaleCacheRows(entityType: BidWinnerDetailEntityType) {
+  const cutoff = new Date(Date.now() - CACHE_PURGE_AGE_MS).toISOString();
+
+  if (entityType === "plan") {
+    await db
+      .delete(planDetailsCache)
+      .where(lt(planDetailsCache.updatedAt, cutoff));
+    return;
+  }
+
+  if (entityType === "project") {
+    await db
+      .delete(projectDetailsCache)
+      .where(lt(projectDetailsCache.updatedAt, cutoff));
+    return;
+  }
+
+  await db
+    .delete(packageDetailsCache)
+    .where(lt(packageDetailsCache.updatedAt, cutoff));
+}
+
+export async function fetchBidWinnerSourceDetail(input: {
+  entityType: BidWinnerDetailEntityType;
+  externalId: string;
+  sourceUrl?: string;
+}): Promise<BidWinnerDetailResult> {
+  const resolvedSourceUrl = buildSourceUrl(
+    input.entityType,
+    input.externalId,
+    input.sourceUrl,
+  );
+  const cacheKey = computeCacheKey(input.externalId, resolvedSourceUrl);
+
+  let cacheRow:
+    | typeof packageDetailsCache.$inferSelect
+    | typeof planDetailsCache.$inferSelect
+    | typeof projectDetailsCache.$inferSelect
+    | undefined;
+  try {
+    cacheRow = await readCacheRow(input.entityType, cacheKey);
   } catch (error) {
     console.warn("Package details cache read failed, continue without cache", {
+      entityType: input.entityType,
       externalId: input.externalId,
       sourceUrl: resolvedSourceUrl,
       error,
@@ -973,35 +1100,36 @@ export async function fetchBidWinnerDetail(input: {
     const nowIso = new Date().toISOString();
 
     try {
-      await db
-        .insert(packageDetailsCache)
-        .values({
-          externalId: input.externalId,
-          sourceUrl: resolvedSourceUrl,
-          cacheKey,
-          payloadJson: toCachePayload(freshCore),
-          fetchedAt: freshCore.fetchedAt,
-          updatedAt: nowIso,
-        })
-        .onConflictDoUpdate({
-          target: packageDetailsCache.cacheKey,
-          set: {
-            externalId: input.externalId,
-            sourceUrl: resolvedSourceUrl,
-            payloadJson: toCachePayload(freshCore),
-            fetchedAt: freshCore.fetchedAt,
-            updatedAt: nowIso,
-          },
-        });
+      await writeCacheRow(input.entityType, {
+        externalId: input.externalId,
+        sourceUrl: resolvedSourceUrl,
+        cacheKey,
+        payloadJson: toCachePayload(freshCore),
+        fetchedAt: freshCore.fetchedAt,
+        updatedAt: nowIso,
+      });
 
       console.info("Package details cache refreshed", {
+        entityType: input.entityType,
         externalId: input.externalId,
         sourceUrl: resolvedSourceUrl,
       });
+
+      if (Math.random() < CACHE_PURGE_PROBABILITY) {
+        try {
+          await purgeStaleCacheRows(input.entityType);
+        } catch (purgeError) {
+          console.warn("Stale detail cache purge failed", {
+            entityType: input.entityType,
+            error: purgeError,
+          });
+        }
+      }
     } catch (error) {
       console.warn(
         "Package details cache write failed, continue with live data",
         {
+          entityType: input.entityType,
           externalId: input.externalId,
           sourceUrl: resolvedSourceUrl,
           error,
@@ -1016,6 +1144,7 @@ export async function fetchBidWinnerDetail(input: {
   } catch (error) {
     if (cachedCore) {
       console.warn("Package details upstream failed, serving stale cache", {
+        entityType: input.entityType,
         externalId: input.externalId,
         sourceUrl: resolvedSourceUrl,
         cacheAgeMs: cachedAgeMs,
