@@ -2,12 +2,15 @@
 
 import {
   Check,
+  ClipboardPaste,
+  Copy,
   FileDown,
   FileSpreadsheet,
   LinkIcon,
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -690,6 +693,7 @@ function RowsStep({
 }) {
   const [form, setForm] = useState(emptyRowForm);
   const [pasteText, setPasteText] = useState("");
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
   const createRow = api.excelWorkspace.createWorkspaceRow.useMutation({
     onSuccess: async () => refetchWorkspace(),
   });
@@ -755,7 +759,20 @@ function RowsStep({
       .filter(Boolean)
       .map((line) => line.split("\t"));
     for (const row of rows) {
-      const [name, unit, qty, stock, term] = row;
+      const [
+        name,
+        unit,
+        qty,
+        stock,
+        term,
+        specText,
+        inspectionQtyTerm1,
+        inspectionQtyTerm2,
+        unitPrice,
+        vendorHint,
+        originHint,
+        notes,
+      ] = row;
       if (!name || !unit) continue;
       await createRow.mutateAsync({
         workspaceId: payload.workspace.id,
@@ -767,11 +784,19 @@ function RowsStep({
             qtyTotal: qty ?? "",
             qtyInStock: stock ?? "0",
             term: term?.includes("2") ? "term_2" : "term_1",
+            specText: specText ?? "",
+            inspectionQtyTerm1: inspectionQtyTerm1 ?? "",
+            inspectionQtyTerm2: inspectionQtyTerm2 ?? "",
+            unitPrice: unitPrice ?? "",
+            vendorHint: vendorHint ?? "",
+            originHint: originHint ?? "",
+            notes: notes ?? "",
           }),
         },
       });
     }
     setPasteText("");
+    setIsPasteOpen(false);
   };
 
   return (
@@ -783,7 +808,17 @@ function RowsStep({
             Thực mua được tính khi xuất: SL tổng hợp trừ SL còn tồn.
           </p>
         </div>
-        <Badge tone="info">{payload.items.length} dòng</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => setIsPasteOpen(true)}
+          >
+            <ClipboardPaste className="h-3.5 w-3.5" />
+            Dán nhiều dòng
+          </button>
+          <Badge tone="info">{payload.items.length} dòng</Badge>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2 lg:grid-cols-6">
@@ -871,31 +906,91 @@ function RowsStep({
             setForm({ ...form, unitPrice: event.target.value })
           }
         />
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="Nhà cung cấp"
+          value={form.vendorHint}
+          onChange={(event) =>
+            setForm({ ...form, vendorHint: event.target.value })
+          }
+        />
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="Xuất xứ"
+          value={form.originHint}
+          onChange={(event) =>
+            setForm({ ...form, originHint: event.target.value })
+          }
+        />
+        <input
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm lg:col-span-2"
+          placeholder="Ghi chú"
+          value={form.notes}
+          onChange={(event) => setForm({ ...form, notes: event.target.value })}
+        />
       </div>
 
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-semibold text-slate-600">
-          Dán nhanh: Tên[TAB]ĐVT[TAB]SL tổng[TAB]SL tồn[TAB]Học kỳ
-        </p>
-        <div className="mt-2 flex gap-2">
-          <textarea
-            className="h-16 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs"
-            value={pasteText}
-            onChange={(event) => setPasteText(event.target.value)}
-          />
-          <button
-            type="button"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-white disabled:opacity-50"
-            disabled={!pasteText.trim()}
-            onClick={() => void pasteRows()}
-          >
-            Nhập dán
-          </button>
+      {isPasteOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">
+          <div className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-950">
+                  Dán nhanh nhiều dòng vật tư
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Mỗi dòng dùng tab theo thứ tự: Tên, ĐVT, SL tổng, SL tồn, Học
+                  kỳ, Thông số, BB I, BB II, Đơn giá, NCC, Xuất xứ, Ghi chú.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                onClick={() => setIsPasteOpen(false)}
+                aria-label="Đóng nhập dán"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                className="h-64 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                value={pasteText}
+                onChange={(event) => setPasteText(event.target.value)}
+                placeholder={
+                  "Dây điện\tMét\t10\t2\tHọc kỳ I\tCu/PVC\t1\t0\t25000\tNCC A\tViệt Nam\tGhi chú"
+                }
+              />
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-500">
+                  Dòng thiếu tên hoặc ĐVT sẽ được bỏ qua.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => setIsPasteOpen(false)}
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                    disabled={!pasteText.trim() || createRow.isPending}
+                    onClick={() => void pasteRows()}
+                  >
+                    <ClipboardPaste className="h-4 w-4" />
+                    Nhập dòng
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-[1450px] divide-y divide-slate-200 text-sm">
+        <table className="min-w-[1780px] divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-100 text-left text-xs text-slate-600 uppercase">
             <tr>
               <th className="px-2 py-2">Xuất</th>
@@ -911,6 +1006,9 @@ function RowsStep({
               <th className="px-2 py-2">BB I</th>
               <th className="px-2 py-2">BB II</th>
               <th className="px-2 py-2">Đơn giá</th>
+              <th className="px-2 py-2">NCC</th>
+              <th className="px-2 py-2">Xuất xứ</th>
+              <th className="px-2 py-2">Ghi chú</th>
               <th className="px-2 py-2">Nguồn</th>
               <th className="px-2 py-2"> </th>
             </tr>
@@ -919,6 +1017,8 @@ function RowsStep({
             {payload.items.map((item) => {
               const buyQty =
                 Number(item.qtyTotal ?? 0) - Number(item.qtyInStock ?? 0);
+              const stockOverflow =
+                Number(item.qtyInStock ?? 0) > Number(item.qtyTotal ?? 0);
               const candidate = payload.candidates.find(
                 (row) => row.id === item.selectedCandidateId,
               );
@@ -961,7 +1061,16 @@ function RowsStep({
                   </td>
                   <EditableNumberCell item={item} field="qtyTotal" />
                   <EditableNumberCell item={item} field="qtyInStock" />
-                  <td className="px-2 py-2 align-top font-semibold tabular-nums">
+                  <td
+                    className={`px-2 py-2 align-top font-semibold tabular-nums ${
+                      stockOverflow ? "text-rose-700" : "text-slate-900"
+                    }`}
+                    title={
+                      stockOverflow
+                        ? "SL còn tồn lớn hơn SL tổng hợp; export sẽ bị chặn."
+                        : undefined
+                    }
+                  >
                     {buyQty.toLocaleString("vi-VN")}
                   </td>
                   <EditableNumberCell item={item} field="depreciation" />
@@ -969,6 +1078,9 @@ function RowsStep({
                   <EditableNumberCell item={item} field="inspectionQtyTerm1" />
                   <EditableNumberCell item={item} field="inspectionQtyTerm2" />
                   <EditableNumberCell item={item} field="unitPrice" integer />
+                  <EditableCell item={item} field="vendorHint" width="w-40" />
+                  <EditableCell item={item} field="originHint" width="w-32" />
+                  <EditableCell item={item} field="notes" width="w-52" />
                   <td className="max-w-48 px-2 py-2 align-top text-xs text-slate-500">
                     {candidate ? candidate.title : "Chưa có"}
                   </td>
@@ -979,7 +1091,10 @@ function RowsStep({
                         className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold hover:bg-slate-100"
                         onClick={() => void duplicateRow(item)}
                       >
-                        Nhân
+                        <span className="inline-flex items-center gap-1">
+                          <Copy className="h-3.5 w-3.5" />
+                          Nhân
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -1005,14 +1120,20 @@ function RowsStep({
     width,
   }: {
     item: WorkspaceItem;
-    field: "productName" | "specText" | "unit";
+    field:
+      | "productName"
+      | "specText"
+      | "unit"
+      | "vendorHint"
+      | "originHint"
+      | "notes";
     width: string;
   }) {
     return (
       <td className="px-2 py-2 align-top">
         <input
           className={`${width} rounded border border-slate-200 px-2 py-1`}
-          defaultValue={item[field]}
+          defaultValue={item[field] ?? ""}
           onBlur={(event) =>
             updateRow.mutate({
               rowId: item.id,

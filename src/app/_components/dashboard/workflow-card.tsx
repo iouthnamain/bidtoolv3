@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PauseCircle, Play, Settings, ToggleRight } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
 import { formatDateTime } from "~/lib/datetime";
@@ -117,8 +118,9 @@ export function WorkflowCard({
 
         <Link
           href={`/workflows/${id}`}
-          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
         >
+          <Settings className="h-3.5 w-3.5" aria-hidden />
           Quản lý
         </Link>
       </div>
@@ -137,6 +139,7 @@ export function WorkflowCard({
           size="sm"
           isLoading={isRunningNow}
           disabled={!isActive}
+          leftIcon={<Play className="h-3.5 w-3.5" />}
           onClick={onRunNow}
         >
           Chạy ngay
@@ -145,6 +148,13 @@ export function WorkflowCard({
           variant="secondary"
           size="sm"
           isLoading={isToggling}
+          leftIcon={
+            isActive ? (
+              <PauseCircle className="h-3.5 w-3.5" />
+            ) : (
+              <ToggleRight className="h-3.5 w-3.5" />
+            )
+          }
           onClick={() => onToggleActive(!isActive)}
         >
           {isActive ? "Tạm dừng" : "Kích hoạt"}

@@ -15,6 +15,18 @@ import {
   useSearchParams,
   type ReadonlyURLSearchParams,
 } from "next/navigation";
+import {
+  BellPlus,
+  BookmarkCheck,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 
 import { PAGE_SIZE_OPTIONS, type SortOrder } from "~/constants/search-options";
 import {
@@ -74,6 +86,9 @@ const smartViewFrequencyLabels = {
   daily: "Hằng ngày",
   weekly: "Hằng tuần",
 } as const;
+
+const controlClass =
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100";
 
 function formatCurrency(value: number) {
   return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
@@ -230,7 +245,9 @@ function MultiSelectDropdown({
         className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
-        <span className="truncate">{summarizeSelected(selected, emptyLabel)}</span>
+        <span className="truncate">
+          {summarizeSelected(selected, emptyLabel)}
+        </span>
         <span className="ml-2 shrink-0 text-xs text-slate-500">
           {selected.length}
         </span>
@@ -299,6 +316,22 @@ function detailHrefForItem(item: SearchItem) {
   return `/package-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
 }
 
+function ownerTextForItem(item: SearchItem) {
+  return item.entityType === "package" ? item.inviter : item.owner;
+}
+
+function fieldTextForItem(item: SearchItem) {
+  if (item.entityType === "plan") {
+    return [item.field, item.procurementMethod].filter(Boolean).join(" / ");
+  }
+
+  if (item.entityType === "project") {
+    return item.projectGroup;
+  }
+
+  return item.category;
+}
+
 function entityLabelForItems(items: SearchItem[]) {
   const entityType = items[0]?.entityType ?? "package";
   return SEARCH_ENTITY_LABELS[entityType];
@@ -306,6 +339,50 @@ function entityLabelForItems(items: SearchItem[]) {
 
 function selectedKey(item: SearchItem) {
   return `${item.entityType}:${item.externalId}`;
+}
+
+function ResultActions({
+  item,
+  addWatchlist,
+}: {
+  item: SearchItem;
+  addWatchlist: ReturnType<typeof api.watchlist.addItem.useMutation>;
+}) {
+  return (
+    <div className="flex min-w-[180px] flex-wrap gap-1.5">
+      <Link
+        href={detailHrefForItem(item)}
+        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+      >
+        <Eye className="h-3.5 w-3.5" aria-hidden />
+        Chi tiết
+      </Link>
+      <a
+        href={item.sourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+      >
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+        Nguồn
+      </a>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="px-1.5 py-1"
+        leftIcon={<BellPlus className="h-3.5 w-3.5" />}
+        onClick={() =>
+          addWatchlist.mutate({
+            type: item.entityType,
+            refKey: item.externalId,
+            label: item.title,
+          })
+        }
+      >
+        Theo dõi
+      </Button>
+    </div>
+  );
 }
 
 function toSavePayload(item: SearchItem) {
@@ -383,7 +460,8 @@ function SourceMetaBanner({ result }: { result: SearchResult }) {
           {exactFields.length > 0 ? exactFields : "phân trang/tổng số cơ bản"}
         </p>
         <p className="mt-1">
-          Tinh lọc trong app: {localFields.length > 0 ? localFields : "không có"}
+          Tinh lọc trong app:{" "}
+          {localFields.length > 0 ? localFields : "không có"}
         </p>
       </div>
 
@@ -445,160 +523,198 @@ function ResultsTable(props: {
   const entityType = props.items[0]?.entityType ?? "package";
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-          <tr>
-            <th className="px-3 py-3">
+    <div className="space-y-3">
+      <div className="space-y-2 md:hidden">
+        {props.items.map((item) => (
+          <article
+            key={selectedKey(item)}
+            className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
               <input
                 type="checkbox"
-                checked={allSelected}
-                onChange={(event) => toggleAll(event.target.checked)}
-                aria-label="Chọn tất cả"
+                className="mt-1"
+                checked={props.selectedKeys.has(selectedKey(item))}
+                onChange={(event) => toggleOne(item, event.target.checked)}
+                aria-label={`Chọn ${item.externalId}`}
               />
-            </th>
-            <th className="px-3 py-3">Tên</th>
-            <th className="px-3 py-3">
-              {entityType === "package"
-                ? "Bên mời / chủ đầu tư"
-                : entityType === "plan"
-                  ? "Chủ đầu tư"
-                  : "Đơn vị"}
-            </th>
-            <th className="px-3 py-3">Tỉnh</th>
-            <th className="px-3 py-3">
-              {entityType === "plan"
-                ? "Lĩnh vực / HTLCNT"
-                : entityType === "project"
-                  ? "Nhóm dự án"
-                  : "Lĩnh vực"}
-            </th>
-            <th className="px-3 py-3 text-right">Ngân sách</th>
-            <th className="px-3 py-3">Ngày</th>
-            <th className="px-3 py-3">Hành động</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {props.items.map((item) => (
-            <tr key={selectedKey(item)} className="align-top">
-              <td className="px-3 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm leading-5 font-semibold [overflow-wrap:anywhere] text-slate-950">
+                  {item.title}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {item.externalId} • {item.province}
+                </p>
+              </div>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md bg-slate-50 px-2 py-1.5">
+                <dt className="text-slate-400">Đơn vị</dt>
+                <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
+                  {ownerTextForItem(item)}
+                </dd>
+              </div>
+              <div className="rounded-md bg-slate-50 px-2 py-1.5">
+                <dt className="text-slate-400">Lĩnh vực</dt>
+                <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
+                  {fieldTextForItem(item)}
+                </dd>
+              </div>
+              <div className="rounded-md bg-slate-50 px-2 py-1.5">
+                <dt className="text-slate-400">Ngân sách</dt>
+                <dd className="mt-0.5 font-mono font-semibold text-slate-800">
+                  {formatCurrency(item.budget)}
+                </dd>
+              </div>
+              <div className="rounded-md bg-slate-50 px-2 py-1.5">
+                <dt className="text-slate-400">Ngày đăng</dt>
+                <dd className="mt-0.5 font-medium text-slate-700">
+                  {formatDate(item.publishedAt)}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="mt-3">
+              <ResultActions item={item} addWatchlist={props.addWatchlist} />
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+        <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+            <tr>
+              <th className="px-3 py-3">
                 <input
                   type="checkbox"
-                  checked={props.selectedKeys.has(selectedKey(item))}
-                  onChange={(event) => toggleOne(item, event.target.checked)}
-                  aria-label={`Chọn ${item.externalId}`}
+                  checked={allSelected}
+                  onChange={(event) => toggleAll(event.target.checked)}
+                  aria-label="Chọn tất cả"
                 />
-              </td>
-              <td className="px-3 py-3">
-                <div className="max-w-[340px]">
-                  <p className="font-semibold text-slate-900">{item.title}</p>
-                  {item.entityType === "plan" ? (
-                    <p className="mt-1 text-xs text-slate-500">{item.planName}</p>
-                  ) : null}
-                  {item.entityType === "project" &&
-                  item.relatedPlans.length > 0 ? (
-                    <div className="mt-1 space-y-1">
-                      <p className="text-xs text-slate-500">
-                        KHLCNT liên quan: {item.relatedPlanCount}
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {item.relatedPlans.slice(0, 2).map((plan) => (
-                          <a
-                            key={plan.externalId}
-                            href={plan.sourceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
-                          >
-                            {plan.title}
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </td>
-              <td className="px-3 py-3 text-xs text-slate-700">
-                {item.entityType === "package"
-                  ? item.inviter
-                  : item.owner}
-              </td>
-              <td className="px-3 py-3 text-xs text-slate-700">{item.province}</td>
-              <td className="px-3 py-3 text-xs text-slate-700">
-                {item.entityType === "plan" ? (
-                  <div>
-                    <p>{item.field}</p>
-                    <p className="mt-1 text-slate-500">{item.procurementMethod}</p>
-                  </div>
-                ) : item.entityType === "project" ? (
-                  item.projectGroup
-                ) : (
-                  item.category
-                )}
-              </td>
-              <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
-                {formatCurrency(item.budget)}
-              </td>
-              <td className="px-3 py-3 text-xs text-slate-700">
-                {item.entityType === "project" ? (
-                  <div>
-                    <p>Đăng: {formatDate(item.publishedAt)}</p>
-                    <p className="mt-1 text-slate-500">
-                      Duyệt: {formatDate(item.approvedAt)}
-                    </p>
-                  </div>
-                ) : item.entityType === "plan" ? (
-                  <div>
-                    <p>Đăng: {formatDate(item.publishedAt)}</p>
-                    <p className="mt-1 text-slate-500">
-                      Tiến độ: {item.timeline ?? "-"}
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <p>Đăng: {formatDate(item.publishedAt)}</p>
-                    <p className="mt-1 text-slate-500">
-                      Match: {item.matchScore}%
-                    </p>
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-3">
-                <div className="flex min-w-[180px] flex-wrap gap-1">
-                  <Link
-                    href={detailHrefForItem(item)}
-                    className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-                  >
-                    Chi tiết
-                  </Link>
-                  <a
-                    href={item.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-                  >
-                    Nguồn
-                  </a>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="px-1.5 py-1"
-                    onClick={() =>
-                      props.addWatchlist.mutate({
-                        type: item.entityType,
-                        refKey: item.externalId,
-                        label: item.title,
-                      })
-                    }
-                  >
-                    Theo dõi
-                  </Button>
-                </div>
-              </td>
+              </th>
+              <th className="px-3 py-3">Tên</th>
+              <th className="px-3 py-3">
+                {entityType === "package"
+                  ? "Bên mời / chủ đầu tư"
+                  : entityType === "plan"
+                    ? "Chủ đầu tư"
+                    : "Đơn vị"}
+              </th>
+              <th className="px-3 py-3">Tỉnh</th>
+              <th className="px-3 py-3">
+                {entityType === "plan"
+                  ? "Lĩnh vực / HTLCNT"
+                  : entityType === "project"
+                    ? "Nhóm dự án"
+                    : "Lĩnh vực"}
+              </th>
+              <th className="px-3 py-3 text-right">Ngân sách</th>
+              <th className="px-3 py-3">Ngày</th>
+              <th className="px-3 py-3">Hành động</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {props.items.map((item) => (
+              <tr key={selectedKey(item)} className="align-top">
+                <td className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={props.selectedKeys.has(selectedKey(item))}
+                    onChange={(event) => toggleOne(item, event.target.checked)}
+                    aria-label={`Chọn ${item.externalId}`}
+                  />
+                </td>
+                <td className="px-3 py-3">
+                  <div className="max-w-[340px]">
+                    <p className="font-semibold text-slate-900">{item.title}</p>
+                    {item.entityType === "plan" ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.planName}
+                      </p>
+                    ) : null}
+                    {item.entityType === "project" &&
+                    item.relatedPlans.length > 0 ? (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs text-slate-500">
+                          KHLCNT liên quan: {item.relatedPlanCount}
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {item.relatedPlans.slice(0, 2).map((plan) => (
+                            <a
+                              key={plan.externalId}
+                              href={plan.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
+                            >
+                              {plan.title}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-700">
+                  {ownerTextForItem(item)}
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-700">
+                  {item.province}
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-700">
+                  {item.entityType === "plan" ? (
+                    <div>
+                      <p>{item.field}</p>
+                      <p className="mt-1 text-slate-500">
+                        {item.procurementMethod}
+                      </p>
+                    </div>
+                  ) : item.entityType === "project" ? (
+                    item.projectGroup
+                  ) : (
+                    item.category
+                  )}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
+                  {formatCurrency(item.budget)}
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-700">
+                  {item.entityType === "project" ? (
+                    <div>
+                      <p>Đăng: {formatDate(item.publishedAt)}</p>
+                      <p className="mt-1 text-slate-500">
+                        Duyệt: {formatDate(item.approvedAt)}
+                      </p>
+                    </div>
+                  ) : item.entityType === "plan" ? (
+                    <div>
+                      <p>Đăng: {formatDate(item.publishedAt)}</p>
+                      <p className="mt-1 text-slate-500">
+                        Tiến độ: {item.timeline ?? "-"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p>Đăng: {formatDate(item.publishedAt)}</p>
+                      <p className="mt-1 text-slate-500">
+                        Match: {item.matchScore}%
+                      </p>
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-3">
+                  <ResultActions
+                    item={item}
+                    addWatchlist={props.addWatchlist}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -610,7 +726,9 @@ export function SearchPageClient() {
 
   const initialMode = readSearchModeFromSearchParams(searchParams);
   const initialCriteria = readSearchCriteriaFromSearchParams(searchParams);
-  const initialSavedFilterId = parsePositiveId(searchParams.get("savedFilterId"));
+  const initialSavedFilterId = parsePositiveId(
+    searchParams.get("savedFilterId"),
+  );
   const initialPage = parsePositiveInt(searchParams.get("page"), 1);
   const initialLimit = parsePositiveInt(searchParams.get("limit"), 20);
   const initialSortOrder = readSortOrderFromSearchParams(searchParams);
@@ -734,7 +852,16 @@ export function SearchPageClient() {
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
     });
-  }, [appliedCriteria, limit, mode, page, pathname, router, savedFilterId, sortOrder]);
+  }, [
+    appliedCriteria,
+    limit,
+    mode,
+    page,
+    pathname,
+    router,
+    savedFilterId,
+    sortOrder,
+  ]);
 
   useEffect(() => {
     const key = searchParams.toString();
@@ -804,9 +931,7 @@ export function SearchPageClient() {
     },
     onError: (error) => {
       setSaveSelectedSuccess(null);
-      setSaveSelectedError(
-        error.message ?? "Không thể lưu các mục đã chọn.",
-      );
+      setSaveSelectedError(error.message ?? "Không thể lưu các mục đã chọn.");
     },
   });
 
@@ -853,7 +978,9 @@ export function SearchPageClient() {
     setPage(1);
   }, [savedFilterId, savedFilterQuery.data]);
 
-  const selectedItems = items.filter((item) => selectedKeys.has(selectedKey(item)));
+  const selectedItems = items.filter((item) =>
+    selectedKeys.has(selectedKey(item)),
+  );
   const appliedChips = summarizeSearchCriteria(mode, appliedCriteria);
 
   const persistSmartView = () => {
@@ -922,10 +1049,12 @@ export function SearchPageClient() {
     <section className="panel p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Trung tâm tìm kiếm BidWinner public</h2>
+          <h2 className="text-lg font-semibold">
+            Trung tâm tìm kiếm BidWinner public
+          </h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương,
-            ngành nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
+            Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương, ngành
+            nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -933,14 +1062,16 @@ export function SearchPageClient() {
             variant="secondary"
             size="sm"
             isLoading={resultQuery.isFetching}
+            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
             onClick={() => resultQuery.refetch()}
           >
             Tải lại
           </Button>
           <Link
             href="/saved-items"
-            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
+            <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
             Smart Views & Watchlist
           </Link>
         </div>
@@ -954,7 +1085,7 @@ export function SearchPageClient() {
             <button
               key={tabMode}
               type="button"
-              className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+              className={`rounded-lg border px-4 py-3 text-left transition-colors ${
                 isActive
                   ? "border-sky-400 bg-sky-50"
                   : "border-slate-200 bg-white hover:border-slate-300"
@@ -986,9 +1117,10 @@ export function SearchPageClient() {
           </p>
           <button
             type="button"
-            className="rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
             onClick={resetFilters}
           >
+            <X className="h-3.5 w-3.5" aria-hidden />
             Xóa tất cả
           </button>
         </div>
@@ -1008,7 +1140,7 @@ export function SearchPageClient() {
         <FilterField label="Từ khóa" htmlFor="search-keyword">
           <input
             id="search-keyword"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             value={formState.keyword}
             onChange={(event) =>
               setFormState((previous) => ({
@@ -1023,7 +1155,7 @@ export function SearchPageClient() {
         <FilterField label="Tỉnh / thành">
           {mode === "package_location" ? (
             <select
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className={controlClass}
               value={formState.provinces[0] ?? ""}
               onChange={(event) =>
                 setFormState((previous) => ({
@@ -1079,7 +1211,7 @@ export function SearchPageClient() {
           >
             <select
               multiple
-              className="min-h-56 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              className={`${controlClass} min-h-56`}
               value={formState.classifyIds.map(String)}
               onChange={(event) => {
                 const next = Array.from(event.target.selectedOptions)
@@ -1154,7 +1286,7 @@ export function SearchPageClient() {
         <FilterField label="Ngân sách từ" htmlFor="search-budget-min">
           <input
             id="search-budget-min"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             type="number"
             min={0}
             value={formState.budgetMin}
@@ -1170,7 +1302,7 @@ export function SearchPageClient() {
         <FilterField label="Ngân sách đến" htmlFor="search-budget-max">
           <input
             id="search-budget-max"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             type="number"
             min={0}
             value={formState.budgetMax}
@@ -1186,7 +1318,7 @@ export function SearchPageClient() {
         <FilterField label="Ngày từ" htmlFor="search-date-from">
           <input
             id="search-date-from"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             type="date"
             value={formState.publishedFrom}
             onChange={(event) =>
@@ -1201,7 +1333,7 @@ export function SearchPageClient() {
         <FilterField label="Ngày đến" htmlFor="search-date-to">
           <input
             id="search-date-to"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             type="date"
             value={formState.publishedTo}
             onChange={(event) =>
@@ -1219,7 +1351,7 @@ export function SearchPageClient() {
           <FilterField label="Match tối thiểu" htmlFor="search-match">
             <input
               id="search-match"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className={controlClass}
               type="number"
               min={0}
               max={100}
@@ -1298,11 +1430,30 @@ export function SearchPageClient() {
         </div>
       ) : null}
 
+      {hasPendingSearchFilterChanges ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="inline-flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4" aria-hidden />
+            Có thay đổi bộ lọc chưa áp dụng. Kết quả và Smart View vẫn đang dùng
+            bộ lọc hiện tại.
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={budgetRangeError || publishedDateRangeError}
+            leftIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+            onClick={applyDraftFilters}
+          >
+            Áp dụng ngay
+          </Button>
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
         <FilterField label="Tên Smart View" htmlFor="smart-view-name">
           <input
             id="smart-view-name"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className={controlClass}
             placeholder="Đặt tên cho bộ lọc đã áp dụng"
             value={smartViewName}
             onChange={(event) => setSmartViewName(event.target.value)}
@@ -1311,7 +1462,7 @@ export function SearchPageClient() {
         <FilterField label="Tần suất thông báo" htmlFor="smart-view-frequency">
           <select
             id="smart-view-frequency"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className={controlClass}
             value={smartViewFrequency}
             onChange={(event) =>
               setSmartViewFrequency(event.target.value as "daily" | "weekly")
@@ -1327,8 +1478,11 @@ export function SearchPageClient() {
         <Button
           variant="primary"
           disabled={
-            budgetRangeError || publishedDateRangeError || !hasPendingSearchFilterChanges
+            budgetRangeError ||
+            publishedDateRangeError ||
+            !hasPendingSearchFilterChanges
           }
+          leftIcon={<SlidersHorizontal className="h-4 w-4" />}
           onClick={applyDraftFilters}
         >
           Áp dụng bộ lọc
@@ -1337,6 +1491,7 @@ export function SearchPageClient() {
           variant="secondary"
           isLoading={saveFilter.isPending || updateSavedFilter.isPending}
           disabled={budgetRangeError || publishedDateRangeError}
+          leftIcon={<BookmarkCheck className="h-4 w-4" />}
           onClick={persistSmartView}
         >
           {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
@@ -1346,6 +1501,7 @@ export function SearchPageClient() {
           className="bg-emerald-600 hover:bg-emerald-700"
           isLoading={saveSelectedResults.isPending}
           disabled={selectedItems.length === 0}
+          leftIcon={<Save className="h-4 w-4" />}
           onClick={() =>
             saveSelectedResults.mutate({
               items: selectedItems.map((item) => toSavePayload(item)),
@@ -1387,12 +1543,13 @@ export function SearchPageClient() {
           </p>
           <p className="mt-1 text-xs text-slate-500">
             Tổng nguồn: {result.total.toLocaleString("vi-VN")} • Hiển thị cửa sổ
-            này: {result.visibleCount} • Cập nhật: {formatDateTime(result.fetchedAt)}
+            này: {result.visibleCount} • Cập nhật:{" "}
+            {formatDateTime(result.fetchedAt)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className={controlClass}
             value={limit}
             onChange={(event) => {
               setLimit(parsePositiveInt(event.target.value, 20));
@@ -1408,10 +1565,11 @@ export function SearchPageClient() {
           <div className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
             <button
               type="button"
-              className="rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               disabled={page <= 1}
               onClick={() => setPage((previous) => Math.max(1, previous - 1))}
             >
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
               Trước
             </button>
             <span className="text-xs text-slate-500">
@@ -1419,13 +1577,14 @@ export function SearchPageClient() {
             </span>
             <button
               type="button"
-              className="rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               disabled={page >= totalPages}
               onClick={() =>
                 setPage((previous) => Math.min(totalPages, previous + 1))
               }
             >
               Sau
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
             </button>
           </div>
         </div>
@@ -1441,7 +1600,11 @@ export function SearchPageClient() {
           title={`Không có ${entityLabel.toLowerCase()} phù hợp`}
           description="Hãy nới bộ lọc, đổi chế độ tìm kiếm hoặc thử tải lại nguồn public của BidWinner."
           cta={
-            <Button variant="secondary" onClick={() => resultQuery.refetch()}>
+            <Button
+              variant="secondary"
+              leftIcon={<RefreshCw className="h-4 w-4" />}
+              onClick={() => resultQuery.refetch()}
+            >
               Tải lại dữ liệu
             </Button>
           }

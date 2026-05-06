@@ -3,17 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Bell, Plus } from "lucide-react";
 
 import { WorkflowCard } from "~/app/_components/dashboard/workflow-card";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
 
-type WorkflowFilter =
-  | "all"
-  | "active"
-  | "inactive"
-  | "attention"
-  | "never_ran";
+type WorkflowFilter = "all" | "active" | "inactive" | "attention" | "never_ran";
 
 const filterLabels: Record<WorkflowFilter, string> = {
   all: "Tất cả",
@@ -114,6 +110,7 @@ export function WorkflowsPageClient() {
             variant="primary"
             size="sm"
             isLoading={createWorkflow.isPending}
+            leftIcon={<Plus className="h-3.5 w-3.5" />}
             onClick={() => {
               createWorkflow.mutate({
                 name: `Workflow mới ${workflows.length + 1}`,
@@ -134,7 +131,7 @@ export function WorkflowsPageClient() {
               key={filterKey}
               type="button"
               onClick={() => setActiveFilter(filterKey)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
                 activeFilter === filterKey
                   ? "border-sky-700 bg-sky-700 text-white"
                   : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -218,8 +215,9 @@ export function WorkflowsPageClient() {
             <h3 className="text-sm font-bold">Thông báo gần đây</h3>
             <Link
               href="/notifications"
-              className="text-xs font-semibold text-sky-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline"
             >
+              <Bell className="h-3.5 w-3.5" aria-hidden />
               Mở trung tâm thông báo
             </Link>
           </div>

@@ -3,20 +3,26 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  Edit3,
+  ExternalLink,
+  Play,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 import {
   buildSearchHref,
   summarizeSearchCriteria,
 } from "~/lib/search-criteria";
-import {
-  SEARCH_MODE_LABELS,
-  WATCHLIST_TYPE_LABELS,
-} from "~/lib/search-modes";
+import { SEARCH_MODE_LABELS, WATCHLIST_TYPE_LABELS } from "~/lib/search-modes";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type SavedFilterItem = RouterOutputs["search"]["listSavedFilters"][number];
-type SavedFilterNotificationFrequency = SavedFilterItem["notificationFrequency"];
+type SavedFilterNotificationFrequency =
+  SavedFilterItem["notificationFrequency"];
 
 const notificationFrequencyLabels: Record<
   SavedFilterNotificationFrequency,
@@ -128,8 +134,8 @@ function SavedFiltersSection() {
         <div>
           <h2 className="text-sm font-bold">Smart Views</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Quản lý bộ lọc đã lưu, mở lại vào trang tìm kiếm để chỉnh sửa và
-            tạo workflow cảnh báo mới.
+            Quản lý bộ lọc đã lưu, mở lại vào trang tìm kiếm để chỉnh sửa và tạo
+            workflow cảnh báo mới.
           </p>
         </div>
         <Badge count={savedFilters.length} />
@@ -162,14 +168,16 @@ function SavedFiltersSection() {
             <Button
               variant="secondary"
               size="sm"
+              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
               onClick={() => savedFiltersQuery.refetch()}
             >
               Thử lại
             </Button>
             <Link
               href="/search"
-              className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 transition-colors duration-150 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 transition-colors duration-150 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
+              <Search className="h-3.5 w-3.5" aria-hidden />
               Mở trang Tìm kiếm
             </Link>
           </div>
@@ -182,8 +190,9 @@ function SavedFiltersSection() {
           cta={
             <Link
               href="/search"
-              className="inline-flex items-center justify-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
+              <Search className="h-4 w-4" aria-hidden />
               Đến trang Tìm kiếm
             </Link>
           }
@@ -215,7 +224,11 @@ function SavedFiltersSection() {
                         {SEARCH_MODE_LABELS[filter.mode]}
                       </span>
                       <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                        {notificationFrequencyLabels[filter.notificationFrequency]}
+                        {
+                          notificationFrequencyLabels[
+                            filter.notificationFrequency
+                          ]
+                        }
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -244,22 +257,25 @@ function SavedFiltersSection() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link
                     href={buildSavedFilterHref(filter)}
-                    className="inline-flex items-center justify-center rounded-md bg-sky-700 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-700 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                   >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                     Áp dụng
                   </Link>
                   <Link
                     href={buildSavedFilterHref(filter, {
                       savedFilterId: filter.id,
                     })}
-                    className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                   >
+                    <Edit3 className="h-3.5 w-3.5" aria-hidden />
                     Chỉnh sửa
                   </Link>
                   <Button
                     variant="secondary"
                     size="sm"
                     isLoading={workflowCreateLoading}
+                    leftIcon={<Play className="h-3.5 w-3.5" />}
                     onClick={() =>
                       createWorkflow.mutate({ savedFilterId: filter.id })
                     }
@@ -270,6 +286,7 @@ function SavedFiltersSection() {
                     variant="danger"
                     size="sm"
                     isLoading={deleteLoading}
+                    leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                     onClick={() => handleDeleteSavedFilter(filter)}
                   >
                     Xóa
@@ -317,6 +334,7 @@ function WatchlistSection() {
             <Button
               variant="secondary"
               size="sm"
+              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
               onClick={() => watchlistQuery.refetch()}
             >
               Thử lại
@@ -331,8 +349,9 @@ function WatchlistSection() {
           cta={
             <Link
               href="/search"
-              className="inline-flex items-center justify-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
+              <Search className="h-4 w-4" aria-hidden />
               Đến trang Tìm kiếm
             </Link>
           }
@@ -356,6 +375,7 @@ function WatchlistSection() {
                 variant="danger"
                 size="sm"
                 isLoading={removeWatchlistItem.isPending}
+                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                 onClick={() => removeWatchlistItem.mutate({ id: item.id })}
               >
                 Xóa

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Bell, Search, Workflow } from "lucide-react";
 
 import { AlertCard } from "~/app/_components/dashboard/alert-card";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
@@ -262,8 +263,9 @@ export default async function DashboardPage() {
             </div>
             <Link
               href="/notifications"
-              className="text-xs font-semibold text-sky-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline"
             >
+              <Bell className="h-3.5 w-3.5" aria-hidden />
               Xem tất cả
             </Link>
           </div>
@@ -290,8 +292,9 @@ export default async function DashboardPage() {
               cta={
                 <Link
                   href="/search"
-                  className="inline-flex items-center rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
+                  <Search className="h-4 w-4" aria-hidden />
                   Tạo bộ lọc
                 </Link>
               }
@@ -316,8 +319,9 @@ export default async function DashboardPage() {
             </div>
             <Link
               href="/workflows"
-              className="text-xs font-semibold text-sky-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline"
             >
+              <Workflow className="h-3.5 w-3.5" aria-hidden />
               Quản lý workflow
             </Link>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
@@ -10,6 +10,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
 }
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -38,6 +40,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className,
       children,
       type,
+      leftIcon,
+      rightIcon,
       ...rest
     },
     ref,
@@ -47,6 +51,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         type={type ?? "button"}
         disabled={isLoading ? true : disabled}
+        aria-busy={isLoading ? true : undefined}
         className={`${baseClass} ${variantClass[variant]} ${sizeClass[size]} ${className ?? ""}`}
         {...rest}
       >
@@ -55,8 +60,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
             aria-hidden="true"
           />
+        ) : leftIcon ? (
+          <span className="shrink-0" aria-hidden="true">
+            {leftIcon}
+          </span>
         ) : null}
         {children}
+        {!isLoading && rightIcon ? (
+          <span className="shrink-0" aria-hidden="true">
+            {rightIcon}
+          </span>
+        ) : null}
       </button>
     );
   },

@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft, BellPlus, RefreshCw } from "lucide-react";
 
 import { Button, EmptyState } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
-import { SEARCH_ENTITY_LABELS, type SearchEntityType } from "~/lib/search-modes";
+import {
+  SEARCH_ENTITY_LABELS,
+  type SearchEntityType,
+} from "~/lib/search-modes";
 
 type PackageDetailsPageClientProps = {
   entityType?: SearchEntityType;
@@ -171,6 +175,7 @@ export function BidWinnerSourceDetailsPageClient({
               variant="secondary"
               size="sm"
               isLoading={addWatchlist.isPending}
+              leftIcon={<BellPlus className="h-3.5 w-3.5" />}
               onClick={() =>
                 addWatchlist.mutate({
                   type: entityType,
@@ -184,14 +189,16 @@ export function BidWinnerSourceDetailsPageClient({
             <Button
               variant="secondary"
               size="sm"
+              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
               onClick={() => detailsQuery.refetch()}
             >
               Làm mới
             </Button>
             <Link
               href={backHref}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
               Quay lại Search
             </Link>
           </div>
@@ -453,6 +460,8 @@ export function BidWinnerSourceDetailsPageClient({
   );
 }
 
-export function PackageDetailsPageClient(props: Omit<PackageDetailsPageClientProps, "entityType">) {
+export function PackageDetailsPageClient(
+  props: Omit<PackageDetailsPageClientProps, "entityType">,
+) {
   return <BidWinnerSourceDetailsPageClient entityType="package" {...props} />;
 }

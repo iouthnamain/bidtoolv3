@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCheck, Filter, MailOpen } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { formatDateTime } from "~/lib/datetime";
@@ -59,6 +60,7 @@ export function NotificationsPageClient() {
           <Button
             variant={unreadOnly ? "primary" : "secondary"}
             size="sm"
+            leftIcon={<Filter className="h-3.5 w-3.5" />}
             onClick={() => setUnreadOnly((prev) => !prev)}
           >
             {unreadOnly ? "Đang lọc chưa đọc" : "Lọc chưa đọc"}
@@ -68,6 +70,7 @@ export function NotificationsPageClient() {
             size="sm"
             isLoading={markAllAsRead.isPending}
             disabled={notifications.length === 0}
+            leftIcon={<CheckCheck className="h-3.5 w-3.5" />}
             onClick={() => markAllAsRead.mutate()}
           >
             Đánh dấu tất cả đã đọc
@@ -105,9 +108,7 @@ export function NotificationsPageClient() {
                           ? "Trung bình"
                           : "Thấp"}
                     </Badge>
-                    {!item.isRead ? (
-                      <Badge tone="info">Mới</Badge>
-                    ) : null}
+                    {!item.isRead ? <Badge tone="info">Mới</Badge> : null}
                   </div>
                   <p className="mt-1 text-sm text-slate-700">{item.body}</p>
                   <p className="mt-2 text-xs text-slate-500">
@@ -120,8 +121,10 @@ export function NotificationsPageClient() {
                     variant="secondary"
                     size="sm"
                     isLoading={
-                      markAsRead.isPending && markAsRead.variables?.id === item.id
+                      markAsRead.isPending &&
+                      markAsRead.variables?.id === item.id
                     }
+                    leftIcon={<MailOpen className="h-3.5 w-3.5" />}
                     onClick={() => markAsRead.mutate({ id: item.id })}
                   >
                     Đánh dấu đã đọc

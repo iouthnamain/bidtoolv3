@@ -3,6 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  Archive,
+  FileSpreadsheet,
+  FolderOpen,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
@@ -96,6 +105,9 @@ const statTileToneClass: Record<StatTone, string> = {
   success: "border-emerald-200 bg-emerald-50",
   info: "border-sky-200 bg-sky-50",
 };
+
+const controlClass =
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100";
 
 function displayWorkspaceName(name: string) {
   return name === "Product sourcing workspace" ? "Workbook vật tư chuẩn" : name;
@@ -195,19 +207,30 @@ function StatTile({
   label,
   value,
   tone,
+  icon,
 }: {
   label: string;
   value: number;
   tone: StatTone;
+  icon?: ReactNode;
 }) {
   return (
     <div className={`rounded-lg border px-3 py-2 ${statTileToneClass[tone]}`}>
-      <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
-        {label}
-      </p>
-      <p className="mt-0.5 text-lg font-bold text-slate-950 tabular-nums">
-        {value.toLocaleString("vi-VN")}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
+            {label}
+          </p>
+          <p className="mt-0.5 text-lg font-bold text-slate-950 tabular-nums">
+            {value.toLocaleString("vi-VN")}
+          </p>
+        </div>
+        {icon ? (
+          <span className="mt-0.5 text-slate-500" aria-hidden>
+            {icon}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -389,7 +412,7 @@ export function ExcelWorkspaceListClient() {
             <div className="mt-1.5 flex flex-wrap gap-2">
               <input
                 id="excel-workspace-name"
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                className={`${controlClass} min-w-0 flex-1`}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
@@ -405,6 +428,7 @@ export function ExcelWorkspaceListClient() {
                 size="md"
                 isLoading={createWorkspace.isPending}
                 disabled={createDisabled}
+                leftIcon={<Plus className="h-4 w-4" />}
                 onClick={handleCreateWorkspace}
               >
                 {createWorkspace.isPending ? "Đang tạo..." : "Tạo workspace"}
@@ -418,33 +442,51 @@ export function ExcelWorkspaceListClient() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[28rem]">
-            <StatTile label="Tổng" value={metrics.total} tone="neutral" />
+            <StatTile
+              label="Tổng"
+              value={metrics.total}
+              tone="neutral"
+              icon={<FileSpreadsheet className="h-4 w-4" />}
+            />
             <StatTile
               label="Đang xử lý"
               value={metrics.active}
               tone="warning"
+              icon={<Search className="h-4 w-4" />}
             />
             <StatTile
               label="Sẵn sàng xuất"
               value={metrics.readyToExport}
               tone="success"
+              icon={<FolderOpen className="h-4 w-4" />}
             />
-            <StatTile label="Đã khóa" value={metrics.archived} tone="info" />
+            <StatTile
+              label="Đã khóa"
+              value={metrics.archived}
+              tone="info"
+              icon={<Archive className="h-4 w-4" />}
+            />
           </div>
         </div>
       </section>
 
       <section className="panel p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            className="min-w-[16rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-            placeholder="Tìm theo tên, tệp nguồn, sheet hoặc bước tiếp theo"
-            aria-label="Tìm không gian Excel"
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
+          <div className="relative min-w-[16rem] flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+              aria-hidden
+            />
+            <input
+              className={`${controlClass} pl-9`}
+              placeholder="Tìm theo tên, tệp nguồn, sheet hoặc bước tiếp theo"
+              aria-label="Tìm không gian Excel"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          </div>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className={`${controlClass} w-auto min-w-48 text-slate-700`}
             value={statusFilter}
             aria-label="Lọc không gian Excel theo trạng thái"
             onChange={(event) =>
@@ -458,7 +500,7 @@ export function ExcelWorkspaceListClient() {
             ))}
           </select>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className={`${controlClass} w-auto min-w-44 text-slate-700`}
             value={sortBy}
             aria-label="Sắp xếp danh sách workspace"
             onChange={(event) => setSortBy(event.target.value as WorkspaceSort)}
@@ -478,7 +520,7 @@ export function ExcelWorkspaceListClient() {
                 key={filterKey}
                 type="button"
                 onClick={() => setActiveViewFilter(filterKey)}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
                   activeViewFilter === filterKey
                     ? "border-sky-700 bg-sky-700 text-white"
                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
@@ -611,17 +653,19 @@ export function ExcelWorkspaceListClient() {
                     <div className="flex gap-1.5">
                       <Link
                         href={workspaceHref}
-                        className="inline-flex items-center justify-center rounded-md bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
                       >
+                        <FolderOpen className="h-3.5 w-3.5" aria-hidden />
                         Mở workspace
                       </Link>
                       <button
                         type="button"
-                        className="inline-flex items-center justify-center rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!canDelete || deleteWorkspace.isPending}
                         onClick={() => handleDeleteWorkspace(workspace)}
                         aria-label={`Xóa ${displayWorkspaceName(workspace.name)}`}
                       >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
                         Xóa
                       </button>
                     </div>
