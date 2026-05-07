@@ -1,242 +1,307 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import {
+  ArrowUpRight,
+  FileSpreadsheet,
+  Link as LinkIcon,
+  PackagePlus,
+  Plus,
+  Search,
+  Trash2,
+  WalletCards,
+} from "lucide-react";
 
+import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
 import { api } from "~/trpc/react";
 
-const emptyForm = {
-  code: "",
-  name: "",
-  unit: "",
-  category: "",
-  defaultDepreciation: "1",
-  defaultReusePct: "0",
-};
+function formatMoney(value: number | null | undefined, currency = "VND") {
+  if (value == null) {
+    return "-";
+  }
+  return `${value.toLocaleString("vi-VN")} ${currency}`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString("vi-VN");
+}
+
+function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
+  const metadata = normalizeMaterialMetadata(metadataJson);
+  return metadata.priceSources.length + (sourceUrl ? 1 : 0);
+}
 
 export function MaterialsListClient() {
   const [keyword, setKeyword] = useState("");
-  const [form, setForm] = useState(emptyForm);
-  const [csv, setCsv] = useState("");
-  const [importMessage, setImportMessage] = useState<string | null>(null);
   const utils = api.useUtils();
   const { data: materials = [], isLoading } =
     api.material.searchMaterials.useQuery({
       keyword,
-      limit: 50,
+      limit: 80,
       offset: 0,
     });
 
-  const createMaterial = api.material.createMaterial.useMutation({
-    onSuccess: async () => {
-      setForm(emptyForm);
-      await utils.material.searchMaterials.invalidate();
-    },
-  });
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: async () => {
       await utils.material.searchMaterials.invalidate();
     },
   });
-  const importCsv = api.material.importMaterialsCsv.useMutation({
-    onSuccess: async (result) => {
-      setImportMessage(
-        `Đã nhập ${result.inserted}, bỏ qua ${result.skipped}, lỗi ${result.errors.length}.`,
-      );
-      setCsv("");
-      await utils.material.searchMaterials.invalidate();
-    },
-  });
 
-  const submit = () => {
-    createMaterial.mutate({
-      code: form.code || undefined,
-      name: form.name,
-      unit: form.unit,
-      category: form.category || undefined,
-      defaultDepreciation: Number(form.defaultDepreciation || 1),
-      defaultReusePct: Number.parseInt(form.defaultReusePct || "0", 10),
-    });
+  const summary = useMemo(() => {
+    const categorySet = new Set(
+      materials
+        .map((item) => item.category)
+        .filter((value): value is string => Boolean(value)),
+    );
+    const priced = materials.filter(
+      (item) => item.defaultUnitPrice != null,
+    ).length;
+    const withSources = materials.filter(
+      (item) => getSourceCount(item.metadataJson, item.sourceUrl) > 0,
+    ).length;
+
+    return {
+      total: materials.length,
+      priced,
+      withSources,
+      categories: categorySet.size,
+    };
+  }, [materials]);
+
+  const removeMaterial = (id: number, name: string) => {
+    const confirmed = window.confirm(`Xóa vật tư "${name}" khỏi danh mục?`);
+    if (!confirmed) {
+      return;
+    }
+    deleteMaterial.mutate({ id });
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+    <div className="space-y-4">
       <section className="panel p-4">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold">Thêm sản phẩm / vật tư</h2>
+            <h2 className="text-sm font-bold text-slate-950">
+              Quản lý sản phẩm / vật tư
+            </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Tạo nhanh danh mục nội bộ để dùng trong bước tìm sản phẩm.
+              Danh mục catalog, giá mặc định và link nguồn đang dùng cho Excel
+              Workspace.
             </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/materials/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Thêm thủ công
+            </Link>
+            <Link
+              href="/materials/import"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <FileSpreadsheet className="h-4 w-4" aria-hidden />
+              Nhập sheet
+            </Link>
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2">
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Mã sản phẩm / vật tư (tuỳ chọn)"
-            aria-label="Mã sản phẩm hoặc vật tư"
-            value={form.code}
-            onChange={(event) => setForm({ ...form, code: event.target.value })}
-          />
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            placeholder="Tên sản phẩm / quy cách vật tư"
-            aria-label="Tên sản phẩm hoặc quy cách vật tư"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-          />
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="ĐVT"
-              aria-label="Đơn vị tính"
-              value={form.unit}
-              onChange={(event) =>
-                setForm({ ...form, unit: event.target.value })
-              }
-            />
-            <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Nhóm sản phẩm / vật tư"
-              aria-label="Nhóm sản phẩm hoặc vật tư"
-              value={form.category}
-              onChange={(event) =>
-                setForm({ ...form, category: event.target.value })
-              }
-            />
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Khấu hao"
-              type="number"
-              min={0}
-              step={0.1}
-              aria-label="Khấu hao mặc định"
-              value={form.defaultDepreciation}
-              onChange={(event) =>
-                setForm({ ...form, defaultDepreciation: event.target.value })
-              }
-            />
-            <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="% sử dụng lại"
-              type="number"
-              min={0}
-              max={100}
-              aria-label="Phần trăm sử dụng lại mặc định"
-              value={form.defaultReusePct}
-              onChange={(event) =>
-                setForm({ ...form, defaultReusePct: event.target.value })
-              }
-            />
-          </div>
-          <button
-            type="button"
-            className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
-            disabled={!form.name || !form.unit || createMaterial.isPending}
-            onClick={submit}
-          >
-            {createMaterial.isPending ? "Đang lưu..." : "Lưu sản phẩm / vật tư"}
-          </button>
-        </div>
-
-        <div className="mt-5 border-t border-slate-200 pt-4">
-          <h3 className="text-sm font-bold">Nhập CSV</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            Dòng tiêu đề:
-            code,name,unit,category,default_depreciation,default_reuse_pct
-          </p>
-          <textarea
-            className="mt-2 h-32 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"
-            value={csv}
-            onChange={(event) => setCsv(event.target.value)}
-            placeholder="Dán CSV tại đây"
-            aria-label="Nội dung CSV sản phẩm hoặc vật tư"
-          />
-          <button
-            type="button"
-            className="mt-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100 disabled:opacity-50"
-            disabled={!csv.trim() || importCsv.isPending}
-            onClick={() => importCsv.mutate({ csv })}
-          >
-            Nhập CSV
-          </button>
-          {importMessage ? (
-            <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-              {importMessage}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-slate-500">Catalog</p>
+              <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
+            </div>
+            <p className="mt-1 text-2xl font-bold text-slate-950">
+              {isLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
-          ) : null}
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-emerald-700">Có giá</p>
+              <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
+            </div>
+            <p className="mt-1 text-2xl font-bold text-emerald-900">
+              {isLoading ? "-" : summary.priced.toLocaleString("vi-VN")}
+            </p>
+          </div>
+          <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-sky-700">Có nguồn</p>
+              <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
+            </div>
+            <p className="mt-1 text-2xl font-bold text-sky-950">
+              {isLoading ? "-" : summary.withSources.toLocaleString("vi-VN")}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-slate-500">Nhóm</p>
+              <Badge tone="neutral">Category</Badge>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-slate-950">
+              {isLoading ? "-" : summary.categories.toLocaleString("vi-VN")}
+            </p>
+          </div>
         </div>
       </section>
 
       <section className="panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
-            <h2 className="text-sm font-bold">Danh mục sản phẩm / vật tư</h2>
+            <h2 className="text-sm font-bold text-slate-950">
+              Danh mục vật tư
+            </h2>
             <p className="mt-1 text-xs text-slate-500">
               {isLoading
                 ? "Đang tải..."
-                : `${materials.length.toLocaleString("vi-VN")} sản phẩm / vật tư`}
+                : `${materials.length.toLocaleString("vi-VN")} vật tư trong kết quả hiện tại`}
             </p>
           </div>
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72"
-            placeholder="Tìm theo tên, mã, ĐVT hoặc nhóm"
-            aria-label="Tìm sản phẩm hoặc vật tư"
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
+          <label className="relative w-full sm:w-80">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+              aria-hidden
+            />
+            <input
+              className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm"
+              placeholder="Tìm tên, mã, ĐVT hoặc nhóm"
+              aria-label="Tìm sản phẩm hoặc vật tư"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          </label>
         </div>
 
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
               <tr>
-                <th className="px-3 py-2">Tên</th>
-                <th className="px-3 py-2">ĐVT</th>
-                <th className="px-3 py-2">Nhóm</th>
-                <th className="px-3 py-2">Mặc định</th>
+                <th className="px-3 py-2">Vật tư</th>
+                <th className="px-3 py-2">Phân loại</th>
+                <th className="px-3 py-2">Giá mặc định</th>
+                <th className="px-3 py-2">Nguồn</th>
+                <th className="px-3 py-2">Mặc định THVT</th>
+                <th className="px-3 py-2">Cập nhật</th>
                 <th className="px-3 py-2"> </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {materials.map((item) => (
-                <tr key={item.id}>
-                  <td className="max-w-[360px] px-3 py-2 font-medium [overflow-wrap:anywhere]">
-                    {item.name}
-                    {item.code ? (
-                      <span className="ml-2 text-xs text-slate-400">
-                        {item.code}
+              {materials.map((item) => {
+                const sourceCount = getSourceCount(
+                  item.metadataJson,
+                  item.sourceUrl,
+                );
+                return (
+                  <tr key={item.id} className="hover:bg-slate-50/80">
+                    <td className="max-w-[420px] px-3 py-2">
+                      <Link
+                        href={`/materials/${item.id}`}
+                        className="font-bold [overflow-wrap:anywhere] text-slate-950 transition-colors hover:text-sky-700 hover:underline"
+                      >
+                        {item.name}
+                      </Link>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        {item.code ? <span>{item.code}</span> : null}
+                        {item.specText ? (
+                          <span className="line-clamp-1 max-w-[320px]">
+                            {item.specText}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-slate-800">
+                          {item.unit}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {item.category ?? "-"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-semibold text-slate-900">
+                      {formatMoney(item.defaultUnitPrice, item.currency)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {sourceCount > 0 ? (
+                        <Badge tone="info" count={sourceCount}>
+                          Link giá
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral">Chưa có</Badge>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      KH{" "}
+                      <span className="font-semibold text-slate-800">
+                        {item.defaultDepreciation}
+                      </span>{" "}
+                      • dùng lại{" "}
+                      <span className="font-semibold text-slate-800">
+                        {item.defaultReusePct}%
                       </span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">{item.unit}</td>
-                  <td className="px-3 py-2">{item.category ?? "-"}</td>
-                  <td className="px-3 py-2 text-xs text-slate-600">
-                    KH {item.defaultDepreciation} • sử dụng lại{" "}
-                    {item.defaultReusePct}%
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      className="rounded border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                      disabled={deleteMaterial.isPending}
-                      onClick={() => deleteMaterial.mutate({ id: item.id })}
-                      aria-label={`Xoá ${item.name}`}
-                    >
-                      Xoá
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {materials.length === 0 ? (
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">
+                      {formatDate(item.updatedAt)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex justify-end gap-1.5">
+                        <Link
+                          href={`/materials/${item.id}`}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700"
+                          aria-label={`Mở chi tiết ${item.name}`}
+                        >
+                          <ArrowUpRight className="h-4 w-4" aria-hidden />
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 px-0 text-rose-700 hover:bg-rose-50"
+                          disabled={deleteMaterial.isPending}
+                          onClick={() => removeMaterial(item.id, item.name)}
+                          aria-label={`Xóa ${item.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!isLoading && materials.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="px-3 py-8 text-center text-sm text-slate-500"
-                  >
-                    Chưa có sản phẩm / vật tư.
+                  <td colSpan={7} className="px-3 py-8">
+                    <EmptyState
+                      title="Chưa có sản phẩm / vật tư."
+                      description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
+                      cta={
+                        <div className="flex flex-wrap justify-center gap-2">
+                          <Link
+                            href="/materials/new"
+                            className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                          >
+                            Thêm thủ công
+                          </Link>
+                          <Link
+                            href="/materials/import"
+                            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Nhập sheet
+                          </Link>
+                        </div>
+                      }
+                    />
                   </td>
                 </tr>
               ) : null}

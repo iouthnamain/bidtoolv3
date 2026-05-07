@@ -1201,6 +1201,9 @@ function ResearchStep({
   const [materialCandidates, setMaterialCandidates] = useState<
     MaterialCandidate[]
   >([]);
+  const [activeProductTab, setActiveProductTab] = useState<"web" | "local">(
+    "web",
+  );
   const [manualSpec, setManualSpec] = useState(emptyManualSpec);
   const [materialForm, setMaterialForm] = useState(emptyMaterialForm);
   const [message, setMessage] = useState<string | null>(null);
@@ -1209,6 +1212,23 @@ function ResearchStep({
   const candidates = payload.candidates.filter(
     (candidate) => candidate.workspaceItemId === activeItem?.id,
   );
+  const localSavedCandidates = candidates.filter(
+    (candidate) => candidate.provider === "material",
+  );
+  const localSavedMaterialIds = new Set(
+    localSavedCandidates
+      .map((candidate) => /^material:\/\/materials\/(\d+)$/.exec(candidate.url))
+      .map((match) => (match ? Number(match[1]) : null))
+      .filter((id): id is number => id !== null),
+  );
+  const localSearchCandidates = materialCandidates.filter(
+    (candidate) => !localSavedMaterialIds.has(candidate.materialId),
+  );
+  const webCandidates = candidates.filter(
+    (candidate) => candidate.provider !== "material",
+  );
+  const localProductCount =
+    localSavedCandidates.length + localSearchCandidates.length;
   const selectedCandidate = payload.candidates.find(
     (candidate) => candidate.id === activeItem?.selectedCandidateId,
   );
@@ -1228,8 +1248,13 @@ function ResearchStep({
     }
   }, [activeItem]);
 
+  useEffect(() => {
+    setMaterialCandidates([]);
+  }, [activeItem?.id]);
+
   const searchWeb = api.excelWorkspace.searchWebCandidates.useMutation({
     onSuccess: async (result) => {
+      setActiveProductTab("web");
       setMessage(
         result.warning ?? `Tìm thấy ${result.candidates.length} nguồn web.`,
       );
@@ -1239,6 +1264,7 @@ function ResearchStep({
   const searchMaterials =
     api.excelWorkspace.searchMaterialCandidates.useMutation({
       onSuccess: (result) => {
+        setActiveProductTab("local");
         setMaterialCandidates(result);
         setMessage(`Tìm thấy ${result.length} vật tư trong danh mục.`);
       },
@@ -1248,6 +1274,7 @@ function ResearchStep({
   });
   const linkMaterial = api.excelWorkspace.linkMaterialToRow.useMutation({
     onSuccess: async () => {
+      setActiveProductTab("local");
       await refetchWorkspace();
       setMaterialCandidates([]);
     },
@@ -1255,6 +1282,7 @@ function ResearchStep({
   const createMaterialAndLink =
     api.excelWorkspace.createMaterialAndLinkRow.useMutation({
       onSuccess: async () => {
+        setActiveProductTab("local");
         await Promise.all([
           refetchWorkspace(),
           utils.material.searchMaterials.invalidate(),
@@ -1363,11 +1391,15 @@ function ResearchStep({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                onClick={() => searchWeb.mutate({ rowId: activeItem.id })}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                disabled={searchWeb.isPending}
+                onClick={() => {
+                  setActiveProductTab("web");
+                  searchWeb.mutate({ rowId: activeItem.id });
+                }}
               >
                 <Search className="h-4 w-4" />
-                Tìm web
+                {searchWeb.isPending ? "Đang tìm" : "Tìm web"}
               </button>
               <button
                 type="button"
@@ -1387,135 +1419,293 @@ function ResearchStep({
         </article>
 
         <article className="panel p-4">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-64 flex-1">
-              <span className="text-xs font-semibold text-slate-600">
-                Tìm danh mục
-              </span>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={materialKeyword}
-                onChange={(event) => setMaterialKeyword(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
-              onClick={() =>
-                searchMaterials.mutate({
-                  rowId: activeItem.id,
-                  keyword: materialKeyword,
-                })
-              }
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div
+              className="grid w-full grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-auto"
+              role="tablist"
+              aria-label="Product result sources"
             >
-              Tìm danh mục
-            </button>
-          </div>
-        </article>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          {materialCandidates.map((candidate) => (
-            <article
-              key={`material-${candidate.materialId}`}
-              className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
-                    Danh mục
+              {(
+                [
+                  {
+                    id: "web",
+                    label: "Web searched",
+                    suffix: " products",
+                    count: webCandidates.length,
+                  },
+                  {
+                    id: "local",
+                    label: "Local saved",
+                    suffix: " products",
+                    count: localProductCount,
+                  },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeProductTab === tab.id}
+                  className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+                    activeProductTab === tab.id
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                  onClick={() => setActiveProductTab(tab.id)}
+                >
+                  <span className="truncate">
+                    {tab.label}
+                    <span className="hidden md:inline">{tab.suffix}</span>
                   </span>
-                  <h3 className="mt-2 font-semibold">{candidate.title}</h3>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
-                  {candidate.confidenceScore}%
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] ${
+                      activeProductTab === tab.id
+                        ? "bg-slate-950 text-white"
+                        : "bg-white text-slate-500"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">
+              {activeProductTab === "web"
+                ? "Nguồn lấy từ tìm kiếm web và nguồn ngoài."
+                : "Vật tư đã lưu trong danh mục nội bộ."}
+            </p>
+          </div>
+
+          {activeProductTab === "local" ? (
+            <div className="mt-4 flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="min-w-64 flex-1">
+                <span className="text-xs font-semibold text-slate-600">
+                  Tìm danh mục
                 </span>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                {candidate.code ? `Mã ${candidate.code} • ` : ""}ĐVT{" "}
-                {candidate.unit} • {candidate.category ?? "-"}
-              </p>
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={materialKeyword}
+                  onChange={(event) => setMaterialKeyword(event.target.value)}
+                />
+              </label>
               <button
                 type="button"
-                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+                className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50"
+                disabled={searchMaterials.isPending}
                 onClick={() =>
-                  linkMaterial.mutate({
+                  searchMaterials.mutate({
                     rowId: activeItem.id,
-                    materialId: candidate.materialId,
+                    keyword: materialKeyword,
                   })
                 }
               >
-                <LinkIcon className="h-3.5 w-3.5" />
-                Liên kết
+                {searchMaterials.isPending ? "Đang tìm" : "Tìm danh mục"}
               </button>
-            </article>
-          ))}
+            </div>
+          ) : null}
 
-          {candidates.map((candidate) => {
-            const spec = specFromCandidate(candidate);
-            return (
-              <article
-                key={candidate.id}
-                className={`rounded-xl border bg-white p-4 shadow-sm ${
-                  candidate.isSelected
-                    ? "border-emerald-400 ring-2 ring-emerald-100"
-                    : "border-slate-200"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold">{candidate.title}</h3>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
-                    {candidate.confidenceScore}%
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {candidate.domain}
-                </p>
-                <p className="mt-2 line-clamp-3 text-sm text-slate-600">
-                  {candidate.snippet}
-                </p>
-                <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded bg-slate-50 px-2 py-1">
-                    <dt className="text-slate-500">Giá</dt>
-                    <dd className="font-semibold">
-                      {spec?.priceText ?? spec?.priceVnd ?? "-"}
-                    </dd>
-                  </div>
-                  <div className="rounded bg-slate-50 px-2 py-1">
-                    <dt className="text-slate-500">Xuất xứ</dt>
-                    <dd className="font-semibold">
-                      {spec?.originCountry ?? "-"}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
-                    disabled={candidate.isSelected}
-                    onClick={() =>
-                      selectWeb.mutate({
-                        rowId: activeItem.id,
-                        candidateId: candidate.id,
-                      })
-                    }
-                  >
-                    {candidate.isSelected ? "Đã chọn" : "Chọn"}
-                  </button>
-                  {/https?:\/\//i.test(candidate.url) ? (
-                    <a
-                      href={candidate.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold hover:bg-slate-100"
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {activeProductTab === "local" ? (
+              <>
+                {localSavedCandidates.map((candidate) => {
+                  const spec = specFromCandidate(candidate);
+                  const sourceUrl = /https?:\/\//i.test(candidate.url)
+                    ? candidate.url
+                    : spec?.sourceUrl;
+                  return (
+                    <article
+                      key={candidate.id}
+                      className={`rounded-xl border bg-white p-4 shadow-sm ${
+                        candidate.isSelected
+                          ? "border-emerald-400 ring-2 ring-emerald-100"
+                          : "border-sky-200"
+                      }`}
                     >
-                      Mở nguồn
-                    </a>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                            Danh mục
+                          </span>
+                          <h3 className="mt-2 font-semibold">
+                            {candidate.title}
+                          </h3>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
+                          {candidate.confidenceScore}%
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {candidate.domain}
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">
+                        {candidate.snippet}
+                      </p>
+                      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded bg-slate-50 px-2 py-1">
+                          <dt className="text-slate-500">Giá</dt>
+                          <dd className="font-semibold">
+                            {spec?.priceText ?? spec?.priceVnd ?? "-"}
+                          </dd>
+                        </div>
+                        <div className="rounded bg-slate-50 px-2 py-1">
+                          <dt className="text-slate-500">Xuất xứ</dt>
+                          <dd className="font-semibold">
+                            {spec?.originCountry ?? "-"}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                          disabled={candidate.isSelected}
+                          onClick={() =>
+                            selectWeb.mutate({
+                              rowId: activeItem.id,
+                              candidateId: candidate.id,
+                            })
+                          }
+                        >
+                          {candidate.isSelected ? "Đã chọn" : "Chọn"}
+                        </button>
+                        {sourceUrl && /https?:\/\//i.test(sourceUrl) ? (
+                          <a
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold hover:bg-slate-100"
+                          >
+                            Mở nguồn
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {localSearchCandidates.map((candidate) => (
+                  <article
+                    key={`material-${candidate.materialId}`}
+                    className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                          Danh mục
+                        </span>
+                        <h3 className="mt-2 font-semibold">
+                          {candidate.title}
+                        </h3>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
+                        {candidate.confidenceScore}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {candidate.code ? `Mã ${candidate.code} • ` : ""}ĐVT{" "}
+                      {candidate.unit} • {candidate.category ?? "-"}
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+                      onClick={() =>
+                        linkMaterial.mutate({
+                          rowId: activeItem.id,
+                          materialId: candidate.materialId,
+                        })
+                      }
+                    >
+                      <LinkIcon className="h-3.5 w-3.5" />
+                      Liên kết
+                    </button>
+                  </article>
+                ))}
+
+                {localProductCount === 0 ? (
+                  <div className="col-span-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    Chưa có sản phẩm đã lưu cho dòng này. Tìm danh mục để lấy
+                    vật tư nội bộ.
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {webCandidates.map((candidate) => {
+                  const spec = specFromCandidate(candidate);
+                  return (
+                    <article
+                      key={candidate.id}
+                      className={`rounded-xl border bg-white p-4 shadow-sm ${
+                        candidate.isSelected
+                          ? "border-emerald-400 ring-2 ring-emerald-100"
+                          : "border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-semibold">{candidate.title}</h3>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
+                          {candidate.confidenceScore}%
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {candidate.domain}
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">
+                        {candidate.snippet}
+                      </p>
+                      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded bg-slate-50 px-2 py-1">
+                          <dt className="text-slate-500">Giá</dt>
+                          <dd className="font-semibold">
+                            {spec?.priceText ?? spec?.priceVnd ?? "-"}
+                          </dd>
+                        </div>
+                        <div className="rounded bg-slate-50 px-2 py-1">
+                          <dt className="text-slate-500">Xuất xứ</dt>
+                          <dd className="font-semibold">
+                            {spec?.originCountry ?? "-"}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                          disabled={candidate.isSelected}
+                          onClick={() =>
+                            selectWeb.mutate({
+                              rowId: activeItem.id,
+                              candidateId: candidate.id,
+                            })
+                          }
+                        >
+                          {candidate.isSelected ? "Đã chọn" : "Chọn"}
+                        </button>
+                        {/https?:\/\//i.test(candidate.url) ? (
+                          <a
+                            href={candidate.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold hover:bg-slate-100"
+                          >
+                            Mở nguồn
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {webCandidates.length === 0 ? (
+                  <div className="col-span-full rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    Chưa có sản phẩm tìm từ web cho dòng này. Bấm Tìm web để lấy
+                    nguồn.
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </article>
 
         <article className="panel p-4">
           <h3 className="text-sm font-bold">Thêm nguồn / danh mục thủ công</h3>
