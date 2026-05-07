@@ -28,7 +28,13 @@ import {
   X,
 } from "lucide-react";
 
-import { PAGE_SIZE_OPTIONS, type SortOrder } from "~/constants/search-options";
+import {
+  CATEGORY_OPTIONS,
+  KEYWORD_OPTIONS,
+  PAGE_SIZE_OPTIONS,
+  PROVINCE_OPTIONS,
+  type SortOrder,
+} from "~/constants/search-options";
 import {
   buildSearchUrlParams,
   emptySearchCriteria,
@@ -46,9 +52,15 @@ import {
   SEARCH_ENTITY_LABELS,
   SEARCH_MODE_DESCRIPTIONS,
   SEARCH_MODE_LABELS,
+  getSearchEntityType,
   type SearchMode,
 } from "~/lib/search-modes";
-import { Button, EmptyState, FilterField } from "~/app/_components/ui";
+import {
+  Button,
+  EmptyState,
+  FilterField,
+  SkeletonTable,
+} from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type SearchResult = RouterOutputs["search"]["querySearchResults"];
@@ -87,11 +99,42 @@ const smartViewFrequencyLabels = {
   weekly: "Hằng tuần",
 } as const;
 
+const DEFAULT_RESULT_OPTIONS: SearchResult["options"] = {
+  provinces: [...PROVINCE_OPTIONS],
+  keywords: [...KEYWORD_OPTIONS],
+  packageCategories: [...CATEGORY_OPTIONS],
+  planFields: [],
+  procurementMethods: [],
+  projectGroups: [],
+  classifies: [],
+};
+
+const EMPTY_SEARCH_ITEMS: SearchItem[] = [];
+
+const DEFAULT_BUDGET_SLIDER_MAX = 100_000_000_000;
+const BUDGET_SLIDER_STEP = 1_000_000;
+
 const controlClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100";
 
 function formatCurrency(value: number) {
   return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
+}
+
+function formatCompactCurrency(value: number) {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toLocaleString("vi-VN", {
+      maximumFractionDigits: 1,
+    })} tỷ`;
+  }
+
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString("vi-VN", {
+      maximumFractionDigits: 0,
+    })} triệu`;
+  }
+
+  return value.toLocaleString("vi-VN");
 }
 
 function formatDate(value?: string | null) {
@@ -332,9 +375,64 @@ function fieldTextForItem(item: SearchItem) {
   return item.category;
 }
 
-function entityLabelForItems(items: SearchItem[]) {
-  const entityType = items[0]?.entityType ?? "package";
-  return SEARCH_ENTITY_LABELS[entityType];
+function idHeaderForEntity(entityType: SearchItem["entityType"]) {
+  if (entityType === "plan") {
+    return "Mã KHLCNT";
+  }
+
+  if (entityType === "project") {
+    return "Mã dự án";
+  }
+
+  return "Số TBMT";
+}
+
+function titleHeaderForEntity(entityType: SearchItem["entityType"]) {
+  if (entityType === "plan") {
+    return "Tên KHLCNT";
+  }
+
+  if (entityType === "project") {
+    return "Tên dự án";
+  }
+
+  return "Tên gói thầu";
+}
+
+function deadlineHeaderForEntity(entityType: SearchItem["entityType"]) {
+  if (entityType === "plan") {
+    return "Tiến độ";
+  }
+
+  if (entityType === "project") {
+    return "Phê duyệt";
+  }
+
+  return "Đóng thầu";
+}
+
+function budgetHeaderForEntity(entityType: SearchItem["entityType"]) {
+  if (entityType === "project") {
+    return "Tổng mức đầu tư";
+  }
+
+  return "Giá gói thầu";
+}
+
+function deadlineTextForItem(item: SearchItem) {
+  if (item.entityType === "package") {
+    return formatDate(item.closingAt);
+  }
+
+  if (item.entityType === "plan") {
+    return item.timeline ?? "-";
+  }
+
+  return formatDate(item.approvedAt);
+}
+
+function entityLabelForMode(mode: SearchMode) {
+  return SEARCH_ENTITY_LABELS[getSearchEntityType(mode)];
 }
 
 function selectedKey(item: SearchItem) {
@@ -483,6 +581,35 @@ function SourceMetaBanner({ result }: { result: SearchResult }) {
   );
 }
 
+function ResultMatchSummary({ result }: { result: SearchResult }) {
+  const entityLabel =
+    SEARCH_ENTITY_LABELS[result.items[0]?.entityType ?? "package"];
+  const count = result.visibleCount.toLocaleString("vi-VN");
+
+  if ((result.items[0]?.entityType ?? "package") !== "package") {
+    return (
+      <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium text-sky-600">
+        Tìm thấy{" "}
+        <span className="text-emerald-600">
+          {count} {entityLabel.toLowerCase()}
+        </span>{" "}
+        phù hợp với bộ lọc đang áp dụng.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium">
+      <span className="text-sky-600">Tìm thấy </span>
+      <span className="text-emerald-600">{count} gói thầu </span>
+      <span className="text-emerald-600">chưa đóng thầu </span>
+      <span className="text-sky-600">trong tên gói thầu | bên mời thầu </span>
+      <span className="text-emerald-600">tại các tỉnh thành phố </span>
+      <span className="text-sky-600">bạn lựa chọn</span>
+    </div>
+  );
+}
+
 function ResultsTable(props: {
   items: SearchItem[];
   selectedKeys: Set<string>;
@@ -573,6 +700,14 @@ function ResultsTable(props: {
                   {formatDate(item.publishedAt)}
                 </dd>
               </div>
+              <div className="rounded-md bg-slate-50 px-2 py-1.5">
+                <dt className="text-slate-400">
+                  {deadlineHeaderForEntity(item.entityType)}
+                </dt>
+                <dd className="mt-0.5 font-medium text-slate-700">
+                  {deadlineTextForItem(item)}
+                </dd>
+              </div>
             </dl>
 
             <div className="mt-3">
@@ -583,10 +718,10 @@ function ResultsTable(props: {
       </div>
 
       <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
-        <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+        <table className="min-w-[1180px] divide-y divide-slate-200 bg-white text-sm">
+          <thead className="bg-white text-left text-[13px] font-semibold text-slate-500">
             <tr>
-              <th className="px-3 py-3">
+              <th className="w-10 px-3 py-4">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -594,25 +729,24 @@ function ResultsTable(props: {
                   aria-label="Chọn tất cả"
                 />
               </th>
-              <th className="px-3 py-3">Tên</th>
-              <th className="px-3 py-3">
-                {entityType === "package"
-                  ? "Bên mời / chủ đầu tư"
-                  : entityType === "plan"
-                    ? "Chủ đầu tư"
-                    : "Đơn vị"}
+              <th className="w-32 px-3 py-4">
+                {idHeaderForEntity(entityType)}
               </th>
-              <th className="px-3 py-3">Tỉnh</th>
-              <th className="px-3 py-3">
-                {entityType === "plan"
-                  ? "Lĩnh vực / HTLCNT"
-                  : entityType === "project"
-                    ? "Nhóm dự án"
-                    : "Lĩnh vực"}
+              <th className="min-w-[300px] px-3 py-4">
+                {titleHeaderForEntity(entityType)}
               </th>
-              <th className="px-3 py-3 text-right">Ngân sách</th>
-              <th className="px-3 py-3">Ngày</th>
-              <th className="px-3 py-3">Hành động</th>
+              <th className="w-44 px-3 py-4">Địa điểm thực hiện</th>
+              <th className="min-w-[220px] px-3 py-4">
+                Bên mời thầu/Chủ đầu tư
+              </th>
+              <th className="w-32 px-3 py-4">
+                {deadlineHeaderForEntity(entityType)}
+              </th>
+              <th className="w-36 px-3 py-4 text-right">
+                {budgetHeaderForEntity(entityType)}
+              </th>
+              <th className="w-28 px-3 py-4">Đăng tải</th>
+              <th className="w-44 px-3 py-4">Hành động</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -627,8 +761,21 @@ function ResultsTable(props: {
                   />
                 </td>
                 <td className="px-3 py-3">
-                  <div className="max-w-[340px]">
+                  <Link
+                    href={detailHrefForItem(item)}
+                    className="inline-block text-sm leading-5 font-medium text-[#0091ff] [overflow-wrap:anywhere] hover:underline"
+                  >
+                    {item.externalId}
+                  </Link>
+                </td>
+                <td className="px-3 py-3">
+                  <div>
                     <p className="font-semibold text-slate-900">{item.title}</p>
+                    {item.entityType === "package" ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.category} • Match {item.matchScore}%
+                      </p>
+                    ) : null}
                     {item.entityType === "plan" ? (
                       <p className="mt-1 text-xs text-slate-500">
                         {item.planName}
@@ -658,51 +805,19 @@ function ResultsTable(props: {
                   </div>
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-700">
-                  {ownerTextForItem(item)}
-                </td>
-                <td className="px-3 py-3 text-xs text-slate-700">
                   {item.province}
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-700">
-                  {item.entityType === "plan" ? (
-                    <div>
-                      <p>{item.field}</p>
-                      <p className="mt-1 text-slate-500">
-                        {item.procurementMethod}
-                      </p>
-                    </div>
-                  ) : item.entityType === "project" ? (
-                    item.projectGroup
-                  ) : (
-                    item.category
-                  )}
+                  {ownerTextForItem(item)}
+                </td>
+                <td className="px-3 py-3 text-xs text-slate-700">
+                  {deadlineTextForItem(item)}
                 </td>
                 <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
                   {formatCurrency(item.budget)}
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-700">
-                  {item.entityType === "project" ? (
-                    <div>
-                      <p>Đăng: {formatDate(item.publishedAt)}</p>
-                      <p className="mt-1 text-slate-500">
-                        Duyệt: {formatDate(item.approvedAt)}
-                      </p>
-                    </div>
-                  ) : item.entityType === "plan" ? (
-                    <div>
-                      <p>Đăng: {formatDate(item.publishedAt)}</p>
-                      <p className="mt-1 text-slate-500">
-                        Tiến độ: {item.timeline ?? "-"}
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p>Đăng: {formatDate(item.publishedAt)}</p>
-                      <p className="mt-1 text-slate-500">
-                        Match: {item.matchScore}%
-                      </p>
-                    </div>
-                  )}
+                  {formatDate(item.publishedAt)}
                 </td>
                 <td className="px-3 py-3">
                   <ResultActions
@@ -794,11 +909,37 @@ export function SearchPageClient() {
     [appliedCriteria, limit, mode, page, sortOrder],
   );
 
-  const [result, resultQuery] =
-    api.search.querySearchResults.useSuspenseQuery(queryInput);
-  const items = result.items;
-  const totalPages = Math.max(1, Math.ceil(result.total / limit));
-  const entityLabel = entityLabelForItems(items);
+  const resultQuery = api.search.querySearchResults.useQuery(queryInput, {
+    placeholderData: (previousData) =>
+      previousData?.mode === mode ? previousData : undefined,
+  });
+  const result = resultQuery.data;
+  const items = result?.items ?? EMPTY_SEARCH_ITEMS;
+  const filterOptions = result?.options ?? DEFAULT_RESULT_OPTIONS;
+  const totalPages = result ? Math.max(1, Math.ceil(result.total / limit)) : 1;
+  const entityLabel = entityLabelForMode(mode);
+  const isInitialResultsLoading = resultQuery.isLoading && !result;
+  const isShowingPreviousResults = Boolean(resultQuery.isPlaceholderData);
+  const budgetMinNumber = parseOptionalNumber(formState.budgetMin) ?? 0;
+  const budgetMaxNumber = parseOptionalNumber(formState.budgetMax);
+  const budgetSliderMax = Math.max(
+    DEFAULT_BUDGET_SLIDER_MAX,
+    result?.windowBudgetRange.max ?? 0,
+    budgetMinNumber,
+    budgetMaxNumber ?? 0,
+  );
+  const budgetSliderMinValue = Math.min(budgetMinNumber, budgetSliderMax);
+  const budgetSliderMaxValue =
+    budgetMaxNumber !== null
+      ? Math.min(
+          Math.max(budgetMaxNumber, budgetSliderMinValue),
+          budgetSliderMax,
+        )
+      : budgetSliderMax;
+  const budgetSliderMinPercent =
+    budgetSliderMax > 0 ? (budgetSliderMinValue / budgetSliderMax) * 100 : 0;
+  const budgetSliderMaxPercent =
+    budgetSliderMax > 0 ? (budgetSliderMaxValue / budgetSliderMax) * 100 : 100;
 
   const draftCriteriaKey = useMemo(
     () => serializeCriteria(draftCriteria),
@@ -833,10 +974,10 @@ export function SearchPageClient() {
   );
 
   useEffect(() => {
-    if (page > totalPages) {
+    if (result && page > totalPages) {
       setPage(totalPages);
     }
-  }, [page, totalPages]);
+  }, [page, result, totalPages]);
 
   useEffect(() => {
     const params = buildSearchUrlParams({
@@ -1046,579 +1187,722 @@ export function SearchPageClient() {
   const isEditingSmartView = savedFilterId !== null;
 
   return (
-    <section className="panel p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">
-            Trung tâm tìm kiếm BidWinner public
-          </h2>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">
-            Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương, ngành
-            nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
-          </p>
+    <div className="space-y-4">
+      <section className="panel p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">
+              Trung tâm tìm kiếm BidWinner public
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương,
+              ngành nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/saved-items"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
+              Smart Views & Watchlist
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
+            const isActive = mode === tabMode;
+
+            return (
+              <button
+                key={tabMode}
+                type="button"
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  isActive
+                    ? "border-sky-400 bg-sky-50"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+                onClick={() => {
+                  setMode(tabMode);
+                  setSavedFilterId(null);
+                  if (!budgetRangeError && !publishedDateRangeError) {
+                    setAppliedCriteria(draftCriteria);
+                  }
+                  setPage(1);
+                }}
+              >
+                <p className="text-sm font-semibold text-slate-900">
+                  {SEARCH_MODE_LABELS[tabMode]}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {SEARCH_MODE_DESCRIPTIONS[tabMode]}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+              Bộ lọc đang áp dụng
+            </p>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
+              onClick={resetFilters}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Xóa tất cả
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {appliedChips.map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
+              >
+                {chip}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
+          <FilterField label="Tên Smart View" htmlFor="smart-view-name">
+            <input
+              id="smart-view-name"
+              className={controlClass}
+              placeholder="Đặt tên cho bộ lọc đã áp dụng"
+              value={smartViewName}
+              onChange={(event) => setSmartViewName(event.target.value)}
+            />
+          </FilterField>
+          <FilterField
+            label="Tần suất thông báo"
+            htmlFor="smart-view-frequency"
+          >
+            <select
+              id="smart-view-frequency"
+              className={controlClass}
+              value={smartViewFrequency}
+              onChange={(event) =>
+                setSmartViewFrequency(event.target.value as "daily" | "weekly")
+              }
+            >
+              <option value="daily">Hằng ngày</option>
+              <option value="weekly">Hằng tuần</option>
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            disabled={
+              budgetRangeError ||
+              publishedDateRangeError ||
+              !hasPendingSearchFilterChanges
+            }
+            leftIcon={<SlidersHorizontal className="h-4 w-4" />}
+            onClick={applyDraftFilters}
+          >
+            Áp dụng bộ lọc
+          </Button>
           <Button
             variant="secondary"
-            size="sm"
-            isLoading={resultQuery.isFetching}
-            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-            onClick={() => resultQuery.refetch()}
+            isLoading={saveFilter.isPending || updateSavedFilter.isPending}
+            disabled={budgetRangeError || publishedDateRangeError}
+            leftIcon={<BookmarkCheck className="h-4 w-4" />}
+            onClick={persistSmartView}
           >
-            Tải lại
+            {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
           </Button>
-          <Link
-            href="/saved-items"
-            className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
-            Smart Views & Watchlist
-          </Link>
         </div>
-      </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-        {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
-          const isActive = mode === tabMode;
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <FilterField label="Từ khóa" htmlFor="search-keyword">
+            <input
+              id="search-keyword"
+              className={controlClass}
+              value={formState.keyword}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  keyword: event.target.value,
+                }))
+              }
+              placeholder="Nhập nhiều cụm, phân tách bằng dấu phẩy"
+            />
+          </FilterField>
 
-          return (
-            <button
-              key={tabMode}
-              type="button"
-              className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                isActive
-                  ? "border-sky-400 bg-sky-50"
-                  : "border-slate-200 bg-white hover:border-slate-300"
-              }`}
-              onClick={() => {
-                setMode(tabMode);
-                setSavedFilterId(null);
-                if (!budgetRangeError && !publishedDateRangeError) {
-                  setAppliedCriteria(draftCriteria);
+          <FilterField label="Tỉnh / thành">
+            {mode === "package_location" ? (
+              <select
+                className={controlClass}
+                value={formState.provinces[0] ?? ""}
+                onChange={(event) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    provinces: event.target.value ? [event.target.value] : [],
+                  }))
                 }
+              >
+                <option value="">Chọn một tỉnh/thành</option>
+                {filterOptions.provinces.map((province) => (
+                  <option key={province} value={province}>
+                    {province}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <MultiSelectDropdown
+                ariaLabel="Tỉnh / thành"
+                options={filterOptions.provinces}
+                selected={formState.provinces}
+                onChange={(next) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    provinces: next,
+                  }))
+                }
+                emptyLabel="Tất cả tỉnh/thành"
+              />
+            )}
+          </FilterField>
+
+          {(mode === "package_keyword" || mode === "package_location") && (
+            <FilterField label="Lĩnh vực gói">
+              <MultiSelectDropdown
+                ariaLabel="Lĩnh vực gói"
+                options={filterOptions.packageCategories}
+                selected={formState.packageCategories}
+                onChange={(next) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    packageCategories: next,
+                  }))
+                }
+                emptyLabel="Tất cả lĩnh vực gói"
+              />
+            </FilterField>
+          )}
+
+          {mode === "package_area_location" && (
+            <FilterField
+              label="Ngành nghề & địa phương"
+              helper="Chọn nhiều classify public của BidWinner. Tab này tinh lọc trên cửa sổ dữ liệu đã tải."
+            >
+              <select
+                multiple
+                className={`${controlClass} min-h-56`}
+                value={formState.classifyIds.map(String)}
+                onChange={(event) => {
+                  const next = Array.from(event.target.selectedOptions)
+                    .map((option) => Number.parseInt(option.value, 10))
+                    .filter((value) => Number.isInteger(value) && value > 0);
+
+                  setFormState((previous) => ({
+                    ...previous,
+                    classifyIds: next,
+                  }));
+                }}
+              >
+                {filterOptions.classifies.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {`${"· ".repeat(entry.depth)}${entry.name}`}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+          )}
+
+          {mode === "plan" && (
+            <>
+              <FilterField label="Lĩnh vực KHLCNT">
+                <MultiSelectDropdown
+                  ariaLabel="Lĩnh vực KHLCNT"
+                  options={filterOptions.planFields}
+                  selected={formState.planFields}
+                  onChange={(next) =>
+                    setFormState((previous) => ({
+                      ...previous,
+                      planFields: next,
+                    }))
+                  }
+                  emptyLabel="Tất cả lĩnh vực KHLCNT"
+                />
+              </FilterField>
+              <FilterField label="HTLCNT">
+                <MultiSelectDropdown
+                  ariaLabel="HTLCNT"
+                  options={filterOptions.procurementMethods}
+                  selected={formState.procurementMethods}
+                  onChange={(next) =>
+                    setFormState((previous) => ({
+                      ...previous,
+                      procurementMethods: next,
+                    }))
+                  }
+                  emptyLabel="Tất cả HTLCNT"
+                />
+              </FilterField>
+            </>
+          )}
+
+          {mode === "project" && (
+            <FilterField label="Nhóm dự án">
+              <MultiSelectDropdown
+                ariaLabel="Nhóm dự án"
+                options={filterOptions.projectGroups}
+                selected={formState.projectGroups}
+                onChange={(next) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    projectGroups: next,
+                  }))
+                }
+                emptyLabel="Tất cả nhóm dự án"
+              />
+            </FilterField>
+          )}
+
+          <FilterField
+            label="Ngân sách"
+            htmlFor="search-budget-min"
+            className="lg:col-span-2"
+          >
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label
+                  className="flex flex-col gap-1"
+                  htmlFor="search-budget-min"
+                >
+                  <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                    Ngân sách từ
+                  </span>
+                  <input
+                    id="search-budget-min"
+                    className={controlClass}
+                    type="number"
+                    min={0}
+                    value={formState.budgetMin}
+                    onChange={(event) =>
+                      setFormState((previous) => ({
+                        ...previous,
+                        budgetMin: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <label
+                  className="flex flex-col gap-1"
+                  htmlFor="search-budget-max"
+                >
+                  <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                    Ngân sách đến
+                  </span>
+                  <input
+                    id="search-budget-max"
+                    className={controlClass}
+                    type="number"
+                    min={0}
+                    value={formState.budgetMax}
+                    onChange={(event) =>
+                      setFormState((previous) => ({
+                        ...previous,
+                        budgetMax: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                  <span>{formatCompactCurrency(budgetSliderMinValue)}</span>
+                  <span>{formatCompactCurrency(budgetSliderMaxValue)}</span>
+                </div>
+                <div className="relative h-8">
+                  <div className="absolute inset-x-0 top-3 h-2 rounded-full bg-slate-200" />
+                  <div
+                    className="absolute top-3 h-2 rounded-full bg-sky-500"
+                    style={{
+                      left: `${budgetSliderMinPercent}%`,
+                      right: `${100 - budgetSliderMaxPercent}%`,
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={budgetSliderMax}
+                    step={BUDGET_SLIDER_STEP}
+                    value={budgetSliderMinValue}
+                    aria-label="Ngân sách từ"
+                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-sky-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
+                    onChange={(event) => {
+                      const next = Number(event.currentTarget.value);
+                      const currentMax = parseOptionalNumber(
+                        formState.budgetMax,
+                      );
+                      const bounded =
+                        currentMax !== null ? Math.min(next, currentMax) : next;
+
+                      setFormState((previous) => ({
+                        ...previous,
+                        budgetMin: bounded > 0 ? String(bounded) : "",
+                      }));
+                    }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={budgetSliderMax}
+                    step={BUDGET_SLIDER_STEP}
+                    value={budgetSliderMaxValue}
+                    aria-label="Ngân sách đến"
+                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-sky-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
+                    onChange={(event) => {
+                      const next = Number(event.currentTarget.value);
+                      const bounded = Math.max(next, budgetSliderMinValue);
+
+                      setFormState((previous) => ({
+                        ...previous,
+                        budgetMax:
+                          bounded >= budgetSliderMax ? "" : String(bounded),
+                      }));
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </FilterField>
+
+          <FilterField label="Ngày từ" htmlFor="search-date-from">
+            <input
+              id="search-date-from"
+              className={controlClass}
+              type="date"
+              value={formState.publishedFrom}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  publishedFrom: event.target.value,
+                }))
+              }
+            />
+          </FilterField>
+
+          <FilterField label="Ngày đến" htmlFor="search-date-to">
+            <input
+              id="search-date-to"
+              className={controlClass}
+              type="date"
+              value={formState.publishedTo}
+              onChange={(event) =>
+                setFormState((previous) => ({
+                  ...previous,
+                  publishedTo: event.target.value,
+                }))
+              }
+            />
+          </FilterField>
+
+          {(mode === "package_keyword" ||
+            mode === "package_location" ||
+            mode === "package_area_location") && (
+            <FilterField label="Match tối thiểu" htmlFor="search-match">
+              <input
+                id="search-match"
+                className={controlClass}
+                type="number"
+                min={0}
+                max={100}
+                value={formState.minMatchScore}
+                onChange={(event) =>
+                  setFormState((previous) => ({
+                    ...previous,
+                    minMatchScore: Number.parseInt(event.target.value, 10) || 0,
+                  }))
+                }
+              />
+            </FilterField>
+          )}
+
+          <FilterField label="Sắp xếp ngày đăng">
+            <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
+              {(
+                [
+                  { value: "desc", label: "Mới nhất" },
+                  { value: "asc", label: "Cũ nhất" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                    sortOrder === option.value
+                      ? "bg-sky-700 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  onClick={() => setSortOrder(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </FilterField>
+        </div>
+
+        {budgetRangeError ? (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
+          </div>
+        ) : null}
+
+        {publishedDateRangeError ? (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            Ngày đến phải lớn hơn hoặc bằng ngày từ.
+          </div>
+        ) : null}
+
+        {isEditingSmartView ? (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-sky-900">
+                  {savedFilterQuery.isPending
+                    ? "Đang tải Smart View để chỉnh sửa"
+                    : savedFilterQuery.error
+                      ? "Không mở được Smart View"
+                      : "Đang chỉnh sửa Smart View"}
+                </p>
+                <p className="mt-1 text-xs text-sky-800">
+                  {savedFilterQuery.error?.message ??
+                    "Cập nhật Smart View sẽ không sửa workflow đã tạo trước đó."}
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setSavedFilterId(null)}
+              >
+                Hủy chỉnh sửa
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {hasPendingSearchFilterChanges ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <span className="inline-flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4" aria-hidden />
+              Có thay đổi bộ lọc chưa áp dụng. Kết quả và Smart View vẫn đang
+              dùng bộ lọc hiện tại.
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={budgetRangeError || publishedDateRangeError}
+              leftIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+              onClick={applyDraftFilters}
+            >
+              Áp dụng ngay
+            </Button>
+          </div>
+        ) : null}
+
+        {saveError ? (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {saveError}
+          </div>
+        ) : null}
+
+        {smartViewSuccess ? (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {smartViewSuccess} • {smartViewFrequencyLabels[smartViewFrequency]}
+          </div>
+        ) : null}
+      </section>
+
+      <section
+        className="panel p-4 sm:p-5"
+        aria-busy={resultQuery.isFetching ? true : undefined}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Kết quả {SEARCH_MODE_LABELS[mode]}
+            </p>
+            {result ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Tổng nguồn: {result.total.toLocaleString("vi-VN")} • Hiển thị
+                cửa sổ này: {result.visibleCount} • Cập nhật:{" "}
+                {formatDateTime(result.fetchedAt)}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">
+                Đang tải dữ liệu public...
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={controlClass}
+              value={limit}
+              onChange={(event) => {
+                setLimit(parsePositiveInt(event.target.value, 20));
                 setPage(1);
               }}
             >
-              <p className="text-sm font-semibold text-slate-900">
-                {SEARCH_MODE_LABELS[tabMode]}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {SEARCH_MODE_DESCRIPTIONS[tabMode]}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-            Bộ lọc đang áp dụng
-          </p>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
-            onClick={resetFilters}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-            Xóa tất cả
-          </button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {appliedChips.map((chip) => (
-            <span
-              key={chip}
-              className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
-            >
-              {chip}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <FilterField label="Từ khóa" htmlFor="search-keyword">
-          <input
-            id="search-keyword"
-            className={controlClass}
-            value={formState.keyword}
-            onChange={(event) =>
-              setFormState((previous) => ({
-                ...previous,
-                keyword: event.target.value,
-              }))
-            }
-            placeholder="Nhập nhiều cụm, phân tách bằng dấu phẩy"
-          />
-        </FilterField>
-
-        <FilterField label="Tỉnh / thành">
-          {mode === "package_location" ? (
-            <select
-              className={controlClass}
-              value={formState.provinces[0] ?? ""}
-              onChange={(event) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  provinces: event.target.value ? [event.target.value] : [],
-                }))
-              }
-            >
-              <option value="">Chọn một tỉnh/thành</option>
-              {result.options.provinces.map((province) => (
-                <option key={province} value={province}>
-                  {province}
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size} dòng
                 </option>
               ))}
             </select>
-          ) : (
-            <MultiSelectDropdown
-              ariaLabel="Tỉnh / thành"
-              options={result.options.provinces}
-              selected={formState.provinces}
-              onChange={(next) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  provinces: next,
-                }))
-              }
-              emptyLabel="Tất cả tỉnh/thành"
-            />
-          )}
-        </FilterField>
-
-        {(mode === "package_keyword" || mode === "package_location") && (
-          <FilterField label="Lĩnh vực gói">
-            <MultiSelectDropdown
-              ariaLabel="Lĩnh vực gói"
-              options={result.options.packageCategories}
-              selected={formState.packageCategories}
-              onChange={(next) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  packageCategories: next,
-                }))
-              }
-              emptyLabel="Tất cả lĩnh vực gói"
-            />
-          </FilterField>
-        )}
-
-        {mode === "package_area_location" && (
-          <FilterField
-            label="Ngành nghề & địa phương"
-            helper="Chọn nhiều classify public của BidWinner. Tab này tinh lọc trên cửa sổ dữ liệu đã tải."
-          >
-            <select
-              multiple
-              className={`${controlClass} min-h-56`}
-              value={formState.classifyIds.map(String)}
-              onChange={(event) => {
-                const next = Array.from(event.target.selectedOptions)
-                  .map((option) => Number.parseInt(option.value, 10))
-                  .filter((value) => Number.isInteger(value) && value > 0);
-
-                setFormState((previous) => ({
-                  ...previous,
-                  classifyIds: next,
-                }));
-              }}
-            >
-              {result.options.classifies.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {`${"· ".repeat(entry.depth)}${entry.name}`}
-                </option>
-              ))}
-            </select>
-          </FilterField>
-        )}
-
-        {mode === "plan" && (
-          <>
-            <FilterField label="Lĩnh vực KHLCNT">
-              <MultiSelectDropdown
-                ariaLabel="Lĩnh vực KHLCNT"
-                options={result.options.planFields}
-                selected={formState.planFields}
-                onChange={(next) =>
-                  setFormState((previous) => ({
-                    ...previous,
-                    planFields: next,
-                  }))
-                }
-                emptyLabel="Tất cả lĩnh vực KHLCNT"
-              />
-            </FilterField>
-            <FilterField label="HTLCNT">
-              <MultiSelectDropdown
-                ariaLabel="HTLCNT"
-                options={result.options.procurementMethods}
-                selected={formState.procurementMethods}
-                onChange={(next) =>
-                  setFormState((previous) => ({
-                    ...previous,
-                    procurementMethods: next,
-                  }))
-                }
-                emptyLabel="Tất cả HTLCNT"
-              />
-            </FilterField>
-          </>
-        )}
-
-        {mode === "project" && (
-          <FilterField label="Nhóm dự án">
-            <MultiSelectDropdown
-              ariaLabel="Nhóm dự án"
-              options={result.options.projectGroups}
-              selected={formState.projectGroups}
-              onChange={(next) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  projectGroups: next,
-                }))
-              }
-              emptyLabel="Tất cả nhóm dự án"
-            />
-          </FilterField>
-        )}
-
-        <FilterField label="Ngân sách từ" htmlFor="search-budget-min">
-          <input
-            id="search-budget-min"
-            className={controlClass}
-            type="number"
-            min={0}
-            value={formState.budgetMin}
-            onChange={(event) =>
-              setFormState((previous) => ({
-                ...previous,
-                budgetMin: event.target.value,
-              }))
-            }
-          />
-        </FilterField>
-
-        <FilterField label="Ngân sách đến" htmlFor="search-budget-max">
-          <input
-            id="search-budget-max"
-            className={controlClass}
-            type="number"
-            min={0}
-            value={formState.budgetMax}
-            onChange={(event) =>
-              setFormState((previous) => ({
-                ...previous,
-                budgetMax: event.target.value,
-              }))
-            }
-          />
-        </FilterField>
-
-        <FilterField label="Ngày từ" htmlFor="search-date-from">
-          <input
-            id="search-date-from"
-            className={controlClass}
-            type="date"
-            value={formState.publishedFrom}
-            onChange={(event) =>
-              setFormState((previous) => ({
-                ...previous,
-                publishedFrom: event.target.value,
-              }))
-            }
-          />
-        </FilterField>
-
-        <FilterField label="Ngày đến" htmlFor="search-date-to">
-          <input
-            id="search-date-to"
-            className={controlClass}
-            type="date"
-            value={formState.publishedTo}
-            onChange={(event) =>
-              setFormState((previous) => ({
-                ...previous,
-                publishedTo: event.target.value,
-              }))
-            }
-          />
-        </FilterField>
-
-        {(mode === "package_keyword" ||
-          mode === "package_location" ||
-          mode === "package_area_location") && (
-          <FilterField label="Match tối thiểu" htmlFor="search-match">
-            <input
-              id="search-match"
-              className={controlClass}
-              type="number"
-              min={0}
-              max={100}
-              value={formState.minMatchScore}
-              onChange={(event) =>
-                setFormState((previous) => ({
-                  ...previous,
-                  minMatchScore: Number.parseInt(event.target.value, 10) || 0,
-                }))
-              }
-            />
-          </FilterField>
-        )}
-
-        <FilterField label="Sắp xếp ngày đăng">
-          <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
-            {(
-              [
-                { value: "desc", label: "Mới nhất" },
-                { value: "asc", label: "Cũ nhất" },
-              ] as const
-            ).map((option) => (
+            <div className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
               <button
-                key={option.value}
                 type="button"
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                  sortOrder === option.value
-                    ? "bg-sky-700 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-                onClick={() => setSortOrder(option.value)}
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                disabled={!result || page <= 1}
+                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
               >
-                {option.label}
+                <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+                Trước
               </button>
-            ))}
-          </div>
-        </FilterField>
-      </div>
-
-      {budgetRangeError ? (
-        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
-        </div>
-      ) : null}
-
-      {publishedDateRangeError ? (
-        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          Ngày đến phải lớn hơn hoặc bằng ngày từ.
-        </div>
-      ) : null}
-
-      {isEditingSmartView ? (
-        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-sky-900">
-                {savedFilterQuery.isPending
-                  ? "Đang tải Smart View để chỉnh sửa"
-                  : savedFilterQuery.error
-                    ? "Không mở được Smart View"
-                    : "Đang chỉnh sửa Smart View"}
-              </p>
-              <p className="mt-1 text-xs text-sky-800">
-                {savedFilterQuery.error?.message ??
-                  "Cập nhật Smart View sẽ không sửa workflow đã tạo trước đó."}
-              </p>
+              <span className="text-xs text-slate-500">
+                {result ? `Trang ${page}/${totalPages}` : "Trang ..."}
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                disabled={!result || page >= totalPages}
+                onClick={() =>
+                  setPage((previous) => Math.min(totalPages, previous + 1))
+                }
+              >
+                Sau
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+              </button>
             </div>
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setSavedFilterId(null)}
-            >
-              Hủy chỉnh sửa
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {hasPendingSearchFilterChanges ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <span className="inline-flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4" aria-hidden />
-            Có thay đổi bộ lọc chưa áp dụng. Kết quả và Smart View vẫn đang dùng
-            bộ lọc hiện tại.
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={budgetRangeError || publishedDateRangeError}
-            leftIcon={<SlidersHorizontal className="h-3.5 w-3.5" />}
-            onClick={applyDraftFilters}
-          >
-            Áp dụng ngay
-          </Button>
-        </div>
-      ) : null}
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
-        <FilterField label="Tên Smart View" htmlFor="smart-view-name">
-          <input
-            id="smart-view-name"
-            className={controlClass}
-            placeholder="Đặt tên cho bộ lọc đã áp dụng"
-            value={smartViewName}
-            onChange={(event) => setSmartViewName(event.target.value)}
-          />
-        </FilterField>
-        <FilterField label="Tần suất thông báo" htmlFor="smart-view-frequency">
-          <select
-            id="smart-view-frequency"
-            className={controlClass}
-            value={smartViewFrequency}
-            onChange={(event) =>
-              setSmartViewFrequency(event.target.value as "daily" | "weekly")
-            }
-          >
-            <option value="daily">Hằng ngày</option>
-            <option value="weekly">Hằng tuần</option>
-          </select>
-        </FilterField>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          variant="primary"
-          disabled={
-            budgetRangeError ||
-            publishedDateRangeError ||
-            !hasPendingSearchFilterChanges
-          }
-          leftIcon={<SlidersHorizontal className="h-4 w-4" />}
-          onClick={applyDraftFilters}
-        >
-          Áp dụng bộ lọc
-        </Button>
-        <Button
-          variant="secondary"
-          isLoading={saveFilter.isPending || updateSavedFilter.isPending}
-          disabled={budgetRangeError || publishedDateRangeError}
-          leftIcon={<BookmarkCheck className="h-4 w-4" />}
-          onClick={persistSmartView}
-        >
-          {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
-        </Button>
-        <Button
-          variant="primary"
-          className="bg-emerald-600 hover:bg-emerald-700"
-          isLoading={saveSelectedResults.isPending}
-          disabled={selectedItems.length === 0}
-          leftIcon={<Save className="h-4 w-4" />}
-          onClick={() =>
-            saveSelectedResults.mutate({
-              items: selectedItems.map((item) => toSavePayload(item)),
-            })
-          }
-        >
-          {`Lưu ${selectedItems.length} ${entityLabel.toLowerCase()} đã chọn`}
-        </Button>
-      </div>
-
-      {saveError ? (
-        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {saveError}
-        </div>
-      ) : null}
-
-      {smartViewSuccess ? (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {smartViewSuccess} • {smartViewFrequencyLabels[smartViewFrequency]}
-        </div>
-      ) : null}
-
-      {saveSelectedSuccess ? (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {saveSelectedSuccess}
-        </div>
-      ) : null}
-
-      {saveSelectedError ? (
-        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {saveSelectedError}
-        </div>
-      ) : null}
-
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">
-            Kết quả {SEARCH_MODE_LABELS[mode]}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Tổng nguồn: {result.total.toLocaleString("vi-VN")} • Hiển thị cửa sổ
-            này: {result.visibleCount} • Cập nhật:{" "}
-            {formatDateTime(result.fetchedAt)}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            className={controlClass}
-            value={limit}
-            onChange={(event) => {
-              setLimit(parsePositiveInt(event.target.value, 20));
-              setPage(1);
-            }}
-          >
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
-                {size} dòng
-              </option>
-            ))}
-          </select>
-          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-              disabled={page <= 1}
-              onClick={() => setPage((previous) => Math.max(1, previous - 1))}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
-              Trước
-            </button>
-            <span className="text-xs text-slate-500">
-              Trang {page}/{totalPages}
-            </span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-              disabled={page >= totalPages}
-              onClick={() =>
-                setPage((previous) => Math.min(totalPages, previous + 1))
-              }
-            >
-              Sau
-              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <SourceMetaBanner result={result} />
-      </div>
-
-      {items.length === 0 ? (
-        <EmptyState
-          className="mt-6"
-          title={`Không có ${entityLabel.toLowerCase()} phù hợp`}
-          description="Hãy nới bộ lọc, đổi chế độ tìm kiếm hoặc thử tải lại nguồn public của BidWinner."
-          cta={
-            <Button
-              variant="secondary"
-              leftIcon={<RefreshCw className="h-4 w-4" />}
+              isLoading={resultQuery.isFetching}
+              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
               onClick={() => resultQuery.refetch()}
             >
-              Tải lại dữ liệu
+              Tải lại
             </Button>
-          }
-        />
-      ) : (
-        <div className="mt-4">
-          <ResultsTable
-            items={items}
-            selectedKeys={selectedKeys}
-            setSelectedKeys={setSelectedKeys}
-            addWatchlist={addWatchlist}
-          />
+            <Button
+              variant="primary"
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              isLoading={saveSelectedResults.isPending}
+              disabled={selectedItems.length === 0 || isShowingPreviousResults}
+              leftIcon={<Save className="h-3.5 w-3.5" />}
+              onClick={() =>
+                saveSelectedResults.mutate({
+                  items: selectedItems.map((item) => toSavePayload(item)),
+                })
+              }
+            >
+              {`Lưu ${selectedItems.length} ${entityLabel.toLowerCase()}`}
+            </Button>
+          </div>
         </div>
-      )}
-    </section>
+
+        {saveSelectedSuccess ? (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {saveSelectedSuccess}
+          </div>
+        ) : null}
+
+        {saveSelectedError ? (
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {saveSelectedError}
+          </div>
+        ) : null}
+
+        {isShowingPreviousResults ? (
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            Đang tải kết quả mới...
+          </div>
+        ) : null}
+
+        {resultQuery.isError && !result ? (
+          <EmptyState
+            className="mt-6"
+            title={`Không tải được ${entityLabel.toLowerCase()}`}
+            description={
+              resultQuery.error?.message ??
+              "Nguồn public có thể tạm thời không phản hồi."
+            }
+            cta={
+              <Button
+                variant="secondary"
+                leftIcon={<RefreshCw className="h-4 w-4" />}
+                onClick={() => resultQuery.refetch()}
+              >
+                Tải lại dữ liệu
+              </Button>
+            }
+          />
+        ) : isInitialResultsLoading ? (
+          <div className="mt-4" role="status" aria-label="Đang tải kết quả">
+            <SkeletonTable rows={6} cols={8} />
+          </div>
+        ) : result ? (
+          <>
+            {items.length === 0 ? (
+              <>
+                <div className="mt-3">
+                  <SourceMetaBanner result={result} />
+                </div>
+                <EmptyState
+                  className="mt-6"
+                  title={`Không có ${entityLabel.toLowerCase()} phù hợp`}
+                  description="Hãy nới bộ lọc, đổi chế độ tìm kiếm hoặc thử tải lại nguồn public của BidWinner."
+                  cta={
+                    <Button
+                      variant="secondary"
+                      leftIcon={<RefreshCw className="h-4 w-4" />}
+                      onClick={() => resultQuery.refetch()}
+                    >
+                      Tải lại dữ liệu
+                    </Button>
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <div className="mt-4">
+                  <ResultMatchSummary result={result} />
+                </div>
+                <div
+                  className={`transition-opacity ${
+                    isShowingPreviousResults ? "opacity-60" : "opacity-100"
+                  }`}
+                >
+                  <ResultsTable
+                    items={items}
+                    selectedKeys={selectedKeys}
+                    setSelectedKeys={setSelectedKeys}
+                    addWatchlist={addWatchlist}
+                  />
+                </div>
+                <div className="mt-3">
+                  <SourceMetaBanner result={result} />
+                </div>
+              </>
+            )}
+          </>
+        ) : null}
+      </section>
+    </div>
   );
 }

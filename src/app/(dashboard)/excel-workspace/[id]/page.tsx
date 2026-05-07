@@ -6,7 +6,7 @@ import {
   type ExcelWorkspaceStepId,
 } from "~/lib/excel-workspace-steps";
 import { ExcelWorkspaceWizardClient } from "~/app/_components/excel-workspace/workspace-wizard-client";
-import { api } from "~/trpc/server";
+import { HydrateClient, api } from "~/trpc/server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,21 @@ type ExcelWorkspaceDetailPageProps = {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ step?: string }>;
 };
+
+function prefetchExcelWorkspaceDetailStepData(
+  workspaceId: number,
+  step: ExcelWorkspaceStepId,
+) {
+  if (step === "import") {
+    void api.excelWorkspace.previewWorkbookSheets.prefetch({ workspaceId });
+  }
+
+  if (step === "export") {
+    void api.excelWorkspace.validateWorkspaceForExport.prefetch({
+      workspaceId,
+    });
+  }
+}
 
 export default async function ExcelWorkspaceDetailPage({
   params,
@@ -35,23 +50,32 @@ export default async function ExcelWorkspaceDetailPage({
     notFound();
   }
 
-  const requestedStep = excelWorkspaceSteps.includes(step as ExcelWorkspaceStepId)
+  const requestedStep = excelWorkspaceSteps.includes(
+    step as ExcelWorkspaceStepId,
+  )
     ? (step as ExcelWorkspaceStepId)
     : null;
 
   if (
     !requestedStep ||
-    !isExcelWorkspaceStepAccessible(requestedStep, initialData.routeMeta.maxStep)
+    !isExcelWorkspaceStepAccessible(
+      requestedStep,
+      initialData.routeMeta.maxStep,
+    )
   ) {
     redirect(
       `/excel-workspace/${workspaceId}?step=${initialData.routeMeta.nextStep}`,
     );
   }
 
+  prefetchExcelWorkspaceDetailStepData(workspaceId, requestedStep);
+
   return (
-    <ExcelWorkspaceWizardClient
-      workspaceId={workspaceId}
-      initialData={initialData}
-    />
+    <HydrateClient>
+      <ExcelWorkspaceWizardClient
+        workspaceId={workspaceId}
+        initialData={initialData}
+      />
+    </HydrateClient>
   );
 }

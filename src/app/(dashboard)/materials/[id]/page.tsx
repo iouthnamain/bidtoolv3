@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { MaterialDetailClient } from "~/app/_components/materials/detail-client";
+import { HydrateClient, api } from "~/trpc/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,11 @@ type MaterialDetailsPageProps = {
     id: string;
   }>;
 };
+
+function prefetchMaterialDetailsPageData(id: number) {
+  void api.material.getById.prefetch({ id });
+  void api.material.getUsage.prefetch({ materialId: id, limit: 20 });
+}
 
 export default async function MaterialDetailsPage({
   params,
@@ -22,20 +28,24 @@ export default async function MaterialDetailsPage({
     notFound();
   }
 
+  prefetchMaterialDetailsPageData(id);
+
   return (
     <DashboardShell
       title="Chi tiết vật tư"
       description="Xem, chỉnh sửa và kiểm tra lịch sử sử dụng vật tư trong các workspace Excel"
     >
-      <Suspense
-        fallback={
-          <div className="panel p-5 text-sm text-slate-600">
-            Đang tải chi tiết vật tư...
-          </div>
-        }
-      >
-        <MaterialDetailClient id={id} />
-      </Suspense>
+      <HydrateClient>
+        <Suspense
+          fallback={
+            <div className="panel p-5 text-sm text-slate-600">
+              Đang tải chi tiết vật tư...
+            </div>
+          }
+        >
+          <MaterialDetailClient id={id} />
+        </Suspense>
+      </HydrateClient>
     </DashboardShell>
   );
 }

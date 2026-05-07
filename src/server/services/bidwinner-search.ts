@@ -29,6 +29,7 @@ type SearchOptions = {
 type BidWinnerRawItem = {
   id: number;
   so_tbmt?: number | string;
+  rev?: number | string | null;
   ten_goi_thau?: string;
   owner?: string | null;
   bmt?: string | null;
@@ -81,6 +82,29 @@ export type LivePackageItem = {
   matchScore: number;
   sourceUrl: string;
 };
+
+export function formatBidNoticeNumber(raw: {
+  id: number;
+  so_tbmt?: number | string | null;
+  rev?: number | string | null;
+}) {
+  const noticeNumber = String(raw.so_tbmt ?? "").trim();
+  if (!noticeNumber) {
+    return String(raw.id);
+  }
+
+  if (/^[A-Za-z]/.test(noticeNumber)) {
+    return noticeNumber;
+  }
+
+  const revision = String(raw.rev ?? "").trim();
+  const revisionSuffix =
+    revision && !noticeNumber.includes("-")
+      ? `-${revision.padStart(2, "0")}`
+      : "";
+
+  return `IB${noticeNumber}${revisionSuffix}`;
+}
 
 export type LocalRefinementField =
   | "keyword"
@@ -393,7 +417,7 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
 
   return {
     id: raw.id,
-    externalId: String(raw.id),
+    externalId: formatBidNoticeNumber(raw),
     title: raw.ten_goi_thau,
     inviter,
     province,

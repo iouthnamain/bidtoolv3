@@ -2,22 +2,34 @@ import { Suspense } from "react";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { NotificationsPageClient } from "~/app/_components/dashboard/notifications-page-client";
+import { HydrateClient, api } from "~/trpc/server";
+
+function prefetchNotificationsPageData() {
+  void api.notification.list.prefetch({
+    limit: 50,
+    unreadOnly: false,
+  });
+}
 
 export default function NotificationsPage() {
+  prefetchNotificationsPageData();
+
   return (
     <DashboardShell
       title="Trung tâm thông báo"
       description="Quản lý cảnh báo in-app được tạo từ workflow và theo dõi các mục chưa đọc."
     >
-      <Suspense
-        fallback={
-          <div className="panel p-5 text-sm text-slate-600">
-            Đang tải thông báo...
-          </div>
-        }
-      >
-        <NotificationsPageClient />
-      </Suspense>
+      <HydrateClient>
+        <Suspense
+          fallback={
+            <div className="panel p-5 text-sm text-slate-600">
+              Đang tải thông báo...
+            </div>
+          }
+        >
+          <NotificationsPageClient />
+        </Suspense>
+      </HydrateClient>
     </DashboardShell>
   );
 }

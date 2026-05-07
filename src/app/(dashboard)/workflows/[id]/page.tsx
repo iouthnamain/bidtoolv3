@@ -2,11 +2,15 @@ import { notFound } from "next/navigation";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { WorkflowDetailPageClient } from "~/app/_components/dashboard/workflow-detail-page-client";
-import { api } from "~/trpc/server";
+import { HydrateClient, api } from "~/trpc/server";
 
 type WorkflowDetailPageProps = {
   params: Promise<{ id: string }>;
 };
+
+function prefetchWorkflowDetailPageData(workflowId: number) {
+  void api.workflow.getRuns.prefetch({ workflowId });
+}
 
 export default async function WorkflowDetailPage({
   params,
@@ -26,15 +30,19 @@ export default async function WorkflowDetailPage({
     notFound();
   }
 
+  prefetchWorkflowDetailPageData(workflowId);
+
   return (
     <DashboardShell
       title="Chi tiết workflow"
       description="Quản lý cấu hình, trạng thái kích hoạt và lịch sử chạy của workflow."
     >
-      <WorkflowDetailPageClient
-        workflowId={workflowId}
-        initialWorkflow={initialWorkflow}
-      />
+      <HydrateClient>
+        <WorkflowDetailPageClient
+          workflowId={workflowId}
+          initialWorkflow={initialWorkflow}
+        />
+      </HydrateClient>
     </DashboardShell>
   );
 }
