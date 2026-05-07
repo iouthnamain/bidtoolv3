@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -759,5 +759,15 @@ export const searchRouter = createTRPCRouter({
 
         throw error;
       }
+    }),
+
+  deleteSavedFilters: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const deleted = await ctx.db
+        .delete(savedFilters)
+        .where(inArray(savedFilters.id, input.ids))
+        .returning({ id: savedFilters.id });
+      return { count: deleted.length };
     }),
 });

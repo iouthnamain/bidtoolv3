@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import Papa from "papaparse";
 import { z } from "zod";
 
@@ -728,5 +728,17 @@ export const materialRouter = createTRPCRouter({
       }
 
       return { inserted, skipped, errors, warnings: workbook.warnings };
+    }),
+
+  deleteMany: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString();
+      const updated = await ctx.db
+        .update(materials)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(inArray(materials.id, input.ids), isNull(materials.deletedAt)))
+        .returning({ id: materials.id });
+      return { count: updated.length };
     }),
 });

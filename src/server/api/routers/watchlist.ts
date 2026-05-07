@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -94,5 +94,15 @@ export const watchlistRouter = createTRPCRouter({
       return baseQuery
         .where(eq(watchlistItems.type, input.type))
         .orderBy(desc(watchlistItems.createdAt));
+    }),
+
+  removeMany: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const deleted = await ctx.db
+        .delete(watchlistItems)
+        .where(inArray(watchlistItems.id, input.ids))
+        .returning({ id: watchlistItems.id });
+      return { count: deleted.length };
     }),
 });

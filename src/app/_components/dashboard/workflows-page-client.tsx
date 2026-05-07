@@ -7,6 +7,7 @@ import { Bell, Plus } from "lucide-react";
 
 import { WorkflowCard } from "~/app/_components/dashboard/workflow-card";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { api } from "~/trpc/react";
 
 type WorkflowFilter = "all" | "active" | "inactive" | "attention" | "never_ran";
@@ -25,9 +26,11 @@ export function WorkflowsPageClient() {
   const [workflows] = api.workflow.list.useSuspenseQuery();
   const [notifications] = api.notification.list.useSuspenseQuery({ limit: 5 });
   const utils = api.useUtils();
+  const toast = useToast();
 
   const runNow = api.workflow.runNow.useMutation({
     onSuccess: async () => {
+      toast.success("Đã chạy workflow.");
       await Promise.all([
         utils.workflow.list.invalidate(),
         utils.workflow.getRuns.invalidate(),
@@ -36,10 +39,16 @@ export function WorkflowsPageClient() {
         utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
+    onError: () => {
+      toast.error("Không thể chạy workflow.");
+    },
   });
 
   const setActive = api.workflow.setActive.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
+      toast.success(
+        variables.isActive ? "Đã kích hoạt workflow." : "Đã tạm dừng workflow.",
+      );
       await Promise.all([
         utils.workflow.list.invalidate(),
         utils.workflow.getById.invalidate(),
@@ -47,14 +56,21 @@ export function WorkflowsPageClient() {
         utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
+    onError: () => {
+      toast.error("Không thể thay đổi trạng thái workflow.");
+    },
   });
 
   const createWorkflow = api.workflow.create.useMutation({
     onSuccess: async (workflow) => {
+      toast.success("Đã tạo workflow mới.");
       await utils.workflow.list.invalidate();
       if (workflow) {
         router.push(`/workflows/${workflow.id}`);
       }
+    },
+    onError: () => {
+      toast.error("Không thể tạo workflow.");
     },
   });
 

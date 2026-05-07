@@ -13,8 +13,10 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
+import { useRowSelection } from "~/lib/use-row-selection";
 import { api } from "~/trpc/react";
 
 function formatMoney(value: number | null | undefined, currency = "VND") {
@@ -43,6 +45,8 @@ function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
 export function MaterialsListClient() {
   const [keyword, setKeyword] = useState("");
   const utils = api.useUtils();
+  const toast = useToast();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { data: materials = [], isLoading } =
     api.material.searchMaterials.useQuery({
       keyword,
@@ -50,9 +54,26 @@ export function MaterialsListClient() {
       offset: 0,
     });
 
+  const allIds = useMemo(() => materials.map((m) => m.id), [materials]);
+  const sel = useRowSelection(allIds);
+
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: async () => {
+      toast.success("Đã xóa vật tư.");
       await utils.material.searchMaterials.invalidate();
+    },
+  });
+
+  const deleteMany = api.material.deleteMany.useMutation({
+    onSuccess: async (result) => {
+      toast.success(`Đã xóa ${result.count} vật tư.`);
+      sel.clear();
+      setConfirmDelete(false);
+      await utils.material.searchMaterials.invalidate();
+    },
+    onError: () => {
+      toast.error("Không thể xóa vật tư.");
+      setConfirmDelete(false);
     },
   });
 
@@ -77,16 +98,37 @@ export function MaterialsListClient() {
     };
   }, [materials]);
 
-  const removeMaterial = (id: number, name: string) => {
-    const confirmed = window.confirm(`Xóa vật tư "${name}" khỏi danh mục?`);
-    if (!confirmed) {
-      return;
-    }
-    deleteMaterial.mutate({ id });
-  };
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Xóa ${sel.selectedCount} vật tư?`}
+        description="Vật tư đã xóa sẽ không hiển thị trong danh mục. Dữ liệu workspace không bị ảnh hưởng."
+        confirmLabel="Xóa"
+        variant="danger"
+        isLoading={deleteMany.isPending}
+        onConfirm={() => deleteMany.mutate({ ids: sel.selectedIds })}
+        onCancel={() => setConfirmDelete(false)}
+      />
+      <ConfirmDialog
+        open={singleDeleteTarget !== null}
+        title={`Xóa vật tư "${singleDeleteTarget?.name ?? ""}"?`}
+        variant="danger"
+        confirmLabel="Xóa"
+        isLoading={deleteMaterial.isPending}
+        onConfirm={() => {
+          if (singleDeleteTarget)
+            deleteMaterial.mutate({ id: singleDeleteTarget.id });
+          setSingleDeleteTarget(null);
+        }}
+        onCancel={() => setSingleDeleteTarget(null)}
+      />
+
       <section className="panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -183,10 +225,38 @@ export function MaterialsListClient() {
           </label>
         </div>
 
+        {sel.someSelected ? (
+          <div className="mt-3">
+            <BulkActionBar count={sel.selectedCount} onClear={sel.clear}>
+              <Button
+                variant="danger"
+                size="sm"
+                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Xóa đã chọn
+              </Button>
+            </BulkActionBar>
+          </div>
+        ) : null}
+
         <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
               <tr>
+                <th className="px-3 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={sel.allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = sel.indeterminate;
+                    }}
+                    onChange={sel.toggleAll}
+                    disabled={materials.length === 0}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
+                    aria-label="Chọn tất cả vật tư"
+                  />
+                </th>
                 <th className="px-3 py-2">Vật tư</th>
                 <th className="px-3 py-2">Phân loại</th>
                 <th className="px-3 py-2">Giá mặc định</th>
@@ -202,8 +272,21 @@ export function MaterialsListClient() {
                   item.metadataJson,
                   item.sourceUrl,
                 );
+                const isSelected = sel.selected.has(item.id);
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50/80">
+                  <tr
+                    key={item.id}
+                    className={`transition-colors ${isSelected ? "bg-sky-50/60" : "hover:bg-slate-50/80"}`}
+                  >
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => sel.toggle(item.id)}
+                        className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
+                        aria-label={`Chọn ${item.name}`}
+                      />
+                    </td>
                     <td className="max-w-[420px] px-3 py-2">
                       <Link
                         href={`/materials/${item.id}`}
@@ -269,7 +352,12 @@ export function MaterialsListClient() {
                           size="sm"
                           className="h-8 w-8 px-0 text-rose-700 hover:bg-rose-50"
                           disabled={deleteMaterial.isPending}
-                          onClick={() => removeMaterial(item.id, item.name)}
+                          onClick={() =>
+                            setSingleDeleteTarget({
+                              id: item.id,
+                              name: item.name,
+                            })
+                          }
                           aria-label={`Xóa ${item.name}`}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden />
@@ -281,7 +369,7 @@ export function MaterialsListClient() {
               })}
               {!isLoading && materials.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8">
+                  <td colSpan={8} className="px-3 py-8">
                     <EmptyState
                       title="Chưa có sản phẩm / vật tư."
                       description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."

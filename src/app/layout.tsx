@@ -3,6 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
 
+import { ToastProvider } from "~/app/_components/ui/toast";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
@@ -32,7 +33,9 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${beVietnamPro.variable}`}>
       <body className="app-bg text-slate-900 antialiased">
-        <TRPCReactProvider>{children}</TRPCReactProvider>
+        <TRPCReactProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </TRPCReactProvider>
       </body>
     </html>
   );

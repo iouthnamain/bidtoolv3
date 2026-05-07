@@ -90,9 +90,13 @@ const navSections: NavSection[] = [
         subItems: [
           { href: "/help#bat-dau", label: "Bắt đầu" },
           { href: "/help#windows-launch", label: "Windows" },
+          { href: "/help#cap-nhat-hang-ngay", label: "Vận hành" },
           { href: "/help#tim-kiem", label: "Tìm kiếm" },
           { href: "/help#smart-view", label: "Smart Views" },
+          { href: "/help#quy-trinh", label: "Quy trình" },
+          { href: "/help#thong-bao", label: "Thông báo" },
           { href: "/help#excel-workspace", label: "Excel Workspace" },
+          { href: "/help#vat-tu", label: "Vật tư" },
           { href: "/help#khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
       },

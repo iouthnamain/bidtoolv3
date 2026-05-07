@@ -20,6 +20,8 @@
   --critical: #be123c;
   --warning: #b45309;
   --good: #047857;
+  --ring: #0284c7;
+  --ring-offset: 2px;
 }
 
 body {
@@ -56,4 +58,36 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* Shared focus ring */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 var(--ring-offset) var(--surface-1), 0 0 0 calc(var(--ring-offset) + 2px) var(--ring);
+}
+
+/* Smooth dialog backdrop */
+dialog::backdrop {
+  transition: opacity 150ms ease;
+}
+dialog[open]::backdrop {
+  opacity: 1;
+}
+
+/* Toast entry animation */
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-enter {
+  animation: toast-enter 200ms ease-out;
 }

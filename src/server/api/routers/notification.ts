@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { notifications } from "~/server/db/schema";
@@ -45,4 +45,25 @@ export const notificationRouter = createTRPCRouter({
       .where(eq(notifications.isRead, false));
     return { success: true };
   }),
+
+  markSelectedAsRead: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const updated = await ctx.db
+        .update(notifications)
+        .set({ isRead: true })
+        .where(inArray(notifications.id, input.ids))
+        .returning({ id: notifications.id });
+      return { count: updated.length };
+    }),
+
+  deleteMany: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const deleted = await ctx.db
+        .delete(notifications)
+        .where(inArray(notifications.id, input.ids))
+        .returning({ id: notifications.id });
+      return { count: deleted.length };
+    }),
 });

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCheck, Filter, MailOpen } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckCheck, Filter, MailOpen, Trash2 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { formatDateTime } from "~/lib/datetime";
+import { useRowSelection } from "~/lib/use-row-selection";
 import { api } from "~/trpc/react";
 
 function severityTone(
@@ -26,27 +28,64 @@ export function NotificationsPageClient() {
     unreadOnly,
   });
   const utils = api.useUtils();
+  const toast = useToast();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const allIds = useMemo(() => notifications.map((n) => n.id), [notifications]);
+  const sel = useRowSelection(allIds);
+
+  const invalidateAll = async () => {
+    await Promise.all([
+      utils.notification.list.invalidate(),
+      utils.insight.getDashboardSummary.invalidate(),
+    ]);
+  };
 
   const markAsRead = api.notification.markAsRead.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.notification.list.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
-      ]);
-    },
+    onSuccess: invalidateAll,
   });
 
   const markAllAsRead = api.notification.markAllAsRead.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.notification.list.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
-      ]);
+      toast.success("Đã đánh dấu tất cả đã đọc.");
+      await invalidateAll();
+    },
+  });
+
+  const markSelectedAsRead = api.notification.markSelectedAsRead.useMutation({
+    onSuccess: async (result) => {
+      toast.success(`Đã đánh dấu ${result.count} mục đã đọc.`);
+      sel.clear();
+      await invalidateAll();
+    },
+  });
+
+  const deleteMany = api.notification.deleteMany.useMutation({
+    onSuccess: async (result) => {
+      toast.success(`Đã xóa ${result.count} thông báo.`);
+      sel.clear();
+      setConfirmDelete(false);
+      await invalidateAll();
+    },
+    onError: () => {
+      toast.error("Không thể xóa thông báo.");
+      setConfirmDelete(false);
     },
   });
 
   return (
     <section className="panel p-4">
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Xóa ${sel.selectedCount} thông báo?`}
+        description="Thông báo đã xóa không thể khôi phục."
+        confirmLabel="Xóa"
+        variant="danger"
+        isLoading={deleteMany.isPending}
+        onConfirm={() => deleteMany.mutate({ ids: sel.selectedIds })}
+        onCancel={() => setConfirmDelete(false)}
+      />
+
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
           <h2 className="text-sm font-bold">Thông báo trong ứng dụng</h2>
@@ -78,6 +117,30 @@ export function NotificationsPageClient() {
         </div>
       </div>
 
+      {sel.someSelected ? (
+        <div className="mt-3">
+          <BulkActionBar count={sel.selectedCount} onClear={sel.clear}>
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={markSelectedAsRead.isPending}
+              leftIcon={<MailOpen className="h-3.5 w-3.5" />}
+              onClick={() => markSelectedAsRead.mutate({ ids: sel.selectedIds })}
+            >
+              Đánh dấu đã đọc
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+              onClick={() => setConfirmDelete(true)}
+            >
+              Xóa
+            </Button>
+          </BulkActionBar>
+        </div>
+      ) : null}
+
       {notifications.length === 0 ? (
         <EmptyState
           className="mt-4"
@@ -89,13 +152,22 @@ export function NotificationsPageClient() {
           {notifications.map((item) => (
             <li
               key={item.id}
-              className={`rounded-xl border px-4 py-3 ${
-                item.isRead
-                  ? "border-slate-200 bg-slate-50"
-                  : "border-sky-200 bg-sky-50/70"
+              className={`rounded-xl border px-4 py-3 transition-colors ${
+                sel.selected.has(item.id)
+                  ? "border-sky-300 bg-sky-50 ring-1 ring-sky-200"
+                  : item.isRead
+                    ? "border-slate-200 bg-slate-50"
+                    : "border-sky-200 bg-sky-50/70"
               }`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={sel.selected.has(item.id)}
+                  onChange={() => sel.toggle(item.id)}
+                  className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-sky-600"
+                  aria-label={`Chọn "${item.title}"`}
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-slate-900">
@@ -127,7 +199,7 @@ export function NotificationsPageClient() {
                     leftIcon={<MailOpen className="h-3.5 w-3.5" />}
                     onClick={() => markAsRead.mutate({ id: item.id })}
                   >
-                    Đánh dấu đã đọc
+                    Đã đọc
                   </Button>
                 ) : null}
               </div>

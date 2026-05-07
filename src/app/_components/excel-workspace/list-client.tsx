@@ -13,7 +13,9 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
+import { useRowSelection } from "~/lib/use-row-selection";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type WorkspaceSummary =
@@ -249,10 +251,16 @@ export function ExcelWorkspaceListClient() {
   const [sortBy, setSortBy] = useState<WorkspaceSort>("updated_desc");
   const deferredKeyword = useDeferredValue(keyword);
   const utils = api.useUtils();
+  const toast = useToast();
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceSummary | null>(
+    null,
+  );
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const createWorkspace = api.excelWorkspace.createWorkspace.useMutation({
     onSuccess: async (workspace) => {
       setName(buildSuggestedWorkspaceName(workspaces.length + 2));
+      toast.success("Đã tạo workspace mới.");
       await utils.excelWorkspace.listWorkspaces.invalidate();
       router.push(`/excel-workspace/${workspace.id}?step=setup`);
     },
@@ -260,7 +268,26 @@ export function ExcelWorkspaceListClient() {
 
   const deleteWorkspace = api.excelWorkspace.deleteWorkspace.useMutation({
     onSuccess: async () => {
+      setDeleteTarget(null);
+      toast.success("Đã xóa workspace.");
       await utils.excelWorkspace.listWorkspaces.invalidate();
+    },
+    onError: () => {
+      setDeleteTarget(null);
+      toast.error("Không thể xóa workspace.");
+    },
+  });
+
+  const deleteMany = api.excelWorkspace.deleteMany.useMutation({
+    onSuccess: async (result) => {
+      toast.success(`Đã xóa ${result.count} workspace.`);
+      sel.clear();
+      setConfirmBulkDelete(false);
+      await utils.excelWorkspace.listWorkspaces.invalidate();
+    },
+    onError: () => {
+      toast.error("Không thể xóa workspace.");
+      setConfirmBulkDelete(false);
     },
   });
 
@@ -374,6 +401,12 @@ export function ExcelWorkspaceListClient() {
     });
   }, [activeViewFilter, deferredKeyword, sortBy, statusFilter, workspaces]);
 
+  const filteredIds = useMemo(
+    () => filteredWorkspaces.map((w) => w.id),
+    [filteredWorkspaces],
+  );
+  const sel = useRowSelection(filteredIds);
+
   const createDisabled = !name.trim() || createWorkspace.isPending;
 
   const handleCreateWorkspace = () => {
@@ -386,20 +419,33 @@ export function ExcelWorkspaceListClient() {
   };
 
   const handleDeleteWorkspace = (workspace: WorkspaceSummary) => {
-    const readableName = displayWorkspaceName(workspace.name);
-    const shouldDelete = window.confirm(
-      `Xóa "${readableName}" khỏi danh sách? Dữ liệu đã nhập và các lựa chọn khớp sẽ bị mất.`,
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
-    deleteWorkspace.mutate({ id: workspace.id });
+    setDeleteTarget(workspace);
   };
 
   return (
     <div className="space-y-3">
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Xóa "${deleteTarget ? displayWorkspaceName(deleteTarget.name) : ""}"?`}
+        description="Dữ liệu đã nhập và các lựa chọn khớp sẽ bị mất."
+        confirmLabel="Xóa"
+        variant="danger"
+        isLoading={deleteWorkspace.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteWorkspace.mutate({ id: deleteTarget.id });
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Xóa ${sel.selectedCount} workspace?`}
+        description="Tất cả dữ liệu đã nhập và lựa chọn khớp sẽ bị mất."
+        confirmLabel="Xóa"
+        variant="danger"
+        isLoading={deleteMany.isPending}
+        onConfirm={() => deleteMany.mutate({ ids: sel.selectedIds })}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
       <section className="panel p-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
@@ -546,6 +592,19 @@ export function ExcelWorkspaceListClient() {
         </div>
       </section>
 
+      {sel.someSelected ? (
+        <BulkActionBar count={sel.selectedCount} onClear={sel.clear}>
+          <Button
+            variant="danger"
+            size="sm"
+            leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+            onClick={() => setConfirmBulkDelete(true)}
+          >
+            Xóa đã chọn
+          </Button>
+        </BulkActionBar>
+      ) : null}
+
       {filteredWorkspaces.length === 0 ? (
         <EmptyState
           title="Không có workspace phù hợp bộ lọc"
@@ -564,9 +623,16 @@ export function ExcelWorkspaceListClient() {
             return (
               <li
                 key={workspace.id}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-sky-300 hover:shadow"
+                className={`rounded-xl border bg-white px-4 py-3 shadow-sm transition ${sel.selected.has(workspace.id) ? "border-sky-300 bg-sky-50/40 ring-1 ring-sky-200" : "border-slate-200 hover:border-sky-300 hover:shadow"}`}
               >
                 <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                  <input
+                    type="checkbox"
+                    checked={sel.selected.has(workspace.id)}
+                    onChange={() => sel.toggle(workspace.id)}
+                    className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-sky-600"
+                    aria-label={`Chọn ${displayWorkspaceName(workspace.name)}`}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={statusTone[workspace.status]}>

@@ -2139,4 +2139,14 @@ export const excelWorkspaceRouter = createTRPCRouter({
 
       return updated;
     }),
+
+  deleteMany: publicProcedure
+    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const deleted = await ctx.db
+        .delete(excelWorkspaces)
+        .where(inArray(excelWorkspaces.id, input.ids))
+        .returning({ id: excelWorkspaces.id });
+      return { count: deleted.length };
+    }),
 });

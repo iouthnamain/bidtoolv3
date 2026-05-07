@@ -17,7 +17,8 @@ import {
   summarizeSearchCriteria,
 } from "~/lib/search-criteria";
 import { SEARCH_MODE_LABELS, WATCHLIST_TYPE_LABELS } from "~/lib/search-modes";
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type SavedFilterItem = RouterOutputs["search"]["listSavedFilters"][number];
@@ -80,7 +81,11 @@ function LoadingPanel({ message }: { message: string }) {
 function SavedFiltersSection() {
   const router = useRouter();
   const utils = api.useUtils();
+  const toast = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SavedFilterItem | null>(
+    null,
+  );
   const savedFiltersQuery = api.search.listSavedFilters.useQuery(undefined, {
     retry: false,
   });
@@ -88,16 +93,20 @@ function SavedFiltersSection() {
   const deleteSavedFilter = api.search.deleteSavedFilter.useMutation({
     onSuccess: async () => {
       setActionError(null);
+      setDeleteTarget(null);
+      toast.success("Đã xóa Smart View.");
       await utils.search.listSavedFilters.invalidate();
     },
     onError: (error) => {
       setActionError(error.message || "Không thể xóa Smart View.");
+      setDeleteTarget(null);
     },
   });
 
   const createWorkflow = api.workflow.createFromSavedFilter.useMutation({
     onSuccess: async (workflow) => {
       setActionError(null);
+      toast.success("Đã tạo workflow từ Smart View.");
       await Promise.all([
         utils.workflow.list.invalidate(),
         utils.insight.getWorkflowHealth.invalidate(),
@@ -117,19 +126,23 @@ function SavedFiltersSection() {
   const savedFilters = savedFiltersQuery.data ?? [];
 
   const handleDeleteSavedFilter = (filter: SavedFilterItem) => {
-    const shouldDelete = window.confirm(
-      `Xóa Smart View "${filter.name}"? Workflow đã tạo từ Smart View này vẫn được giữ nguyên và không bị thay đổi.`,
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
-    deleteSavedFilter.mutate({ id: filter.id });
+    setDeleteTarget(filter);
   };
 
   return (
     <section id="smart-views" className="panel scroll-mt-6 p-5">
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Xóa Smart View "${deleteTarget?.name ?? ""}"?`}
+        description="Workflow đã tạo từ Smart View này vẫn được giữ nguyên và không bị thay đổi."
+        confirmLabel="Xóa"
+        variant="danger"
+        isLoading={deleteSavedFilter.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteSavedFilter.mutate({ id: deleteTarget.id });
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
         <div>
           <h2 className="text-sm font-bold">Smart Views</h2>
