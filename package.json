@@ -2,6 +2,7 @@
   "name": "bidtoolv3",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.cjs",
   "description": "Single-user local dashboard for tender discovery, Excel material review, and product candidate matching against BidWinner and SearXNG.",
   "type": "module",
   "engines": {
@@ -26,7 +27,6 @@
     "check": "eslint . && tsc --noEmit",
     "dev": "next dev --turbo",
     "dev:install": "bun run ./scripts/local-dev.ts install",
-    "dev:one-time": "bun run ./scripts/local-dev.ts one-time",
     "dev:kill": "bun run ./scripts/kill-local-dev.ts",
     "dev:run": "bun run ./scripts/local-dev.ts run",
     "dev:update": "bun run ./scripts/local-dev.ts update",
@@ -34,6 +34,11 @@
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio",
+    "desktop:build": "bun run build && bun run desktop:prepare && electron-builder",
+    "desktop:dev": "bun run ./scripts/desktop-dev.ts",
+    "desktop:pack": "bun run build && bun run desktop:prepare && electron-builder --dir",
+    "desktop:prepare": "bun run ./scripts/prepare-electron-standalone.ts",
+    "desktop:start": "electron .",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
     "lint": "eslint .",
@@ -57,36 +62,61 @@
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.14.0",
-    "next": "^15.2.3",
+    "next": "15.5.16",
     "papaparse": "^5.5.3",
     "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1",
     "superjson": "^2.2.1",
-    "xlsx": "^0.18.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@playwright/test": "^1.59.1",
-    "@tailwindcss/postcss": "^4.0.15",
+    "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^20.14.10",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitest/ui": "^4.1.5",
+    "@vitest/ui": "^4.1.6",
     "dotenv": "^17.4.1",
     "drizzle-kit": "^0.31.10",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.23.0",
-    "eslint-config-next": "^15.2.3",
-    "postcss": "^8.5.3",
+    "eslint-config-next": "15.5.16",
+    "postcss": "^8.5.14",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "tailwindcss": "^4.0.15",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.27.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.6"
+  },
+  "build": {
+    "appId": "local.bidtoolv3",
+    "productName": "BidTool v3",
+    "asar": false,
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/standalone/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    }
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"

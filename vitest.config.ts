@@ -12,6 +12,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    env: {
+      SKIP_ENV_VALIDATION: "1",
+    },
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "tests/**/*.test.ts"],
     globals: false,
   },

@@ -489,7 +489,6 @@ function materialCandidateValues(input: {
     imageUrl: null,
     extractedSpecJson: spec,
     confidenceScore: input.confidenceScore,
-    legacySearchScore: null,
     matchReasons: input.matchReasons,
     isSelected: true,
     fetchedAt: input.now,
@@ -695,7 +694,10 @@ export const excelWorkspaceRouter = createTRPCRouter({
 
       let workbook: ParsedWorkbook;
       try {
-        workbook = parseWorkbookBase64(input.fileName, input.workbookBase64);
+        workbook = await parseWorkbookBase64(
+          input.fileName,
+          input.workbookBase64,
+        );
       } catch (error) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -1429,7 +1431,6 @@ export const excelWorkspaceRouter = createTRPCRouter({
               imageUrl: candidate.imageUrl,
               extractedSpecJson: candidate.extractedSpec,
               confidenceScore: candidate.confidenceScore,
-              legacySearchScore: null,
               matchReasons: candidate.matchReasons,
               fetchedAt: now,
               createdAt: now,
@@ -1932,7 +1933,6 @@ export const excelWorkspaceRouter = createTRPCRouter({
             imageUrl: spec.imageUrl ?? null,
             extractedSpecJson: spec,
             confidenceScore: 100,
-            legacySearchScore: null,
             matchReasons: ["Người dùng nhập thủ công"],
             isSelected: true,
             fetchedAt: now,
@@ -2052,7 +2052,7 @@ export const excelWorkspaceRouter = createTRPCRouter({
         selectedCandidates.map((candidate) => [candidate.id, candidate]),
       );
 
-      const workbookBase64 = buildEnrichedWorkbookBase64(
+      const workbookBase64 = await buildEnrichedWorkbookBase64(
         items.map((item) => ({
           originalDataJson: item.originalDataJson,
           enrichedSnapshotJson: item.enrichedSnapshotJson,
@@ -2064,7 +2064,7 @@ export const excelWorkspaceRouter = createTRPCRouter({
       );
 
       const stem =
-        workspace.sourceFileName?.replace(/\.(xlsx|xls)$/i, "") ??
+        workspace.sourceFileName?.replace(/\.xlsx$/i, "") ??
         workspace.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
       const fileName = `${stem || "workspace"}-enriched.xlsx`;
       const now = new Date().toISOString();
@@ -2141,7 +2141,9 @@ export const excelWorkspaceRouter = createTRPCRouter({
     }),
 
   deleteMany: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(excelWorkspaces)

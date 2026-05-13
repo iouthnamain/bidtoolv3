@@ -659,7 +659,7 @@ export const materialRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const workbook = parseWorkbookBase64(
+      const workbook = await parseWorkbookBase64(
         input.fileName,
         input.workbookBase64,
       );
@@ -731,13 +731,17 @@ export const materialRouter = createTRPCRouter({
     }),
 
   deleteMany: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
       const updated = await ctx.db
         .update(materials)
         .set({ deletedAt: now, updatedAt: now })
-        .where(and(inArray(materials.id, input.ids), isNull(materials.deletedAt)))
+        .where(
+          and(inArray(materials.id, input.ids), isNull(materials.deletedAt)),
+        )
         .returning({ id: materials.id });
       return { count: updated.length };
     }),

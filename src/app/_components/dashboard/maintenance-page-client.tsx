@@ -1,17 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DownloadCloud, GitBranch, GitCommit, RefreshCw } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
 import { type RouterOutputs, api } from "~/trpc/react";
 
-type RunResult = RouterOutputs["maintenance"]["runSetup"];
+type RunResult = RouterOutputs["maintenance"]["runFullUpdate"];
 
 type TaskKey =
   | "docker"
   | "dockerStop"
+  | "checkUpdate"
+  | "pull"
   | "setup"
   | "update"
+  | "fullUpdate"
   | "migrate"
   | "killAll";
 
@@ -44,10 +48,31 @@ const tasks: TaskMeta[] = [
     variant: "secondary",
   },
   {
+    key: "checkUpdate",
+    label: "Kiểm tra bản mới",
+    description:
+      "Chạy `git fetch --prune` để cập nhật upstream tracking và báo nếu có phiên bản mới.",
+    variant: "secondary",
+  },
+  {
+    key: "pull",
+    label: "Pull code",
+    description:
+      "Chạy `git pull --ff-only`. Nếu local có thay đổi xung đột, Git sẽ dừng thay vì tự merge.",
+    variant: "secondary",
+  },
+  {
     key: "update",
     label: "Chạy update",
     description:
       "Chạy `bun run dev:update`: refresh deps, đảm bảo Postgres + SearXNG, áp migrations. `git pull` chạy riêng trước đó.",
+    variant: "secondary",
+  },
+  {
+    key: "fullUpdate",
+    label: "Cập nhật đầy đủ",
+    description:
+      "Chạy `git pull --ff-only`, sau đó chạy `bun run dev:update` để đồng bộ code, deps và database.",
     variant: "primary",
   },
   {
@@ -98,6 +123,9 @@ function getTaskLabel(task: string | null | undefined) {
   if (task === "db:migrate") return "Áp migrations";
   if (task === "docker:up") return "Khởi động Docker";
   if (task === "docker:stop") return "Dừng Docker";
+  if (task === "git:fetch") return "Kiểm tra bản mới";
+  if (task === "git:pull") return "Pull code";
+  if (task === "full:update") return "Cập nhật đầy đủ";
   if (task === "kill:all") return "Dừng toàn bộ";
   return tasks.find((item) => item.key === task)?.label ?? task;
 }
@@ -108,9 +136,44 @@ function isTaskRunning(task: TaskKey, runningTask: string | null | undefined) {
     runningTask === task ||
     (task === "docker" && runningTask === "docker:up") ||
     (task === "dockerStop" && runningTask === "docker:stop") ||
+    (task === "checkUpdate" && runningTask === "git:fetch") ||
+    (task === "pull" && runningTask === "git:pull") ||
+    (task === "fullUpdate" && runningTask === "full:update") ||
     (task === "migrate" && runningTask === "db:migrate") ||
     (task === "killAll" && runningTask === "kill:all")
   );
+}
+
+function formatCommitDate(value: string | null | undefined) {
+  if (!value) return "Không rõ";
+  return formatTime(value);
+}
+
+function getVersionBadgeTone(
+  versionInfo:
+    | RouterOutputs["maintenance"]["status"]["versionInfo"]
+    | undefined,
+) {
+  if (!versionInfo?.git.available) return "warning";
+  if (versionInfo.updateAvailable) return "warning";
+  if (versionInfo.git.dirty) return "info";
+  return "success";
+}
+
+function getVersionBadgeLabel(
+  versionInfo:
+    | RouterOutputs["maintenance"]["status"]["versionInfo"]
+    | undefined,
+) {
+  if (!versionInfo?.git.available) return "Git chưa khả dụng";
+  if (versionInfo.versionUpdateAvailable && versionInfo.upstreamVersion) {
+    return `Có v${versionInfo.upstreamVersion}`;
+  }
+  if (versionInfo.git.behind > 0) {
+    return `Sau ${versionInfo.git.behind} commit`;
+  }
+  if (versionInfo.git.dirty) return "Có thay đổi local";
+  return "Đang mới";
 }
 
 export function MaintenancePageClient() {
@@ -130,13 +193,22 @@ export function MaintenancePageClient() {
     setLastResult({ ...data, task });
     setActiveTask(null);
     setErrorMessage(null);
-    void utils.maintenance.status.invalidate();
+    void Promise.all([
+      utils.maintenance.status.invalidate(),
+      utils.maintenance.version.invalidate(),
+      utils.notification.unreadCount.invalidate(),
+      utils.notification.list.invalidate(),
+      utils.insight.getDashboardSummary.invalidate(),
+    ]);
   };
 
   const handleError = () => (error: { message: string }) => {
     setErrorMessage(error.message);
     setActiveTask(null);
-    void utils.maintenance.status.invalidate();
+    void Promise.all([
+      utils.maintenance.status.invalidate(),
+      utils.maintenance.version.invalidate(),
+    ]);
   };
 
   const runDockerStack = api.maintenance.runDockerStack.useMutation({
@@ -151,8 +223,20 @@ export function MaintenancePageClient() {
     onSuccess: handleSuccess("setup"),
     onError: handleError(),
   });
+  const checkForUpdates = api.maintenance.checkForUpdates.useMutation({
+    onSuccess: handleSuccess("checkUpdate"),
+    onError: handleError(),
+  });
+  const runCodePull = api.maintenance.runCodePull.useMutation({
+    onSuccess: handleSuccess("pull"),
+    onError: handleError(),
+  });
   const runUpdate = api.maintenance.runUpdate.useMutation({
     onSuccess: handleSuccess("update"),
+    onError: handleError(),
+  });
+  const runFullUpdate = api.maintenance.runFullUpdate.useMutation({
+    onSuccess: handleSuccess("fullUpdate"),
     onError: handleError(),
   });
   const runMigrate = api.maintenance.runMigrate.useMutation({
@@ -168,7 +252,10 @@ export function MaintenancePageClient() {
     runDockerStack.isPending ||
     runDockerStop.isPending ||
     runSetup.isPending ||
+    checkForUpdates.isPending ||
+    runCodePull.isPending ||
     runUpdate.isPending ||
+    runFullUpdate.isPending ||
     runMigrate.isPending ||
     runKillAll.isPending;
   const serverRunningTask = statusQuery.data?.runningTask ?? null;
@@ -176,6 +263,8 @@ export function MaintenancePageClient() {
   const isRunning = isPending || !!serverRunningTask;
   const runningLabel = getTaskLabel(activeTask ?? serverRunningTask);
   const enabled = statusQuery.data?.enabled ?? false;
+  const versionInfo =
+    lastResult?.versionInfo ?? statusQuery.data?.versionInfo ?? undefined;
 
   useEffect(() => {
     if (!isRunning) return;
@@ -192,7 +281,10 @@ export function MaintenancePageClient() {
     if (task === "docker") runDockerStack.mutate();
     if (task === "dockerStop") runDockerStop.mutate();
     if (task === "setup") runSetup.mutate();
+    if (task === "checkUpdate") checkForUpdates.mutate();
+    if (task === "pull") runCodePull.mutate();
     if (task === "update") runUpdate.mutate();
+    if (task === "fullUpdate") runFullUpdate.mutate();
     if (task === "migrate") runMigrate.mutate();
     if (task === "killAll") runKillAll.mutate();
   };
@@ -265,6 +357,105 @@ export function MaintenancePageClient() {
           <Badge tone={isRunning ? "info" : "success"}>
             {isRunning ? "Đang chạy" : "Sẵn sàng"}
           </Badge>
+        </div>
+      </section>
+
+      <section
+        className={`panel p-4 ${
+          versionInfo?.updateAvailable
+            ? "border-amber-200 bg-amber-50/80"
+            : "bg-white/90"
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <p className="section-title">Phiên bản</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">
+              BidTool v{versionInfo?.version ?? "unknown"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Trạng thái này đọc từ <code>package.json</code>, commit hiện tại
+              và upstream tracking của Git. Khi có thay đổi, hệ thống tạo thông
+              báo in-app sau khi kiểm tra hoặc chạy update.
+            </p>
+          </div>
+          <Badge tone={getVersionBadgeTone(versionInfo)}>
+            {getVersionBadgeLabel(versionInfo)}
+          </Badge>
+        </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+            <div className="flex items-center gap-2 text-slate-500">
+              <GitBranch className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Branch</p>
+            </div>
+            <p className="mt-2 text-sm font-bold text-slate-950">
+              {versionInfo?.git.branch ?? "Không rõ"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Upstream: {versionInfo?.git.upstream ?? "chưa cấu hình"}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+            <div className="flex items-center gap-2 text-slate-500">
+              <GitCommit className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Commit</p>
+            </div>
+            <p className="mt-2 text-sm font-bold text-slate-950">
+              {versionInfo?.git.commitShort ?? "Không rõ"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {formatCommitDate(versionInfo?.git.commitDate)}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+            <div className="flex items-center gap-2 text-slate-500">
+              <RefreshCw className="h-4 w-4" />
+              <p className="text-xs font-semibold uppercase">Upstream</p>
+            </div>
+            <p className="mt-2 text-sm font-bold text-slate-950">
+              {versionInfo?.upstreamVersion
+                ? `v${versionInfo.upstreamVersion}`
+                : "Chưa có phiên bản upstream"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Ahead {versionInfo?.git.ahead ?? 0} · Behind{" "}
+              {versionInfo?.git.behind ?? 0}
+              {versionInfo?.git.dirty ? " · local dirty" : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+            isLoading={
+              activeTask === "checkUpdate" ||
+              isTaskRunning("checkUpdate", serverRunningTask)
+            }
+            disabled={isRunning && activeTask !== "checkUpdate"}
+            onClick={() => handleRun("checkUpdate")}
+          >
+            Kiểm tra bản mới
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<DownloadCloud className="h-3.5 w-3.5" />}
+            isLoading={
+              activeTask === "fullUpdate" ||
+              isTaskRunning("fullUpdate", serverRunningTask)
+            }
+            disabled={isRunning && activeTask !== "fullUpdate"}
+            onClick={() => handleRun("fullUpdate")}
+          >
+            Cập nhật đầy đủ
+          </Button>
         </div>
       </section>
 
@@ -357,7 +548,7 @@ export function MaintenancePageClient() {
           )}
         </div>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {tasks.map((task) => {
             const taskIsActive =
               activeTask === task.key ||

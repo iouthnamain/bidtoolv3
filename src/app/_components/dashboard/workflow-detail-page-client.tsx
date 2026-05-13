@@ -153,6 +153,7 @@ export function WorkflowDetailPageClient({
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.getRuns.invalidate({ workflowId }),
         utils.workflow.list.invalidate(),
+        utils.notification.unreadCount.invalidate(),
         utils.notification.list.invalidate(),
         utils.insight.getWorkflowHealth.invalidate(),
         utils.insight.getDashboardSummary.invalidate(),
@@ -185,7 +186,9 @@ export function WorkflowDetailPageClient({
               Quay lại danh sách workflow
             </Link>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-950">{workflow.name}</h2>
+              <h2 className="text-xl font-bold text-slate-950">
+                {workflow.name}
+              </h2>
               <Badge tone={workflow.isActive ? "success" : "neutral"}>
                 {workflow.isActive ? "Hoạt động" : "Tạm dừng"}
               </Badge>
@@ -305,7 +308,9 @@ export function WorkflowDetailPageClient({
             <select
               className="rounded-lg border border-slate-300 bg-white px-3 py-2"
               value={searchMode}
-              onChange={(event) => setSearchMode(event.target.value as SearchMode)}
+              onChange={(event) =>
+                setSearchMode(event.target.value as SearchMode)
+              }
             >
               {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((mode) => (
                 <option key={mode} value={mode}>

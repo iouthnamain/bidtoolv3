@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Bell, RefreshCw, X } from "lucide-react";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
+import { useToast } from "~/app/_components/ui/toast";
 import { STORAGE_KEYS } from "~/lib/storage-keys";
+import { api } from "~/trpc/react";
 
 const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
+const APP_VERSION_SEEN_KEY = STORAGE_KEYS.appVersionSeen;
+const APP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.appUpdateDismissed;
 
 type IconName =
   | "dashboard"
@@ -347,9 +352,15 @@ function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
+  const shouldReadUnreadCount = pathname !== "/maintenance";
+  const unreadCountQuery = api.notification.unreadCount.useQuery(undefined, {
+    enabled: shouldReadUnreadCount,
+    refetchInterval: 30000,
+  });
   const [expandedHrefs, setExpandedHrefs] = useState<Record<string, boolean>>(
     {},
   );
+  const unreadCount = shouldReadUnreadCount ? (unreadCountQuery.data ?? 0) : 0;
 
   const isItemActive = (item: NavItem) =>
     pathname === item.href ||
@@ -377,13 +388,17 @@ function SidebarNav({
             />
           )}
           {section.items.map((item) => {
+            const itemWithBadge =
+              item.href === "/notifications"
+                ? { ...item, badgeCount: unreadCount }
+                : item;
             const active = isItemActive(item);
             // Auto-expand when item is active; otherwise honor manual toggle.
             const expanded = expandedHrefs[item.href] ?? active;
             return (
               <NavLink
                 key={item.href}
-                item={item}
+                item={itemWithBadge}
                 collapsed={collapsed}
                 onNavigate={onNavigate}
                 isActive={active}
@@ -433,6 +448,123 @@ function CollapseToggle({
 
 function BrandHeader({ collapsed }: { collapsed: boolean }) {
   return <Logo collapsed={collapsed} />;
+}
+
+function VersionUpdateNotice() {
+  const { error, info, success, warning } = useToast();
+  const utils = api.useUtils();
+  const versionQuery = api.maintenance.version.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
+  const checkForUpdates = api.maintenance.checkForUpdates.useMutation({
+    onSuccess: async (result) => {
+      if (result.versionInfo.updateAvailable) {
+        warning("Có bản cập nhật BidTool mới.");
+      } else {
+        success("BidTool đang ở bản mới nhất trong upstream đã fetch.");
+      }
+
+      await Promise.all([
+        utils.maintenance.version.invalidate(),
+        utils.maintenance.status.invalidate(),
+        utils.notification.unreadCount.invalidate(),
+        utils.notification.list.invalidate(),
+      ]);
+    },
+    onError: (mutationError) => {
+      error(mutationError.message || "Không thể kiểm tra bản cập nhật.");
+    },
+  });
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const versionInfo = versionQuery.data;
+  const noticeKey = versionInfo
+    ? [
+        versionInfo.version,
+        versionInfo.upstreamVersion ?? "no-upstream-version",
+        versionInfo.git.commitShort ?? "no-commit",
+        versionInfo.git.behind,
+      ].join(":")
+    : null;
+
+  useEffect(() => {
+    setDismissedKey(window.localStorage.getItem(APP_UPDATE_DISMISSED_KEY));
+  }, []);
+
+  useEffect(() => {
+    if (!versionInfo?.version) {
+      return;
+    }
+
+    const lastSeen = window.localStorage.getItem(APP_VERSION_SEEN_KEY);
+    if (lastSeen && lastSeen !== versionInfo.version) {
+      info(`BidTool đã chuyển từ v${lastSeen} sang v${versionInfo.version}.`);
+    }
+    window.localStorage.setItem(APP_VERSION_SEEN_KEY, versionInfo.version);
+  }, [info, versionInfo?.version]);
+
+  if (!versionInfo?.updateAvailable || dismissedKey === noticeKey) {
+    return null;
+  }
+
+  const dismiss = () => {
+    if (!noticeKey) {
+      return;
+    }
+
+    window.localStorage.setItem(APP_UPDATE_DISMISSED_KEY, noticeKey);
+    setDismissedKey(noticeKey);
+  };
+
+  return (
+    <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-950">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+            aria-hidden
+          >
+            <Bell className="h-4 w-4" />
+          </span>
+          <p className="min-w-0 text-xs font-semibold sm:text-sm">
+            {versionInfo.versionUpdateAvailable && versionInfo.upstreamVersion
+              ? `Có phiên bản v${versionInfo.upstreamVersion} mới hơn v${versionInfo.version}.`
+              : `Có ${versionInfo.git.behind} commit mới trên upstream.`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {isDevEnvironment ? (
+            <button
+              type="button"
+              onClick={() => checkForUpdates.mutate()}
+              disabled={checkForUpdates.isPending}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-900 transition-colors hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${
+                  checkForUpdates.isPending ? "animate-spin" : ""
+                }`}
+              />
+              Kiểm tra
+            </button>
+          ) : null}
+          <Link
+            href="/maintenance"
+            className="inline-flex h-8 items-center rounded-md bg-amber-900 px-2.5 text-xs font-bold text-white transition-colors hover:bg-amber-950 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+          >
+            Cập nhật
+          </Link>
+          <button
+            type="button"
+            onClick={dismiss}
+            aria-label="Ẩn thông báo cập nhật"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-amber-800 transition-colors hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -536,6 +668,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <MobileBanner />
+        <VersionUpdateNotice />
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
             {children}

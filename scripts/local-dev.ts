@@ -5,7 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-type WorkflowCommand = "install" | "one-time" | "run" | "update";
+type WorkflowCommand = "install" | "run" | "update";
 
 type CommandResult = {
   code: number;
@@ -33,12 +33,7 @@ const migrationRetryDelayMs = 2_000;
 function isWorkflowCommand(
   value: string | undefined,
 ): value is WorkflowCommand {
-  return (
-    value === "install" ||
-    value === "one-time" ||
-    value === "run" ||
-    value === "update"
-  );
+  return value === "install" || value === "run" || value === "update";
 }
 
 function assertBunRuntime(): void {
@@ -399,17 +394,13 @@ async function main(): Promise<void> {
   const commandArg = process.argv[2];
   if (!isWorkflowCommand(commandArg)) {
     throw new Error(
-      "Missing workflow command. Use one of: install, update, run, one-time.",
+      "Missing workflow command. Use one of: install, update, run.",
     );
   }
 
   switch (commandArg) {
     case "install":
       await runInstallWorkflow();
-      return;
-    case "one-time":
-      await runInstallWorkflow();
-      await startDevServer();
       return;
     case "run":
       await runDevWorkflow();

@@ -613,11 +613,6 @@ export const webProductCandidates = pgTable(
       .notNull()
       .default({}),
     confidenceScore: integer("confidence_score").notNull().default(0),
-    legacySearchScore: numeric("tavily_score", {
-      precision: 8,
-      scale: 4,
-      mode: "number",
-    }),
     matchReasons: jsonb("match_reasons")
       .$type<string[]>()
       .notNull()

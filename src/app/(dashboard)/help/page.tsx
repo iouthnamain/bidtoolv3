@@ -297,7 +297,7 @@ const sections: Section[] = [
     intro:
       "Excel Workspace biến file sản phẩm bất kỳ thành workbook đã bổ sung thông tin match, nguồn chứng cứ và dữ liệu xuất.",
     steps: [
-      "Tạo workspace mới, đặt tên dễ nhận biết và upload file `.xls` hoặc `.xlsx`.",
+      "Tạo workspace mới, đặt tên dễ nhận biết và upload file `.xlsx`.",
       "Chọn sheet, map cột sản phẩm/spec/đơn vị/số lượng/giá/vendor/origin.",
       "Review và sửa dòng đã parse trước khi tìm nguồn web.",
       "Ở bước Find, dùng bộ lọc gợi ý để tinh lọc kết quả. Khi bộ lọc đang bật, bấm `Tìm thêm theo bộ lọc` để tìm web với nhiều kết quả hơn.",

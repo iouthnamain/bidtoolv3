@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import {
   standardColumnKeys,
@@ -205,6 +205,26 @@ function cleanCell(value: unknown): string {
   if (value instanceof Date) {
     return value.toISOString().replace(/\s+/g, " ").trim();
   }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.text === "string") {
+      return cleanCell(record.text);
+    }
+    if ("result" in record) {
+      return cleanCell(record.result);
+    }
+    if (Array.isArray(record.richText)) {
+      return record.richText
+        .map((part) =>
+          typeof part === "object" && part !== null
+            ? cleanCell((part as { text?: unknown }).text)
+            : "",
+        )
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+  }
   return "";
 }
 
@@ -343,46 +363,67 @@ export function rebuildSheetWithHeaderRow(
   });
 }
 
-export function parseWorkbookBase64(
+function excelWorksheetToMatrix(sheet: ExcelJS.Worksheet): string[][] {
+  const rowLimit = Math.min(sheet.rowCount, MAX_IMPORT_ROWS);
+  const matrix: string[][] = [];
+
+  for (let rowNumber = 1; rowNumber <= rowLimit; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const values: string[] = [];
+    for (let colNumber = 1; colNumber <= MAX_IMPORT_COLS; colNumber += 1) {
+      const cell = row.getCell(colNumber);
+      if (cell.isMerged && cell.master.address !== cell.address) {
+        values.push("");
+      } else {
+        values.push(cleanCell(cell.value));
+      }
+    }
+    while (values.length > 0 && values[values.length - 1] === "") {
+      values.pop();
+    }
+    matrix.push(values);
+  }
+
+  return matrix;
+}
+
+export async function parseWorkbookBase64(
   fileName: string,
   workbookBase64: string,
-): ParsedWorkbook {
+): Promise<ParsedWorkbook> {
+  if (!/\.xlsx$/i.test(fileName)) {
+    throw new Error(
+      "Chỉ hỗ trợ tệp .xlsx. Hãy chuyển tệp .xls cũ sang .xlsx trước khi nhập.",
+    );
+  }
+
   const base64 = workbookBase64.includes(",")
     ? workbookBase64.split(",").pop()!
     : workbookBase64;
-  const workbook = XLSX.read(Buffer.from(base64, "base64"), {
-    type: "buffer",
-    cellDates: false,
-  });
+  const workbook = new ExcelJS.Workbook();
+  const workbookBuffer = Buffer.from(base64, "base64");
+  await workbook.xlsx.load(
+    workbookBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0],
+  );
   const workbookWarnings: string[] = [];
 
-  const sheets = workbook.SheetNames.map((name) => {
-    const sheet = workbook.Sheets[name];
-    const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(sheet!, {
-      header: 1,
-      raw: false,
-      defval: "",
-      blankrows: true,
-    });
+  const sheets = workbook.worksheets.map((sheet) => {
     const warnings: string[] = [];
-    if (rawMatrix.length > MAX_IMPORT_ROWS) {
+    if (sheet.rowCount > MAX_IMPORT_ROWS) {
       warnings.push(
-        `Trang tính ${name} có hơn ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng; chỉ đọc ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng đầu.`,
+        `Trang tính ${sheet.name} có hơn ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng; chỉ đọc ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng đầu.`,
+      );
+    }
+    if (sheet.columnCount > MAX_IMPORT_COLS) {
+      warnings.push(
+        `Trang tính ${sheet.name} có hơn ${MAX_IMPORT_COLS} cột; chỉ đọc ${MAX_IMPORT_COLS} cột đầu.`,
       );
     }
 
-    const matrix = rawMatrix.slice(0, MAX_IMPORT_ROWS).map((row) => {
-      if (row.length > MAX_IMPORT_COLS) {
-        warnings.push(
-          `Trang tính ${name} có hơn ${MAX_IMPORT_COLS} cột; chỉ đọc ${MAX_IMPORT_COLS} cột đầu.`,
-        );
-      }
-      return row.slice(0, MAX_IMPORT_COLS).map(cleanCell);
-    });
-
+    const matrix = excelWorksheetToMatrix(sheet);
     const detectedHeaderIndex = detectHeaderIndex(matrix);
     return buildSheetFromMatrix({
-      name,
+      name: sheet.name,
       matrix,
       detectedHeaderIndex,
       warnings: Array.from(new Set(warnings)),
@@ -484,7 +525,9 @@ export function rowsFromMapping(
     });
 }
 
-export function buildEnrichedWorkbookBase64(rows: ExportRowInput[]): string {
+export async function buildEnrichedWorkbookBase64(
+  rows: ExportRowInput[],
+): Promise<string> {
   const outputRows = rows.map((row) => {
     const spec = row.enrichedSnapshotJson as Partial<ExtractedProductSpec>;
     return {
@@ -504,11 +547,19 @@ export function buildEnrichedWorkbookBase64(rows: ExportRowInput[]): string {
     };
   });
 
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(outputRows);
-  XLSX.utils.book_append_sheet(workbook, sheet, "enriched");
-  const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }) as
-    | Buffer
-    | Uint8Array;
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("enriched");
+  const headers = Array.from(
+    outputRows.reduce<Set<string>>((keys, row) => {
+      Object.keys(row).forEach((key) => keys.add(key));
+      return keys;
+    }, new Set<string>()),
+  );
+  sheet.columns = headers.map((header) => ({
+    header,
+    key: header,
+  }));
+  sheet.addRows(outputRows);
+  const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer).toString("base64");
 }

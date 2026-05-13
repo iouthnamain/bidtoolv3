@@ -142,8 +142,8 @@ export function MaterialImportClient() {
               <h3 className="text-sm font-bold text-slate-950">Upload Excel</h3>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Hỗ trợ `.xlsx` và `.xls`; có thể nhập tên sheet nếu workbook có
-              nhiều trang tính.
+              Hỗ trợ `.xlsx`; có thể nhập tên sheet nếu workbook có nhiều trang
+              tính.
             </p>
           </div>
 
@@ -157,13 +157,13 @@ export function MaterialImportClient() {
                 Chọn file Excel
               </span>
               <span className="max-w-[48%] truncate text-xs font-medium text-slate-600">
-                {xlsxFile ? xlsxFile.name : ".xlsx / .xls"}
+                {xlsxFile ? xlsxFile.name : ".xlsx"}
               </span>
             </label>
             <input
               id="material-import-xlsx"
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx"
               className="sr-only"
               onChange={(event) => setXlsxFile(event.target.files?.[0] ?? null)}
             />

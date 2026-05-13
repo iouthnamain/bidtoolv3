@@ -58,7 +58,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 $commands = if ($Mode -eq "Update") {
   @("bun run dev:update", "bun run dev:run")
 } elseif (-not (Test-Path $nextModuleDir)) {
-  @("bun run dev:one-time")
+  @("bun run dev:install", "bun run dev:run")
 } else {
   @("bun run dev:run")
 }

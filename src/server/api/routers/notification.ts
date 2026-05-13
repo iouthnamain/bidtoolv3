@@ -1,10 +1,19 @@
 import { z } from "zod";
-import { desc, eq, inArray } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { notifications } from "~/server/db/schema";
 
 export const notificationRouter = createTRPCRouter({
+  unreadCount: publicProcedure.query(async ({ ctx }) => {
+    const result = await ctx.db
+      .select({ value: count() })
+      .from(notifications)
+      .where(eq(notifications.isRead, false));
+
+    return result[0]?.value ?? 0;
+  }),
+
   list: publicProcedure
     .input(
       z
@@ -47,7 +56,9 @@ export const notificationRouter = createTRPCRouter({
   }),
 
   markSelectedAsRead: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const updated = await ctx.db
         .update(notifications)
@@ -58,7 +69,9 @@ export const notificationRouter = createTRPCRouter({
     }),
 
   deleteMany: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(notifications)

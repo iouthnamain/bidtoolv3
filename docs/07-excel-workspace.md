@@ -23,7 +23,7 @@ The original workbook is not mutated. Export creates a new `.xlsx` with original
   - See uploaded file, selected sheet, row count, and status.
 
 - `/excel-workspace/[id]?step=import|map|review|find|export`
-  - `import`: upload `.xls` or `.xlsx`.
+  - `import`: upload `.xlsx`.
   - `map`: choose sheet and map product/spec/unit/quantity/price columns.
   - `review`: fix parsed rows before web search.
   - `find`: search SearXNG candidates and choose or manually enter matches.

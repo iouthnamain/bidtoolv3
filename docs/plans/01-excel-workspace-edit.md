@@ -11,7 +11,7 @@ The feature is no longer school-related. THVT, HK, campus, school-year, and cata
 In scope:
 
 - Create a generic Excel workspace from `/excel-workspace`.
-- Upload `.xls` or `.xlsx` files using `xlsx`.
+- Upload `.xlsx` files using `exceljs`.
 - Preview workbook sheets and auto-suggest column mappings.
 - Require a mapped product-name column.
 - Optional mapped fields: spec/description, unit, quantity, target price, currency, vendor hint, origin hint, notes.

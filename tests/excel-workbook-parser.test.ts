@@ -13,8 +13,8 @@ function sampleBase64(path: string) {
 }
 
 describe("standard Excel workbook parser", () => {
-  it("detects and maps the Long Thanh sample header row", () => {
-    const workbook = parseWorkbookBase64(
+  it("detects and maps the Long Thanh sample header row", async () => {
+    const workbook = await parseWorkbookBase64(
       "khoa điện long thành.xlsx",
       sampleBase64("docs/sample/khoa điện long thành.xlsx"),
     );
@@ -37,8 +37,8 @@ describe("standard Excel workbook parser", () => {
     });
   });
 
-  it("detects row 4 and suffixes duplicate headers in the Bang ke sample", () => {
-    const workbook = parseWorkbookBase64(
+  it("detects row 4 and suffixes duplicate headers in the Bang ke sample", async () => {
+    const workbook = await parseWorkbookBase64(
       "Copy of Bảng kê VT.xlsx",
       sampleBase64("docs/sample/Copy of Bảng kê  VT -22- 3-2025 (chốt).xlsx"),
     );
@@ -52,22 +52,15 @@ describe("standard Excel workbook parser", () => {
     expect(sheet.suggestedMapping.qtyTotal).toBe("Số lượng");
   });
 
-  it("detects formatted THVT headers on row 8", () => {
-    const workbook = parseWorkbookBase64(
-      "Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
-      sampleBase64(
-        "docs/sample/Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
+  it("rejects legacy xls files", async () => {
+    await expect(
+      parseWorkbookBase64(
+        "Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
+        sampleBase64(
+          "docs/sample/Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
+        ),
       ),
-    );
-    const sheet = workbook.sheets.find((item) =>
-      item.name.includes("THVT Khoa CK NH 2026-2027"),
-    );
-
-    expect(sheet?.detectedHeaderRowIndex).toBe(8);
-    expect(sheet?.suggestedMapping.materialName).toBe("TÊN QUI CÁCH VẬT TƯ");
-    expect(sheet?.suggestedMapping.unit).toBe("ĐVT");
-    expect(sheet?.suggestedMapping.qtyTotal).toBe("SỐ LƯỢNG TỔNG HỢP");
-    expect(sheet?.suggestedMapping.qtyInStock).toBe("SỐ LƯỢNG CÒN TỒN");
+    ).rejects.toThrow(".xlsx");
   });
 
   it("normalizes Vietnamese d-stroke before accent stripping", () => {

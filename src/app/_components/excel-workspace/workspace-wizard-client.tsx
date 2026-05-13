@@ -522,7 +522,7 @@ function ImportStep({
         <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center hover:bg-white">
           <input
             type="file"
-            accept=".xls,.xlsx"
+            accept=".xlsx"
             className="sr-only"
             aria-label="Chọn tệp Excel"
             onChange={(event) => void handleFile(event.target.files?.[0])}

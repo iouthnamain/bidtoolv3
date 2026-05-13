@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   type Dispatch,
+  type KeyboardEvent,
   type SetStateAction,
   useEffect,
   useMemo,
@@ -1177,6 +1178,17 @@ export function SearchPageClient() {
     setSaveSelectedError(null);
   };
 
+  const applyDraftFiltersOnEnter = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    applyDraftFilters();
+  };
+
   const resetFilters = () => {
     setFormState(buildFormState(emptySearchCriteria));
     setAppliedCriteria({ ...emptySearchCriteria });
@@ -1333,6 +1345,7 @@ export function SearchPageClient() {
                   keyword: event.target.value,
                 }))
               }
+              onKeyDown={applyDraftFiltersOnEnter}
               placeholder="Nhập nhiều cụm, phân tách bằng dấu phẩy"
             />
           </FilterField>

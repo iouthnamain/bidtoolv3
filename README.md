@@ -54,7 +54,7 @@ It ensures `.env` exists, starts PostgreSQL and SearXNG if needed, waits for rea
 
 If you want a double-click launcher from File Explorer on Windows:
 
-- `launch-maintenance.bat` starts the app and opens `http://localhost:3000/maintenance` when ready. If dependencies are missing, it falls back to the one-time install + run flow automatically.
+- `launch-maintenance.bat` starts the app and opens `http://localhost:3000/maintenance` when ready. If dependencies are missing, it runs install first, then starts the app.
 - `update-maintenance.bat` is the same idea for after `git pull`: it runs `bun run dev:update`, then starts the app, then opens `/maintenance`.
 
 Keep the PowerShell window that opens in the background running while you use the app. These launchers still require Bun on `PATH` and Docker Desktop running.
@@ -66,11 +66,33 @@ Install, update, and run never seed automatically. If you want demo data:
 1. Set `ENABLE_DEMO_SEED="true"` in `.env`.
 2. Run `bun run db:seed`.
 
-### Legacy Shortcut
+### Compatibility Aliases
 
-`bun run dev:one-time` still works as a backward-compatible install-plus-run shortcut, but `dev:install`, `dev:update`, and `dev:run` are now the primary workflow.
+Older aliases `bun run setup`, `bun run start:dev`, and `bun run update` point to the primary local workflow for compatibility.
 
-Older aliases `bun run setup`, `bun run start:dev`, and `bun run update` also point to the new workflow for compatibility.
+## Desktop App
+
+Electron is an additional local desktop entrypoint. It does not replace the Next.js web app.
+
+Use this during development:
+
+```bash
+bun run desktop:dev
+```
+
+Build an unpacked desktop app for a quick local smoke test:
+
+```bash
+bun run desktop:pack
+```
+
+Build an installer/package:
+
+```bash
+bun run desktop:build
+```
+
+The desktop app runs the same Next.js application in a local Electron window. PostgreSQL and SearXNG still run through the existing Docker workflow.
 
 ## Local SearXNG Search
 
@@ -102,9 +124,11 @@ curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
 - `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, SearXNG, and migrations.
 - `bun run dev:update` - post-pull sync: deps, PostgreSQL, SearXNG, and migrations.
 - `bun run dev:run` - daily startup with env, PostgreSQL, SearXNG, and migration checks before Next.js.
-- `bun run dev:one-time` - backward-compatible alias for install plus run.
 - `bun run dev:kill` - stop Docker Compose services and BidTool local dev processes when ports are stuck; it uses stop-only Docker commands and does not delete containers or volumes.
 - `bun run dev` - start Next.js only, without local stack checks.
+- `bun run desktop:dev` - start the local stack and open the app in Electron for development.
+- `bun run desktop:pack` - build Next standalone output and create an unpacked Electron app.
+- `bun run desktop:build` - build Next standalone output and package the Electron app.
 - `bun run build` - create a production build.
 - `bun run start` - run the production server after `bun run build`.
 - `bun run preview` - build and start production locally in one command.

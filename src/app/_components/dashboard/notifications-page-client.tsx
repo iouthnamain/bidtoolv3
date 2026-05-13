@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 import { CheckCheck, Filter, MailOpen, Trash2 } from "lucide-react";
 
-import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import {
+  Badge,
+  BulkActionBar,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+} from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { formatDateTime } from "~/lib/datetime";
 import { useRowSelection } from "~/lib/use-row-selection";
@@ -36,6 +42,7 @@ export function NotificationsPageClient() {
 
   const invalidateAll = async () => {
     await Promise.all([
+      utils.notification.unreadCount.invalidate(),
       utils.notification.list.invalidate(),
       utils.insight.getDashboardSummary.invalidate(),
     ]);
@@ -125,7 +132,9 @@ export function NotificationsPageClient() {
               size="sm"
               isLoading={markSelectedAsRead.isPending}
               leftIcon={<MailOpen className="h-3.5 w-3.5" />}
-              onClick={() => markSelectedAsRead.mutate({ ids: sel.selectedIds })}
+              onClick={() =>
+                markSelectedAsRead.mutate({ ids: sel.selectedIds })
+              }
             >
               Đánh dấu đã đọc
             </Button>

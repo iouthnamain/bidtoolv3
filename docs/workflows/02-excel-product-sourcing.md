@@ -21,7 +21,7 @@ Target flow:
 
 ## Inputs
 
-- `.xls` or `.xlsx` workbook.
+- `.xlsx` workbook.
 - Selected sheet name.
 - Column mapping:
   - product name
@@ -53,7 +53,7 @@ Meaning:
 ## Main Steps
 
 1. User creates a workspace from `/excel-workspace`.
-2. User uploads `.xls` or `.xlsx`.
+2. User uploads `.xlsx`.
 3. System reads sheet names and previews headers.
 4. User selects sheet and confirms column mapping.
 5. System imports normalized rows while preserving original row data.
