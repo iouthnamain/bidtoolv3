@@ -3,16 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, RefreshCw, X } from "lucide-react";
+import { Bell, Download, RefreshCw, RotateCw, X } from "lucide-react";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
 import { useToast } from "~/app/_components/ui/toast";
+import {
+  getDesktopUpdateActionError,
+  getDesktopUpdateNoticeKey,
+  isDesktopUpdateButtonDisabled,
+  resolveDesktopUpdateButtonAction,
+  shouldShowDesktopUpdateNotice,
+  type DesktopUpdateState,
+} from "~/lib/desktop-update";
 import { STORAGE_KEYS } from "~/lib/storage-keys";
 import { api } from "~/trpc/react";
 
 const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
 const APP_VERSION_SEEN_KEY = STORAGE_KEYS.appVersionSeen;
 const APP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.appUpdateDismissed;
+const DESKTOP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.desktopUpdateDismissed;
 
 type IconName =
   | "dashboard"
@@ -450,6 +459,201 @@ function BrandHeader({ collapsed }: { collapsed: boolean }) {
   return <Logo collapsed={collapsed} />;
 }
 
+function useDesktopUpdateState() {
+  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const bridge = window.bidtoolDesktop;
+    if (!bridge?.isDesktop) {
+      return;
+    }
+
+    let mounted = true;
+    void bridge
+      .getUpdateState()
+      .then((state) => {
+        if (mounted) {
+          setUpdateState(state);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setUpdateState(null);
+        }
+      });
+
+    const unsubscribe = bridge.onUpdateState((state) => {
+      if (mounted) {
+        setUpdateState(state);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  return [updateState, setUpdateState] as const;
+}
+
+function DesktopUpdateNotice() {
+  const { error, success } = useToast();
+  const [updateState, setUpdateState] = useDesktopUpdateState();
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const noticeKey = getDesktopUpdateNoticeKey(updateState);
+
+  useEffect(() => {
+    setDismissedKey(window.localStorage.getItem(DESKTOP_UPDATE_DISMISSED_KEY));
+  }, []);
+
+  if (
+    !shouldShowDesktopUpdateNotice(updateState) ||
+    !noticeKey ||
+    dismissedKey === noticeKey
+  ) {
+    return null;
+  }
+
+  const bridge = window.bidtoolDesktop;
+  const action = resolveDesktopUpdateButtonAction(updateState);
+  const disabled = isDesktopUpdateButtonDisabled(updateState);
+  const version =
+    updateState?.downloadedVersion ?? updateState?.availableVersion ?? null;
+  const percent =
+    typeof updateState?.downloadPercent === "number"
+      ? Math.floor(updateState.downloadPercent)
+      : null;
+  const isDownloadRetry = updateState?.errorContext === "download";
+
+  const dismiss = () => {
+    window.localStorage.setItem(DESKTOP_UPDATE_DISMISSED_KEY, noticeKey);
+    setDismissedKey(noticeKey);
+  };
+
+  const handleAction = () => {
+    if (!bridge || !updateState || disabled || action === "none") {
+      return;
+    }
+
+    if (action === "download") {
+      void bridge
+        .downloadUpdate()
+        .then((result) => {
+          setUpdateState(result.state);
+          const actionError = getDesktopUpdateActionError(result);
+          if (actionError) {
+            error(actionError);
+          } else if (result.completed) {
+            success("Đã tải bản cập nhật. Khởi động lại để cài đặt.");
+          }
+        })
+        .catch((updateError: unknown) => {
+          error(
+            updateError instanceof Error
+              ? updateError.message
+              : "Không thể bắt đầu tải bản cập nhật.",
+          );
+        });
+      return;
+    }
+
+    if (action === "install") {
+      const confirmed = window.confirm(
+        `Cài đặt bản cập nhật${version ? ` ${version}` : ""} và khởi động lại BidTool?`,
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      void bridge
+        .installUpdate()
+        .then((result) => {
+          setUpdateState(result.state);
+          const actionError = getDesktopUpdateActionError(result);
+          if (actionError) {
+            error(actionError);
+          }
+        })
+        .catch((updateError: unknown) => {
+          error(
+            updateError instanceof Error
+              ? updateError.message
+              : "Không thể cài đặt bản cập nhật.",
+          );
+        });
+    }
+  };
+
+  const message =
+    action === "install"
+      ? `Bản cập nhật${version ? ` ${version}` : ""} đã tải xong.`
+      : updateState?.status === "downloading"
+        ? `Đang tải bản cập nhật${percent !== null ? ` (${percent}%)` : ""}.`
+        : isDownloadRetry
+          ? `Tải bản cập nhật${version ? ` ${version}` : ""} thất bại.`
+          : `Có bản cập nhật desktop${version ? ` ${version}` : ""}.`;
+  const buttonLabel =
+    action === "install"
+      ? "Khởi động lại"
+      : updateState?.status === "downloading"
+        ? `Đang tải${percent !== null ? ` ${percent}%` : ""}`
+        : isDownloadRetry
+          ? "Thử tải lại"
+          : "Tải cập nhật";
+
+  return (
+    <div className="border-b border-sky-200 bg-sky-50 px-4 py-2.5 text-sky-950">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700"
+            aria-hidden
+          >
+            {action === "install" ? (
+              <RotateCw className="h-4 w-4" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </span>
+          <p className="min-w-0 text-xs font-semibold sm:text-sm">{message}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleAction}
+            disabled={disabled || action === "none"}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-800 px-2.5 text-xs font-bold text-white transition-colors hover:bg-sky-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {action === "install" ? (
+              <RotateCw className="h-3.5 w-3.5" />
+            ) : (
+              <Download
+                className={`h-3.5 w-3.5 ${
+                  updateState?.status === "downloading" ? "animate-pulse" : ""
+                }`}
+              />
+            )}
+            {buttonLabel}
+          </button>
+          {action === "download" ? (
+            <button
+              type="button"
+              onClick={dismiss}
+              aria-label="Ẩn thông báo cập nhật desktop"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-sky-800 transition-colors hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VersionUpdateNotice() {
   const { error, info, success, warning } = useToast();
   const utils = api.useUtils();
@@ -458,7 +662,9 @@ function VersionUpdateNotice() {
   });
   const checkForUpdates = api.maintenance.checkForUpdates.useMutation({
     onSuccess: async (result) => {
-      if (result.versionInfo.updateAvailable) {
+      if (result.exitCode !== 0) {
+        error(`Kiểm tra bản cập nhật thất bại (exit ${result.exitCode}).`);
+      } else if (result.versionInfo.updateAvailable) {
         warning("Có bản cập nhật BidTool mới.");
       } else {
         success("BidTool đang ở bản mới nhất trong upstream đã fetch.");
@@ -668,6 +874,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <MobileBanner />
+        <DesktopUpdateNotice />
         <VersionUpdateNotice />
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-5">

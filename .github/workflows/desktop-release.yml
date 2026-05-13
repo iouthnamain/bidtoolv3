@@ -1,0 +1,101 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
+      SKIP_ENV_VALIDATION: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve release version
+        shell: pwsh
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.release_tag || github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:RELEASE_TAG_INPUT
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "Release tag is empty."
+          }
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$') {
+            throw "Release tag '$tag' must look like v0.1.0."
+          }
+
+          "BIDTOOL_DESKTOP_VERSION=$($Matches.version)" >> $env:GITHUB_ENV
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Check
+        run: bun run check
+
+      - name: Test
+        run: bun run test
+
+      - name: Build Windows desktop app
+        run: bun run desktop:build
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bidtoolv3-windows
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.blockmap
+            dist-electron/latest.yml
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+            $PSNativeCommandUseErrorActionPreference = $false
+          }
+
+          $tag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "Release tag is empty."
+          }
+
+          $assets = @(Get-ChildItem -Path "dist-electron" -File |
+            Where-Object { ($_.Extension -in ".exe", ".blockmap") -or ($_.Name -eq "latest.yml") } |
+            ForEach-Object { $_.FullName })
+
+          if ($assets.Count -eq 0) {
+            throw "No Windows release assets found in dist-electron."
+          }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          } else {
+            gh release create $tag $assets --title "BidTool v3 $tag" --generate-notes --target $env:GITHUB_SHA
+          }

@@ -1,18 +1,428 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
+const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 
 const HOST = "127.0.0.1";
 const START_TIMEOUT_MS = 90_000;
+const UPDATE_STARTUP_DELAY_MS = 15_000;
+const UPDATE_POLL_INTERVAL_MS = 30 * 60_000;
+const UPDATE_GET_STATE_CHANNEL = "bidtool:update:get-state";
+const UPDATE_CHECK_CHANNEL = "bidtool:update:check";
+const UPDATE_DOWNLOAD_CHANNEL = "bidtool:update:download";
+const UPDATE_INSTALL_CHANNEL = "bidtool:update:install";
+const UPDATE_STATE_CHANNEL = "bidtool:update-state";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let nextServerProcess = null;
 /** @type {string | null} */
 let appOrigin = null;
 let isQuitting = false;
+let updateCheckInFlight = false;
+let updateDownloadInFlight = false;
+let updateInstallInFlight = false;
+let updaterConfigured = false;
+let updaterListenersRegistered = false;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let updateStartupTimer = null;
+/** @type {ReturnType<typeof setInterval> | null} */
+let updatePollTimer = null;
+
+/** @typedef {"disabled" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error"} DesktopUpdateStatus */
+/** @typedef {"check" | "download" | "install" | null} DesktopUpdateErrorContext */
+
+/**
+ * @typedef {object} DesktopUpdateState
+ * @property {boolean} enabled
+ * @property {DesktopUpdateStatus} status
+ * @property {string} currentVersion
+ * @property {NodeJS.Platform} platform
+ * @property {string | null} availableVersion
+ * @property {string | null} downloadedVersion
+ * @property {number | null} downloadPercent
+ * @property {string | null} checkedAt
+ * @property {string | null} message
+ * @property {DesktopUpdateErrorContext} errorContext
+ * @property {boolean} canRetry
+ */
+
+/** @type {DesktopUpdateState} */
+let desktopUpdateState = createDesktopUpdateState({
+  enabled: false,
+  message: "Automatic updates are available only in packaged desktop builds.",
+  status: "disabled",
+});
+
+function getCurrentVersion() {
+  try {
+    return app.getVersion();
+  } catch {
+    return "0.0.0";
+  }
+}
+
+/**
+ * @param {{
+ *   enabled: boolean;
+ *   status: DesktopUpdateStatus;
+ *   message?: string | null;
+ * }} input
+ * @returns {DesktopUpdateState}
+ */
+function createDesktopUpdateState(input) {
+  return {
+    availableVersion: null,
+    canRetry: false,
+    checkedAt: null,
+    currentVersion: getCurrentVersion(),
+    downloadedVersion: null,
+    downloadPercent: null,
+    enabled: input.enabled,
+    errorContext: null,
+    message: input.message ?? null,
+    platform: process.platform,
+    status: input.status,
+  };
+}
+
+/** @param {DesktopUpdateState} state */
+function emitDesktopUpdateState(state) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(UPDATE_STATE_CHANNEL, state);
+    }
+  }
+}
+
+/** @param {(state: DesktopUpdateState) => DesktopUpdateState} updater */
+function updateDesktopUpdateState(updater) {
+  desktopUpdateState = updater(desktopUpdateState);
+  emitDesktopUpdateState(desktopUpdateState);
+  return desktopUpdateState;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+/** @param {unknown} error */
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** @param {unknown} info */
+function updateVersionFromInfo(info) {
+  if (!info || typeof info !== "object") {
+    return null;
+  }
+
+  const version = /** @type {{ version?: unknown }} */ (info).version;
+  return typeof version === "string" && version.trim() ? version : null;
+}
+
+function resolveDesktopUpdateDisabledReason() {
+  const disabledByEnv = ["1", "true", "yes"].includes(
+    String(process.env.BIDTOOL_DISABLE_AUTO_UPDATE ?? "").toLowerCase(),
+  );
+
+  if (!app.isPackaged) {
+    return "Automatic updates are available only in packaged desktop builds.";
+  }
+  if (disabledByEnv) {
+    return "Automatic updates are disabled by BIDTOOL_DISABLE_AUTO_UPDATE.";
+  }
+  if (process.platform === "linux" && !process.env.APPIMAGE) {
+    return "Automatic updates on Linux require the AppImage build.";
+  }
+  return null;
+}
+
+function markDesktopUpdateIdle() {
+  updateDesktopUpdateState((state) => ({
+    ...state,
+    canRetry: false,
+    currentVersion: getCurrentVersion(),
+    enabled: true,
+    errorContext: null,
+    message: null,
+    status: "idle",
+  }));
+}
+
+/**
+ * @param {DesktopUpdateErrorContext} context
+ * @param {string} message
+ */
+function markDesktopUpdateError(context, message) {
+  updateDesktopUpdateState((state) => {
+    const hasDownloadedVersion = !!state.downloadedVersion;
+    const hasAvailableVersion = !!state.availableVersion;
+    const status =
+      context === "install" && hasDownloadedVersion
+        ? "downloaded"
+        : context === "download" && hasAvailableVersion
+          ? "available"
+          : "error";
+
+    return {
+      ...state,
+      canRetry:
+        hasDownloadedVersion || hasAvailableVersion || context === "check",
+      checkedAt: context === "check" ? nowIso() : state.checkedAt,
+      downloadPercent: null,
+      errorContext: context,
+      message,
+      status,
+    };
+  });
+}
+
+function scheduleDesktopUpdateChecks() {
+  if (updateStartupTimer || updatePollTimer) {
+    return;
+  }
+
+  updateStartupTimer = setTimeout(() => {
+    void checkForDesktopUpdates("startup");
+  }, UPDATE_STARTUP_DELAY_MS);
+  updateStartupTimer.unref?.();
+
+  updatePollTimer = setInterval(() => {
+    void checkForDesktopUpdates("poll");
+  }, UPDATE_POLL_INTERVAL_MS);
+  updatePollTimer.unref?.();
+}
+
+function registerDesktopUpdaterListeners() {
+  if (updaterListenersRegistered) {
+    return;
+  }
+  updaterListenersRegistered = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    updateDesktopUpdateState((state) => ({
+      ...state,
+      checkedAt: nowIso(),
+      downloadPercent: null,
+      errorContext: null,
+      message: null,
+      status: "checking",
+    }));
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    const version = updateVersionFromInfo(info);
+    updateDesktopUpdateState((state) => ({
+      ...state,
+      availableVersion: version,
+      canRetry: false,
+      checkedAt: nowIso(),
+      downloadedVersion: null,
+      downloadPercent: null,
+      errorContext: null,
+      message: null,
+      status: "available",
+    }));
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    updateDesktopUpdateState((state) => ({
+      ...state,
+      availableVersion: null,
+      canRetry: false,
+      checkedAt: nowIso(),
+      downloadedVersion: null,
+      downloadPercent: null,
+      errorContext: null,
+      message: null,
+      status: "up-to-date",
+    }));
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const percent =
+      progress && typeof progress.percent === "number"
+        ? Math.max(0, Math.min(100, progress.percent))
+        : null;
+
+    updateDesktopUpdateState((state) => ({
+      ...state,
+      canRetry: false,
+      downloadPercent: percent,
+      errorContext: null,
+      message: null,
+      status: "downloading",
+    }));
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    const version =
+      updateVersionFromInfo(info) ?? desktopUpdateState.availableVersion;
+    updateDesktopUpdateState((state) => ({
+      ...state,
+      availableVersion: version,
+      canRetry: true,
+      downloadedVersion: version,
+      downloadPercent: 100,
+      errorContext: null,
+      message: null,
+      status: "downloaded",
+    }));
+  });
+
+  autoUpdater.on("error", (error) => {
+    const context = updateInstallInFlight
+      ? "install"
+      : updateDownloadInFlight
+        ? "download"
+        : updateCheckInFlight
+          ? "check"
+          : desktopUpdateState.errorContext;
+    markDesktopUpdateError(context, errorMessage(error));
+  });
+}
+
+function configureDesktopUpdater() {
+  loadLocalEnv();
+  const disabledReason = resolveDesktopUpdateDisabledReason();
+  if (disabledReason) {
+    updaterConfigured = false;
+    updateDesktopUpdateState(() =>
+      createDesktopUpdateState({
+        enabled: false,
+        message: disabledReason,
+        status: "disabled",
+      }),
+    );
+    return;
+  }
+
+  registerDesktopUpdaterListeners();
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+
+  updaterConfigured = true;
+  markDesktopUpdateIdle();
+  scheduleDesktopUpdateChecks();
+}
+
+/** @param {string} reason */
+async function checkForDesktopUpdates(reason) {
+  void reason;
+  if (!updaterConfigured || updateCheckInFlight) {
+    return { checked: false, state: desktopUpdateState };
+  }
+  if (
+    desktopUpdateState.status === "downloading" ||
+    desktopUpdateState.status === "downloaded"
+  ) {
+    return { checked: false, state: desktopUpdateState };
+  }
+
+  updateCheckInFlight = true;
+  updateDesktopUpdateState((state) => ({
+    ...state,
+    checkedAt: nowIso(),
+    downloadPercent: null,
+    errorContext: null,
+    message: null,
+    status: "checking",
+  }));
+
+  try {
+    await autoUpdater.checkForUpdates();
+    if (desktopUpdateState.status === "checking") {
+      updateDesktopUpdateState((state) => ({
+        ...state,
+        availableVersion: null,
+        checkedAt: nowIso(),
+        downloadedVersion: null,
+        downloadPercent: null,
+        errorContext: null,
+        message: null,
+        status: "up-to-date",
+      }));
+    }
+    return { checked: true, state: desktopUpdateState };
+  } catch (error) {
+    markDesktopUpdateError("check", errorMessage(error));
+    return { checked: true, state: desktopUpdateState };
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
+async function downloadDesktopUpdate() {
+  const canDownload =
+    updaterConfigured &&
+    !updateDownloadInFlight &&
+    (desktopUpdateState.status === "available" ||
+      (desktopUpdateState.errorContext === "download" &&
+        !!desktopUpdateState.availableVersion));
+
+  if (!canDownload) {
+    return { accepted: false, completed: false, state: desktopUpdateState };
+  }
+
+  updateDownloadInFlight = true;
+  updateDesktopUpdateState((state) => ({
+    ...state,
+    canRetry: false,
+    downloadPercent: 0,
+    errorContext: null,
+    message: null,
+    status: "downloading",
+  }));
+
+  try {
+    await autoUpdater.downloadUpdate();
+    if (desktopUpdateState.status === "downloading") {
+      const version = desktopUpdateState.availableVersion;
+      updateDesktopUpdateState((state) => ({
+        ...state,
+        canRetry: true,
+        downloadedVersion: version,
+        downloadPercent: 100,
+        errorContext: null,
+        message: null,
+        status: "downloaded",
+      }));
+    }
+    return { accepted: true, completed: true, state: desktopUpdateState };
+  } catch (error) {
+    markDesktopUpdateError("download", errorMessage(error));
+    return { accepted: true, completed: false, state: desktopUpdateState };
+  } finally {
+    updateDownloadInFlight = false;
+  }
+}
+
+async function installDesktopUpdate() {
+  if (
+    !updaterConfigured ||
+    updateInstallInFlight ||
+    desktopUpdateState.status !== "downloaded"
+  ) {
+    return { accepted: false, completed: false, state: desktopUpdateState };
+  }
+
+  updateInstallInFlight = true;
+  isQuitting = true;
+  try {
+    autoUpdater.quitAndInstall(false, true);
+    return { accepted: true, completed: false, state: desktopUpdateState };
+  } catch (error) {
+    updateInstallInFlight = false;
+    isQuitting = false;
+    markDesktopUpdateError("install", errorMessage(error));
+    return { accepted: true, completed: false, state: desktopUpdateState };
+  }
+}
 
 /** @param {URL} url */
 function getClientForUrl(url) {
@@ -79,12 +489,14 @@ function findAvailablePort() {
 }
 
 function findStandaloneServerPath() {
+  const appPath = app.getAppPath();
+  const unpackedAppPath = appPath.replace(/app\.asar$/, "app.asar.unpacked");
   const candidates = [
-    path.join(app.getAppPath(), ".next", "standalone", "server.js"),
+    path.join(unpackedAppPath, ".next", "standalone", "server.js"),
+    path.join(appPath, ".next", "standalone", "server.js"),
     path.join(process.cwd(), ".next", "standalone", "server.js"),
   ];
 
-  const fs = require("node:fs");
   const found = candidates.find((candidate) => fs.existsSync(candidate));
   if (!found) {
     throw new Error(
@@ -95,7 +507,57 @@ function findStandaloneServerPath() {
   return found;
 }
 
+/** @param {string} line */
+function parseEnvLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) {
+    return null;
+  }
+
+  const normalized = trimmed.startsWith("export ")
+    ? trimmed.slice("export ".length).trim()
+    : trimmed;
+  const separatorIndex = normalized.indexOf("=");
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  const key = normalized.slice(0, separatorIndex).trim();
+  let value = normalized.slice(separatorIndex + 1).trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+
+  return { key, value };
+}
+
+function loadLocalEnv() {
+  const candidates = [
+    path.join(process.cwd(), ".env"),
+    path.join(path.dirname(process.execPath), ".env"),
+    path.join(app.getPath("userData"), ".env"),
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+
+    const contents = fs.readFileSync(candidate, "utf8");
+    for (const line of contents.split(/\r?\n/)) {
+      const parsed = parseEnvLine(line);
+      if (parsed && process.env[parsed.key] == null) {
+        process.env[parsed.key] = parsed.value;
+      }
+    }
+  }
+}
+
 async function startStandaloneNextServer() {
+  loadLocalEnv();
   const port =
     Number(process.env.BIDTOOL_DESKTOP_PORT) || (await findAvailablePort());
   const serverPath = findStandaloneServerPath();
@@ -182,6 +644,7 @@ async function createMainWindow(startUrl) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,
       webSecurity: true,
     },
@@ -224,15 +687,28 @@ async function resolveStartUrl() {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  if (updateStartupTimer) {
+    clearTimeout(updateStartupTimer);
+  }
+  if (updatePollTimer) {
+    clearInterval(updatePollTimer);
+  }
   if (nextServerProcess && !nextServerProcess.killed) {
     nextServerProcess.kill();
   }
 });
 
+ipcMain.handle(UPDATE_GET_STATE_CHANNEL, () => desktopUpdateState);
+ipcMain.handle(UPDATE_CHECK_CHANNEL, () => checkForDesktopUpdates("manual"));
+ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, () => downloadDesktopUpdate());
+ipcMain.handle(UPDATE_INSTALL_CHANNEL, () => installDesktopUpdate());
+
 app.whenReady().then(async () => {
   try {
+    loadLocalEnv();
     const startUrl = await resolveStartUrl();
     await createMainWindow(startUrl);
+    configureDesktopUpdater();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     dialog.showErrorBox("BidTool desktop failed to start", message);

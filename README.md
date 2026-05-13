@@ -94,6 +94,23 @@ bun run desktop:build
 
 The desktop app runs the same Next.js application in a local Electron window. PostgreSQL and SearXNG still run through the existing Docker workflow.
 
+### GitHub Releases
+
+Windows desktop releases are built by GitHub Actions.
+
+To publish a release from the command line:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `Desktop Release` workflow builds the Windows installer on `windows-latest` and uploads it to the GitHub Release. You can also run the workflow manually and provide a release tag.
+
+The Windows installer is currently unsigned, so Windows SmartScreen can show a warning until a code-signing certificate is added.
+
+Packaged desktop builds use the release tag as the Electron app version, check GitHub Releases in the background, and show an in-app desktop update notice when a newer version is available. The notice downloads the installer update first, then switches the button to restart and install.
+
 ## Local SearXNG Search
 
 The main dev workflow now starts SearXNG automatically:

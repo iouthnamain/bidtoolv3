@@ -1,4 +1,5 @@
 export const STORAGE_KEYS = {
+  desktopUpdateDismissed: "bidtool.desktop-update.dismissed",
   appUpdateDismissed: "bidtool.app-update.dismissed",
   appVersionSeen: "bidtool.app-version.seen",
   sidebarCollapsed: "bidtool.sidebar.collapsed",

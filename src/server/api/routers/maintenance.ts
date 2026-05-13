@@ -443,6 +443,7 @@ async function runMaintenanceCommand({
   displayName,
   label,
   mode,
+  recordNotification = true,
 }: {
   args: string[];
   command: string;
@@ -450,18 +451,21 @@ async function runMaintenanceCommand({
   displayName: string;
   label: string;
   mode?: "always" | "update-available";
+  recordNotification?: boolean;
 }): Promise<MaintenanceRunResult> {
   const before = await readAppVersionInfo();
   const result = await runCommand(label, command, args);
   const after = await readAppVersionInfo();
-  await recordMaintenanceNotification({
-    after,
-    before,
-    db,
-    displayName,
-    mode,
-    result,
-  });
+  if (recordNotification) {
+    await recordMaintenanceNotification({
+      after,
+      before,
+      db,
+      displayName,
+      mode,
+      result,
+    });
+  }
   return { ...result, versionInfo: after };
 }
 
@@ -601,6 +605,7 @@ async function runDetachedMaintenanceCommand({
   displayName,
   label,
   output,
+  recordNotification = true,
 }: {
   args: string[];
   command: string;
@@ -608,17 +613,20 @@ async function runDetachedMaintenanceCommand({
   displayName: string;
   label: string;
   output: string;
+  recordNotification?: boolean;
 }): Promise<MaintenanceRunResult> {
   const before = await readAppVersionInfo();
   const result = await runDetachedCommand(label, command, args, output);
   const after = await readAppVersionInfo();
-  await recordMaintenanceNotification({
-    after,
-    before,
-    db,
-    displayName,
-    result,
-  });
+  if (recordNotification) {
+    await recordMaintenanceNotification({
+      after,
+      before,
+      db,
+      displayName,
+      result,
+    });
+  }
   return { ...result, versionInfo: after };
 }
 
@@ -685,6 +693,8 @@ export const maintenanceRouter = createTRPCRouter({
       db: ctx.db,
       displayName: "Dừng Docker",
       label: "docker:stop",
+      // This command can stop the backing Postgres container.
+      recordNotification: false,
     }),
   ),
 
@@ -761,6 +771,7 @@ export const maintenanceRouter = createTRPCRouter({
         "Trang này có thể mất kết nối sau vài giây vì Next.js dev server sẽ bị dừng.",
         "Mở lại bằng `launch-maintenance.bat` hoặc `bun run dev:run` khi cần tiếp tục.",
       ].join("\n"),
+      recordNotification: false,
     }),
   ),
 });

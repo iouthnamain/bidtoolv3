@@ -16,6 +16,8 @@ next-env.d.ts
 
 # production
 /build
+/dist-electron
+/.electron-build
 
 # misc
 .DS_Store

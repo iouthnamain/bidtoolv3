@@ -34,9 +34,9 @@
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio",
-    "desktop:build": "bun run build && bun run desktop:prepare && electron-builder",
+    "desktop:build": "bun run build && bun run desktop:prepare && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --publish never",
     "desktop:dev": "bun run ./scripts/desktop-dev.ts",
-    "desktop:pack": "bun run build && bun run desktop:prepare && electron-builder --dir",
+    "desktop:pack": "bun run build && bun run desktop:prepare && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --dir --publish never",
     "desktop:prepare": "bun run ./scripts/prepare-electron-standalone.ts",
     "desktop:start": "electron .",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",
@@ -60,9 +60,10 @@
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
     "drizzle-orm": "^0.45.2",
+    "electron-updater": "^6.6.2",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.14.0",
-    "next": "15.5.16",
+    "next": "15.5.18",
     "papaparse": "^5.5.3",
     "postgres": "^3.4.9",
     "react": "^19.0.0",
@@ -85,7 +86,7 @@
     "electron": "^42.0.1",
     "electron-builder": "^26.8.1",
     "eslint": "^9.23.0",
-    "eslint-config-next": "15.5.16",
+    "eslint-config-next": "15.5.18",
     "postcss": "^8.5.14",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
@@ -94,29 +95,9 @@
     "typescript-eslint": "^8.27.0",
     "vitest": "^4.1.6"
   },
-  "build": {
-    "appId": "local.bidtoolv3",
-    "productName": "BidTool v3",
-    "asar": false,
-    "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "electron/**/*",
-      ".next/standalone/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Office"
-    }
+  "overrides": {
+    "esbuild": "0.25.12",
+    "postcss": "8.5.14"
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"
