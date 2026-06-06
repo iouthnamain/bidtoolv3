@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { type inferRouterInputs } from "@trpc/server";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+import { searchSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { SearchPageClient } from "~/app/_components/dashboard/search-page-client";
 import { type SortOrder } from "~/constants/search-options";
 import {
@@ -95,12 +96,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     <DashboardShell
       title="Tìm kiếm public từ BidWinner"
       description="Một trung tâm tìm kiếm cho gói thầu, theo địa phương, ngành nghề & địa phương, KHLCNT và dự án đầu tư phát triển"
+      sectionNavItems={searchSectionNavItems}
+      sectionNavTitle="Luồng tìm kiếm"
     >
       <HydrateClient>
         <Suspense
           fallback={
             <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-6 text-sm text-slate-600 shadow-sm">
-              Đang tải dữ liệu tìm kiếm public...
+              Đang tải dữ liệu tìm kiếm public…
             </div>
           }
         >

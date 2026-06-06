@@ -176,7 +176,7 @@ export function WorkflowDetailPageClient({
 
   return (
     <div className="space-y-4">
-      <section className="panel p-4">
+      <section id="workflow-overview" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Link
@@ -269,7 +269,7 @@ export function WorkflowDetailPageClient({
         </div>
       </section>
 
-      <section className="panel p-4">
+      <section id="workflow-edit" className="panel scroll-mt-6 p-4">
         <div className="border-b border-slate-200 pb-3">
           <h3 className="text-sm font-bold">Chỉnh sửa workflow</h3>
           <p className="mt-1 text-xs text-slate-500">
@@ -508,7 +508,7 @@ export function WorkflowDetailPageClient({
         </div>
       </section>
 
-      <section className="panel p-4">
+      <section id="workflow-runs" className="panel scroll-mt-6 p-4">
         <div className="border-b border-slate-200 pb-3">
           <h3 className="text-sm font-bold">Lịch sử chạy</h3>
           <p className="mt-1 text-xs text-slate-500">
@@ -518,7 +518,7 @@ export function WorkflowDetailPageClient({
 
         {runsQuery.isLoading ? (
           <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-            Đang tải lịch sử chạy...
+            Đang tải lịch sử chạy…
           </div>
         ) : runHistory.length === 0 ? (
           <EmptyState

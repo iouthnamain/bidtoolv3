@@ -113,7 +113,7 @@ export function WorkflowsPageClient() {
 
   return (
     <div className="grid gap-3 lg:grid-cols-[1.45fr_0.95fr]">
-      <section className="panel p-4">
+      <section id="workflow-list" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
             <h2 className="text-sm font-bold">Danh sách workflow</h2>
@@ -138,7 +138,7 @@ export function WorkflowsPageClient() {
               });
             }}
           >
-            {createWorkflow.isPending ? "Đang tạo..." : "Tạo workflow"}
+            {createWorkflow.isPending ? "Đang tạo…" : "Tạo workflow"}
           </Button>
         </div>
 
@@ -148,7 +148,7 @@ export function WorkflowsPageClient() {
               key={filterKey}
               type="button"
               onClick={() => setActiveFilter(filterKey)}
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                 activeFilter === filterKey
                   ? "border-sky-700 bg-sky-700 text-white"
                   : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -203,7 +203,7 @@ export function WorkflowsPageClient() {
       </section>
 
       <section className="space-y-3">
-        <article className="panel p-4">
+        <article id="workflow-health" className="panel scroll-mt-6 p-4">
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
             <h3 className="text-sm font-bold">Trạng thái nhanh</h3>
             <Badge tone="info" count={workflows.length}>
@@ -227,7 +227,7 @@ export function WorkflowsPageClient() {
           </div>
         </article>
 
-        <article className="panel p-4">
+        <article id="workflow-notifications" className="panel scroll-mt-6 p-4">
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
             <h3 className="text-sm font-bold">Thông báo gần đây</h3>
             <Link

@@ -65,7 +65,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-xl border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-lg border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-sm"
       onKeyDown={handleKeyDown}
       onClick={handleBackdropClick}
       aria-labelledby="confirm-dialog-title"

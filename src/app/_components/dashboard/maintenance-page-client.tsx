@@ -292,7 +292,7 @@ export function MaintenancePageClient() {
   if (statusQuery.isPending) {
     return (
       <div className="panel p-4 text-sm text-slate-600">
-        Đang kiểm tra trạng thái...
+        Đang kiểm tra trạng thái…
       </div>
     );
   }
@@ -319,7 +319,8 @@ export function MaintenancePageClient() {
   return (
     <div className="space-y-3">
       <section
-        className={`panel p-4 ${
+        id="maintenance-status"
+        className={`panel scroll-mt-6 p-4 ${
           isRunning ? "border-sky-200 bg-sky-50/80" : "bg-white/90"
         }`}
       >
@@ -361,7 +362,8 @@ export function MaintenancePageClient() {
       </section>
 
       <section
-        className={`panel p-4 ${
+        id="maintenance-services"
+        className={`panel scroll-mt-6 p-4 ${
           versionInfo?.updateAvailable
             ? "border-amber-200 bg-amber-50/80"
             : "bg-white/90"
@@ -522,7 +524,7 @@ export function MaintenancePageClient() {
         </div>
       </section>
 
-      <section className="panel p-4">
+      <section id="maintenance-commands" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
             <p className="section-title">Lệnh nhanh</p>
@@ -571,7 +573,7 @@ export function MaintenancePageClient() {
                     onClick={() => handleRun(task.key)}
                     className="w-full"
                   >
-                    {taskIsActive ? "Đang chạy..." : task.label}
+                    {taskIsActive ? "Đang chạy…" : task.label}
                   </Button>
                 </div>
               </div>
@@ -617,7 +619,7 @@ export function MaintenancePageClient() {
       ) : null}
 
       {lastResult ? (
-        <section className="panel p-4">
+        <section id="maintenance-results" className="panel scroll-mt-6 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
             <div>
               <p className="section-title">Kết quả gần nhất</p>

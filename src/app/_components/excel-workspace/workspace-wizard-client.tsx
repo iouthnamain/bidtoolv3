@@ -41,12 +41,12 @@ type SheetPreview =
   RouterOutputs["excelWorkspace"]["previewWorkbookSheets"][number];
 type StepId = ExcelWorkspaceStepId;
 
-const steps: Array<{ id: StepId; label: string }> = [
-  { id: "setup", label: "Cấu hình" },
-  { id: "import", label: "Nhập Excel" },
-  { id: "rows", label: "Dòng vật tư" },
-  { id: "research", label: "Research" },
-  { id: "export", label: "Xuất Excel" },
+const steps: Array<{ id: StepId; label: string; description: string }> = [
+  { id: "setup", label: "Cấu hình", description: "Header và mẫu sheet" },
+  { id: "import", label: "Nhập Excel", description: "File, sheet và map cột" },
+  { id: "rows", label: "Dòng vật tư", description: "Chuẩn hóa dữ liệu" },
+  { id: "research", label: "Tìm nguồn", description: "Web, catalog, manual" },
+  { id: "export", label: "Xuất Excel", description: "Validate và tải file" },
 ];
 
 const mappingFields: Array<{
@@ -1918,10 +1918,7 @@ function ExportStep({ payload }: { payload: WorkspacePayload }) {
           value={payload.items.filter((item) => item.includedInExport).length}
         />
         <SummaryCard label="Sheet" value={selectedTemplates.length} />
-        <SummaryCard
-          label="Lỗi chặn"
-          value={isLoading ? "..." : errors.length}
-        />
+        <SummaryCard label="Lỗi chặn" value={isLoading ? "…" : errors.length} />
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -2036,7 +2033,7 @@ export function ExcelWorkspaceWizardClient({
   }
 
   if (!payload) {
-    return <div className="panel p-5 text-sm text-slate-600">Đang tải...</div>;
+    return <div className="panel p-5 text-sm text-slate-600">Đang tải…</div>;
   }
 
   const activeStep =
@@ -2077,7 +2074,10 @@ export function ExcelWorkspaceWizardClient({
           </Badge>
         </div>
 
-        <nav className="mt-2 flex flex-wrap gap-1 border-t border-slate-200 pt-2">
+        <nav
+          aria-label="Các bước xử lý Excel workspace"
+          className="mt-3 grid gap-2 border-t border-slate-200 pt-3 sm:grid-cols-2 xl:grid-cols-5"
+        >
           {steps.map((step, index) => {
             const isActive = activeStep === step.id;
             const isLocked = index > maxStepIndex;
@@ -2087,21 +2087,33 @@ export function ExcelWorkspaceWizardClient({
                 key={step.id}
                 type="button"
                 disabled={isLocked}
+                aria-current={isActive ? "step" : undefined}
                 onClick={() => setStep(step.id)}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed ${
+                className={`flex min-w-0 items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed ${
                   isActive
-                    ? "bg-slate-950 text-white"
+                    ? "border-slate-950 bg-slate-950 text-white"
                     : isDone
-                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
                       : isLocked
-                        ? "bg-white text-slate-400"
-                        : "bg-white text-slate-700 hover:bg-slate-100"
+                        ? "border-slate-200 bg-white text-slate-400"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                 }`}
               >
-                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-current/10 text-[10px]">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold">
                   {isDone ? "✓" : index + 1}
                 </span>
-                {step.label}
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-bold">
+                    {step.label}
+                  </span>
+                  <span
+                    className={`mt-0.5 block text-[11px] leading-4 ${
+                      isActive ? "text-white/75" : "text-slate-500"
+                    }`}
+                  >
+                    {step.description}
+                  </span>
+                </span>
               </button>
             );
           })}

@@ -647,7 +647,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
   if (materialQuery.isLoading) {
     return (
       <div className="panel p-5 text-sm text-slate-600">
-        Đang tải chi tiết vật tư...
+        Đang tải chi tiết vật tư…
       </div>
     );
   }
@@ -675,14 +675,14 @@ export function MaterialDetailClient({ id }: { id: number }) {
   if (!form) {
     return (
       <div className="panel p-5 text-sm text-slate-600">
-        Đang tải chi tiết vật tư...
+        Đang tải chi tiết vật tư…
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <section className="panel p-4">
+      <section id="material-overview" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <Link
@@ -784,7 +784,10 @@ export function MaterialDetailClient({ id }: { id: number }) {
         </dl>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+      <section
+        id="material-prices"
+        className="grid scroll-mt-6 gap-4 xl:grid-cols-[0.85fr_1.15fr]"
+      >
         <article className="panel p-4">
           <div className="border-b border-slate-200 pb-3">
             <div className="flex items-center gap-2">
@@ -803,7 +806,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             <Field label="Tên nguồn">
               <input
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                placeholder="Nhà cung cấp, sàn TMĐT, báo giá..."
+                placeholder="Nhà cung cấp, sàn TMĐT, báo giá…"
                 value={priceSourceForm.label}
                 onChange={(event) =>
                   setPriceSourceForm({
@@ -847,7 +850,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             <Field label="URL sản phẩm">
               <input
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                placeholder="https://..."
+                placeholder="https://example.com/bao-gia…"
                 value={priceSourceForm.url}
                 onChange={(event) =>
                   setPriceSourceForm({
@@ -981,7 +984,10 @@ export function MaterialDetailClient({ id }: { id: number }) {
         </article>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+      <section
+        id="material-edit"
+        className="grid scroll-mt-6 gap-4 xl:grid-cols-[1.25fr_0.75fr]"
+      >
         <article className="panel p-4">
           <div className="border-b border-slate-200 pb-3">
             <h3 className="text-sm font-bold text-slate-950">
@@ -1175,7 +1181,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
         {usageQuery.isLoading ? (
           <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-            Đang tải lịch sử sử dụng...
+            Đang tải lịch sử sử dụng…
           </div>
         ) : usageQuery.isError ? (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">

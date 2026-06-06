@@ -3,7 +3,27 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, Download, RefreshCw, RotateCw, X } from "lucide-react";
+import {
+  BarChart3,
+  Bell,
+  BookmarkCheck,
+  Boxes,
+  ChevronRight,
+  CircleHelp,
+  Download,
+  FileSpreadsheet,
+  LayoutDashboard,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  RotateCw,
+  Search,
+  Workflow,
+  Wrench,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
 import { useToast } from "~/app/_components/ui/toast";
@@ -134,6 +154,19 @@ const navSections: NavSection[] = [
     : []),
 ];
 
+const navIconMap: Record<IconName, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  search: Search,
+  excel: FileSpreadsheet,
+  materials: Boxes,
+  saved: BookmarkCheck,
+  workflow: Workflow,
+  insight: BarChart3,
+  notification: Bell,
+  help: CircleHelp,
+  tools: Wrench,
+};
+
 function NavItemIcon({
   icon,
   className,
@@ -141,98 +174,8 @@ function NavItemIcon({
   icon: IconName;
   className?: string;
 }) {
-  const common = {
-    className,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-
-  switch (icon) {
-    case "dashboard":
-      return (
-        <svg {...common}>
-          <rect x="3" y="3" width="8" height="8" rx="1.5" />
-          <rect x="13" y="3" width="8" height="5" rx="1.5" />
-          <rect x="13" y="10" width="8" height="11" rx="1.5" />
-          <rect x="3" y="13" width="8" height="8" rx="1.5" />
-        </svg>
-      );
-    case "search":
-      return (
-        <svg {...common}>
-          <circle cx="11" cy="11" r="6.5" />
-          <path d="m16 16 4.25 4.25" />
-        </svg>
-      );
-    case "saved":
-      return (
-        <svg {...common}>
-          <path d="M6 4.5h12A1.5 1.5 0 0 1 19.5 6v14.5L12 16l-7.5 4.5V6A1.5 1.5 0 0 1 6 4.5Z" />
-        </svg>
-      );
-    case "excel":
-      return (
-        <svg {...common}>
-          <path d="M5 4.5h9l5 5v10A1.5 1.5 0 0 1 17.5 21h-12A1.5 1.5 0 0 1 4 19.5V6a1.5 1.5 0 0 1 1-1.5Z" />
-          <path d="M14 4.5V10h5" />
-          <path d="M8 13h7" />
-          <path d="M8 16h7" />
-        </svg>
-      );
-    case "workflow":
-      return (
-        <svg {...common}>
-          <circle cx="6" cy="6" r="2.5" />
-          <circle cx="18" cy="12" r="2.5" />
-          <circle cx="6" cy="18" r="2.5" />
-          <path d="M8.5 6h6" />
-          <path d="M15.8 13.4 8.3 16.6" />
-        </svg>
-      );
-    case "insight":
-      return (
-        <svg {...common}>
-          <path d="M4.5 19.5h15" />
-          <path d="M7.5 16v-5" />
-          <path d="M12 16V9" />
-          <path d="M16.5 16V6" />
-        </svg>
-      );
-    case "notification":
-      return (
-        <svg {...common}>
-          <path d="M7.5 9a4.5 4.5 0 1 1 9 0v4l1.5 2.5h-12L7.5 13Z" />
-          <path d="M10 18a2 2 0 0 0 4 0" />
-        </svg>
-      );
-    case "help":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.6V14" />
-          <path d="M12 17.25h.01" />
-        </svg>
-      );
-    case "materials":
-      return (
-        <svg {...common}>
-          <path d="M4.5 8.5 12 4l7.5 4.5-7.5 4.5-7.5-4.5Z" />
-          <path d="m4.5 12 7.5 4.5 7.5-4.5" />
-          <path d="m4.5 15.5 7.5 4.5 7.5-4.5" />
-        </svg>
-      );
-    case "tools":
-      return (
-        <svg {...common}>
-          <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2 2.5-2.5Z" />
-        </svg>
-      );
-  }
+  const Icon = navIconMap[icon];
+  return <Icon className={className} aria-hidden="true" />;
 }
 
 function ChevronIcon({
@@ -243,20 +186,12 @@ function ChevronIcon({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
+    <ChevronRight
       className={`${className} transition-transform duration-150 ${
         expanded ? "rotate-90" : ""
       }`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="m9 6 6 6-6 6" />
-    </svg>
+      aria-hidden="true"
+    />
   );
 }
 
@@ -281,9 +216,9 @@ function NavLink({
   return (
     <div className="flex flex-col">
       <div
-        className={`group relative flex items-center rounded-lg text-sm font-medium transition-colors duration-150 ${
+        className={`group relative flex items-center rounded-md text-sm font-medium transition-colors duration-150 ${
           isActive
-            ? "bg-sky-700 text-white"
+            ? "bg-sky-50 text-sky-900 ring-1 ring-sky-200"
             : "text-slate-700 hover:bg-slate-100"
         } ${collapsed ? "justify-center" : ""}`}
       >
@@ -293,14 +228,14 @@ function NavLink({
           title={collapsed ? item.label : undefined}
           aria-current={isActive ? "page" : undefined}
           aria-label={collapsed ? item.label : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+          className={`flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
             collapsed ? "justify-center" : ""
           }`}
         >
           <span
             className={`relative flex h-7 w-7 shrink-0 items-center justify-center ${
               isActive
-                ? "text-white"
+                ? "text-sky-700"
                 : "text-slate-500 group-hover:text-slate-700"
             }`}
           >
@@ -308,7 +243,7 @@ function NavLink({
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
                 className={`absolute -top-1 -right-1 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold ${
-                  isActive ? "bg-white text-sky-700" : "bg-rose-600 text-white"
+                  isActive ? "bg-sky-700 text-white" : "bg-rose-600 text-white"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
               >
@@ -326,7 +261,7 @@ function NavLink({
             aria-expanded={expanded}
             className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
               isActive
-                ? "text-white/80 hover:bg-white/15"
+                ? "text-sky-700 hover:bg-sky-100"
                 : "text-slate-500 hover:bg-slate-200"
             }`}
           >
@@ -440,18 +375,11 @@ function CollapseToggle({
       title={`${collapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
       className={`flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
     >
-      <svg
-        viewBox="0 0 24 24"
-        className="h-4 w-4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {collapsed ? <path d="m9 6 6 6-6 6" /> : <path d="m15 6-6 6 6 6" />}
-      </svg>
+      {collapsed ? (
+        <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+      ) : (
+        <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+      )}
     </button>
   );
 }
@@ -815,6 +743,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen flex-col text-slate-900 sm:flex-row">
+      <a
+        href="#main-content"
+        className="sr-only z-[60] rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+      >
+        Bỏ qua điều hướng
+      </a>
       <aside
         className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur transition-[width] duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
           sidebarCollapsed ? "sm:w-16" : "sm:w-64"
@@ -857,27 +791,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             aria-label="Mở menu điều hướng"
             className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M4 6h16" />
-              <path d="M4 12h16" />
-              <path d="M4 18h16" />
-            </svg>
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
         </header>
 
         <MobileBanner />
         <DesktopUpdateNotice />
         <VersionUpdateNotice />
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
             {children}
           </div>
@@ -904,19 +825,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 aria-label="Đóng menu"
                 className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="m6 6 12 12" />
-                  <path d="m18 6-12 12" />
-                </svg>
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
             <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-2 py-3">

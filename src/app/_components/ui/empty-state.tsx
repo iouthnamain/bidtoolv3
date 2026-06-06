@@ -17,10 +17,10 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div
-      className={`rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center ${className ?? ""}`}
+      className={`rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center ${className ?? ""}`}
     >
       {icon ? (
-        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-400 ring-1 ring-slate-200">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-white text-slate-400 ring-1 ring-slate-200">
           {icon}
         </div>
       ) : null}

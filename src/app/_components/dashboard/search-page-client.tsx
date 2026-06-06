@@ -116,7 +116,13 @@ const DEFAULT_BUDGET_SLIDER_MAX = 100_000_000_000;
 const BUDGET_SLIDER_STEP = 1_000_000;
 
 const controlClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100";
+  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
+
+const dateFormatter = new Intl.DateTimeFormat("vi-VN");
+const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 function formatCurrency(value: number) {
   return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
@@ -149,7 +155,7 @@ function formatDate(value?: string | null) {
     return value;
   }
 
-  return parsed.toLocaleDateString("vi-VN");
+  return dateFormatter.format(parsed);
 }
 
 function formatDateTime(value?: string | null) {
@@ -163,7 +169,7 @@ function formatDateTime(value?: string | null) {
     return value;
   }
 
-  return parsed.toLocaleString("vi-VN");
+  return dateTimeFormatter.format(parsed);
 }
 
 function buildFormState(criteria: SearchCriteria): FormState {
@@ -298,10 +304,13 @@ function MultiSelectDropdown({
       </button>
 
       {isOpen ? (
-        <div className="absolute z-20 mt-2 w-full rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+        <div className="absolute z-20 mt-2 w-full rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
           <input
             className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-            placeholder="Tìm nhanh..."
+            name="multiselect-search"
+            aria-label="Tìm trong danh sách"
+            autoComplete="off"
+            placeholder="Tìm nhanh…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -1198,7 +1207,7 @@ export function SearchPageClient() {
 
   return (
     <div className="space-y-4">
-      <section className="panel p-4 sm:p-5">
+      <section id="search-modes" className="panel scroll-mt-6 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">
@@ -1228,7 +1237,7 @@ export function SearchPageClient() {
               <button
                 key={tabMode}
                 type="button"
-                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                className={`rounded-lg border px-4 py-3 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   isActive
                     ? "border-sky-400 bg-sky-50"
                     : "border-slate-200 bg-white hover:border-slate-300"
@@ -1253,7 +1262,10 @@ export function SearchPageClient() {
           })}
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div
+          id="search-filters"
+          className="mt-4 scroll-mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
               Bộ lọc đang áp dụng
@@ -1739,6 +1751,7 @@ export function SearchPageClient() {
       </section>
 
       <section
+        id="search-results"
         className="panel p-4 sm:p-5"
         aria-busy={resultQuery.isFetching ? true : undefined}
       >
@@ -1755,7 +1768,7 @@ export function SearchPageClient() {
               </p>
             ) : (
               <p className="mt-1 text-xs text-slate-500">
-                Đang tải dữ liệu public...
+                Đang tải dữ liệu public…
               </p>
             )}
           </div>
@@ -1774,10 +1787,10 @@ export function SearchPageClient() {
                 </option>
               ))}
             </select>
-            <div className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm">
+            <div className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!result || page <= 1}
                 onClick={() => setPage((previous) => Math.max(1, previous - 1))}
               >
@@ -1785,11 +1798,11 @@ export function SearchPageClient() {
                 Trước
               </button>
               <span className="text-xs text-slate-500">
-                {result ? `Trang ${page}/${totalPages}` : "Trang ..."}
+                {result ? `Trang ${page}/${totalPages}` : "Trang …"}
               </span>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!result || page >= totalPages}
                 onClick={() =>
                   setPage((previous) => Math.min(totalPages, previous + 1))
@@ -1841,7 +1854,7 @@ export function SearchPageClient() {
         {isShowingPreviousResults ? (
           <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
             <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            Đang tải kết quả mới...
+            Đang tải kết quả mới…
           </div>
         ) : null}
 

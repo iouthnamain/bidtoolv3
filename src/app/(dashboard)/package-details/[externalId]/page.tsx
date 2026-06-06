@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { PackageDetailsPageClient } from "~/app/_components/dashboard/package-details-page-client";
+import { sourceDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { HydrateClient, api } from "~/trpc/server";
 
 type PackageDetailsPageProps = {
@@ -37,12 +38,14 @@ export default async function PackageDetailsPage({
     <DashboardShell
       title="Chi tiết từ trang nguồn"
       description="Hiển thị source URL, products parse theo heuristic và toàn bộ link khả dụng"
+      sectionNavItems={sourceDetailSectionNavItems}
+      sectionNavTitle="Khu vực chi tiết"
     >
       <HydrateClient>
         <Suspense
           fallback={
             <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-6 text-sm text-slate-600 shadow-sm">
-              Đang tải chi tiết gói thầu...
+              Đang tải chi tiết gói thầu…
             </div>
           }
         >

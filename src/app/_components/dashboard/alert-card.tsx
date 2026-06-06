@@ -20,7 +20,7 @@ const severityLabel: Record<AlertCardProps["severity"], string> = {
 export function AlertCard({ title, body, severity }: AlertCardProps) {
   return (
     <article
-      className={`rounded-xl border p-3 shadow-sm backdrop-blur ${severityClass[severity]}`}
+      className={`rounded-lg border p-3 shadow-sm backdrop-blur ${severityClass[severity]}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere]">

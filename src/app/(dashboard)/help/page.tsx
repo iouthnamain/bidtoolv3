@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+import { helpSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 
 type HelpLink = {
   href: string;
@@ -868,6 +869,8 @@ export default function HelpPage() {
     <DashboardShell
       title="Trợ giúp & Hướng dẫn"
       description="Hướng dẫn vận hành BidTool v3 từ lúc mở app, tìm gói thầu, lưu bộ lọc, chạy Excel workspace đến bảo trì cục bộ."
+      sectionNavItems={helpSectionNavItems}
+      sectionNavTitle="Mục trợ giúp chính"
     >
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <aside className="lg:sticky lg:top-4 lg:self-start">

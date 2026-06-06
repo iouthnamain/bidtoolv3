@@ -282,7 +282,7 @@ export function MaterialCreateClient() {
           <Field label="URL nguồn" className="md:col-span-2">
             <input
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="https://..."
+              placeholder="https://example.com/bao-gia…"
               value={form.sourceUrl}
               onChange={(event) =>
                 setForm({ ...form, sourceUrl: event.target.value })

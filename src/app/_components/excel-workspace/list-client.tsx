@@ -115,7 +115,7 @@ const statTileToneClass: Record<StatTone, string> = {
 };
 
 const controlClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100";
+  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
 
 function displayWorkspaceName(name: string) {
   return name === "Product sourcing workspace" ? "Workbook vật tư chuẩn" : name;
@@ -452,7 +452,7 @@ export function ExcelWorkspaceListClient() {
         onConfirm={() => deleteMany.mutate({ ids: sel.selectedIds })}
         onCancel={() => setConfirmBulkDelete(false)}
       />
-      <section className="panel p-4">
+      <section id="create-workspace" className="panel scroll-mt-6 p-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
             <label
@@ -483,7 +483,7 @@ export function ExcelWorkspaceListClient() {
                 leftIcon={<Plus className="h-4 w-4" />}
                 onClick={handleCreateWorkspace}
               >
-                {createWorkspace.isPending ? "Đang tạo..." : "Tạo workspace"}
+                {createWorkspace.isPending ? "Đang tạo…" : "Tạo workspace"}
               </Button>
             </div>
             <p className="mt-1.5 text-xs text-slate-500">
@@ -522,7 +522,7 @@ export function ExcelWorkspaceListClient() {
         </div>
       </section>
 
-      <section className="panel p-3">
+      <section id="workspace-list" className="panel scroll-mt-6 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[16rem] flex-1">
             <Search
@@ -572,7 +572,7 @@ export function ExcelWorkspaceListClient() {
                 key={filterKey}
                 type="button"
                 onClick={() => setActiveViewFilter(filterKey)}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   activeViewFilter === filterKey
                     ? "border-sky-700 bg-sky-700 text-white"
                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
@@ -716,8 +716,10 @@ export function ExcelWorkspaceListClient() {
                       </div>
                       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-teal-500 via-sky-500 to-cyan-500 transition-[width]"
-                          style={{ width: `${completionPercent}%` }}
+                          className="h-full w-full origin-left rounded-full bg-gradient-to-r from-teal-500 via-sky-500 to-cyan-500 transition-transform duration-300"
+                          style={{
+                            transform: `scaleX(${completionPercent / 100})`,
+                          }}
                         />
                       </div>
                     </div>

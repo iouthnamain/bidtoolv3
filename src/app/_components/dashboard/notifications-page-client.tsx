@@ -81,7 +81,7 @@ export function NotificationsPageClient() {
   });
 
   return (
-    <section className="panel p-4">
+    <section id="notification-list" className="panel scroll-mt-6 p-4">
       <ConfirmDialog
         open={confirmDelete}
         title={`Xóa ${sel.selectedCount} thông báo?`}

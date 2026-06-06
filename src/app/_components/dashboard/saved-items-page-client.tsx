@@ -166,7 +166,7 @@ function SavedFiltersSection() {
       ) : null}
 
       {savedFiltersQuery.isPending ? (
-        <LoadingPanel message="Đang tải Smart Views..." />
+        <LoadingPanel message="Đang tải Smart Views…" />
       ) : savedFiltersQuery.error ? (
         <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
           <p className="font-semibold">Không tải được Smart Views</p>
@@ -336,7 +336,7 @@ function WatchlistSection() {
       </div>
 
       {watchlistQuery.isPending ? (
-        <LoadingPanel message="Đang tải Watchlist..." />
+        <LoadingPanel message="Đang tải Watchlist…" />
       ) : watchlistQuery.error ? (
         <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
           <p className="font-semibold">Không tải được Watchlist</p>

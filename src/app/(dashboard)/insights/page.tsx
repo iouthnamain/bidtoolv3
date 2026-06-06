@@ -1,5 +1,6 @@
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
+import { insightsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { api } from "~/trpc/server";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +100,8 @@ export default async function InsightsPage() {
     <DashboardShell
       title="Insights & Xu hướng"
       description="Tổng quan thị trường và chỉ số vận hành"
+      sectionNavItems={insightsSectionNavItems}
+      sectionNavTitle="Khu vực phân tích"
     >
       {isDegraded ? (
         <section className="panel mb-3 border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -107,7 +110,10 @@ export default async function InsightsPage() {
         </section>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section
+        id="insight-kpis"
+        className="grid scroll-mt-6 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+      >
         <KpiCard
           label="Tổng gói thầu"
           value={summary.totalPackages}
@@ -122,7 +128,7 @@ export default async function InsightsPage() {
         />
       </section>
 
-      <section className="panel mt-4 p-3">
+      <section id="market-trend" className="panel mt-4 scroll-mt-6 p-3">
         <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">
           Xu hướng 7 ngày
         </h2>
@@ -162,9 +168,9 @@ export default async function InsightsPage() {
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-300">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-sky-600 transition-all"
+                    className="h-full w-full origin-left rounded-full bg-gradient-to-r from-cyan-500 to-sky-600 transition-transform duration-300"
                     style={{
-                      width: `${Math.max(3, (row.newPackages / maxPackages) * 100)}%`,
+                      transform: `scaleX(${Math.max(0.03, row.newPackages / maxPackages)})`,
                     }}
                   />
                 </div>
@@ -175,7 +181,7 @@ export default async function InsightsPage() {
       </section>
 
       <section className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
-        <article className="panel p-4">
+        <article id="workflow-health" className="panel scroll-mt-6 p-4">
           <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">
             Sức khoẻ workflow
           </h2>
@@ -198,7 +204,7 @@ export default async function InsightsPage() {
           </p>
         </article>
 
-        <article className="panel p-4">
+        <article id="top-signals" className="panel scroll-mt-6 p-4">
           <h2 className="border-b border-slate-200 pb-2 text-sm font-bold">
             Top tín hiệu thị trường
           </h2>

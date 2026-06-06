@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+import { workflowDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { WorkflowDetailPageClient } from "~/app/_components/dashboard/workflow-detail-page-client";
 import { HydrateClient, api } from "~/trpc/server";
 
@@ -36,6 +37,8 @@ export default async function WorkflowDetailPage({
     <DashboardShell
       title="Chi tiết workflow"
       description="Quản lý cấu hình, trạng thái kích hoạt và lịch sử chạy của workflow."
+      sectionNavItems={workflowDetailSectionNavItems}
+      sectionNavTitle="Chi tiết workflow"
     >
       <HydrateClient>
         <WorkflowDetailPageClient

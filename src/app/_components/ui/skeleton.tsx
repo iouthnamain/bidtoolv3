@@ -34,7 +34,7 @@ export function SkeletonCard({ className }: SkeletonProps) {
   return (
     <div
       aria-hidden
-      className={`rounded-xl border border-slate-200/70 bg-white p-4 ${className ?? ""}`}
+      className={`rounded-lg border border-slate-200/70 bg-white p-4 ${className ?? ""}`}
     >
       <div className="flex items-center gap-3">
         <Skeleton className="h-9 w-9 rounded-lg" />
@@ -55,7 +55,7 @@ export function SkeletonKpi() {
   return (
     <div
       aria-hidden
-      className="rounded-xl border border-slate-200/70 bg-white p-4"
+      className="rounded-lg border border-slate-200/70 bg-white p-4"
     >
       <Skeleton className="mb-2 h-3 w-20" />
       <Skeleton className="h-8 w-16" />
@@ -76,7 +76,7 @@ export function SkeletonTable({
   return (
     <div
       aria-hidden
-      className={`overflow-hidden rounded-xl border border-slate-200/70 bg-white ${className ?? ""}`}
+      className={`overflow-hidden rounded-lg border border-slate-200/70 bg-white ${className ?? ""}`}
     >
       <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
         <div className="flex gap-4">
@@ -103,7 +103,7 @@ export function SkeletonTable({
 
 export function PageSkeleton() {
   return (
-    <div className="space-y-4" aria-label="Đang tải..." role="status">
+    <div className="space-y-4" aria-label="Đang tải…" role="status">
       <div className="flex items-center gap-3">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-8 w-24 rounded-lg" />

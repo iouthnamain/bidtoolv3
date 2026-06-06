@@ -1,5 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
+import {
+  PageSectionNav,
+  type PageSectionNavItem,
+} from "~/app/_components/dashboard/page-section-nav";
 
 import { Logo } from "~/app/_components/brand/logo";
 import { Badge, EmptyState } from "~/app/_components/ui";
@@ -7,13 +11,18 @@ import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
+const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "Chưa chạy";
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
 
-  return parsed.toLocaleString("vi-VN");
+  return dateTimeFormatter.format(parsed);
 }
 
 function statusLabel(status: string | null | undefined) {
@@ -30,63 +39,6 @@ function statusTone(status: string | null | undefined) {
   return "neutral";
 }
 
-function ActionIcon({
-  name,
-}: {
-  name: "search" | "excel" | "workflow" | "help";
-}) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-    className: "h-5 w-5",
-  };
-
-  if (name === "search") {
-    return (
-      <svg {...common}>
-        <circle cx="11" cy="11" r="6.5" />
-        <path d="m16 16 4.25 4.25" />
-      </svg>
-    );
-  }
-
-  if (name === "excel") {
-    return (
-      <svg {...common}>
-        <path d="M5 4.5h9l5 5v10A1.5 1.5 0 0 1 17.5 21h-12A1.5 1.5 0 0 1 4 19.5V6a1.5 1.5 0 0 1 1-1.5Z" />
-        <path d="M14 4.5V10h5" />
-        <path d="M8 13h7" />
-        <path d="M8 16h7" />
-      </svg>
-    );
-  }
-
-  if (name === "workflow") {
-    return (
-      <svg {...common}>
-        <circle cx="6" cy="6" r="2.5" />
-        <circle cx="18" cy="12" r="2.5" />
-        <circle cx="6" cy="18" r="2.5" />
-        <path d="M8.5 6h6" />
-        <path d="M15.8 13.4 8.3 16.6" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg {...common}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.6V14" />
-      <path d="M12 17.25h.01" />
-    </svg>
-  );
-}
-
 export default async function Home() {
   const { summary, latestAlerts, recentWorkflowRuns, isDegraded } =
     await getDashboardSnapshot();
@@ -94,61 +46,62 @@ export default async function Home() {
   const workflowState =
     summary.activeWorkflows > 0 ? "Đang theo dõi" : "Chưa bật workflow";
 
-  const actionLinks = [
+  const actionLinks: PageSectionNavItem[] = [
     {
       href: "/search",
       label: "Tìm gói thầu",
-      body: "Lọc realtime từ BidWinner và lưu gói phù hợp vào DB.",
-      icon: "search" as const,
+      description: "Lọc realtime từ BidWinner và lưu gói phù hợp vào DB.",
+      icon: "search",
     },
     {
       href: "/excel-workspace",
       label: "Xử lý Excel",
-      body: "Import bảng sản phẩm, map cột, chọn evidence và export enriched file.",
-      icon: "excel" as const,
+      description:
+        "Import bảng sản phẩm, map cột, chọn evidence và export enriched file.",
+      icon: "sheet",
     },
     {
       href: "/workflows",
       label: "Tự động hóa",
-      body: "Biến Smart View thành workflow cảnh báo gói thầu mới.",
-      icon: "workflow" as const,
+      description: "Biến Smart View thành workflow cảnh báo gói thầu mới.",
+      icon: "workflow",
     },
     {
       href: "/help",
       label: "Hướng dẫn",
-      body: "Xem cách setup, vận hành, bảo trì và xử lý lỗi thường gặp.",
-      icon: "help" as const,
+      description: "Xem cách setup, vận hành, bảo trì và xử lý lỗi thường gặp.",
+      icon: "file",
     },
   ];
 
   return (
     <main className="min-h-screen px-4 py-5 text-slate-900 sm:py-7">
       <div className="mx-auto w-full max-w-[1440px] space-y-5">
-        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
           <Logo ariaLabel="BidTool v3" tagline="Procurement OS" />
           <nav className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <Link
               href="/dashboard"
-              className="rounded-lg px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Dashboard
             </Link>
             <Link
               href="/help"
-              className="rounded-lg px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Trợ giúp
             </Link>
             <Link
               href="/search"
-              className="rounded-lg bg-sky-700 px-3 py-1.5 text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="rounded-md bg-sky-700 px-3 py-1.5 text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Bắt đầu tìm kiếm
             </Link>
           </nav>
         </header>
 
-        <section className="grid overflow-hidden rounded-3xl border border-cyan-200/50 bg-gradient-to-br from-cyan-950 via-sky-950 to-teal-900 text-white shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="grid overflow-hidden rounded-lg border border-cyan-200/50 bg-gradient-to-br from-cyan-950 via-sky-950 to-teal-900 text-white shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
           <div className="flex flex-col justify-between gap-8 p-6 sm:p-8 lg:p-10">
             <div>
               <p className="text-xs font-semibold tracking-[0.22em] text-cyan-100 uppercase">
@@ -165,13 +118,13 @@ export default async function Home() {
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
                   href="/dashboard"
-                  className="inline-flex items-center rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-950 transition-colors hover:bg-cyan-50 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
+                  className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-bold text-slate-950 transition-colors hover:bg-cyan-50 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
                 >
                   Mở trung tâm điều hành
                 </Link>
                 <Link
                   href="/maintenance"
-                  className="inline-flex items-center rounded-xl border border-white/40 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
+                  className="inline-flex items-center rounded-md border border-white/40 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
                 >
                   Kiểm tra bảo trì
                 </Link>
@@ -205,7 +158,7 @@ export default async function Home() {
           </div>
 
           <figure className="border-t border-white/15 bg-white/8 p-4 lg:border-t-0 lg:border-l">
-            <div className="overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl shadow-cyan-950/30">
+            <div className="overflow-hidden rounded-lg border border-white/20 bg-white shadow-2xl shadow-cyan-950/30">
               <Image
                 src="/help/dashboard-overview.png"
                 alt="Ảnh chụp màn hình dashboard BidTool"
@@ -230,27 +183,7 @@ export default async function Home() {
           </section>
         ) : null}
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {actionLinks.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="panel group flex min-h-36 flex-col justify-between gap-5 p-4 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50/60 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-sky-700 transition-colors group-hover:border-sky-200">
-                <ActionIcon name={item.icon} />
-              </span>
-              <span>
-                <span className="block text-sm font-bold text-slate-950">
-                  {item.label}
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-slate-600">
-                  {item.body}
-                </span>
-              </span>
-            </Link>
-          ))}
-        </section>
+        <PageSectionNav title="Luồng chính" items={actionLinks} />
 
         <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
           <article className="panel p-4">

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+import { materialDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { MaterialDetailClient } from "~/app/_components/materials/detail-client";
 import { HydrateClient, api } from "~/trpc/server";
 
@@ -34,12 +35,14 @@ export default async function MaterialDetailsPage({
     <DashboardShell
       title="Chi tiết vật tư"
       description="Xem, chỉnh sửa và kiểm tra lịch sử sử dụng vật tư trong các workspace Excel"
+      sectionNavItems={materialDetailSectionNavItems}
+      sectionNavTitle="Chi tiết vật tư"
     >
       <HydrateClient>
         <Suspense
           fallback={
             <div className="panel p-5 text-sm text-slate-600">
-              Đang tải chi tiết vật tư...
+              Đang tải chi tiết vật tư…
             </div>
           }
         >

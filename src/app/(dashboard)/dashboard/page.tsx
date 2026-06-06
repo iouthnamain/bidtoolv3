@@ -1,11 +1,22 @@
 import Link from "next/link";
-import { Bell, Search, Workflow } from "lucide-react";
+import {
+  Bell,
+  BookmarkCheck,
+  Search,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
 
 import { AlertCard } from "~/app/_components/dashboard/alert-card";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
 import { Badge, EmptyState } from "~/app/_components/ui";
 import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
+
+const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
@@ -17,7 +28,7 @@ function formatDateTime(value: string | null | undefined) {
     return value;
   }
 
-  return date.toLocaleString("vi-VN");
+  return dateTimeFormatter.format(date);
 }
 
 function workflowStatusLabel(status: string | null | undefined) {
@@ -34,57 +45,18 @@ function workflowStatusTone(status: string | null | undefined) {
   return "neutral";
 }
 
-function MiniIcon({
-  name,
-}: {
-  name: "search" | "saved" | "workflow" | "notification";
-}) {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-    className: "h-4 w-4",
-  };
+type MiniIconName = "search" | "saved" | "workflow" | "notification";
 
-  if (name === "search") {
-    return (
-      <svg {...common}>
-        <circle cx="11" cy="11" r="6.5" />
-        <path d="m16 16 4.25 4.25" />
-      </svg>
-    );
-  }
+const miniIconMap: Record<MiniIconName, LucideIcon> = {
+  search: Search,
+  saved: BookmarkCheck,
+  workflow: Workflow,
+  notification: Bell,
+};
 
-  if (name === "saved") {
-    return (
-      <svg {...common}>
-        <path d="M6 4.5h12A1.5 1.5 0 0 1 19.5 6v14.5L12 16l-7.5 4.5V6A1.5 1.5 0 0 1 6 4.5Z" />
-      </svg>
-    );
-  }
-
-  if (name === "workflow") {
-    return (
-      <svg {...common}>
-        <circle cx="6" cy="6" r="2.5" />
-        <circle cx="18" cy="12" r="2.5" />
-        <circle cx="6" cy="18" r="2.5" />
-        <path d="M8.5 6h6" />
-        <path d="M15.8 13.4 8.3 16.6" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg {...common}>
-      <path d="M7.5 9a4.5 4.5 0 1 1 9 0v4l1.5 2.5h-12L7.5 13Z" />
-      <path d="M10 18a2 2 0 0 0 4 0" />
-    </svg>
-  );
+function MiniIcon({ name }: { name: MiniIconName }) {
+  const Icon = miniIconMap[name];
+  return <Icon className="h-4 w-4" aria-hidden="true" />;
 }
 
 export default async function DashboardPage() {
@@ -136,15 +108,13 @@ export default async function DashboardPage() {
         </section>
       ) : null}
 
-      <section className="grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
+      <section className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
         <article className="panel overflow-hidden">
-          <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-sky-950 to-teal-950 px-4 py-4 text-white sm:px-5">
+          <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold tracking-[0.16em] text-cyan-100/90 uppercase">
-                  Trạng thái hôm nay
-                </p>
-                <h2 className="mt-1 text-xl font-bold tracking-tight">
+                <p className="section-title">Trạng thái hôm nay</p>
+                <h2 className="mt-1 text-base font-bold tracking-tight text-slate-950">
                   {hasAttention
                     ? "Có cảnh báo cần xử lý"
                     : "Hệ thống đang ổn định"}
@@ -156,14 +126,14 @@ export default async function DashboardPage() {
                   : "Không có cảnh báo mới"}
               </Badge>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-50/90">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
               Bắt đầu bằng cảnh báo chưa đọc nếu có. Nếu mọi thứ ổn, tiếp tục
               tạo Smart View mới hoặc kiểm tra workflow gần nhất.
             </p>
           </div>
 
-          <div className="grid gap-3 p-4 sm:grid-cols-3 sm:p-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="grid gap-3 p-4 sm:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
               <p className="text-xs font-semibold text-slate-500">
                 Workflow gần nhất
               </p>
@@ -174,7 +144,7 @@ export default async function DashboardPage() {
                 {formatDateTime(latestWorkflow?.latestRun?.startedAt)}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
               <p className="text-xs font-semibold text-slate-500">
                 Tự động hóa
               </p>
@@ -185,7 +155,7 @@ export default async function DashboardPage() {
                 Tỷ lệ thành công {summary.workflowSuccessRate}%
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
               <p className="text-xs font-semibold text-slate-500">
                 Dữ liệu theo dõi
               </p>
@@ -209,9 +179,9 @@ export default async function DashboardPage() {
               <Link
                 key={action.href}
                 href={action.href}
-                className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50/70 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50/70 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-700">
                   <MiniIcon name={action.icon} />
                 </span>
                 <span className="min-w-0">
@@ -292,7 +262,7 @@ export default async function DashboardPage() {
               cta={
                 <Link
                   href="/search"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-sky-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   <Search className="h-4 w-4" aria-hidden />
                   Tạo bộ lọc
@@ -337,7 +307,7 @@ export default async function DashboardPage() {
               {recentWorkflowRuns.map((workflow) => (
                 <li
                   key={workflow.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere] text-slate-900">

@@ -25,11 +25,11 @@ export function Badge({
 }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${toneClass[tone]} ${className ?? ""}`}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold ${toneClass[tone]} ${className ?? ""}`}
     >
       {children}
       {typeof count === "number" ? (
-        <span className="rounded-full bg-white/70 px-1 text-[11px] leading-tight tabular-nums">
+        <span className="rounded bg-white/70 px-1 text-[11px] leading-tight tabular-nums">
           {count}
         </span>
       ) : null}

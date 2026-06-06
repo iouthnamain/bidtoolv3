@@ -23,12 +23,12 @@ const variantClass: Record<ButtonVariant, string> = {
 };
 
 const sizeClass: Record<ButtonSize, string> = {
-  sm: "rounded-md px-2.5 py-1 text-xs",
-  md: "rounded-lg px-3 py-2 text-sm",
+  sm: "min-h-8 rounded-md px-2.5 py-1 text-xs",
+  md: "min-h-9 rounded-md px-3 py-2 text-sm",
 };
 
 const baseClass =
-  "inline-flex items-center justify-center gap-1.5 font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(

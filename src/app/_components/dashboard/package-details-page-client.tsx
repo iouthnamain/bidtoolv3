@@ -103,7 +103,7 @@ export function BidWinnerSourceDetailsPageClient({
   if (detailsQuery.isLoading) {
     return (
       <div className="panel p-5 text-sm text-slate-600">
-        Đang tải chi tiết {SEARCH_ENTITY_LABELS[entityType].toLowerCase()}...
+        Đang tải chi tiết {SEARCH_ENTITY_LABELS[entityType].toLowerCase()}…
       </div>
     );
   }
@@ -144,7 +144,7 @@ export function BidWinnerSourceDetailsPageClient({
 
   return (
     <div className="space-y-4">
-      <section className="panel p-4">
+      <section id="source-overview" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
@@ -227,7 +227,10 @@ export function BidWinnerSourceDetailsPageClient({
         ) : null}
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section
+        id="source-tables"
+        className="grid scroll-mt-6 gap-3 sm:grid-cols-2"
+      >
         <article className="panel p-4">
           <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
             Products (heuristic)
@@ -246,7 +249,7 @@ export function BidWinnerSourceDetailsPageClient({
         </article>
       </section>
 
-      <section className="panel p-4">
+      <section id="source-commodity" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh mục hàng hóa</h3>
         {details.requiredTables.commodityCategories.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -272,7 +275,7 @@ export function BidWinnerSourceDetailsPageClient({
         ) : null}
       </section>
 
-      <section className="panel p-4">
+      <section id="source-tbmt" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Nội dung TBMT</h3>
         {details.requiredTables.tenderNoticeContents.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -298,7 +301,7 @@ export function BidWinnerSourceDetailsPageClient({
         ) : null}
       </section>
 
-      <section className="panel p-4">
+      <section id="source-documents" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Hồ sơ mời thầu</h3>
         {details.requiredTables.invitationDocuments.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -347,7 +350,7 @@ export function BidWinnerSourceDetailsPageClient({
         ) : null}
       </section>
 
-      <section className="panel p-4">
+      <section id="source-lots" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách các lô</h3>
         {details.requiredTables.lotList.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -373,7 +376,7 @@ export function BidWinnerSourceDetailsPageClient({
         ) : null}
       </section>
 
-      <section className="panel p-4">
+      <section id="source-products" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách products</h3>
         {details.products.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
@@ -396,7 +399,7 @@ export function BidWinnerSourceDetailsPageClient({
         )}
       </section>
 
-      <section className="panel p-4">
+      <section id="source-links" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách links khả dụng</h3>
         {details.links.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">

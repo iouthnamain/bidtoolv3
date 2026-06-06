@@ -7,6 +7,8 @@ import { Badge } from "~/app/_components/ui/badge";
 import { Button } from "~/app/_components/ui/button";
 import { FilterField } from "~/app/_components/ui/filter-field";
 import { useToast } from "~/app/_components/ui/toast";
+import { PageSectionNav } from "~/app/_components/dashboard/page-section-nav";
+import { desktopSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import type { DesktopServerConfig } from "~/types/bidtool-desktop";
 
 const emptyConfig: DesktopServerConfig = {
@@ -18,27 +20,27 @@ const emptyConfig: DesktopServerConfig = {
 function sourceLabel(source: DesktopServerConfig["source"]) {
   switch (source) {
     case "env":
-      return "Admin env";
+      return "Cấu hình env quản trị";
     case "user":
-      return "Saved locally";
+      return "Lưu trên máy này";
     case "none":
-      return "Bundled local mode";
+      return "Server local đi kèm";
   }
 }
 
 function validateServerUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
-    return "Enter the customer server URL.";
+    return "Nhập URL server khách hàng.";
   }
 
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return "Use an http:// or https:// URL.";
+      return "Dùng URL bắt đầu bằng http:// hoặc https://.";
     }
   } catch {
-    return "Enter a valid URL, for example http://bidtool.local.";
+    return "Nhập URL hợp lệ, ví dụ http://bidtool.local.";
   }
 
   return null;
@@ -74,7 +76,7 @@ export function DesktopSettingsPageClient() {
         error(
           loadError instanceof Error
             ? loadError.message
-            : "Could not read desktop server settings.",
+            : "Không đọc được cấu hình desktop server.",
         );
       })
       .finally(() => setIsLoading(false));
@@ -104,12 +106,12 @@ export function DesktopSettingsPageClient() {
       const nextConfig = await bridge.setServerUrl(serverUrl);
       setConfig(nextConfig);
       setServerUrl(nextConfig.serverUrl ?? "");
-      success("Desktop server URL saved.");
+      success("Đã lưu Desktop server URL.");
     } catch (saveError) {
       error(
         saveError instanceof Error
           ? saveError.message
-          : "Could not save desktop server URL.",
+          : "Không lưu được Desktop server URL.",
       );
     } finally {
       setIsSaving(false);
@@ -128,12 +130,12 @@ export function DesktopSettingsPageClient() {
       setConfig(nextConfig);
       setServerUrl("");
       setFormError(null);
-      success("Desktop server URL cleared.");
+      success("Đã xóa Desktop server URL.");
     } catch (clearError) {
       error(
         clearError instanceof Error
           ? clearError.message
-          : "Could not clear desktop server URL.",
+          : "Không xóa được Desktop server URL.",
       );
     } finally {
       setIsClearing(false);
@@ -153,7 +155,7 @@ export function DesktopSettingsPageClient() {
       error(
         reloadError instanceof Error
           ? reloadError.message
-          : "Could not load the configured server.",
+          : "Không tải được server đang cấu hình.",
       );
       setIsReloading(false);
     }
@@ -161,47 +163,52 @@ export function DesktopSettingsPageClient() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+      <header className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-950 text-white">
                 <MonitorCog className="h-4 w-4" aria-hidden />
               </span>
               <Badge tone={isDesktop ? "success" : "neutral"}>
-                {isDesktop ? "Electron detected" : "Browser mode"}
+                {isDesktop ? "Đã nhận Electron" : "Chế độ trình duyệt"}
               </Badge>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
               Desktop client
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Point the desktop app at a customer on-prem server, or clear the
-              setting to use the bundled local server package.
+              Trỏ desktop app tới server on-prem của khách hàng, hoặc xóa cấu
+              hình để dùng server local đi kèm.
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
-              Active mode
+              Chế độ hiện tại
             </p>
             <p className="mt-1 font-bold text-slate-950">{activeMode}</p>
           </div>
         </div>
       </header>
 
+      <PageSectionNav title="Khu vực desktop" items={desktopSectionNavItems} />
+
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div
+          id="desktop-server"
+          className="scroll-mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+        >
           <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-700">
               <Server className="h-4 w-4" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-bold text-slate-950">
-                Customer server URL
+                Server URL khách hàng
               </h2>
               <p className="mt-1 text-sm leading-6 text-slate-600">
-                Use the URL from the on-prem install, usually a LAN hostname or
-                private domain behind the bundled reverse proxy.
+                Dùng URL từ bản cài on-prem, thường là LAN hostname hoặc domain
+                nội bộ sau reverse proxy đi kèm.
               </p>
             </div>
           </div>
@@ -213,8 +220,8 @@ export function DesktopSettingsPageClient() {
               error={formError ?? undefined}
               helper={
                 config.source === "env"
-                  ? "This value is locked by BIDTOOL_SERVER_URL."
-                  : "Example: http://bidtool.local or https://bidtool.company.com"
+                  ? "Giá trị này đang bị khóa bởi BIDTOOL_SERVER_URL."
+                  : "Ví dụ: http://bidtool.local hoặc https://bidtool.company.com"
               }
             >
               <input
@@ -226,7 +233,7 @@ export function DesktopSettingsPageClient() {
                   setFormError(null);
                 }}
                 placeholder="http://localhost:13000"
-                className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 transition outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
             </FilterField>
 
@@ -237,7 +244,7 @@ export function DesktopSettingsPageClient() {
                 disabled={!isDesktop || !config.canEdit || isLoading}
                 isLoading={isSaving}
               >
-                Save URL
+                Lưu URL
               </Button>
               <Button
                 type="button"
@@ -247,7 +254,7 @@ export function DesktopSettingsPageClient() {
                 isLoading={isReloading}
                 leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
               >
-                Load active mode
+                Tải chế độ hiện tại
               </Button>
               <Button
                 type="button"
@@ -262,19 +269,22 @@ export function DesktopSettingsPageClient() {
                 isLoading={isClearing}
                 leftIcon={<Trash2 className="h-3.5 w-3.5" />}
               >
-                Clear
+                Xóa
               </Button>
             </div>
           </div>
         </div>
 
-        <aside className="rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm">
+        <aside
+          id="desktop-config"
+          className="scroll-mt-6 rounded-lg border border-slate-200 bg-slate-950 p-5 text-white shadow-sm"
+        >
           <p className="text-xs font-semibold tracking-[0.14em] text-slate-400 uppercase">
-            Current config
+            Cấu hình hiện tại
           </p>
           <dl className="mt-4 space-y-4 text-sm">
             <div>
-              <dt className="text-slate-400">Source</dt>
+              <dt className="text-slate-400">Nguồn</dt>
               <dd className="mt-1 font-semibold">
                 {sourceLabel(config.source)}
               </dd>
@@ -282,13 +292,13 @@ export function DesktopSettingsPageClient() {
             <div>
               <dt className="text-slate-400">Server</dt>
               <dd className="mt-1 font-semibold break-all">
-                {config.serverUrl ?? "No remote server configured"}
+                {config.serverUrl ?? "Chưa cấu hình server remote"}
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400">Editable</dt>
+              <dt className="text-slate-400">Có thể sửa</dt>
               <dd className="mt-1 font-semibold">
-                {config.canEdit ? "Yes" : "No"}
+                {config.canEdit ? "Có" : "Không"}
               </dd>
             </div>
           </dl>

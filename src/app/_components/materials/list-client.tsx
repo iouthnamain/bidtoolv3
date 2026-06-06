@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   FileSpreadsheet,
@@ -49,6 +49,7 @@ function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
 }
 
 export function MaterialsListClient() {
+  const [hasMounted, setHasMounted] = useState(false);
   const [keyword, setKeyword] = useState("");
   const utils = api.useUtils();
   const toast = useToast();
@@ -60,7 +61,20 @@ export function MaterialsListClient() {
       offset: 0,
     });
 
-  const allIds = useMemo(() => materials.map((m) => m.id), [materials]);
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  const visibleMaterials = useMemo(
+    () => (hasMounted ? materials : []),
+    [hasMounted, materials],
+  );
+  const showInitialLoading =
+    !hasMounted || (isLoading && visibleMaterials.length === 0);
+  const allIds = useMemo(
+    () => visibleMaterials.map((m) => m.id),
+    [visibleMaterials],
+  );
   const sel = useRowSelection(allIds);
 
   const deleteMaterial = api.material.deleteMaterial.useMutation({
@@ -85,24 +99,24 @@ export function MaterialsListClient() {
 
   const summary = useMemo(() => {
     const categorySet = new Set(
-      materials
+      visibleMaterials
         .map((item) => item.category)
         .filter((value): value is string => Boolean(value)),
     );
-    const priced = materials.filter(
+    const priced = visibleMaterials.filter(
       (item) => item.defaultUnitPrice != null,
     ).length;
-    const withSources = materials.filter(
+    const withSources = visibleMaterials.filter(
       (item) => getSourceCount(item.metadataJson, item.sourceUrl) > 0,
     ).length;
 
     return {
-      total: materials.length,
+      total: visibleMaterials.length,
       priced,
       withSources,
       categories: categorySet.size,
     };
-  }, [materials]);
+  }, [visibleMaterials]);
 
   const [singleDeleteTarget, setSingleDeleteTarget] = useState<{
     id: number;
@@ -135,7 +149,7 @@ export function MaterialsListClient() {
         onCancel={() => setSingleDeleteTarget(null)}
       />
 
-      <section className="panel p-4">
+      <section id="material-summary" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">
@@ -171,7 +185,7 @@ export function MaterialsListClient() {
               <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-950">
-              {isLoading ? "-" : summary.total.toLocaleString("vi-VN")}
+              {showInitialLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
           </div>
           <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
@@ -180,7 +194,9 @@ export function MaterialsListClient() {
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-emerald-900">
-              {isLoading ? "-" : summary.priced.toLocaleString("vi-VN")}
+              {showInitialLoading
+                ? "-"
+                : summary.priced.toLocaleString("vi-VN")}
             </p>
           </div>
           <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3">
@@ -189,7 +205,9 @@ export function MaterialsListClient() {
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-sky-950">
-              {isLoading ? "-" : summary.withSources.toLocaleString("vi-VN")}
+              {showInitialLoading
+                ? "-"
+                : summary.withSources.toLocaleString("vi-VN")}
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
@@ -198,22 +216,24 @@ export function MaterialsListClient() {
               <Badge tone="neutral">Category</Badge>
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-950">
-              {isLoading ? "-" : summary.categories.toLocaleString("vi-VN")}
+              {showInitialLoading
+                ? "-"
+                : summary.categories.toLocaleString("vi-VN")}
             </p>
           </div>
         </div>
       </section>
 
-      <section className="panel p-4">
+      <section id="material-catalog" className="panel scroll-mt-6 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">
               Danh mục vật tư
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              {isLoading
-                ? "Đang tải..."
-                : `${materials.length.toLocaleString("vi-VN")} vật tư trong kết quả hiện tại`}
+              {showInitialLoading
+                ? "Đang tải…"
+                : `${visibleMaterials.length.toLocaleString("vi-VN")} vật tư trong kết quả hiện tại`}
             </p>
           </div>
           <label className="relative w-full sm:w-80">
@@ -258,7 +278,7 @@ export function MaterialsListClient() {
                       if (el) el.indeterminate = sel.indeterminate;
                     }}
                     onChange={sel.toggleAll}
-                    disabled={materials.length === 0}
+                    disabled={visibleMaterials.length === 0}
                     className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
                     aria-label="Chọn tất cả vật tư"
                   />
@@ -273,7 +293,7 @@ export function MaterialsListClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {materials.map((item) => {
+              {visibleMaterials.map((item) => {
                 const sourceCount = getSourceCount(
                   item.metadataJson,
                   item.sourceUrl,
@@ -373,7 +393,7 @@ export function MaterialsListClient() {
                   </tr>
                 );
               })}
-              {!isLoading && materials.length === 0 ? (
+              {!showInitialLoading && visibleMaterials.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-8">
                     <EmptyState
