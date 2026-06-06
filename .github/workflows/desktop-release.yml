@@ -233,6 +233,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: bidtoolv3-*
           path: release-assets
 
       - name: Publish GitHub Release
