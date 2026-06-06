@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -6,12 +6,45 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
-const nextBin = path.join(
-  rootDir,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "next.cmd" : "next",
-);
+
+async function pathExists(target: string) {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveNextBuildCommand() {
+  const binName = process.platform === "win32" ? "next.cmd" : "next";
+  const nextBin = path.join(rootDir, "node_modules", ".bin", binName);
+  if (await pathExists(nextBin)) {
+    return {
+      args: ["build"],
+      command: nextBin,
+    };
+  }
+
+  const nextCli = path.join(
+    rootDir,
+    "node_modules",
+    "next",
+    "dist",
+    "bin",
+    "next",
+  );
+  if (await pathExists(nextCli)) {
+    return {
+      args: [nextCli, "build"],
+      command: process.env.NODE ?? "node",
+    };
+  }
+
+  throw new Error(
+    "Unable to find the Next.js CLI. Run `bun install` before building.",
+  );
+}
 
 function resolveDistDir() {
   const distArgIndex = process.argv.indexOf("--dist");
@@ -37,8 +70,9 @@ async function main() {
   const distDir = resolveDistDir();
 
   await rm(path.join(rootDir, distDir), { force: true, recursive: true });
+  const nextBuild = await resolveNextBuildCommand();
 
-  const child = spawn(nextBin, ["build"], {
+  const child = spawn(nextBuild.command, nextBuild.args, {
     cwd: rootDir,
     env: {
       ...process.env,
