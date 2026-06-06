@@ -17,7 +17,7 @@ module.exports = {
     },
   ],
   win: {
-    icon: "../../public/favicon.ico",
+    icon: "../../public/desktop-icon.ico",
     target: ["nsis"],
   },
   linux: {

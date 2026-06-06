@@ -1,0 +1,24 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bidtool-desktop-icon-bg" x1="34" y1="28" x2="222" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0e7490" />
+      <stop offset="0.52" stop-color="#075985" />
+      <stop offset="1" stop-color="#115e59" />
+    </linearGradient>
+    <filter id="bidtool-desktop-icon-shadow" x="0" y="0" width="256" height="256" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#042f2e" flood-opacity="0.24" />
+    </filter>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="44" fill="url(#bidtool-desktop-icon-bg)" filter="url(#bidtool-desktop-icon-shadow)" />
+  <path
+    d="M65.5 50h72.8a44.7 44.7 0 0 1 44.7 44.7 40.5 40.5 0 0 1-17 33 44.7 44.7 0 0 1 22.4 39.4 44.7 44.7 0 0 1-44.7 42.5H65.5V50Zm32.1 27.8v38.3h39.6a19.2 19.2 0 0 0 0-38.3H97.6Zm0 65v39.4h44.9a19.7 19.7 0 0 0 0-39.4H97.6Z"
+    fill="#ffffff"
+  />
+  <path
+    d="m194.8 99.2 17.2 17.2 34.4-34.4"
+    stroke="#5eead4"
+    stroke-width="18"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
