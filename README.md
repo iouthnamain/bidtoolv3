@@ -70,9 +70,45 @@ Install, update, and run never seed automatically. If you want demo data:
 
 Older aliases `bun run setup`, `bun run start:dev`, and `bun run update` point to the primary local workflow for compatibility.
 
+## On-Prem Single-Tenant Package
+
+For B2B customers, BidTool can run as one isolated customer deployment with the
+production Docker stack:
+
+- Caddy reverse proxy
+- BidTool Next.js app container
+- PostgreSQL
+- SearXNG and Valkey
+
+Create or update the customer stack:
+
+```bash
+bun run onprem:install
+bun run onprem:update
+```
+
+Back up and restore the customer database:
+
+```bash
+bun run onprem:backup
+bun run onprem:restore -- backups/onprem/bidtool-YYYYMMDD-HHMMSS.dump
+```
+
+Create a distributable customer bundle:
+
+```bash
+bun run onprem:bundle
+```
+
+Customer configuration lives in `deploy/onprem/.env.customer`, created from
+`deploy/onprem/.env.customer.example` on first install. See
+[On-Prem Deployment](docs/onprem.md) for ports, HTTPS, update, backup, restore,
+and operations details.
+
 ## Desktop App
 
-Electron is an additional local desktop entrypoint. It does not replace the Next.js web app.
+Electron is an additional desktop entrypoint. It can either run the bundled local
+server or connect to a customer on-prem server.
 
 Use this during development:
 
@@ -92,11 +128,18 @@ Build an installer/package:
 bun run desktop:build
 ```
 
-The desktop app runs the same Next.js application in a local Electron window. PostgreSQL and SearXNG still run through the existing Docker workflow.
+For on-prem customers, set `BIDTOOL_SERVER_URL` next to the desktop executable
+or open `/desktop` inside the desktop app and save the customer server URL. When
+`BIDTOOL_SERVER_URL` is set by an admin, the in-app setting is read-only.
+
+When no server URL is configured, the desktop app runs the same Next.js
+application in a local Electron window. PostgreSQL and SearXNG still run through
+the existing Docker workflow.
 
 ### GitHub Releases
 
-Windows desktop releases are built by GitHub Actions.
+Desktop releases, on-prem bundles, and the on-prem Docker image are built by
+GitHub Actions.
 
 To publish a release from the command line:
 
@@ -105,7 +148,10 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `Desktop Release` workflow builds the Windows installer on `windows-latest` and uploads it to the GitHub Release. You can also run the workflow manually and provide a release tag.
+The `Release` workflow builds Windows and Linux desktop artifacts, publishes the
+on-prem Docker image to GitHub Container Registry, creates the on-prem bundle,
+and uploads release assets to GitHub Releases. You can also run the workflow
+manually and provide a release tag.
 
 The Windows installer is currently unsigned, so Windows SmartScreen can show a warning until a code-signing certificate is added.
 
@@ -153,6 +199,11 @@ curl 'http://localhost:18080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json
 - `bun run desktop:dev` - start the local stack and open the app in Electron for development.
 - `bun run desktop:pack` - build Next standalone output and create an unpacked Electron app.
 - `bun run desktop:build` - build Next standalone output and package the Electron app.
+- `bun run onprem:install` - create customer env if needed and start the production on-prem stack.
+- `bun run onprem:update` - back up, pull images, recreate containers, and run migrations.
+- `bun run onprem:backup` - create a PostgreSQL custom-format backup.
+- `bun run onprem:restore -- <backup>` - restore a backup and restart the app.
+- `bun run onprem:bundle` - create a distributable on-prem archive.
 - `bun run build` - create a production build.
 - `bun run start` - run the production server after `bun run build`.
 - `bun run preview` - build and start production locally in one command.
@@ -175,4 +226,5 @@ Project docs live in `docs/`:
 - [Data Source Strategy](docs/05-data-source-strategy.md)
 - [Excel Workspace](docs/07-excel-workspace.md)
 - [SearXNG Self-hosted Search](docs/08-searxng-self-hosted-search.md)
+- [On-Prem Deployment](docs/onprem.md)
 - [Workflow Library](docs/workflows/README.md)

@@ -16,6 +16,10 @@ const UPDATE_CHECK_CHANNEL = "bidtool:update:check";
 const UPDATE_DOWNLOAD_CHANNEL = "bidtool:update:download";
 const UPDATE_INSTALL_CHANNEL = "bidtool:update:install";
 const UPDATE_STATE_CHANNEL = "bidtool:update-state";
+const SERVER_CONFIG_GET_CHANNEL = "bidtool:server-config:get";
+const SERVER_CONFIG_SET_CHANNEL = "bidtool:server-config:set";
+const SERVER_CONFIG_CLEAR_CHANNEL = "bidtool:server-config:clear";
+const SERVER_CONFIG_RELOAD_CHANNEL = "bidtool:server-config:reload";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let nextServerProcess = null;
@@ -34,6 +38,7 @@ let updatePollTimer = null;
 
 /** @typedef {"disabled" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error"} DesktopUpdateStatus */
 /** @typedef {"check" | "download" | "install" | null} DesktopUpdateErrorContext */
+/** @typedef {"env" | "user" | "none"} DesktopServerConfigSource */
 
 /**
  * @typedef {object} DesktopUpdateState
@@ -48,6 +53,13 @@ let updatePollTimer = null;
  * @property {string | null} message
  * @property {DesktopUpdateErrorContext} errorContext
  * @property {boolean} canRetry
+ */
+
+/**
+ * @typedef {object} DesktopServerConfig
+ * @property {string | null} serverUrl
+ * @property {DesktopServerConfigSource} source
+ * @property {boolean} canEdit
  */
 
 /** @type {DesktopUpdateState} */
@@ -556,6 +568,100 @@ function loadLocalEnv() {
   }
 }
 
+function getDesktopConfigPath() {
+  return path.join(app.getPath("userData"), "desktop-config.json");
+}
+
+function readDesktopConfig() {
+  const configPath = getDesktopConfigPath();
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+/** @param {Record<string, unknown>} config */
+function writeDesktopConfig(config) {
+  const configPath = getDesktopConfigPath();
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** @param {string} rawUrl */
+function normalizeServerUrl(rawUrl) {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    throw new Error("Server URL is required.");
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Server URL must be a valid http:// or https:// URL.");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Server URL must start with http:// or https://.");
+  }
+
+  parsed.hash = "";
+  parsed.search = "";
+  if (parsed.pathname.endsWith("/") && parsed.pathname !== "/") {
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  }
+
+  return parsed.toString().replace(/\/$/, "");
+}
+
+/** @returns {DesktopServerConfig} */
+function getDesktopServerConfig() {
+  const envServerUrl = process.env.BIDTOOL_SERVER_URL?.trim();
+  if (envServerUrl) {
+    return {
+      canEdit: false,
+      serverUrl: normalizeServerUrl(envServerUrl),
+      source: "env",
+    };
+  }
+
+  const config = readDesktopConfig();
+  const serverUrl =
+    typeof config.serverUrl === "string" && config.serverUrl.trim()
+      ? normalizeServerUrl(config.serverUrl)
+      : null;
+
+  return {
+    canEdit: true,
+    serverUrl,
+    source: serverUrl ? "user" : "none",
+  };
+}
+
+/** @param {unknown} rawUrl */
+function saveDesktopServerUrl(rawUrl) {
+  if (typeof rawUrl !== "string") {
+    throw new Error("Server URL must be a string.");
+  }
+
+  const normalizedUrl = normalizeServerUrl(rawUrl);
+  const config = readDesktopConfig();
+  writeDesktopConfig({ ...config, serverUrl: normalizedUrl });
+  return getDesktopServerConfig();
+}
+
+function clearDesktopServerUrl() {
+  const config = readDesktopConfig();
+  delete config.serverUrl;
+  writeDesktopConfig(config);
+  return getDesktopServerConfig();
+}
+
 async function startStandaloneNextServer() {
   loadLocalEnv();
   const port =
@@ -682,7 +788,32 @@ async function resolveStartUrl() {
     return devUrl;
   }
 
+  const serverConfig = getDesktopServerConfig();
+  if (serverConfig.serverUrl) {
+    await waitForUrl(serverConfig.serverUrl, START_TIMEOUT_MS);
+    return serverConfig.serverUrl;
+  }
+
   return await startStandaloneNextServer();
+}
+
+async function reloadWindowsToStartUrl() {
+  const serverConfig = getDesktopServerConfig();
+  if (serverConfig.serverUrl && nextServerProcess && !nextServerProcess.killed) {
+    nextServerProcess.kill();
+    nextServerProcess = null;
+  }
+
+  const startUrl = await resolveStartUrl();
+  appOrigin = new URL(startUrl).origin;
+
+  await Promise.all(
+    BrowserWindow.getAllWindows()
+      .filter((window) => !window.isDestroyed())
+      .map((window) => window.loadURL(startUrl)),
+  );
+
+  return { loadedUrl: startUrl, serverConfig: getDesktopServerConfig() };
 }
 
 app.on("before-quit", () => {
@@ -702,6 +833,12 @@ ipcMain.handle(UPDATE_GET_STATE_CHANNEL, () => desktopUpdateState);
 ipcMain.handle(UPDATE_CHECK_CHANNEL, () => checkForDesktopUpdates("manual"));
 ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, () => downloadDesktopUpdate());
 ipcMain.handle(UPDATE_INSTALL_CHANNEL, () => installDesktopUpdate());
+ipcMain.handle(SERVER_CONFIG_GET_CHANNEL, () => getDesktopServerConfig());
+ipcMain.handle(SERVER_CONFIG_SET_CHANNEL, (_event, serverUrl) =>
+  saveDesktopServerUrl(serverUrl),
+);
+ipcMain.handle(SERVER_CONFIG_CLEAR_CHANNEL, () => clearDesktopServerUrl());
+ipcMain.handle(SERVER_CONFIG_RELOAD_CHANNEL, () => reloadWindowsToStartUrl());
 
 app.whenReady().then(async () => {
   try {
@@ -710,6 +847,29 @@ app.whenReady().then(async () => {
     await createMainWindow(startUrl);
     configureDesktopUpdater();
   } catch (error) {
+    const serverConfig = getDesktopServerConfig();
+    if (serverConfig.source === "user" && serverConfig.serverUrl) {
+      const result = await dialog.showMessageBox({
+        buttons: ["Clear server URL", "Quit"],
+        defaultId: 0,
+        message: "BidTool could not reach the configured on-prem server.",
+        detail: `${serverConfig.serverUrl}\n\nClear the saved server URL to open the bundled local app and edit desktop settings.`,
+        type: "warning",
+      });
+
+      if (result.response === 0) {
+        clearDesktopServerUrl();
+        try {
+          const startUrl = await resolveStartUrl();
+          await createMainWindow(startUrl);
+          configureDesktopUpdater();
+          return;
+        } catch {
+          // Fall through to the standard error below.
+        }
+      }
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     dialog.showErrorBox("BidTool desktop failed to start", message);
     app.quit();

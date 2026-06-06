@@ -114,6 +114,7 @@ const navSections: NavSection[] = [
           { href: "/help#khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
       },
+      { href: "/desktop", label: "Desktop client", icon: "tools" },
     ],
   },
   ...(isDevEnvironment

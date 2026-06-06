@@ -5,9 +5,19 @@ const UPDATE_CHECK_CHANNEL = "bidtool:update:check";
 const UPDATE_DOWNLOAD_CHANNEL = "bidtool:update:download";
 const UPDATE_INSTALL_CHANNEL = "bidtool:update:install";
 const UPDATE_STATE_CHANNEL = "bidtool:update-state";
+const SERVER_CONFIG_GET_CHANNEL = "bidtool:server-config:get";
+const SERVER_CONFIG_SET_CHANNEL = "bidtool:server-config:set";
+const SERVER_CONFIG_CLEAR_CHANNEL = "bidtool:server-config:clear";
+const SERVER_CONFIG_RELOAD_CHANNEL = "bidtool:server-config:reload";
 
 contextBridge.exposeInMainWorld("bidtoolDesktop", {
   isDesktop: true,
+  getServerConfig: () => ipcRenderer.invoke(SERVER_CONFIG_GET_CHANNEL),
+  /** @param {string} serverUrl */
+  setServerUrl: (serverUrl) =>
+    ipcRenderer.invoke(SERVER_CONFIG_SET_CHANNEL, serverUrl),
+  clearServerUrl: () => ipcRenderer.invoke(SERVER_CONFIG_CLEAR_CHANNEL),
+  reloadToServerUrl: () => ipcRenderer.invoke(SERVER_CONFIG_RELOAD_CHANNEL),
   getUpdateState: () => ipcRenderer.invoke(UPDATE_GET_STATE_CHANNEL),
   checkForUpdate: () => ipcRenderer.invoke(UPDATE_CHECK_CHANNEL),
   downloadUpdate: () => ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL),
