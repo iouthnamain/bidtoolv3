@@ -13,9 +13,11 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, "..");
-const standaloneDir = path.join(rootDir, ".next", "standalone");
-const staticSourceDir = path.join(rootDir, ".next", "static");
-const staticTargetDir = path.join(standaloneDir, ".next", "static");
+const nextDistDirName = resolveNextDistDir();
+const nextDistDir = path.join(rootDir, nextDistDirName);
+const standaloneDir = path.join(nextDistDir, "standalone");
+const staticSourceDir = path.join(nextDistDir, "static");
+const staticTargetDir = path.join(standaloneDir, nextDistDirName, "static");
 const publicSourceDir = path.join(rootDir, "public");
 const publicTargetDir = path.join(standaloneDir, "public");
 const stageDir = path.join(rootDir, ".electron-build", "app");
@@ -28,6 +30,26 @@ type PackageManifest = {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
 };
+
+function resolveNextDistDir() {
+  const distArgIndex = process.argv.indexOf("--dist");
+  const equalsArg = process.argv.find((arg) => arg.startsWith("--dist="));
+  const rawDistDir =
+    equalsArg?.slice("--dist=".length) ??
+    (distArgIndex >= 0 ? process.argv[distArgIndex + 1] : undefined) ??
+    process.env.BIDTOOL_NEXT_DIST_DIR ??
+    ".next";
+  const distDir = rawDistDir.trim();
+
+  if (!distDir || distDir === "--dist") {
+    throw new Error("Missing value for --dist.");
+  }
+  if (path.isAbsolute(distDir) || distDir.split(/[\\/]/).includes("..")) {
+    throw new Error(`Invalid Next output directory '${distDir}'.`);
+  }
+
+  return distDir;
+}
 
 async function pathExists(target: string) {
   try {
@@ -150,7 +172,7 @@ async function updateStandalonePackageVersion(version: string) {
 async function main() {
   if (!(await pathExists(path.join(standaloneDir, "server.js")))) {
     throw new Error(
-      "Missing .next/standalone/server.js. Run `bun run build` first.",
+      `Missing ${nextDistDirName}/standalone/server.js. Run \`bun run build\` first.`,
     );
   }
 

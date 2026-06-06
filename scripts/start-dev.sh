@@ -2,6 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+SEARXNG_PROBE_URL="${SEARXNG_BASE_URL:-http://localhost:18080}"
+SEARXNG_PROBE_URL="${SEARXNG_PROBE_URL%/}/search?q=bidtool&format=json"
+
 echo "==> Ensuring Postgres and SearXNG are running"
 docker compose --profile search up -d postgres searxng
 
@@ -20,7 +28,7 @@ done
 
 echo "==> Waiting for SearXNG to be reachable"
 for i in $(seq 1 30); do
-  if curl -fsS 'http://localhost:8080/search?q=bidtool&format=json' >/dev/null 2>&1; then
+  if curl -fsS "$SEARXNG_PROBE_URL" >/dev/null 2>&1; then
     echo "    SearXNG ready"
     break
   fi

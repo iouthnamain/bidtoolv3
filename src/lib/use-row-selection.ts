@@ -1,9 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 
-export function useRowSelection<K extends string | number = number>(allIds: K[]) {
+export function useRowSelection<K extends string | number = number>(
+  allIds: K[],
+) {
   const [selected, setSelected] = useState<Set<K>>(new Set());
 
-  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const allSelected =
+    allIds.length > 0 && allIds.every((id) => selected.has(id));
   const someSelected = selected.size > 0;
   const indeterminate = someSelected && !allSelected;
 

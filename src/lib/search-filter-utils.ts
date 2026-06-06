@@ -19,7 +19,9 @@ export function normalizeProvinceKey(input: string): string {
 }
 
 function normalizeCategoryKey(input: string): string {
-  return normalizeText(input).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return normalizeText(input)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 const canonicalProvinceMap = new Map<string, string>(
@@ -133,4 +135,3 @@ export function normalizeSearchSelections<
     categories: normalizeCategoryFilterValues(input.categories),
   };
 }
-

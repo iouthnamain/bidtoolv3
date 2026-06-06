@@ -4,8 +4,11 @@
  */
 import "./src/env.js";
 
+const distDir = process.env.BIDTOOL_NEXT_DIST_DIR?.trim();
+
 /** @type {import("next").NextConfig} */
 const config = {
+  ...(distDir ? { distDir } : {}),
   output: "standalone",
 };
 

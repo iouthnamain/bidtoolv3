@@ -101,7 +101,9 @@ function assertBudgetRange(config: ReturnType<typeof parseTriggerConfig>) {
   }
 }
 
-function normalizeSavedFilterForWorkflow(row: typeof savedFilters.$inferSelect) {
+function normalizeSavedFilterForWorkflow(
+  row: typeof savedFilters.$inferSelect,
+) {
   const legacyCriteria = buildCriteriaFromLegacyPackageFields({
     keyword: row.keyword,
     provinces: row.provinces,
@@ -258,7 +260,8 @@ export const workflowRouter = createTRPCRouter({
         });
       }
 
-      const normalizedSavedFilter = normalizeSavedFilterForWorkflow(savedFilter);
+      const normalizedSavedFilter =
+        normalizeSavedFilterForWorkflow(savedFilter);
       const triggerConfig = parseTriggerConfig({
         searchMode: normalizedSavedFilter.mode,
         criteria: normalizedSavedFilter.criteria,

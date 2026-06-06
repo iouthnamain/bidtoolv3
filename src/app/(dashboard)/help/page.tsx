@@ -23,6 +23,7 @@ type Section = {
   notes?: string[];
   links?: HelpLink[];
   image?: HelpImage;
+  visual?: HelpVisual;
 };
 
 type TaskFlow = {
@@ -30,12 +31,51 @@ type TaskFlow = {
   body: string;
   href: string;
   cta: string;
+  signal: string;
 };
 
 type PageDirectoryItem = {
   href: string;
   title: string;
   body: string;
+};
+
+type HelpVisual =
+  | "local-stack"
+  | "source-matrix"
+  | "excel-pipeline"
+  | "maintenance-commands"
+  | "troubleshooting";
+
+type SourceMatrixRow = {
+  mode: string;
+  exact: string;
+  local: string;
+  watch: string;
+};
+
+type HelpMetric = {
+  value: string;
+  label: string;
+  body: string;
+};
+
+type FlowNode = {
+  step: string;
+  label: string;
+  body: string;
+};
+
+type CommandCard = {
+  command: string;
+  when: string;
+  result: string;
+};
+
+type TroubleshootingCard = {
+  symptom: string;
+  checks: string[];
+  action: string;
 };
 
 const quickLinks: HelpLink[] = [
@@ -53,24 +93,242 @@ const taskFlow: TaskFlow[] = [
     body: "Mở Tổng quan để xem cảnh báo, workflow gần nhất và dữ liệu đang theo dõi.",
     href: "/dashboard",
     cta: "Tổng quan",
+    signal: "Dùng khi vừa mở app hoặc cần biết có việc gì cần xử lý.",
   },
   {
     title: "2. Tìm và lưu nguồn thầu",
     body: "Dùng Tìm kiếm để lọc BidWinner public, lưu Smart View hoặc đưa gói vào Watchlist.",
     href: "/search",
     cta: "Tìm kiếm",
+    signal: "Dùng khi cần tìm cơ hội, KHLCNT hoặc dự án mới.",
   },
   {
     title: "3. Tự động hóa cảnh báo",
     body: "Biến Smart View ổn định thành workflow, sau đó xử lý kết quả trong Trung tâm thông báo.",
     href: "/workflows",
     cta: "Workflows",
+    signal: "Dùng khi bộ lọc đã ổn và cần nhắc tự động.",
   },
   {
     title: "4. Chuẩn hóa Excel và vật tư",
     body: "Tạo workspace Excel, map cột, đối chiếu catalog vật tư và xuất workbook enriched.",
     href: "/excel-workspace",
     cta: "Excel Workspace",
+    signal: "Dùng khi có file vật tư hoặc bảng sản phẩm cần kiểm chứng.",
+  },
+];
+
+const helpMetrics: HelpMetric[] = [
+  {
+    value: "5",
+    label: "chế độ nguồn thầu",
+    body: "Gói thầu, địa phương, ngành nghề & địa phương, KHLCNT và dự án.",
+  },
+  {
+    value: "4",
+    label: "khối vận hành",
+    body: "Tìm kiếm, Smart View, workflow cảnh báo và notification queue.",
+  },
+  {
+    value: "6",
+    label: "bước Excel",
+    body: "Setup, import, map, review, match evidence và export.",
+  },
+  {
+    value: "1",
+    label: "máy local",
+    body: "Thiết kế hiện tại là single-user, chạy với Postgres và SearXNG cục bộ.",
+  },
+];
+
+const flowNodes: FlowNode[] = [
+  {
+    step: "01",
+    label: "Tìm nguồn",
+    body: "Chọn mode BidWinner, lọc theo nhu cầu và kiểm tra banner nguồn.",
+  },
+  {
+    step: "02",
+    label: "Lưu tiêu chí",
+    body: "Lưu Smart View hoặc đưa dòng cụ thể vào Watchlist.",
+  },
+  {
+    step: "03",
+    label: "Tự động hóa",
+    body: "Tạo workflow từ Smart View, chạy thủ công hoặc để theo lịch.",
+  },
+  {
+    step: "04",
+    label: "Xử lý",
+    body: "Đọc notification, mở detail page và quyết định bước tiếp theo.",
+  },
+  {
+    step: "05",
+    label: "Chuẩn hóa Excel",
+    body: "Map vật tư, chọn evidence, xuất workbook enriched cho review.",
+  },
+];
+
+const localStackLayers: FlowNode[] = [
+  {
+    step: "UI",
+    label: "Browser hoặc Electron",
+    body: "Người dùng thao tác dashboard, help, search và Excel workspace.",
+  },
+  {
+    step: "API",
+    label: "Next.js + tRPC",
+    body: "Router xử lý tìm kiếm, vật tư, workflow, notification và maintenance.",
+  },
+  {
+    step: "DB",
+    label: "PostgreSQL",
+    body: "Lưu tender, Smart View, Watchlist, workflow, material và workspace.",
+  },
+  {
+    step: "WEB",
+    label: "SearXNG",
+    body: "Tìm ứng viên sản phẩm web cho các dòng Excel cần evidence.",
+  },
+];
+
+const sourceMatrixRows: SourceMatrixRow[] = [
+  {
+    mode: "Gói thầu",
+    exact: "Từ khóa, tỉnh, lĩnh vực, ngân sách, ngày đăng.",
+    local: "Match score và tinh chỉnh trong cửa sổ kết quả đã tải.",
+    watch: "Phù hợp nhất để lưu Smart View và tạo workflow.",
+  },
+  {
+    mode: "Theo địa phương",
+    exact: "Một tỉnh/thành theo endpoint public của BidWinner.",
+    local: "Từ khóa, ngân sách, ngày và điểm phù hợp.",
+    watch: "Chỉ chọn một tỉnh để tránh hiểu sai phạm vi nguồn.",
+  },
+  {
+    mode: "Ngành nghề & địa phương",
+    exact: "Taxonomy ngành nghề public từ BidWinner.",
+    local: "Kết quả package được refine trong app.",
+    watch: "Dùng để khám phá taxonomy, không coi như tổng toàn nguồn.",
+  },
+  {
+    mode: "KHLCNT",
+    exact: "Danh sách kế hoạch và phân trang từ trang public.",
+    local: "Từ khóa, tỉnh, ngân sách, ngày, lĩnh vực và HTLCNT.",
+    watch: "Dùng khi cần theo dõi kế hoạch trước gói thầu cụ thể.",
+  },
+  {
+    mode: "Dự án",
+    exact: "Payload dự án đầu tư phát triển public.",
+    local: "Từ khóa, tỉnh, nhóm dự án, ngân sách và ngày.",
+    watch: "Dùng để phát hiện pipeline trước khi có KHLCNT liên quan.",
+  },
+];
+
+const excelPipeline: FlowNode[] = [
+  {
+    step: "Setup",
+    label: "Chọn mẫu",
+    body: "Đặt tên workspace, chọn bộ sheet chuẩn và header cần xuất.",
+  },
+  {
+    step: "Import",
+    label: "Đọc workbook",
+    body: "Upload `.xlsx`, chọn sheet và kiểm tra app đọc được bao nhiêu dòng.",
+  },
+  {
+    step: "Map",
+    label: "Ánh xạ cột",
+    body: "Nối cột file gốc vào tên vật tư, thông số, đơn vị, số lượng và giá.",
+  },
+  {
+    step: "Review",
+    label: "Sửa dòng",
+    body: "Chuẩn hóa tên, đơn vị, số lượng tồn, hao mòn và dòng được export.",
+  },
+  {
+    step: "Find",
+    label: "Chọn evidence",
+    body: "Tìm web bằng SearXNG hoặc chọn catalog vật tư/manual match.",
+  },
+  {
+    step: "Export",
+    label: "Tải Excel",
+    body: "Chỉ xuất khi mọi dòng included đã matched hoặc manual.",
+  },
+];
+
+const maintenanceCommands: CommandCard[] = [
+  {
+    command: "bun run dev:install",
+    when: "Máy mới hoặc clone mới.",
+    result: "Cài deps, tạo `.env` nếu thiếu, bật Docker và áp migrations.",
+  },
+  {
+    command: "bun run dev:run",
+    when: "Mỗi ngày làm việc.",
+    result: "Kiểm tra env, bật Postgres/SearXNG và mở Next dev server.",
+  },
+  {
+    command: "bun run dev:update",
+    when: "Sau khi đã `git pull`.",
+    result: "Cập nhật deps, đảm bảo services chạy và áp migrations mới.",
+  },
+  {
+    command: "bun run db:migrate",
+    when: "Khi schema hoặc migration bị lệch.",
+    result: "Áp migration Drizzle vào database local hiện tại.",
+  },
+  {
+    command: "bun run dev:kill",
+    when: "Port hoặc process local bị kẹt.",
+    result:
+      "Dừng server/Docker compose theo hướng stop-only, không xóa volume.",
+  },
+];
+
+const troubleshootingCards: TroubleshootingCard[] = [
+  {
+    symptom: "Trang không mở",
+    checks: [
+      "Terminal server còn chạy?",
+      "Port 3000 có bị chiếm?",
+      "Docker đã bật?",
+    ],
+    action: "Chạy `bun run dev:kill`, sau đó chạy lại `bun run dev:run`.",
+  },
+  {
+    symptom: "Maintenance báo đỏ",
+    checks: ["Postgres container", "SearXNG container", "Valkey container"],
+    action: "Bấm `Khởi động Docker` hoặc chạy lại daily startup.",
+  },
+  {
+    symptom: "Schema warning",
+    checks: [
+      "Có migration mới?",
+      "Database local có cũ hơn code?",
+      "Pull code vừa xong?",
+    ],
+    action: "Chạy `bun run dev:update` hoặc riêng `bun run db:migrate`.",
+  },
+  {
+    symptom: "Tìm sản phẩm không ra",
+    checks: [
+      "SEARXNG_BASE_URL",
+      "SearXNG chạy ở cổng 18080?",
+      "Từ khóa quá hẹp?",
+    ],
+    action: "Mở `/maintenance`, bật Docker, sau đó tìm lại với ít filter hơn.",
+  },
+  {
+    symptom: "Excel không export",
+    checks: [
+      "Có dòng included chưa match?",
+      "Có dòng thiếu tên/đơn vị?",
+      "Đã manual match?",
+    ],
+    action:
+      "Vào bước Review/Find và xử lý hết lỗi blocking trước khi tải Excel.",
   },
 ];
 
@@ -140,6 +398,7 @@ const sections: Section[] = [
       "Nếu Docker chưa chạy, bật Docker Desktop trước rồi chạy lại lệnh.",
     ],
     links: [{ href: "/dashboard", label: "Mở Tổng quan" }],
+    visual: "local-stack",
     image: {
       src: "/help/dashboard-overview.png",
       alt: "Màn hình tổng quan BidTool với KPI, cảnh báo và workflow gần đây",
@@ -180,6 +439,7 @@ const sections: Section[] = [
       "`dev:update` không tự chạy `git pull`; kéo code trước để tránh ghi đè thay đổi local ngoài ý muốn.",
       "Các lệnh maintenance chỉ khả dụng trong môi trường development.",
     ],
+    visual: "maintenance-commands",
     image: {
       src: "/help/maintenance-status.png",
       alt: "Trang bảo trì hiển thị trạng thái sẵn sàng và các nút chạy setup update migration",
@@ -208,6 +468,7 @@ const sections: Section[] = [
       "Nếu BidWinner chậm hoặc lỗi, thử giảm bộ lọc hoặc chuyển trang sau vài giây.",
     ],
     links: [{ href: "/search", label: "Mở Tìm kiếm" }],
+    visual: "source-matrix",
     image: {
       src: "/help/search-filters.png",
       alt: "Trang tìm kiếm BidTool với bộ lọc BidWinner và kết quả gói thầu",
@@ -308,6 +569,7 @@ const sections: Section[] = [
       "SearXNG chỉ cần khi chạy luồng tìm web cho sản phẩm.",
     ],
     links: [{ href: "/excel-workspace", label: "Mở Không gian Excel" }],
+    visual: "excel-pipeline",
     image: {
       src: "/help/excel-workspace.png",
       alt: "Không gian Excel với danh sách workspace và trạng thái xử lý",
@@ -361,6 +623,7 @@ const sections: Section[] = [
       'Demo seed chỉ chạy khi `ENABLE_DEMO_SEED="true"` trong `.env`.',
     ],
     links: [{ href: "/maintenance", label: "Mở Bảo trì" }],
+    visual: "troubleshooting",
   },
   {
     id: "phim-tat",
@@ -395,6 +658,207 @@ function InlineText({ text }: { text: string }) {
       )}
     </>
   );
+}
+
+function FlowMap() {
+  return (
+    <div className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-3">
+      <div className="grid gap-2 md:grid-cols-5">
+        {flowNodes.map((node, index) => (
+          <div key={node.step} className="relative">
+            {index > 0 ? (
+              <div
+                aria-hidden
+                className="absolute top-5 -left-3 hidden h-px w-6 bg-cyan-300 md:block"
+              />
+            ) : null}
+            <div className="h-full rounded-xl border border-cyan-200 bg-white/85 p-3 shadow-sm">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-cyan-900 text-[11px] font-bold text-white">
+                {node.step}
+              </span>
+              <h3 className="mt-3 text-sm font-bold text-slate-950">
+                {node.label}
+              </h3>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                {node.body}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LocalStackVisual() {
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+        Sơ đồ chạy local
+      </p>
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        {localStackLayers.map((layer) => (
+          <div
+            key={layer.step}
+            className="rounded-xl border border-slate-200 bg-white p-3"
+          >
+            <span className="inline-flex rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold tracking-wide text-white">
+              {layer.step}
+            </span>
+            <h3 className="mt-2 text-sm font-bold text-slate-950">
+              {layer.label}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              {layer.body}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SourceMatrixVisual() {
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+      <div className="bg-slate-900 px-3 py-2 text-xs font-bold tracking-wide text-white uppercase">
+        Ma trận độ chính xác nguồn BidWinner
+      </div>
+      <div className="overflow-x-auto bg-white">
+        <table className="min-w-[760px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <tr>
+              <th className="px-3 py-2 font-bold">Mode</th>
+              <th className="px-3 py-2 font-bold">Từ nguồn public</th>
+              <th className="px-3 py-2 font-bold">Tinh lọc trong app</th>
+              <th className="px-3 py-2 font-bold">Cách dùng đúng</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sourceMatrixRows.map((row) => (
+              <tr key={row.mode}>
+                <th className="w-36 px-3 py-3 text-sm font-bold text-slate-950">
+                  {row.mode}
+                </th>
+                <td className="px-3 py-3 text-xs leading-5 text-slate-600">
+                  {row.exact}
+                </td>
+                <td className="px-3 py-3 text-xs leading-5 text-slate-600">
+                  {row.local}
+                </td>
+                <td className="px-3 py-3 text-xs leading-5 text-slate-600">
+                  {row.watch}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ExcelPipelineVisual() {
+  return (
+    <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3">
+      <p className="text-xs font-bold tracking-wide text-emerald-800 uppercase">
+        Pipeline Excel
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {excelPipeline.map((step, index) => (
+          <div
+            key={step.step}
+            className="rounded-xl border border-emerald-200 bg-white p-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-bold text-slate-950">
+                {step.step}
+              </span>
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+            </div>
+            <h3 className="mt-2 text-sm font-bold text-slate-900">
+              {step.label}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              <InlineText text={step.body} />
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MaintenanceCommandsVisual() {
+  return (
+    <div className="mt-4 grid gap-2 md:grid-cols-2">
+      {maintenanceCommands.map((item) => (
+        <div
+          key={item.command}
+          className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+        >
+          <code className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-900">
+            {item.command}
+          </code>
+          <p className="mt-2 text-xs font-bold text-slate-500 uppercase">
+            Khi dùng
+          </p>
+          <p className="mt-1 text-sm leading-5 text-slate-700">
+            <InlineText text={item.when} />
+          </p>
+          <p className="mt-2 text-xs font-bold text-slate-500 uppercase">
+            Kết quả
+          </p>
+          <p className="mt-1 text-sm leading-5 text-slate-700">
+            <InlineText text={item.result} />
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TroubleshootingVisual() {
+  return (
+    <div className="mt-4 grid gap-2 md:grid-cols-2">
+      {troubleshootingCards.map((card) => (
+        <div
+          key={card.symptom}
+          className="rounded-xl border border-amber-200 bg-amber-50/60 p-3"
+        >
+          <h3 className="text-sm font-bold text-slate-950">{card.symptom}</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-700">
+            {card.checks.map((check) => (
+              <li key={check}>{check}</li>
+            ))}
+          </ul>
+          <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-slate-700">
+            <span className="font-bold text-amber-800">Cách xử lý: </span>
+            <InlineText text={card.action} />
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectionVisual({ visual }: { visual?: HelpVisual }) {
+  switch (visual) {
+    case "local-stack":
+      return <LocalStackVisual />;
+    case "source-matrix":
+      return <SourceMatrixVisual />;
+    case "excel-pipeline":
+      return <ExcelPipelineVisual />;
+    case "maintenance-commands":
+      return <MaintenanceCommandsVisual />;
+    case "troubleshooting":
+      return <TroubleshootingVisual />;
+    default:
+      return null;
+  }
 }
 
 export const dynamic = "force-dynamic";
@@ -454,6 +918,49 @@ export default function HelpPage() {
             </div>
           </section>
 
+          <section className="panel overflow-hidden">
+            <div className="grid gap-0 2xl:grid-cols-[1fr_360px]">
+              <div className="p-4 sm:p-5">
+                <p className="section-title">Bản đồ nhanh</p>
+                <h2 className="mt-1 text-lg font-bold text-slate-950">
+                  BidTool gom việc đấu thầu thành một luồng khép kín
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                  Bắt đầu từ dữ liệu public, lưu tiêu chí cần theo dõi, tự động
+                  tạo cảnh báo, rồi dùng Excel Workspace để chuẩn hóa bảng vật
+                  tư có chứng cứ nguồn.
+                </p>
+                <div className="mt-4">
+                  <FlowMap />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 bg-slate-50 p-4 sm:p-5 2xl:border-t-0 2xl:border-l">
+                <p className="section-title">Tín hiệu chính</p>
+                <div className="mt-3 grid gap-2">
+                  {helpMetrics.map((metric) => (
+                    <div
+                      key={metric.label}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-3"
+                    >
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-cyan-900">
+                          {metric.value}
+                        </span>
+                        <span className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                          {metric.label}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        {metric.body}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="panel p-4 sm:p-5">
             <p className="section-title">Luồng chuẩn</p>
             <h2 className="mt-1 text-lg font-bold text-slate-950">
@@ -472,6 +979,9 @@ export default function HelpPage() {
                     </span>
                     <span className="mt-2 block text-xs leading-5 text-slate-600">
                       {item.body}
+                    </span>
+                    <span className="mt-3 block rounded-lg bg-slate-50 px-2 py-2 text-[11px] leading-4 font-semibold text-slate-500">
+                      {item.signal}
                     </span>
                   </span>
                   <span className="mt-4 text-xs font-bold text-sky-700 group-hover:text-sky-800">
@@ -512,7 +1022,7 @@ export default function HelpPage() {
               className="panel scroll-mt-6 overflow-hidden"
             >
               <div className="grid gap-0 xl:grid-cols-[1fr_420px]">
-                <div className="p-4 sm:p-5">
+                <div className="min-w-0 p-4 sm:p-5">
                   <p className="section-title">{section.eyebrow}</p>
                   <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">
                     {section.title}
@@ -520,6 +1030,8 @@ export default function HelpPage() {
                   <p className="mt-2 text-sm leading-6 text-slate-600">
                     <InlineText text={section.intro} />
                   </p>
+
+                  <SectionVisual visual={section.visual} />
 
                   {section.steps && section.steps.length > 0 ? (
                     <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">

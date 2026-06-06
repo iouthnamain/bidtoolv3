@@ -11,11 +11,12 @@ const describeError = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 export async function getDashboardSnapshot(alertLimit = 3) {
-  const [summaryResult, alertsResult, workflowsResult] = await Promise.allSettled([
-    api.insight.getDashboardSummary(),
-    api.notification.list({ limit: alertLimit }),
-    api.workflow.list(),
-  ]);
+  const [summaryResult, alertsResult, workflowsResult] =
+    await Promise.allSettled([
+      api.insight.getDashboardSummary(),
+      api.notification.list({ limit: alertLimit }),
+      api.workflow.list(),
+    ]);
 
   const isDegraded =
     summaryResult.status === "rejected" ||

@@ -2,10 +2,7 @@ import {
   normalizeCategoryFilterValues,
   normalizeProvinceFilterValues,
 } from "~/lib/search-filter-utils";
-import {
-  SEARCH_MODE_LABELS,
-  type SearchMode,
-} from "~/lib/search-modes";
+import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
 
 export const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,7 +49,10 @@ export function normalizeStringList(values: string[]): string[] {
   ).sort((a, b) => a.localeCompare(b, "vi"));
 }
 
-export function parsePositiveInt(value: string | null, fallback: number): number {
+export function parsePositiveInt(
+  value: string | null,
+  fallback: number,
+): number {
   if (!value) {
     return fallback;
   }
@@ -91,7 +91,9 @@ export function parseMinMatch(value: string | null): number {
   return Math.max(0, Math.min(100, parsed));
 }
 
-export function parseOptionalNumber(value: string | null | undefined): number | null {
+export function parseOptionalNumber(
+  value: string | null | undefined,
+): number | null {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) {
     return null;
@@ -148,8 +150,7 @@ export function normalizeSearchCriteria(
     classifyIds: Array.from(
       new Set(
         (input.classifyIds ?? []).filter(
-          (value): value is number =>
-            Number.isInteger(value) && value > 0,
+          (value): value is number => Number.isInteger(value) && value > 0,
         ),
       ),
     ).sort((a, b) => a - b),

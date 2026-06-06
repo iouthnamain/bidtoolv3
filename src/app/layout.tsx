@@ -5,8 +5,10 @@ import { Be_Vietnam_Pro } from "next/font/google";
 
 import { ToastProvider } from "~/app/_components/ui/toast";
 import { TRPCReactProvider } from "~/trpc/react";
+import { env } from "~/env";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(env.APP_BASE_URL ?? "http://localhost:3000"),
   title: {
     default: "BidTool v3",
     template: "%s · BidTool v3",

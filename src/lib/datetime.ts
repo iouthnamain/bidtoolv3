@@ -1,6 +1,8 @@
 const VN_LOCALE = "vi-VN";
 
-export function formatDateTime(value: string | Date | null | undefined): string {
+export function formatDateTime(
+  value: string | Date | null | undefined,
+): string {
   if (value === null || value === undefined || value === "") {
     return "Chưa có";
   }

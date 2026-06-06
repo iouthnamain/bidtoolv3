@@ -19,9 +19,7 @@ const envPath = path.join(rootDir, ".env");
 const envExamplePath = path.join(rootDir, ".env.example");
 const bunExecutable = process.execPath;
 const defaultDatabasePort = 5432;
-const defaultSearxngHost = "localhost";
-const defaultSearxngPort = 8080;
-const defaultSearxngProbeUrl = `http://${defaultSearxngHost}:${defaultSearxngPort}/search?q=bidtool&format=json`;
+const defaultSearxngBaseUrl = "http://localhost:18080";
 const databaseReadyAttempts = 30;
 const databaseReadyDelayMs = 2_000;
 const searxngReadyAttempts = 30;
@@ -214,6 +212,27 @@ async function readDatabaseConfig(): Promise<{ host: string; port: number }> {
   };
 }
 
+async function readSearxngProbeUrl(): Promise<string> {
+  const envContents = await readFile(envPath, "utf8");
+  const baseUrl = parseEnvValue(envContents, "SEARXNG_BASE_URL");
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(baseUrl ?? defaultSearxngBaseUrl);
+  } catch {
+    throw new Error("SEARXNG_BASE_URL in .env is not a valid URL.");
+  }
+
+  if (!parsedUrl.pathname.endsWith("/")) {
+    parsedUrl.pathname = `${parsedUrl.pathname}/`;
+  }
+
+  const probeUrl = new URL("search", parsedUrl);
+  probeUrl.searchParams.set("q", "bidtool");
+  probeUrl.searchParams.set("format", "json");
+  return probeUrl.toString();
+}
+
 async function canConnectToPort(host: string, port: number): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const socket = net.createConnection({ host, port });
@@ -269,12 +288,12 @@ async function ensureDockerStack(): Promise<void> {
   );
 }
 
-async function canQuerySearxng(): Promise<boolean> {
+async function canQuerySearxng(probeUrl: string): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), searxngProbeTimeoutMs);
 
   try {
-    const response = await fetch(defaultSearxngProbeUrl, {
+    const response = await fetch(probeUrl, {
       signal: controller.signal,
     });
     return response.ok;
@@ -286,10 +305,11 @@ async function canQuerySearxng(): Promise<boolean> {
 }
 
 async function waitForSearxngEndpoint(): Promise<void> {
-  logStep(`Waiting for SearXNG at ${defaultSearxngProbeUrl}`);
+  const probeUrl = await readSearxngProbeUrl();
+  logStep(`Waiting for SearXNG at ${probeUrl}`);
 
   for (let attempt = 1; attempt <= searxngReadyAttempts; attempt += 1) {
-    if (await canQuerySearxng()) {
+    if (await canQuerySearxng(probeUrl)) {
       return;
     }
 
@@ -299,7 +319,7 @@ async function waitForSearxngEndpoint(): Promise<void> {
   }
 
   throw new Error(
-    `SearXNG did not become reachable at ${defaultSearxngProbeUrl} within ${Math.round((searxngReadyAttempts * searxngReadyDelayMs) / 1_000)} seconds.`,
+    `SearXNG did not become reachable at ${probeUrl} within ${Math.round((searxngReadyAttempts * searxngReadyDelayMs) / 1_000)} seconds.`,
   );
 }
 

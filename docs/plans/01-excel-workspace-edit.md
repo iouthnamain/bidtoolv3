@@ -110,7 +110,7 @@ Search query format:
 
 Env:
 
-- `SEARXNG_BASE_URL=http://localhost:8080`
+- `SEARXNG_BASE_URL=http://localhost:18080`
 - `SEARXNG_TIMEOUT_MS=15000`
 - `SEARXNG_MAX_RESULTS=8`
 - `SEARXNG_LANGUAGE=vi-VN`

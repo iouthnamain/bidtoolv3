@@ -9,11 +9,10 @@ export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
     DATABASE_URL: z.string().url(),
+    APP_BASE_URL: z.string().url().optional(),
     BIDWINNER_BASE_URL: z.string().url().default("https://bidwinner.info"),
     BIDWINNER_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
-    PRODUCT_WEB_SEARCH_PROVIDER: z
-      .enum(["auto", "searxng"])
-      .default("auto"),
+    PRODUCT_WEB_SEARCH_PROVIDER: z.enum(["auto", "searxng"]).default("auto"),
     SEARXNG_BASE_URL: z.string().url().optional(),
     SEARXNG_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
     SEARXNG_MAX_RESULTS: z.coerce.number().int().min(1).max(20).default(8),
@@ -38,6 +37,7 @@ export const env = createEnv({
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
+    APP_BASE_URL: process.env.APP_BASE_URL,
     BIDWINNER_BASE_URL: process.env.BIDWINNER_BASE_URL,
     BIDWINNER_TIMEOUT_MS: process.env.BIDWINNER_TIMEOUT_MS,
     PRODUCT_WEB_SEARCH_PROVIDER: process.env.PRODUCT_WEB_SEARCH_PROVIDER,

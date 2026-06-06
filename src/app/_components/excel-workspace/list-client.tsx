@@ -13,7 +13,13 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import {
+  Badge,
+  BulkActionBar,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+} from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { useRowSelection } from "~/lib/use-row-selection";
 import { type RouterOutputs, api } from "~/trpc/react";

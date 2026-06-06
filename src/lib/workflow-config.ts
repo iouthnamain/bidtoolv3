@@ -5,10 +5,7 @@ import {
   summarizeSearchCriteria,
   type SearchCriteria,
 } from "~/lib/search-criteria";
-import {
-  SEARCH_MODE_LABELS,
-  type SearchMode,
-} from "~/lib/search-modes";
+import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
 
 export type WorkflowNotificationFrequency = "daily" | "weekly";
 
@@ -56,7 +53,8 @@ function readNumberArray(value: unknown): number[] {
   }
 
   return value.filter(
-    (item): item is number => typeof item === "number" && Number.isInteger(item),
+    (item): item is number =>
+      typeof item === "number" && Number.isInteger(item),
   );
 }
 
@@ -128,7 +126,8 @@ export function normalizeWorkflowFilterConfig(
       publishedFrom: readString(nestedCriteria.publishedFrom),
       publishedTo: readString(nestedCriteria.publishedTo),
       minMatchScore:
-        readNumber(nestedCriteria.minMatchScore) ?? legacyCriteria.minMatchScore,
+        readNumber(nestedCriteria.minMatchScore) ??
+        legacyCriteria.minMatchScore,
     }),
     savedFilterId:
       typeof savedFilterIdRaw === "number" && Number.isInteger(savedFilterIdRaw)
@@ -148,7 +147,10 @@ export function summarizeWorkflowFilterConfig(
     chips.push(`Smart View: ${config.savedFilterName}`);
   }
 
-  const modeSummary = summarizeSearchCriteria(config.searchMode, config.criteria);
+  const modeSummary = summarizeSearchCriteria(
+    config.searchMode,
+    config.criteria,
+  );
   chips.push(...modeSummary);
 
   if (chips.length === 0) {

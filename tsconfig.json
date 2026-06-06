@@ -31,11 +31,12 @@
   },
   "include": [
     "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next-electron/types/**/*.ts",
     "**/*.ts",
     "**/*.tsx",
     "**/*.cjs",
-    "**/*.js",
-    ".next/types/**/*.ts"
+    "**/*.js"
   ],
   "exclude": ["node_modules", "generated", ".electron-build", "dist-electron"]
 }

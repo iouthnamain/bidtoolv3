@@ -773,7 +773,9 @@ export async function searchBidWinnerLive(
     }
 
     const parsedPages = await Promise.all(
-      pageNumbers.map((page) => fetchParsedBidWinnerPage(page, selectedProvinceCode)),
+      pageNumbers.map((page) =>
+        fetchParsedBidWinnerPage(page, selectedProvinceCode),
+      ),
     );
 
     let sourcePerPage = BIDWINNER_PER_PAGE;
@@ -820,7 +822,8 @@ export async function searchBidWinnerLive(
       keywordItems.push(...parsedPage.items);
 
       sourceTotal +=
-        typeof parsedPage.payload.total === "number" && parsedPage.payload.total > 0
+        typeof parsedPage.payload.total === "number" &&
+        parsedPage.payload.total > 0
           ? parsedPage.payload.total
           : 0;
 

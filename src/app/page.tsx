@@ -125,10 +125,7 @@ export default async function Home() {
     <main className="min-h-screen px-4 py-5 text-slate-900 sm:py-7">
       <div className="mx-auto w-full max-w-[1440px] space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
-          <Logo
-            ariaLabel="BidTool v3"
-            tagline="Procurement OS"
-          />
+          <Logo ariaLabel="BidTool v3" tagline="Procurement OS" />
           <nav className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <Link
               href="/dashboard"

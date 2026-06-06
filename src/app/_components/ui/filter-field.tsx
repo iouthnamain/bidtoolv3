@@ -24,9 +24,15 @@ export function FilterField({
   const hasMessage = !!(error ?? helper);
 
   const labelEl = (
-    <span className={`text-xs font-semibold tracking-[0.12em] uppercase ${error ? "text-rose-600" : "text-slate-600"}`}>
+    <span
+      className={`text-xs font-semibold tracking-[0.12em] uppercase ${error ? "text-rose-600" : "text-slate-600"}`}
+    >
       {label}
-      {required ? <span className="ml-0.5 text-rose-500" aria-hidden>*</span> : null}
+      {required ? (
+        <span className="ml-0.5 text-rose-500" aria-hidden>
+          *
+        </span>
+      ) : null}
     </span>
   );
 

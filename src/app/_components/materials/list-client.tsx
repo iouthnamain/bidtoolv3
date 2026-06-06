@@ -13,7 +13,13 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { Badge, BulkActionBar, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import {
+  Badge,
+  BulkActionBar,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+} from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
 import { useRowSelection } from "~/lib/use-row-selection";

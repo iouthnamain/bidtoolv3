@@ -764,7 +764,7 @@ function ResultsTable(props: {
                 <td className="px-3 py-3">
                   <Link
                     href={detailHrefForItem(item)}
-                    className="inline-block text-sm leading-5 font-medium text-[#0091ff] [overflow-wrap:anywhere] hover:underline"
+                    className="inline-block text-sm leading-5 font-medium [overflow-wrap:anywhere] text-[#0091ff] hover:underline"
                   >
                     {item.externalId}
                   </Link>
@@ -1178,9 +1178,7 @@ export function SearchPageClient() {
     setSaveSelectedError(null);
   };
 
-  const applyDraftFiltersOnEnter = (
-    event: KeyboardEvent<HTMLInputElement>,
-  ) => {
+  const applyDraftFiltersOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) {
       return;
     }

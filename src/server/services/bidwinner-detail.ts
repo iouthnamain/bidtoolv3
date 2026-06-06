@@ -986,34 +986,25 @@ async function writeCacheRow(
   },
 ) {
   if (entityType === "plan") {
-    await db
-      .insert(planDetailsCache)
-      .values(input)
-      .onConflictDoUpdate({
-        target: planDetailsCache.cacheKey,
-        set: input,
-      });
+    await db.insert(planDetailsCache).values(input).onConflictDoUpdate({
+      target: planDetailsCache.cacheKey,
+      set: input,
+    });
     return;
   }
 
   if (entityType === "project") {
-    await db
-      .insert(projectDetailsCache)
-      .values(input)
-      .onConflictDoUpdate({
-        target: projectDetailsCache.cacheKey,
-        set: input,
-      });
+    await db.insert(projectDetailsCache).values(input).onConflictDoUpdate({
+      target: projectDetailsCache.cacheKey,
+      set: input,
+    });
     return;
   }
 
-  await db
-    .insert(packageDetailsCache)
-    .values(input)
-    .onConflictDoUpdate({
-      target: packageDetailsCache.cacheKey,
-      set: input,
-    });
+  await db.insert(packageDetailsCache).values(input).onConflictDoUpdate({
+    target: packageDetailsCache.cacheKey,
+    set: input,
+  });
 }
 
 async function purgeStaleCacheRows(entityType: BidWinnerDetailEntityType) {

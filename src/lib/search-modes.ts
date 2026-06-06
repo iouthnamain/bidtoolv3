@@ -8,7 +8,11 @@ export const SEARCH_MODE_VALUES = [
 
 export type SearchMode = (typeof SEARCH_MODE_VALUES)[number];
 
-export const SEARCH_ENTITY_TYPE_VALUES = ["package", "plan", "project"] as const;
+export const SEARCH_ENTITY_TYPE_VALUES = [
+  "package",
+  "plan",
+  "project",
+] as const;
 
 export type SearchEntityType = (typeof SEARCH_ENTITY_TYPE_VALUES)[number];
 
@@ -27,8 +31,7 @@ export const SEARCH_MODE_DESCRIPTIONS: Record<SearchMode, string> = {
     "Chế độ tỉnh/thành trước tiên: truy vấn trực tiếp BidWinner public theo một địa phương, rồi tinh lọc thêm trong app.",
   package_area_location:
     "Dùng taxonomy công khai Ngành nghề & địa phương của BidWinner, sau đó tinh lọc cục bộ trên cửa sổ gói thầu đang tải.",
-  plan:
-    "Đọc payload công khai của trang Kế hoạch LCNT để lấy tổng nguồn chính xác, rồi tinh lọc cục bộ theo tiêu chí đã chọn.",
+  plan: "Đọc payload công khai của trang Kế hoạch LCNT để lấy tổng nguồn chính xác, rồi tinh lọc cục bộ theo tiêu chí đã chọn.",
   project:
     "Đọc payload công khai của trang Dự án đầu tư phát triển, kèm liên kết KHLCNT liên quan trong cùng cửa sổ dữ liệu.",
 };

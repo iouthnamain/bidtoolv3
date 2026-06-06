@@ -97,7 +97,9 @@ export const watchlistRouter = createTRPCRouter({
     }),
 
   removeMany: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(watchlistItems)

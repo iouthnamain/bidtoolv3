@@ -186,7 +186,9 @@ const projectSaveSchema = z.object({
 });
 
 const saveSearchResultsInputSchema = z.object({
-  items: z.array(z.union([packageSaveSchema, planSaveSchema, projectSaveSchema])).min(1),
+  items: z
+    .array(z.union([packageSaveSchema, planSaveSchema, projectSaveSchema]))
+    .min(1),
 });
 
 type CriteriaInput = z.infer<typeof criteriaInputBaseSchema>;
@@ -466,11 +468,17 @@ export const searchRouter = createTRPCRouter({
         budgetMax: z.number().optional(),
         publishedFrom: z
           .string()
-          .regex(DATE_ONLY_REGEX, "Ngày đăng từ phải theo định dạng YYYY-MM-DD.")
+          .regex(
+            DATE_ONLY_REGEX,
+            "Ngày đăng từ phải theo định dạng YYYY-MM-DD.",
+          )
           .optional(),
         publishedTo: z
           .string()
-          .regex(DATE_ONLY_REGEX, "Ngày đăng đến phải theo định dạng YYYY-MM-DD.")
+          .regex(
+            DATE_ONLY_REGEX,
+            "Ngày đăng đến phải theo định dạng YYYY-MM-DD.",
+          )
           .optional(),
         minMatchScore: z.number().min(0).max(100).default(0),
         sortOrder: z.enum(["asc", "desc"]).default("desc"),
@@ -566,7 +574,9 @@ export const searchRouter = createTRPCRouter({
 
   saveSelectedResults: publicProcedure
     .input(saveSearchResultsInputSchema)
-    .mutation(async ({ ctx, input }) => saveSearchResultItems(ctx, input.items)),
+    .mutation(async ({ ctx, input }) =>
+      saveSearchResultItems(ctx, input.items),
+    ),
 
   saveSelectedPackages: publicProcedure
     .input(
@@ -762,7 +772,9 @@ export const searchRouter = createTRPCRouter({
     }),
 
   deleteSavedFilters: publicProcedure
-    .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }))
+    .input(
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }),
+    )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(savedFilters)

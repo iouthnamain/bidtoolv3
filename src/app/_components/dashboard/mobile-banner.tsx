@@ -31,7 +31,7 @@ export function MobileBanner() {
         type="button"
         onClick={dismiss}
         aria-label="Đóng thông báo"
-        className="shrink-0 rounded p-0.5 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1"
+        className="shrink-0 rounded p-0.5 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
       >
         ×
       </button>

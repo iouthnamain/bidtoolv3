@@ -11,6 +11,7 @@
 
 # next.js
 /.next/
+/.next-electron/
 /out/
 next-env.d.ts
 

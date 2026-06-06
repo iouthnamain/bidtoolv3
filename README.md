@@ -119,12 +119,19 @@ The main dev workflow now starts SearXNG automatically:
 bun run dev:run
 ```
 
-New `.env` files use `SEARXNG_BASE_URL="http://localhost:8080"` from `.env.example`. If your `.env` was created before this default existed, add it manually.
+New `.env` files use non-default host ports to avoid common local conflicts:
+
+- `POSTGRES_HOST_PORT="55432"`
+- `SEARXNG_HOST_PORT="18080"`
+- `DATABASE_URL="postgresql://bidtool:bidtool@localhost:55432/bidtoolv3"`
+- `SEARXNG_BASE_URL="http://localhost:18080"`
+
+If your `.env` was created before these defaults existed, update those values manually.
 
 Check the local JSON API:
 
 ```bash
-curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
+curl 'http://localhost:18080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
 ```
 
 ## Troubleshooting

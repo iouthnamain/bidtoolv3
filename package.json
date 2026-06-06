@@ -23,7 +23,7 @@
     "internal-tool"
   ],
   "scripts": {
-    "build": "next build",
+    "build": "bun run ./scripts/build-next.ts",
     "check": "eslint . && tsc --noEmit",
     "dev": "next dev --turbo",
     "dev:install": "bun run ./scripts/local-dev.ts install",
@@ -34,9 +34,9 @@
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio",
-    "desktop:build": "bun run build && bun run desktop:prepare && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --publish never",
+    "desktop:build": "bun run ./scripts/build-next.ts --dist .next-electron && bun run ./scripts/prepare-electron-standalone.ts --dist .next-electron && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --publish never",
     "desktop:dev": "bun run ./scripts/desktop-dev.ts",
-    "desktop:pack": "bun run build && bun run desktop:prepare && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --dir --publish never",
+    "desktop:pack": "bun run ./scripts/build-next.ts --dist .next-electron && bun run ./scripts/prepare-electron-standalone.ts --dist .next-electron && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --dir --publish never",
     "desktop:prepare": "bun run ./scripts/prepare-electron-standalone.ts",
     "desktop:start": "electron .",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",

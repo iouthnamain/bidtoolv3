@@ -23,7 +23,9 @@ docker compose --profile search up -d searxng
 
 ```env
 PRODUCT_WEB_SEARCH_PROVIDER="searxng"
-SEARXNG_BASE_URL="http://localhost:8080"
+SEARXNG_HOST_PORT="18080"
+SEARXNG_PUBLIC_BASE_URL="http://localhost:18080/"
+SEARXNG_BASE_URL="http://localhost:18080"
 SEARXNG_TIMEOUT_MS="15000"
 SEARXNG_MAX_RESULTS="8"
 SEARXNG_LANGUAGE="vi-VN"
@@ -33,7 +35,7 @@ SEARXNG_ENGINES=""
 3. Kiểm tra JSON API:
 
 ```bash
-curl 'http://localhost:8080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
+curl 'http://localhost:18080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
 ```
 
 Nếu trả về 403, kiểm tra `deploy/searxng/settings.yml` có `search.formats` gồm `json`.

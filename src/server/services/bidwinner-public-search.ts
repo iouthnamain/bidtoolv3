@@ -9,11 +9,11 @@ import {
   normalizeSearchCriteria,
   type SearchCriteria,
 } from "~/lib/search-criteria";
+import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
 import {
-  SEARCH_MODE_LABELS,
-  type SearchMode,
-} from "~/lib/search-modes";
-import { canonicalizeProvinceLabel, normalizeProvinceKey } from "~/lib/search-filter-utils";
+  canonicalizeProvinceLabel,
+  normalizeProvinceKey,
+} from "~/lib/search-filter-utils";
 import {
   searchBidWinnerLive,
   type LivePackageItem,
@@ -260,9 +260,7 @@ function inferCategory(title: string): string {
   if (/(benh vien|y te|thuoc|xet nghiem|hoa chat y)/.test(text)) {
     return "Y tế";
   }
-  if (
-    /(phan mem|may tinh|mang|cntt|vien thong|an ninh mang)/.test(text)
-  ) {
+  if (/(phan mem|may tinh|mang|cntt|vien thong|an ninh mang)/.test(text)) {
     return "Công nghệ thông tin";
   }
   if (/(xay dung|thi cong|xay lap|ha tang|cong trinh)/.test(text)) {
@@ -385,10 +383,9 @@ async function fetchBidWinnerHtml(
 
 function parseProvincePayload(html: string): ProvinceMap {
   const map = new Map<string, string>();
-  const entries = readJsonAttr<ProvincePayloadEntry[] | { data?: ProvincePayloadEntry[] }>(
-    html,
-    ":ttp",
-  );
+  const entries = readJsonAttr<
+    ProvincePayloadEntry[] | { data?: ProvincePayloadEntry[] }
+  >(html, ":ttp");
   const list = Array.isArray(entries)
     ? entries
     : Array.isArray(entries.data)
@@ -412,15 +409,18 @@ function parseProvincePayload(html: string): ProvinceMap {
   return map;
 }
 
-function resolveProvinceLabel(raw: {
-  city?: string | null;
-  matp?: string | null;
-  altCode?: string | null;
-  locationText?: string | null;
-}, provinceMap: ProvinceMap): string {
+function resolveProvinceLabel(
+  raw: {
+    city?: string | null;
+    matp?: string | null;
+    altCode?: string | null;
+    locationText?: string | null;
+  },
+  provinceMap: ProvinceMap,
+): string {
   const cityText = raw.city?.trim();
   const cityLabel = cityText
-    ? canonicalizeProvinceLabel(cityText) ?? cityText
+    ? (canonicalizeProvinceLabel(cityText) ?? cityText)
     : null;
   if (cityLabel) {
     return cityLabel;
@@ -445,7 +445,9 @@ function resolveProvinceLabel(raw: {
   const locationText = raw.locationText?.trim() ?? "";
   if (locationText) {
     for (const province of PROVINCE_OPTIONS) {
-      if (normalizeText(locationText).includes(normalizeProvinceKey(province))) {
+      if (
+        normalizeText(locationText).includes(normalizeProvinceKey(province))
+      ) {
         return province;
       }
     }
@@ -473,8 +475,7 @@ function humanizeProcurementMethod(value?: string | null): string {
     chi_dinh_thau: "Chỉ định thầu",
     tu_thuc_hien: "Tự thực hiện",
     mua_sam_truc_tiep: "Mua sắm trực tiếp",
-    lua_chon_nha_thau_trong_truong_hop_dac_biet:
-      "Trường hợp đặc biệt",
+    lua_chon_nha_thau_trong_truong_hop_dac_biet: "Trường hợp đặc biệt",
   };
 
   return (
@@ -531,8 +532,7 @@ function toPlanItem(
     externalId: String(raw.id),
     noticeNumber: String(raw.so_tbmt ?? raw.id),
     title,
-    planName:
-      fallbackTitle && fallbackTitle.length > 0 ? fallbackTitle : title,
+    planName: fallbackTitle && fallbackTitle.length > 0 ? fallbackTitle : title,
     owner:
       ownerText && ownerText.length > 0
         ? ownerText
@@ -557,7 +557,9 @@ function toPlanItem(
   };
 }
 
-function toProjectPlanLink(raw: BidWinnerProjectPlanRawItem): ProjectPlanLink | null {
+function toProjectPlanLink(
+  raw: BidWinnerProjectPlanRawItem,
+): ProjectPlanLink | null {
   if (!raw.id) {
     return null;
   }
@@ -632,7 +634,8 @@ function sortByPublishedAt<T extends { publishedAt: string }>(
   return [...items].sort((a, b) => {
     return (
       (parseBidWinnerTimestamp(a.publishedAt) -
-        parseBidWinnerTimestamp(b.publishedAt)) * direction
+        parseBidWinnerTimestamp(b.publishedAt)) *
+      direction
     );
   });
 }
@@ -687,7 +690,10 @@ function matchesDateRange(
   return true;
 }
 
-function buildSearchOptions(items: SearchResultItem[], classifies: SearchModeClassifyOption[] = []): SearchModeOptions {
+function buildSearchOptions(
+  items: SearchResultItem[],
+  classifies: SearchModeClassifyOption[] = [],
+): SearchModeOptions {
   const dynamicKeywords = Array.from(
     new Set(
       items
@@ -709,7 +715,9 @@ function buildSearchOptions(items: SearchResultItem[], classifies: SearchModeCla
   const planFields = Array.from(
     new Set(
       items
-        .filter((item): item is PlanSearchResultItem => item.entityType === "plan")
+        .filter(
+          (item): item is PlanSearchResultItem => item.entityType === "plan",
+        )
         .map((item) => item.field)
         .filter(Boolean),
     ),
@@ -718,7 +726,9 @@ function buildSearchOptions(items: SearchResultItem[], classifies: SearchModeCla
   const procurementMethods = Array.from(
     new Set(
       items
-        .filter((item): item is PlanSearchResultItem => item.entityType === "plan")
+        .filter(
+          (item): item is PlanSearchResultItem => item.entityType === "plan",
+        )
         .map((item) => item.procurementMethod)
         .filter(Boolean),
     ),
@@ -728,7 +738,8 @@ function buildSearchOptions(items: SearchResultItem[], classifies: SearchModeCla
     new Set(
       items
         .filter(
-          (item): item is ProjectSearchResultItem => item.entityType === "project",
+          (item): item is ProjectSearchResultItem =>
+            item.entityType === "project",
         )
         .map((item) => item.projectGroup)
         .filter(Boolean),
@@ -759,10 +770,7 @@ async function getClassifyOptions(): Promise<SearchModeClassifyOption[]> {
     "/4.0/goi-thau-theo-linh-vuc-dia-phuong",
     new URLSearchParams(),
   );
-  const entries = readJsonAttr<ClassifyPayloadEntry[]>(
-    html,
-    ":classifies",
-  );
+  const entries = readJsonAttr<ClassifyPayloadEntry[]>(html, ":classifies");
   const byParent = new Map<number, ClassifyPayloadEntry[]>();
 
   for (const entry of entries) {
@@ -940,7 +948,10 @@ async function searchPackageModes(input: {
               "/4.0/goi-thau-theo-linh-vuc-dia-phuong",
               env.BIDWINNER_BASE_URL,
             ).toString()
-          : new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL).toString(),
+          : new URL(
+              "/4.0/tim-kiem-goi-thau",
+              env.BIDWINNER_BASE_URL,
+            ).toString(),
       exactFields,
       localOnlyFields: localFields,
       notices,
@@ -999,7 +1010,11 @@ async function fetchProjectPage(page: number) {
 
   const items = payload.data
     .map((item) =>
-      toProjectItem(item, relatedByProjectId.get(item.id ?? 0) ?? [], provinceMap),
+      toProjectItem(
+        item,
+        relatedByProjectId.get(item.id ?? 0) ?? [],
+        provinceMap,
+      ),
     )
     .filter((item): item is ProjectSearchResultItem => item !== null);
 
@@ -1027,11 +1042,16 @@ async function fetchWindowItems<T>(options: {
     pageNumbers.push(page);
   }
 
-  const pages = await Promise.all(pageNumbers.map((page) => options.fetchPage(page)));
+  const pages = await Promise.all(
+    pageNumbers.map((page) => options.fetchPage(page)),
+  );
   const allItems = pages.flatMap((page) => page.items);
   const sourceTotal = pages[0]?.payload.total ?? 0;
   const perPage = pages[0]?.payload.per_page ?? BIDWINNER_PER_PAGE;
-  const localStart = Math.max(0, options.offset - (startRemotePage - 1) * perPage);
+  const localStart = Math.max(
+    0,
+    options.offset - (startRemotePage - 1) * perPage,
+  );
 
   return {
     sourceTotal,
@@ -1102,7 +1122,11 @@ async function searchPlanMode(input: {
 
     if (
       (criteria.publishedFrom || criteria.publishedTo) &&
-      !matchesDateRange(item.publishedAt, criteria.publishedFrom, criteria.publishedTo)
+      !matchesDateRange(
+        item.publishedAt,
+        criteria.publishedFrom,
+        criteria.publishedTo,
+      )
     ) {
       return false;
     }
@@ -1129,7 +1153,10 @@ async function searchPlanMode(input: {
     options: buildSearchOptions(window.allItems as SearchResultItem[]),
     sourceMeta: {
       modeLabel: SEARCH_MODE_LABELS.plan,
-      pageUrl: new URL("/4.0/tim-kiem-khlcnt", env.BIDWINNER_BASE_URL).toString(),
+      pageUrl: new URL(
+        "/4.0/tim-kiem-khlcnt",
+        env.BIDWINNER_BASE_URL,
+      ).toString(),
       exactFields: [],
       localOnlyFields: localFields,
       notices: [

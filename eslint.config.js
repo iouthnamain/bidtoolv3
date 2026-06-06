@@ -7,7 +7,13 @@ const compat = new FlatCompat({
 
 export default tseslint.config(
   {
-    ignores: [".electron-build", ".next", "dist-electron", "next-env.d.ts"],
+    ignores: [
+      ".electron-build",
+      ".next",
+      ".next-electron",
+      "dist-electron",
+      "next-env.d.ts",
+    ],
   },
   ...compat.extends("next/core-web-vitals"),
   {

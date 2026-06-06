@@ -11,7 +11,13 @@ export function Skeleton({ className }: SkeletonProps) {
   );
 }
 
-export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
+export function SkeletonText({
+  lines = 3,
+  className,
+}: {
+  lines?: number;
+  className?: string;
+}) {
   return (
     <div className={`space-y-2 ${className ?? ""}`} aria-hidden>
       {Array.from({ length: lines }).map((_, i) => (
@@ -58,7 +64,15 @@ export function SkeletonKpi() {
   );
 }
 
-export function SkeletonTable({ rows = 5, cols = 4, className }: { rows?: number; cols?: number; className?: string }) {
+export function SkeletonTable({
+  rows = 5,
+  cols = 4,
+  className,
+}: {
+  rows?: number;
+  cols?: number;
+  className?: string;
+}) {
   return (
     <div
       aria-hidden

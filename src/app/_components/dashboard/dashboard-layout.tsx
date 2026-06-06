@@ -361,7 +361,7 @@ function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
-  const shouldReadUnreadCount = pathname !== "/maintenance";
+  const shouldReadUnreadCount = !["/help", "/maintenance"].includes(pathname);
   const unreadCountQuery = api.notification.unreadCount.useQuery(undefined, {
     enabled: shouldReadUnreadCount,
     refetchInterval: 30000,

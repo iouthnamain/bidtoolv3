@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: bidtool
       POSTGRES_PASSWORD: bidtool
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - bidtoolv3-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -23,9 +23,9 @@ services:
     restart: unless-stopped
     profiles: ["search"]
     ports:
-      - "8080:8080"
+      - "${SEARXNG_HOST_PORT:-18080}:8080"
     environment:
-      SEARXNG_BASE_URL: "${SEARXNG_PUBLIC_BASE_URL:-http://localhost:8080/}"
+      SEARXNG_BASE_URL: "${SEARXNG_PUBLIC_BASE_URL:-http://localhost:18080/}"
       SEARXNG_SECRET: "${SEARXNG_SECRET:-change-me-for-local-dev}"
       SEARXNG_VALKEY_URL: "valkey://searxng-valkey:6379/0"
     volumes:

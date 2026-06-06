@@ -91,17 +91,26 @@ describe("normalizeSearchCriteria", () => {
   });
 
   it("clamps minMatchScore to 0-100", () => {
-    expect(normalizeSearchCriteria({ minMatchScore: 200 }).minMatchScore).toBe(100);
-    expect(normalizeSearchCriteria({ minMatchScore: -5 }).minMatchScore).toBe(0);
+    expect(normalizeSearchCriteria({ minMatchScore: 200 }).minMatchScore).toBe(
+      100,
+    );
+    expect(normalizeSearchCriteria({ minMatchScore: -5 }).minMatchScore).toBe(
+      0,
+    );
   });
 
   it("dedupes and sorts classifyIds", () => {
-    const result = normalizeSearchCriteria({ classifyIds: [3, 1, 1, 2, -1, 0] });
+    const result = normalizeSearchCriteria({
+      classifyIds: [3, 1, 1, 2, -1, 0],
+    });
     expect(result.classifyIds).toEqual([1, 2, 3]);
   });
 
   it("rounds budget values to non-negative integers", () => {
-    const result = normalizeSearchCriteria({ budgetMin: -5.7, budgetMax: 99.4 });
+    const result = normalizeSearchCriteria({
+      budgetMin: -5.7,
+      budgetMax: 99.4,
+    });
     expect(result.budgetMin).toBe(0);
     expect(result.budgetMax).toBe(99);
   });
