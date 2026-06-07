@@ -2,100 +2,99 @@
 
 ## Goal
 
-Turn a tender-search result into a reviewed opportunity and, after business confirmation, export a structured YCKT Excel file.
+Turn a tender-search result into a reviewed opportunity and, after business
+confirmation, export a structured YCKT workbook.
 
 Target flow:
 
-`search -> open link -> review -> wait confirm -> receive YCKT -> export YCKT Excel`
+`search -> open source detail -> review -> save/track -> wait for confirmation -> receive YCKT -> validate rows -> export`
 
 ## Users
 
-- Chuyên viên đấu thầu tìm gói phù hợp theo ngày.
-- Quản lý kinh doanh dự án cần xác nhận tham gia/không tham gia.
-- Operations user chuẩn bị file YCKT để downstream review.
+- Tender specialist searching for suitable packages.
+- Business manager confirming whether to pursue a package.
+- Operations user preparing a reviewed YCKT file for downstream work.
 
 ## Entry Points
 
-- `/search` - tìm kiếm và lọc gói thầu.
-- `/package-details/[externalId]` - mở chi tiết gói thầu.
-- `/saved-items` - quay lại gói đã lưu hoặc đang chờ xác nhận.
+- `/search` for realtime package, plan, and project search.
+- `/package-details/[externalId]` for package source detail.
+- `/saved-items` for saved filters, saved entities, and watchlist items.
+- `/dashboard` for recent alerts and high-priority items.
 
-## Inputs
+## Flow Diagram
 
-- Từ khóa, địa phương, lĩnh vực, khoảng ngân sách.
-- External package id hoặc URL nguồn public.
-- Thông tin gói thầu: tiêu đề, bên mời thầu, ngân sách, thời hạn, lĩnh vực.
-- Tài liệu hoặc nội dung YCKT khi đã nhận được.
+```mermaid
+flowchart LR
+  start["Open /search"]
+  criteria["Enter keyword, mode, date, location, category, budget"]
+  results["Review search results"]
+  openDetail["Open source detail"]
+  review["Review fit, deadline, budget, inviter, source URL"]
+  choose{"Continue?"}
+  save["Save result or add to watchlist"]
+  reject["Archive / ignore with reason"]
+  confirm["Wait for internal confirmation"]
+  yckt["Receive YCKT content or file"]
+  rows["Normalize and review YCKT rows"]
+  export["Export YCKT workbook"]
 
-## Status Flow
+  start --> criteria --> results --> openDetail --> review --> choose
+  choose -->|"yes"| save --> confirm --> yckt --> rows --> export
+  choose -->|"no"| reject
+```
 
-`discovered -> reviewing -> waiting_confirmation -> yckt_received -> exported -> archived`
+## Search to Saved Item Flow
 
-Meaning:
+```mermaid
+flowchart TB
+  search["Search page"]
+  resultModes["Package / plan / project results"]
+  detail["Detail page from source link"]
+  watchlist["Track package, plan, project, inviter, competitor, or commodity"]
+  savedItems["Saved Items page"]
+  revisit["Reopen saved item or filter later"]
 
-- `discovered`: gói xuất hiện từ search hoặc alert.
-- `reviewing`: user đang kiểm tra fit, deadline, ngân sách, nguồn.
-- `waiting_confirmation`: đã đủ thông tin sơ bộ và chờ quyết định nội bộ.
-- `yckt_received`: đã nhận nội dung/tài liệu YCKT.
-- `exported`: đã xuất file Excel YCKT.
-- `archived`: kết thúc hoặc không tiếp tục.
+  search --> resultModes
+  resultModes --> detail
+  resultModes --> watchlist
+  detail --> watchlist
+  watchlist --> savedItems --> revisit
+```
 
-## Main Steps
+## Status Diagram
 
-1. User vào `/search`, nhập keyword và bộ lọc.
-2. Hệ thống trả danh sách gói thầu dạng card/table.
-3. User mở một kết quả để xem chi tiết.
-4. User review các thông tin chính:
-   - fit theo ngành/sản phẩm
-   - ngân sách
-   - deadline
-   - bên mời thầu
-   - nguồn dữ liệu và link gốc
-5. User đánh dấu watchlist hoặc lưu trạng thái `waiting_confirmation`.
-6. Quản lý xác nhận tiếp tục hoặc loại bỏ.
-7. Khi nhận YCKT, user upload/nhập nội dung YCKT vào package detail.
-8. Hệ thống normalize các dòng YCKT thành bảng review.
-9. User rà soát dòng, sửa trường còn thiếu và xác nhận export.
-10. Hệ thống xuất Excel YCKT và lưu audit snapshot.
+```mermaid
+stateDiagram-v2
+  [*] --> discovered
+  discovered --> reviewing: user opens and checks detail
+  reviewing --> waiting_confirmation: saved for business decision
+  reviewing --> archived: rejected during review
+  waiting_confirmation --> yckt_received: YCKT arrives
+  waiting_confirmation --> archived: business rejects
+  yckt_received --> exported: rows validate and file is exported
+  exported --> archived: opportunity complete
+```
 
-## Output
+## Review Checklist
 
-Excel YCKT gồm tối thiểu:
+- Package title and source URL are clear.
+- Inviter, province, category, budget, publish date, and closing date are
+  reviewed.
+- The package is either tracked, saved, or rejected.
+- Confirmation status is visible before YCKT work starts.
+- YCKT rows have required names, specifications, unit, quantity, notes, and
+  source context before export.
 
-- `package_title`
-- `external_id`
-- `inviter`
-- `province`
-- `category`
-- `budget`
-- `deadline`
-- `requirement_name`
-- `requirement_spec`
-- `unit`
-- `quantity`
-- `notes`
-- `source_url`
-- `review_status`
+## Completion Point
 
-## Data To Persist
+The workflow is complete when the reviewed YCKT workbook is exported and the
+package has a final state: exported or archived.
 
-- Package external id/source URL.
-- User review status and notes.
-- Confirmation decision and timestamp.
-- YCKT raw source or file reference.
-- Export file name, exported timestamp, and final row snapshot.
+## Exceptions
 
-## Acceptance Criteria
-
-- User can move a search result into a reviewed/saved state.
-- User can distinguish `waiting_confirmation` from active review.
-- Export is blocked until YCKT rows pass required-field validation.
-- Exported Excel preserves source package metadata and user notes.
-- The package detail page shows when and by whom the export was created.
-
-## Edge Cases
-
-- Source link is unavailable: keep the saved metadata and show a refresh/manual update action.
-- Duplicate package appears from multiple searches: merge by external id or canonical URL.
-- Confirmation rejects the package: move to `archived` with reason.
-- YCKT arrives as inconsistent text: allow manual row editing before export.
+- Source detail unavailable: keep saved metadata and continue with manual notes.
+- Duplicate result appears from multiple searches: use the same source id or
+  canonical URL as the tracking key.
+- Confirmation rejects the package: archive it with the rejection reason.
+- YCKT content is inconsistent: allow row cleanup before export.

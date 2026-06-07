@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/README.md",
+                "file": "docs/workflows/04-workflow-monitor-optimize.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "04-workflow-monitor-optimize"
             }
           }
         ]
@@ -78,7 +78,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 200
+    "width": 269.5
   },
   "right": {
     "id": "51a387a0768d241c",
@@ -94,9 +94,9 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/README.md",
+                "file": "docs/workflows/04-workflow-monitor-optimize.md",
                 "collapseAll": false,
-                "extraContext": false,
+                "extraContext": true,
                 "sortOrder": "alphabetical",
                 "showSearch": false,
                 "searchQuery": "",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for README"
+              "title": "Backlinks for 04-workflow-monitor-optimize"
             }
           },
           {
@@ -156,21 +156,21 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "docs/README.md",
+                "file": "docs/workflows/04-workflow-monitor-optimize.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of README"
+              "title": "Outline of 04-workflow-monitor-optimize"
             }
           }
-        ]
+        ],
+        "currentTab": 4
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -185,11 +185,13 @@
   },
   "active": "feb12e08e2ff211e",
   "lastOpenFiles": [
-    "docs/workflows/04-workflow-monitor-optimize.md",
     "docs/workflows/03-smart-filter-alert-automation.md",
     "docs/workflows/02-excel-product-sourcing.md",
     "docs/workflows/01-search-review-yckt-export.md",
+    "docs/workflows/04-workflow-monitor-optimize.md",
+    "docs/workflows/materials-excel-workspace-pages-functions.md",
     "docs/workflows/README.md",
+    "docs/README.md",
     "docs/workflows",
     "README.md",
     "drizzle/0005_nervous_goliath.sql",
@@ -219,9 +221,7 @@
     "node_modules/crc-32/README.md",
     "docs/plans/02-excel-workspace-publish.md",
     "docs/plans/excel-workspace.md",
-    "docs/README.md",
     "node_modules/@unrs/resolver-binding-linux-x64-musl/README.md",
-    "node_modules/lightningcss-linux-x64-musl/README.md",
-    "node_modules/@img/sharp-linuxmusl-x64/README.md"
+    "node_modules/lightningcss-linux-x64-musl/README.md"
   ]
 }

@@ -2,93 +2,106 @@
 
 ## Goal
 
-Let users save a tender-search filter and turn it into an automated alert workflow.
+Let users save a tender-search filter as a Smart View, turn it into an active
+alert workflow, and receive notifications when the workflow runs.
 
 Target flow:
 
-`search -> refine filters -> save smart view -> create workflow -> run trigger -> create notification`
+`search -> refine filter -> save smart view -> open saved items -> create alert workflow -> run or wait -> receive notification`
 
 ## Users
 
-- Chuyên viên đấu thầu theo dõi cơ hội mới mỗi ngày.
-- Quản lý kinh doanh muốn nhận cảnh báo khi có gói phù hợp.
-- Operations user chuẩn hóa bộ lọc cho team.
+- Tender specialist monitoring new opportunities.
+- Business manager watching selected markets or locations.
+- Operations user standardizing reusable filters.
 
 ## Entry Points
 
-- `/search` - create and save filter.
-- `/workflows` - create, run and manage workflows.
-- `/dashboard` - review high-priority alerts and recent workflow runs.
+- `/search` to create and save a Smart View.
+- `/saved-items` to review saved filters and create alert workflows.
+- `/workflows` to create, run, pause, and inspect workflows.
+- `/notifications` to review generated notifications.
+- `/dashboard` to see recent alerts and workflow health.
 
-## Inputs
+## Smart View to Alert Flow
 
-- Keyword.
-- Province list.
-- Category list.
-- Budget range.
-- Notification frequency.
-- Trigger type:
-  - `new_package`
-  - `schedule`
-- Action type:
-  - `in_app`
-  - `email` when email delivery is available.
+```mermaid
+flowchart LR
+  search["Open /search"]
+  criteria["Set mode, keyword, location, category, budget, date"]
+  results["Review matching results"]
+  save["Save as Smart View"]
+  saved["Open /saved-items"]
+  create["Create alert workflow from Smart View"]
+  active["Workflow becomes active"]
+  run["Run now or wait for next trigger"]
+  notify["Notification is created"]
+  review["Review in dashboard or notification center"]
 
-## Status Flow
+  search --> criteria --> results --> save --> saved --> create --> active --> run --> notify --> review
+```
 
-`filter_draft -> smart_view_saved -> workflow_created -> active -> notification_created`
+## Manual Workflow Creation Flow
 
-Meaning:
+```mermaid
+flowchart LR
+  workflows["Open /workflows"]
+  create["Create new workflow"]
+  detail["Open workflow detail"]
+  tune["Edit trigger criteria and notification settings"]
+  activate["Keep active or pause"]
+  run["Run now"]
+  notification["Notification appears after successful run"]
 
-- `filter_draft`: user is tuning search criteria.
-- `smart_view_saved`: filter is saved and reusable.
-- `workflow_created`: automation exists but may not be active yet.
-- `active`: workflow can run by trigger or manual run.
-- `notification_created`: workflow generated an in-app alert or other action.
+  workflows --> create --> detail --> tune --> activate --> run --> notification
+```
 
-## Main Steps
+## Notification Review Flow
 
-1. User opens `/search`.
-2. User enters keyword and chooses filters.
-3. System updates search results.
-4. User saves the filter as a Smart View.
-5. User chooses alert frequency or clicks `Tạo workflow`.
-6. System creates workflow with:
-   - trigger config from saved filter
-   - action config from notification settings
-   - active/inactive state
-7. Trigger runs by schedule, event or manual run.
-8. Worker checks whether new packages match the saved filter.
-9. If matched, system creates notification and workflow run log.
-10. User sees alert on dashboard and notification center.
+```mermaid
+flowchart TB
+  run["Workflow run completes"]
+  created{"Notification created?"}
+  dashboard["Dashboard recent alerts"]
+  center["/notifications"]
+  read["Mark read or clear selected"]
+  followup["Open related search, saved item, or workflow"]
 
-## Output
+  run --> created
+  created -->|"yes"| dashboard
+  created -->|"yes"| center
+  created -->|"no"| noAlert["No new alert"]
+  dashboard --> followup
+  center --> read --> followup
+```
 
-- Saved Smart View.
-- Workflow record.
-- Workflow run record.
-- Notification record.
+## Status Diagram
 
-## Data To Persist
+```mermaid
+stateDiagram-v2
+  [*] --> filter_draft
+  filter_draft --> smart_view_saved: user saves search criteria
+  smart_view_saved --> workflow_created: user creates alert from saved item
+  workflow_created --> active: workflow is enabled
+  active --> notification_created: run succeeds and creates alert
+  active --> failed_run: run fails
+  failed_run --> active: user retries or waits for next run
+  active --> paused: user pauses workflow
+  paused --> active: user reactivates workflow
+```
 
-- `saved_filters` row with filter criteria.
-- `workflows` row with trigger/action config.
-- `workflow_runs` row for every run attempt.
-- `notifications` row for every generated alert.
-- Optional watchlist item if user tracks package/inviter/competitor.
+## Completion Point
 
-## Acceptance Criteria
+The workflow is complete when the saved filter has an active alert workflow and
+the user can see the latest run outcome and notification trail.
 
-- User can save a filter and apply it again in one click.
-- User can create a workflow from a Smart View.
-- User can activate/deactivate workflow.
-- Manual `run now` creates a run log.
-- A successful matching run creates an in-app notification.
-- Dashboard reflects active workflow count and success rate.
+## Exceptions
 
-## Edge Cases
-
-- Filter returns too many results: ask user to refine before enabling frequent alerts.
-- Workflow action fails: save failed run with error message.
-- Same package is found repeatedly: dedupe notification by package id/source URL.
-- User deactivates workflow while a run is pending: finish current run but prevent future runs.
+- Filter is too broad: user narrows the criteria before enabling regular
+  alerts.
+- Saved filter is outdated: user returns to search, edits the criteria, and
+  saves again.
+- Workflow is paused: no future runs happen until reactivated.
+- Run fails: user sees the failure message in workflow history and can retry.
+- Duplicate opportunity appears again: user relies on source id or source URL to
+  avoid treating it as a new item.

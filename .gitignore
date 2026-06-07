@@ -54,3 +54,4 @@ yarn-error.log*
 
 # bun
 bun.lockb
+.obsidian

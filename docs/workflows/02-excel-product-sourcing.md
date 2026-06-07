@@ -1,111 +1,196 @@
-# Workflow 02 - Excel Workspace Product Sourcing
+# Workflow 02 - Excel Workspace Material Sourcing
 
 ## Goal
 
-Turn an uploaded procurement/product spreadsheet into an enriched Excel file with reviewed web product evidence.
+Turn a material workbook or manually entered material list into a reviewed
+standard workbook with catalog links, source evidence, and export-ready sheets.
 
 Target flow:
 
-`excel workspace -> import Excel -> map columns -> review product rows -> find web candidates -> choose correct product -> export enriched Excel -> final review`
+`prepare catalog -> create workspace -> configure workbook -> import or add rows -> review rows -> research sources -> select evidence -> validate -> export`
 
 ## Users
 
-- Procurement staff reviewing supplier/product spreadsheets.
-- Operations users collecting source evidence for product matching.
-- Analysts preparing enriched product lists for approval.
+- Procurement or operations staff preparing material workbooks.
+- Reviewers checking quantities, prices, and source evidence.
+- Analysts maintaining the internal material catalog.
 
 ## Entry Points
 
-- `/excel-workspace` - create or reopen a workspace.
-- `/excel-workspace/[id]?step=import|map|review|find|export` - step-based wizard.
+- `/materials` for the internal material catalog.
+- `/materials/new` for one-off catalog creation.
+- `/materials/import` for bulk catalog import.
+- `/materials/[id]` for material detail, price links, and workspace usage.
+- `/excel-workspace` for workspace list and creation.
+- `/excel-workspace/[id]?step=setup|import|rows|research|export` for the
+  guided workbook flow.
 
-## Inputs
+## Overall Flow
 
-- `.xlsx` workbook.
-- Selected sheet name.
-- Column mapping:
-  - product name
-  - spec/description
-  - unit
-  - quantity
-  - target price
-  - currency
-  - vendor hint
-  - origin hint
-  - notes
-- Web search provider:
-  - SearXNG when `SEARXNG_BASE_URL` is configured.
-  - Manual match when web search cannot produce usable evidence.
+```mermaid
+flowchart LR
+  catalog["Prepare material catalog"]
+  workspace["Create or open Excel Workspace"]
+  setup["Setup headers and selected sheets"]
+  import["Upload workbook or add rows"]
+  rows["Review and edit material rows"]
+  research["Find source evidence"]
+  select["Select catalog, web, or manual evidence"]
+  validate["Validate export requirements"]
+  export["Download workbook"]
 
-## Status Flow
+  catalog --> workspace --> setup --> import --> rows --> research --> select --> validate --> export
+```
 
-`draft -> imported -> mapped -> reviewed -> matched -> exported`
+## Material Catalog Flow
 
-Meaning:
+```mermaid
+flowchart LR
+  list["Open /materials"]
+  search["Search catalog"]
+  choose{"Need new material?"}
+  create["Create manually"]
+  import["Import CSV/XLSX"]
+  detail["Open material detail"]
+  price["Add fixed price or supplier link"]
+  usage["Review workspace usage"]
+  ready["Catalog item ready for workspace research"]
 
-- `draft`: workspace exists, no workbook imported yet.
-- `imported`: workbook stored and sheet metadata available.
-- `mapped`: user selected sheet and mapped required columns.
-- `reviewed`: parsed rows were confirmed or edited by user.
-- `matched`: every included row has selected web candidate or manual match.
-- `exported`: enriched workbook was generated.
+  list --> search --> choose
+  choose -->|"yes, one item"| create --> detail
+  choose -->|"yes, many items"| import --> list
+  choose -->|"no"| detail
+  detail --> price --> ready
+  detail --> usage
+```
 
-## Main Steps
+## Workspace Step Flow
 
-1. User creates a workspace from `/excel-workspace`.
-2. User uploads `.xlsx`.
-3. System reads sheet names and previews headers.
-4. User selects sheet and confirms column mapping.
-5. System imports normalized rows while preserving original row data.
-6. User reviews parsed rows and edits missing/incorrect values.
-7. User searches web candidates for each row.
-8. System builds a Vietnam-focused product query and returns candidate cards.
-9. User selects the best candidate or creates a manual match.
-10. System stores selected candidate, extracted spec snapshot and evidence.
-11. Export unlocks only when all included rows are `matched` or `manual`.
-12. System exports a new `.xlsx` with original columns plus appended match fields.
+```mermaid
+flowchart LR
+  list["Open /excel-workspace"]
+  create["Create workspace"]
+  setup["Setup<br/>headers, recipients, selected sheets"]
+  import["Import<br/>file, sheet, header, column mapping"]
+  rows["Rows<br/>clean names, units, quantities, prices"]
+  research["Research<br/>catalog, web, manual evidence"]
+  export["Export<br/>validate and download"]
 
-## Output
+  list --> create --> setup --> import --> rows --> research --> export
+```
 
-The enriched workbook keeps original columns and appends:
+## Workspace Navigation Flow
 
-- `matched_product_name`
-- `matched_brand`
-- `matched_model`
-- `matched_spec`
-- `matched_price`
-- `matched_currency`
-- `matched_origin`
-- `matched_vendor`
-- `matched_source_url`
-- `match_confidence`
-- `match_method`
-- `evidence`
+```mermaid
+flowchart TB
+  open["Open workspace detail"]
+  hasRows{"Rows already imported or added?"}
+  openRows{"Any rows still without selected evidence?"}
+  hasWorkbookAndMapping{"Workbook and mapping are ready?"}
+  hasWorkbook{"Workbook uploaded?"}
 
-## Data To Persist
+  research["Next step: research"]
+  export["Next step: export"]
+  importRows["Next step: import<br/>Rows step can be opened"]
+  importOnly["Next step: import"]
+  setup["Next step: setup<br/>Rows step can be opened for manual entry"]
 
-- Workspace metadata and status.
-- Original workbook JSON and selected sheet.
-- Column mapping JSON.
-- Imported row original data JSON.
-- Search query and candidate results.
-- Selected candidate/manual match snapshot.
-- Export file name and timestamp.
+  open --> hasRows
+  hasRows -->|"yes"| openRows
+  openRows -->|"yes"| research
+  openRows -->|"no"| export
+  hasRows -->|"no"| hasWorkbookAndMapping
+  hasWorkbookAndMapping -->|"yes"| importRows
+  hasWorkbookAndMapping -->|"no"| hasWorkbook
+  hasWorkbook -->|"yes"| importOnly
+  hasWorkbook -->|"no"| setup
+```
 
-## Acceptance Criteria
+## Research Flow
 
-- Original workbook is never mutated.
-- Product-name mapping is required before import.
-- User can edit imported rows before search.
-- Search results show title, URL, domain, snippet/evidence, confidence and match reasons.
-- No row is auto-selected by the system.
-- Export is blocked while any included row is unmatched.
-- Exported workbook contains all original columns plus appended enrichment fields.
+```mermaid
+flowchart LR
+  row["Choose a material row"]
+  options{"Evidence source"}
+  catalog["Catalog match"]
+  web["Web candidate"]
+  manual["Manual source entry"]
+  compare["Compare evidence, price, origin, supplier"]
+  selected["Select final evidence"]
+  matched["Row marked matched or manual"]
 
-## Edge Cases
+  row --> options
+  options --> catalog --> compare
+  options --> web --> compare
+  options --> manual --> compare
+  compare --> selected --> matched
+```
 
-- Workbook has many sheets: force explicit sheet selection.
-- Header row is ambiguous: show preview and require user confirmation.
-- Search provider times out: show retry and manual match options.
-- Multiple candidates look similar: allow user to compare evidence, not only confidence score.
-- A row should be excluded: mark it out-of-scope so it does not block export.
+## Export Gate
+
+```mermaid
+flowchart TB
+  exportStep["Export step"]
+  validate["Validate workbook"]
+  blocking{"Blocking issue?"}
+  fix["Return to setup, rows, or research"]
+  download["Download standard workbook"]
+
+  noSheets["No selected sheet template"]
+  noRows["No included rows"]
+  missing["Missing material name or unit"]
+  quantity["Invalid quantity, stock, or reuse percent"]
+  emptySheet["Selected purchase or inspection sheet would be empty"]
+  warnings["Warnings: missing evidence, missing unit price, duplicates"]
+
+  exportStep --> validate --> blocking
+  noSheets --> blocking
+  noRows --> blocking
+  missing --> blocking
+  quantity --> blocking
+  emptySheet --> blocking
+  warnings -. allow download .-> download
+  blocking -->|"yes"| fix
+  blocking -->|"no"| download
+```
+
+## Status Diagram
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> imported: workbook uploaded
+  imported --> mapped: required columns mapped
+  mapped --> reviewed: rows imported or manually added
+  reviewed --> matched: all open rows have selected evidence
+  matched --> exported: enriched export path records exported status
+
+  reviewed --> reviewed: row edits continue
+  matched --> reviewed: evidence cleared or row edited
+  exported --> [*]
+```
+
+## Standard Workbook Output
+
+The standard workbook can include these sheets, depending on the user's setup:
+
+- THVT summary.
+- Purchase request.
+- Inspection term 1.
+- Inspection term 2.
+- Evidence.
+
+## Completion Point
+
+The workflow is complete when the user downloads a validated workbook and any
+remaining warnings are understood or accepted.
+
+## Exceptions
+
+- Workbook has many sheets: user must choose the sheet explicitly.
+- Header row is ambiguous: user reviews and adjusts the header row.
+- Required mapping is missing: import waits until the material-name mapping is
+  available.
+- Source search fails: user can use catalog evidence or enter a manual source.
+- Row is not needed for export: user excludes the row so it does not affect the
+  workbook.
