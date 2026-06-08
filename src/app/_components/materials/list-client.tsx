@@ -40,7 +40,14 @@ function formatDate(value: string | null | undefined) {
 
 function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
   const metadata = normalizeMaterialMetadata(metadataJson);
-  return metadata.priceSources.length + (sourceUrl ? 1 : 0);
+  const normalizedSourceUrl = sourceUrl?.trim();
+  const hasStandaloneSourceUrl =
+    Boolean(normalizedSourceUrl) &&
+    !metadata.priceSources.some(
+      (source) => source.url.trim() === normalizedSourceUrl,
+    );
+
+  return metadata.priceSources.length + (hasStandaloneSourceUrl ? 1 : 0);
 }
 
 export function MaterialsListClient() {
@@ -86,8 +93,13 @@ export function MaterialsListClient() {
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: (_result, variables) => {
       removeMaterialsFromCurrentList([variables.id]);
+      setSingleDeleteTarget(null);
       toast.success("Đã xóa vật tư.");
       void utils.material.searchMaterials.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể xóa vật tư.");
+      setSingleDeleteTarget(null);
     },
   });
 
@@ -166,9 +178,9 @@ export function MaterialsListClient() {
         confirmLabel="Xóa"
         isLoading={deleteMaterial.isPending}
         onConfirm={() => {
-          if (singleDeleteTarget)
+          if (singleDeleteTarget) {
             deleteMaterial.mutate({ id: singleDeleteTarget.id });
-          setSingleDeleteTarget(null);
+          }
         }}
         onCancel={() => setSingleDeleteTarget(null)}
       />

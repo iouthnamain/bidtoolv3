@@ -63,6 +63,7 @@
     "@trpc/client": "^11.0.0",
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
+    "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
     "electron-updater": "^6.6.2",
     "exceljs": "^4.4.0",

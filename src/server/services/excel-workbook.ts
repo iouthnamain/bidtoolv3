@@ -237,12 +237,44 @@ function cleanCell(value: unknown): string {
 }
 
 export function parseOptionalNumber(value: string): number | null {
-  const cleaned = value.replace(/[^\d,.-]/g, "").replace(/,/g, "");
-  if (!cleaned) {
+  const cleaned = value.replace(/[^\d,.-]/g, "").trim();
+  if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === ",") {
     return null;
   }
 
-  const number = Number(cleaned);
+  const sign = cleaned.startsWith("-") ? "-" : "";
+  const unsigned = cleaned.replace(/-/g, "");
+  const commaCount = (unsigned.match(/,/g) ?? []).length;
+  const dotCount = (unsigned.match(/\./g) ?? []).length;
+  let normalized = unsigned;
+
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSeparator =
+      unsigned.lastIndexOf(",") > unsigned.lastIndexOf(".") ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    normalized = unsigned
+      .replace(new RegExp(`\\${thousandsSeparator}`, "g"), "")
+      .replace(decimalSeparator, ".");
+  } else if (commaCount > 0 || dotCount > 0) {
+    const separator = commaCount > 0 ? "," : ".";
+    const parts = unsigned.split(separator);
+    if (parts.length > 1 && parts.slice(1).every((part) => part.length === 3)) {
+      normalized = parts.join("");
+    } else if (parts.length === 2) {
+      const integerPart = parts[0] ?? "";
+      const decimalPart = parts[1] ?? "";
+      normalized =
+        decimalPart.length === 3 && integerPart.length <= 3
+          ? `${integerPart}${decimalPart}`
+          : `${integerPart}.${decimalPart}`;
+    } else {
+      const decimalPart = parts.at(-1) ?? "";
+      const integerPart = parts.slice(0, -1).join("");
+      normalized = `${integerPart}.${decimalPart}`;
+    }
+  }
+
+  const number = Number(`${sign}${normalized}`);
   return Number.isFinite(number) ? number : null;
 }
 

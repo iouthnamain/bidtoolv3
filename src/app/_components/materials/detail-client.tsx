@@ -15,7 +15,6 @@ import {
   Globe2,
   Link as LinkIcon,
   Package,
-  Percent,
   Plus,
   RefreshCw,
   Ruler,
@@ -46,8 +45,6 @@ type MaterialFormState = {
   defaultUnitPrice: string;
   currency: string;
   sourceUrl: string;
-  defaultDepreciation: string;
-  defaultReusePct: string;
 };
 
 type PriceSourceFormState = {
@@ -85,8 +82,6 @@ function formFromMaterial(material: Material): MaterialFormState {
         : String(material.defaultUnitPrice),
     currency: material.currency || "VND",
     sourceUrl: material.sourceUrl ?? "",
-    defaultDepreciation: String(material.defaultDepreciation ?? 1),
-    defaultReusePct: String(material.defaultReusePct ?? 0),
   };
 }
 
@@ -96,16 +91,6 @@ function parseOptionalNumber(value: string) {
   }
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-}
-
-function parseNumberOrDefault(value: string, fallback: number) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function parseIntegerOrDefault(value: string, fallback: number) {
-  const number = Number.parseInt(value, 10);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -142,6 +127,18 @@ function sourcePriceLabel(source: MaterialPriceSource) {
 
 function sourceUsablePrice(source: MaterialPriceSource) {
   return source.mode === "fixed" ? source.fixedPrice : source.lastPrice;
+}
+
+function countMaterialSources(
+  priceSources: MaterialPriceSource[],
+  sourceUrl?: string | null,
+) {
+  const normalizedSourceUrl = sourceUrl?.trim();
+  const hasStandaloneSourceUrl =
+    Boolean(normalizedSourceUrl) &&
+    !priceSources.some((source) => source.url.trim() === normalizedSourceUrl);
+
+  return priceSources.length + (hasStandaloneSourceUrl ? 1 : 0);
 }
 
 const inputClass =
@@ -536,7 +533,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
         : [],
     [material],
   );
-  const sourceCount = priceSources.length + (material?.sourceUrl ? 1 : 0);
+  const sourceCount = countMaterialSources(priceSources, material?.sourceUrl);
   const latestCheckedSource = useMemo(
     () =>
       priceSources
@@ -616,11 +613,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
         defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
         currency: form.currency || "VND",
         sourceUrl: form.sourceUrl || "",
-        defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
-        defaultReusePct: Math.min(
-          100,
-          Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
-        ),
       },
     });
   };
@@ -1216,33 +1208,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 }
               />
             </Field>
-            <Field label="Khấu hao mặc định">
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                step={0.1}
-                value={form.defaultDepreciation}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    defaultDepreciation: event.target.value,
-                  })
-                }
-              />
-            </Field>
-            <Field label="% sử dụng lại mặc định">
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                max={100}
-                value={form.defaultReusePct}
-                onChange={(event) =>
-                  setForm({ ...form, defaultReusePct: event.target.value })
-                }
-              />
-            </Field>
             <Field label="URL nguồn" className="md:col-span-2">
               <input
                 className={inputClass}
@@ -1294,16 +1259,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
                     : "Chưa có"
                 }
                 icon={<Globe2 className="h-4 w-4" />}
-              />
-              <DetailRow
-                label="Khấu hao"
-                value={material.defaultDepreciation}
-                icon={<Percent className="h-4 w-4" />}
-              />
-              <DetailRow
-                label="Sử dụng lại"
-                value={`${material.defaultReusePct}%`}
-                icon={<RefreshCw className="h-4 w-4" />}
               />
             </dl>
           </article>

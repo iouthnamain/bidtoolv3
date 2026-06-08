@@ -148,6 +148,26 @@ test("manual material save shows a friendly duplicate code error", async ({
 
   await deleteVisibleMaterials(page);
   await expect(page.getByText(code)).toHaveCount(0);
+
+  const reusedName = `${code} reused`;
+  await page.goto("/materials/new");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Mã vật tư").fill(code);
+  await page.getByLabel("Tên vật tư").fill(reusedName);
+  await page.getByLabel("ĐVT").fill("Cái");
+  await Promise.all([
+    page.waitForURL(/\/materials\/\d+$/),
+    page.getByRole("button", { name: "Lưu và mở chi tiết" }).click(),
+  ]);
+  await expect(page.getByRole("heading", { name: reusedName })).toBeVisible();
+  await expect(page.getByText(/Khấu hao|Sử dụng lại/)).toHaveCount(0);
+
+  await page.goto("/materials");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(code);
+  await expect(page.getByLabel(`Chọn ${reusedName}`)).toHaveCount(1);
+  await deleteVisibleMaterials(page);
+  await expect(page.getByText(code)).toHaveCount(0);
 });
 
 test("bulk deletes selected materials without requiring a reload", async ({

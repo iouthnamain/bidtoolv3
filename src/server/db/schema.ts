@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const notificationFrequencyEnum = pgEnum("notification_frequency", [
   "daily",
@@ -424,7 +425,9 @@ export const materials = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    materialsCodeUnique: uniqueIndex("materials_code_unique").on(table.code),
+    materialsCodeUnique: uniqueIndex("materials_code_unique")
+      .on(table.code)
+      .where(sql`${table.deletedAt} IS NULL`),
     materialsNameIdx: index("materials_name_idx").on(table.name),
     materialsCategoryIdx: index("materials_category_idx").on(table.category),
   }),

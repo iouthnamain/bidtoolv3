@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   normalizeToken,
+  parseOptionalNumber,
   parseWorkbookBase64,
   rowsFromMapping,
 } from "~/server/services/excel-workbook";
@@ -134,5 +135,14 @@ describe("standard Excel workbook parser", () => {
   it("normalizes Vietnamese d-stroke before accent stripping", () => {
     expect(normalizeToken("ĐVT")).toBe("dvt");
     expect(normalizeToken("Đơn vị tính")).toBe("don vi tinh");
+  });
+
+  it("parses localized numeric strings used in material imports", () => {
+    expect(parseOptionalNumber("2.600.000 VND")).toBe(2600000);
+    expect(parseOptionalNumber("2,600,000 VND")).toBe(2600000);
+    expect(parseOptionalNumber("1.234,56")).toBe(1234.56);
+    expect(parseOptionalNumber("1,234.56")).toBe(1234.56);
+    expect(parseOptionalNumber("1,5")).toBe(1.5);
+    expect(parseOptionalNumber("1.5")).toBe(1.5);
   });
 });

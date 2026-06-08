@@ -39,7 +39,7 @@ const materialInput = z.object({
   defaultReusePct: z.number().int().min(0).max(100).default(0),
 });
 
-const priceSourceInput = z.object({
+const priceSourceBaseInput = z.object({
   label: z.string().trim().min(1),
   url: z.string().trim().optional().default(""),
   mode: z.enum(["linked", "fixed"]).default("linked"),
@@ -48,6 +48,51 @@ const priceSourceInput = z.object({
   note: z.string().trim().optional().default(""),
   isPrimary: z.boolean().default(false),
 });
+
+const priceSourceInput = priceSourceBaseInput.superRefine((source, ctx) => {
+  validatePriceSourceShape(source, ctx);
+});
+
+function validatePriceSourceShape(
+  source: {
+    mode: "linked" | "fixed";
+    url?: string | null;
+    fixedPrice?: number | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (source.mode === "linked" && !source.url?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["url"],
+      message: "Nguồn theo link cần có URL.",
+    });
+  }
+
+  if (source.mode === "fixed" && source.fixedPrice == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["fixedPrice"],
+      message: "Nguồn giá cố định cần có giá.",
+    });
+  }
+}
+
+function assertValidPriceSource(source: MaterialPriceSource) {
+  if (source.mode === "linked" && source.url.trim().length === 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Nguồn theo link cần có URL.",
+    });
+  }
+
+  if (source.mode === "fixed" && source.fixedPrice == null) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Nguồn giá cố định cần có giá.",
+    });
+  }
+}
 
 function parseMaterialsCsv(csv: string) {
   const result = Papa.parse<Record<string, string>>(csv, {
@@ -74,20 +119,27 @@ function parseMaterialsCsv(csv: string) {
     return parseOptionalNumber(raw) ?? Number.NaN;
   };
 
-  return result.data.map((row) => ({
-    code: emptyToUndefined(row.code),
-    name: row.name ?? "",
-    unit: row.unit ?? "",
-    category: emptyToUndefined(row.category),
-    specText: emptyToUndefined(row.spec_text),
-    manufacturer: emptyToUndefined(row.manufacturer),
-    originCountry: emptyToUndefined(row.origin_country),
-    defaultUnitPrice: optionalNumber(row.default_unit_price),
-    currency: emptyToUndefined(row.currency) ?? "VND",
-    sourceUrl: emptyToUndefined(row.source_url),
-    defaultDepreciation: numberOrDefault(row.default_depreciation, 1),
-    defaultReusePct: Math.trunc(numberOrDefault(row.default_reuse_pct, 0)),
-  }));
+  return {
+    rows: result.data.map((row) => ({
+      code: emptyToUndefined(row.code),
+      name: row.name ?? "",
+      unit: row.unit ?? "",
+      category: emptyToUndefined(row.category),
+      specText: emptyToUndefined(row.spec_text),
+      manufacturer: emptyToUndefined(row.manufacturer),
+      originCountry: emptyToUndefined(row.origin_country),
+      defaultUnitPrice: optionalNumber(row.default_unit_price),
+      currency: emptyToUndefined(row.currency) ?? "VND",
+      sourceUrl: emptyToUndefined(row.source_url),
+      defaultDepreciation: numberOrDefault(row.default_depreciation, 1),
+      defaultReusePct: Math.trunc(numberOrDefault(row.default_reuse_pct, 0)),
+    })),
+    errors: result.errors.map((error) => {
+      const rowLabel =
+        typeof error.row === "number" ? `Dòng ${error.row + 2}` : "CSV";
+      return `${rowLabel}: ${error.message}`;
+    }),
+  };
 }
 
 async function assertMaterialCodeAvailable(
@@ -106,6 +158,7 @@ async function assertMaterialCodeAvailable(
     .where(
       and(
         eq(materials.code, normalizedCode),
+        isNull(materials.deletedAt),
         excludeId ? not(eq(materials.id, excludeId)) : undefined,
       ),
     )
@@ -173,6 +226,17 @@ async function getActiveMaterialById(db: AppDb, id: number) {
   return material;
 }
 
+function requireUpdatedMaterial<T>(material: T | undefined): T {
+  if (!material) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Không tìm thấy vật tư.",
+    });
+  }
+
+  return material;
+}
+
 function normalizePrimarySources(
   sources: MaterialPriceSource[],
   primaryId?: string,
@@ -191,6 +255,28 @@ function normalizePrimarySources(
     ...source,
     isPrimary: source.id === targetPrimaryId,
   }));
+}
+
+function selectWorkbookSheet(
+  workbook: Awaited<ReturnType<typeof parseWorkbookBase64>>,
+  sheetName: string | undefined,
+) {
+  const requestedSheetName = sheetName?.trim();
+  if (!requestedSheetName) {
+    return workbook.sheets[0];
+  }
+
+  const sheet = workbook.sheets.find(
+    (item) => item.name === requestedSheetName,
+  );
+  if (!sheet) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Không tìm thấy sheet "${requestedSheetName}".`,
+    });
+  }
+
+  return sheet;
 }
 
 export const materialRouter = createTRPCRouter({
@@ -248,10 +334,12 @@ export const materialRouter = createTRPCRouter({
           currency: shouldApplyFixedPrice ? source.currency : material.currency,
           updatedAt: now,
         })
-        .where(eq(materials.id, input.materialId))
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
         .returning();
 
-      return { material: updated, source };
+      return { material: requireUpdatedMaterial(updated), source };
     }),
 
   updatePriceSource: publicProcedure
@@ -259,7 +347,7 @@ export const materialRouter = createTRPCRouter({
       z.object({
         materialId: z.number().int().positive(),
         sourceId: z.string().min(1),
-        patch: priceSourceInput.partial(),
+        patch: priceSourceBaseInput.partial(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -289,6 +377,7 @@ export const materialRouter = createTRPCRouter({
         mode: input.patch.mode ?? existing.mode,
         isPrimary: input.patch.isPrimary ?? existing.isPrimary,
       };
+      assertValidPriceSource(nextSource);
       const priceSources = normalizePrimarySources(
         metadata.priceSources.map((source) =>
           source.id === input.sourceId ? nextSource : source,
@@ -310,10 +399,12 @@ export const materialRouter = createTRPCRouter({
               : material.sourceUrl,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materials.id, input.materialId))
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
         .returning();
 
-      return { material: updated, source: nextSource };
+      return { material: requireUpdatedMaterial(updated), source: nextSource };
     }),
 
   deletePriceSource: publicProcedure
@@ -329,6 +420,16 @@ export const materialRouter = createTRPCRouter({
       const priceSources = metadata.priceSources.filter(
         (source) => source.id !== input.sourceId,
       );
+      if (priceSources.length === metadata.priceSources.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy link giá.",
+        });
+      }
+
+      const deletedSource = metadata.priceSources.find(
+        (source) => source.id === input.sourceId,
+      );
       const normalizedSources =
         priceSources.some((source) => source.isPrimary) ||
         priceSources.length === 0
@@ -338,6 +439,18 @@ export const materialRouter = createTRPCRouter({
               isPrimary: index === 0,
             }));
       const primary = normalizedSources.find((source) => source.isPrimary);
+      const deletedSourceUrl = deletedSource?.url.trim();
+      const currentSourceUrl = material.sourceUrl?.trim();
+      const shouldClearCurrentSourceUrl =
+        deletedSourceUrl != null &&
+        deletedSourceUrl.length > 0 &&
+        currentSourceUrl === deletedSourceUrl;
+      const nextSourceUrl =
+        shouldClearCurrentSourceUrl && primary?.url.trim()
+          ? primary.url
+          : shouldClearCurrentSourceUrl
+            ? null
+            : material.sourceUrl;
 
       const [updated] = await ctx.db
         .update(materials)
@@ -346,13 +459,15 @@ export const materialRouter = createTRPCRouter({
             ...material.metadataJson,
             ...buildMaterialMetadata({ priceSources: normalizedSources }),
           },
-          sourceUrl: primary?.url ?? material.sourceUrl,
+          sourceUrl: nextSourceUrl,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materials.id, input.materialId))
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
         .returning();
 
-      return updated;
+      return requireUpdatedMaterial(updated);
     }),
 
   refreshPriceSource: publicProcedure
@@ -420,10 +535,12 @@ export const materialRouter = createTRPCRouter({
           sourceUrl: source.isPrimary ? source.url : material.sourceUrl,
           updatedAt: checkedAt,
         })
-        .where(eq(materials.id, input.materialId))
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
         .returning();
 
-      return { material: updated, source: nextSource };
+      return { material: requireUpdatedMaterial(updated), source: nextSource };
     }),
 
   applyPriceSourcePrice: publicProcedure
@@ -460,13 +577,15 @@ export const materialRouter = createTRPCRouter({
         .set({
           defaultUnitPrice: price,
           currency: source.currency,
-          sourceUrl: source.url || material.sourceUrl,
+          sourceUrl: source.url.trim() ? source.url : material.sourceUrl,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materials.id, input.materialId))
+        .where(
+          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
+        )
         .returning();
 
-      return updated;
+      return requireUpdatedMaterial(updated);
     }),
 
   searchMaterials: publicProcedure
@@ -532,7 +651,7 @@ export const materialRouter = createTRPCRouter({
         const [updated] = await ctx.db
           .update(materials)
           .set(materialUpdateValues(input.patch, now))
-          .where(eq(materials.id, input.id))
+          .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
           .returning();
         if (!updated) {
           throw new TRPCError({
@@ -577,7 +696,7 @@ export const materialRouter = createTRPCRouter({
           sourceUrl: patch.sourceUrl === "" ? null : patch.sourceUrl,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materials.id, input.id))
+        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
         .returning();
 
       if (!updated) {
@@ -599,7 +718,7 @@ export const materialRouter = createTRPCRouter({
           deletedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materials.id, input.id))
+        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
         .returning({ id: materials.id });
 
       if (!updated) {
@@ -615,8 +734,7 @@ export const materialRouter = createTRPCRouter({
   importMaterialsCsv: publicProcedure
     .input(z.object({ csv: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const rows = parseMaterialsCsv(input.csv);
-      const errors: string[] = [];
+      const { rows, errors } = parseMaterialsCsv(input.csv);
       let inserted = 0;
       let skipped = 0;
 
@@ -633,7 +751,12 @@ export const materialRouter = createTRPCRouter({
           const [existing] = await ctx.db
             .select({ id: materials.id })
             .from(materials)
-            .where(eq(materials.code, parsed.data.code))
+            .where(
+              and(
+                eq(materials.code, parsed.data.code),
+                isNull(materials.deletedAt),
+              ),
+            )
             .limit(1);
 
           if (existing) {
@@ -673,9 +796,7 @@ export const materialRouter = createTRPCRouter({
         input.fileName,
         input.workbookBase64,
       );
-      const selectedSheet =
-        workbook.sheets.find((item) => item.name === input.sheetName) ??
-        workbook.sheets[0];
+      const selectedSheet = selectWorkbookSheet(workbook, input.sheetName);
       if (!selectedSheet) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -741,9 +862,7 @@ export const materialRouter = createTRPCRouter({
         input.fileName,
         input.workbookBase64,
       );
-      const sheet =
-        workbook.sheets.find((item) => item.name === input.sheetName) ??
-        workbook.sheets[0];
+      const sheet = selectWorkbookSheet(workbook, input.sheetName);
       if (!sheet) {
         throw new TRPCError({
           code: "BAD_REQUEST",

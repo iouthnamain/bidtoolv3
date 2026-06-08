@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -245,6 +245,7 @@ function XlsxPreviewPanel({
 
 export function MaterialImportClient() {
   const utils = api.useUtils();
+  const previewRequestIdRef = useRef(0);
   const [xlsxFile, setXlsxFile] = useState<File | null>(null);
   const [xlsxBase64, setXlsxBase64] = useState<string | null>(null);
   const [xlsxPreview, setXlsxPreview] = useState<XlsxPreview | null>(null);
@@ -263,17 +264,7 @@ export function MaterialImportClient() {
     xlsxPreview?.sheets.find((sheet) => sheet.name === sheetName) ??
     xlsxPreview?.sheets[0];
 
-  const previewXlsx = api.material.previewMaterialsXlsx.useMutation({
-    onSuccess: (result) => {
-      setXlsxPreview(result);
-      setSheetName(result.selectedSheetName);
-      setImportError(null);
-    },
-    onError: (error) => {
-      setXlsxPreview(null);
-      setImportError(error.message || "Không thể tạo preview Excel.");
-    },
-  });
+  const previewXlsx = api.material.previewMaterialsXlsx.useMutation();
 
   const importXlsx = api.material.importMaterialsXlsx.useMutation({
     onSuccess: async (result) => {
@@ -288,6 +279,7 @@ export function MaterialImportClient() {
       setXlsxFile(null);
       setXlsxBase64(null);
       setXlsxPreview(null);
+      setSheetName("");
       await utils.material.searchMaterials.invalidate();
     },
     onError: (error) => {
@@ -315,25 +307,55 @@ export function MaterialImportClient() {
   });
 
   const handleExcelFile = async (file: File | null | undefined) => {
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
+    const requestedSheetName = xlsxPreview ? "" : sheetName.trim();
     setXlsxFile(file ?? null);
     setXlsxBase64(null);
     setXlsxPreview(null);
     setLastResult(null);
     setImportError(null);
+    setSheetName(requestedSheetName);
 
     if (!file) {
+      setSheetName("");
       return;
     }
 
     try {
       const workbookBase64 = await fileToBase64(file);
+      if (requestId !== previewRequestIdRef.current) {
+        return;
+      }
       setXlsxBase64(workbookBase64);
-      previewXlsx.mutate({
-        fileName: file.name,
-        workbookBase64,
-        sheetName: sheetName.trim() || undefined,
-      });
+      previewXlsx.mutate(
+        {
+          fileName: file.name,
+          workbookBase64,
+          sheetName: requestedSheetName || undefined,
+        },
+        {
+          onSuccess: (result) => {
+            if (requestId !== previewRequestIdRef.current) {
+              return;
+            }
+            setXlsxPreview(result);
+            setSheetName(result.selectedSheetName);
+            setImportError(null);
+          },
+          onError: (error) => {
+            if (requestId !== previewRequestIdRef.current) {
+              return;
+            }
+            setXlsxPreview(null);
+            setImportError(error.message || "Không thể tạo preview Excel.");
+          },
+        },
+      );
     } catch (error) {
+      if (requestId !== previewRequestIdRef.current) {
+        return;
+      }
       setImportError(
         error instanceof Error ? error.message : "Không đọc được tệp Excel.",
       );
@@ -500,6 +522,7 @@ export function MaterialImportClient() {
                   <Button
                     variant="ghost"
                     onClick={() => {
+                      previewRequestIdRef.current += 1;
                       setXlsxFile(null);
                       setXlsxBase64(null);
                       setXlsxPreview(null);

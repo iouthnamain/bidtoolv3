@@ -2,6 +2,7 @@ import "~/styles/globals.css";
 
 import { type Metadata } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 
 import { ToastProvider } from "~/app/_components/ui/toast";
 import { TRPCReactProvider } from "~/trpc/react";
@@ -38,6 +39,7 @@ export default function RootLayout({
         <TRPCReactProvider>
           <ToastProvider>{children}</ToastProvider>
         </TRPCReactProvider>
+        <Analytics />
       </body>
     </html>
   );
