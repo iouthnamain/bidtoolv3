@@ -617,6 +617,7 @@ export const materialRouter = createTRPCRouter({
     .input(
       z.object({
         keyword: z.string().trim().optional(),
+        name: z.string().trim().optional(),
         unit: z.string().trim().optional(),
         category: z.string().trim().optional(),
         manufacturer: z.string().trim().optional(),
@@ -652,6 +653,7 @@ export const materialRouter = createTRPCRouter({
                   ilike(materials.originCountry, keyword),
                 )
               : undefined,
+            input.name ? eq(materials.name, input.name) : undefined,
             input.unit ? eq(materials.unit, input.unit) : undefined,
             input.category ? eq(materials.category, input.category) : undefined,
             input.manufacturer
@@ -676,6 +678,7 @@ export const materialRouter = createTRPCRouter({
   getMaterialFilterOptions: publicProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select({
+        name: materials.name,
         unit: materials.unit,
         category: materials.category,
         manufacturer: materials.manufacturer,
@@ -684,9 +687,9 @@ export const materialRouter = createTRPCRouter({
       .from(materials)
       .where(isNull(materials.deletedAt))
       .orderBy(
+        asc(materials.name),
         asc(materials.unit),
         asc(materials.category),
-        asc(materials.name),
       )
       .limit(5000);
 
@@ -700,6 +703,7 @@ export const materialRouter = createTRPCRouter({
       ).sort((a, b) => a.localeCompare(b, "vi"));
 
     return {
+      names: toSortedOptions(rows.map((row) => row.name)),
       units: toSortedOptions(rows.map((row) => row.unit)),
       categories: toSortedOptions(rows.map((row) => row.category)),
       manufacturers: toSortedOptions(rows.map((row) => row.manufacturer)),

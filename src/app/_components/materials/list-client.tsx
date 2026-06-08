@@ -29,8 +29,8 @@ type SortOrder = NonNullable<MaterialSearchInput["sortOrder"]>;
 type PriceStatus = NonNullable<MaterialSearchInput["priceStatus"]>;
 
 const materialSortOptions: Array<{ value: MaterialSortBy; label: string }> = [
-  { value: "updatedAt", label: "Mới cập nhật" },
   { value: "name", label: "Tên vật tư" },
+  { value: "updatedAt", label: "Mới cập nhật" },
   { value: "unit", label: "Đơn vị tính" },
   { value: "category", label: "Nhóm" },
   { value: "manufacturer", label: "NCC" },
@@ -78,19 +78,21 @@ export function MaterialsListClient() {
   const [hasMounted, setHasMounted] = useState(false);
   const [keyword, setKeyword] = useState("");
   const deferredKeyword = useDeferredValue(keyword);
+  const [nameFilter, setNameFilter] = useState("");
   const [unitFilter, setUnitFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [manufacturerFilter, setManufacturerFilter] = useState("");
   const [originFilter, setOriginFilter] = useState("");
   const [priceStatus, setPriceStatus] = useState<PriceStatus>("all");
-  const [sortBy, setSortBy] = useState<MaterialSortBy>("updatedAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortBy, setSortBy] = useState<MaterialSortBy>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const utils = api.useUtils();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const materialSearchInput = useMemo(
     (): MaterialSearchInput => ({
       keyword: deferredKeyword.trim() || undefined,
+      name: nameFilter || undefined,
       unit: unitFilter || undefined,
       category: categoryFilter || undefined,
       manufacturer: manufacturerFilter || undefined,
@@ -103,6 +105,7 @@ export function MaterialsListClient() {
     }),
     [
       deferredKeyword,
+      nameFilter,
       unitFilter,
       categoryFilter,
       manufacturerFilter,
@@ -129,6 +132,7 @@ export function MaterialsListClient() {
     !hasMounted || (isLoading && visibleMaterials.length === 0);
   const activeFilterCount = [
     keyword.trim(),
+    nameFilter,
     unitFilter,
     categoryFilter,
     manufacturerFilter,
@@ -136,7 +140,7 @@ export function MaterialsListClient() {
     priceStatus !== "all" ? priceStatus : "",
   ].filter(Boolean).length;
   const hasActiveViewControls =
-    activeFilterCount > 0 || sortBy !== "updatedAt" || sortOrder !== "desc";
+    activeFilterCount > 0 || sortBy !== "name" || sortOrder !== "asc";
   const allIds = useMemo(
     () => visibleMaterials.map((m) => m.id),
     [visibleMaterials],
@@ -145,13 +149,14 @@ export function MaterialsListClient() {
 
   const resetViewControls = () => {
     setKeyword("");
+    setNameFilter("");
     setUnitFilter("");
     setCategoryFilter("");
     setManufacturerFilter("");
     setOriginFilter("");
     setPriceStatus("all");
-    setSortBy("updatedAt");
-    setSortOrder("desc");
+    setSortBy("name");
+    setSortOrder("asc");
   };
 
   const removeMaterialsFromCurrentList = (ids: number[]) => {
@@ -456,7 +461,26 @@ export function MaterialsListClient() {
               </label>
             </div>
 
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Tên vật tư
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo tên vật tư"
+                  value={nameFilter}
+                  onChange={(event) => setNameFilter(event.target.value)}
+                >
+                  <option value="">Tất cả tên vật tư</option>
+                  {filterOptions?.names.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   ĐVT
