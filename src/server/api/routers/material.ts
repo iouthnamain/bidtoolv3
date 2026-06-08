@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
 
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, inArray, isNull, not, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  not,
+  or,
+} from "drizzle-orm";
 import Papa from "papaparse";
 import { z } from "zod";
 
@@ -23,6 +34,20 @@ import {
 
 type AppDb = typeof appDb;
 type MaterialInput = z.infer<typeof materialInput>;
+
+const materialSortByInput = z
+  .enum([
+    "updatedAt",
+    "name",
+    "unit",
+    "category",
+    "manufacturer",
+    "originCountry",
+    "defaultUnitPrice",
+  ])
+  .default("updatedAt");
+const sortOrderInput = z.enum(["asc", "desc"]).default("desc");
+const priceStatusInput = z.enum(["all", "priced", "missing"]).default("all");
 
 const materialInput = z.object({
   code: z.string().trim().optional(),
@@ -594,12 +619,21 @@ export const materialRouter = createTRPCRouter({
         keyword: z.string().trim().optional(),
         unit: z.string().trim().optional(),
         category: z.string().trim().optional(),
+        manufacturer: z.string().trim().optional(),
+        originCountry: z.string().trim().optional(),
+        priceStatus: priceStatusInput,
+        sortBy: materialSortByInput,
+        sortOrder: sortOrderInput,
         limit: z.number().int().min(1).max(100).default(20),
         offset: z.number().int().min(0).default(0),
       }),
     )
     .query(async ({ ctx, input }) => {
       const keyword = input.keyword ? `%${input.keyword}%` : undefined;
+      const order =
+        input.sortOrder === "asc"
+          ? asc(materials[input.sortBy])
+          : desc(materials[input.sortBy]);
 
       return ctx.db
         .select()
@@ -613,16 +647,65 @@ export const materialRouter = createTRPCRouter({
                   ilike(materials.code, keyword),
                   ilike(materials.unit, keyword),
                   ilike(materials.category, keyword),
+                  ilike(materials.specText, keyword),
+                  ilike(materials.manufacturer, keyword),
+                  ilike(materials.originCountry, keyword),
                 )
               : undefined,
             input.unit ? eq(materials.unit, input.unit) : undefined,
             input.category ? eq(materials.category, input.category) : undefined,
+            input.manufacturer
+              ? eq(materials.manufacturer, input.manufacturer)
+              : undefined,
+            input.originCountry
+              ? eq(materials.originCountry, input.originCountry)
+              : undefined,
+            input.priceStatus === "priced"
+              ? isNotNull(materials.defaultUnitPrice)
+              : undefined,
+            input.priceStatus === "missing"
+              ? isNull(materials.defaultUnitPrice)
+              : undefined,
           ),
         )
-        .orderBy(desc(materials.updatedAt))
+        .orderBy(order, desc(materials.updatedAt), asc(materials.id))
         .limit(input.limit)
         .offset(input.offset);
     }),
+
+  getMaterialFilterOptions: publicProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db
+      .select({
+        unit: materials.unit,
+        category: materials.category,
+        manufacturer: materials.manufacturer,
+        originCountry: materials.originCountry,
+      })
+      .from(materials)
+      .where(isNull(materials.deletedAt))
+      .orderBy(
+        asc(materials.unit),
+        asc(materials.category),
+        asc(materials.name),
+      )
+      .limit(5000);
+
+    const toSortedOptions = (values: Array<string | null>) =>
+      Array.from(
+        new Set(
+          values
+            .map((value) => value?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).sort((a, b) => a.localeCompare(b, "vi"));
+
+    return {
+      units: toSortedOptions(rows.map((row) => row.unit)),
+      categories: toSortedOptions(rows.map((row) => row.category)),
+      manufacturers: toSortedOptions(rows.map((row) => row.manufacturer)),
+      origins: toSortedOptions(rows.map((row) => row.originCountry)),
+    };
+  }),
 
   createMaterial: publicProcedure
     .input(materialInput)

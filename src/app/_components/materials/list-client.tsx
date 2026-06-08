@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   FileSpreadsheet,
+  Filter,
   Link as LinkIcon,
   PackagePlus,
   Plus,
+  RotateCcw,
   Search,
+  SlidersHorizontal,
   SquareCheckBig,
   Trash2,
   WalletCards,
@@ -18,7 +21,28 @@ import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
 import { useRowSelection } from "~/lib/use-row-selection";
-import { api } from "~/trpc/react";
+import { api, type RouterInputs } from "~/trpc/react";
+
+type MaterialSearchInput = RouterInputs["material"]["searchMaterials"];
+type MaterialSortBy = NonNullable<MaterialSearchInput["sortBy"]>;
+type SortOrder = NonNullable<MaterialSearchInput["sortOrder"]>;
+type PriceStatus = NonNullable<MaterialSearchInput["priceStatus"]>;
+
+const materialSortOptions: Array<{ value: MaterialSortBy; label: string }> = [
+  { value: "updatedAt", label: "Mới cập nhật" },
+  { value: "name", label: "Tên vật tư" },
+  { value: "unit", label: "Đơn vị tính" },
+  { value: "category", label: "Nhóm" },
+  { value: "manufacturer", label: "NCC" },
+  { value: "originCountry", label: "Xuất xứ" },
+  { value: "defaultUnitPrice", label: "Đơn giá" },
+];
+
+const priceStatusOptions: Array<{ value: PriceStatus; label: string }> = [
+  { value: "all", label: "Tất cả giá" },
+  { value: "priced", label: "Đã có giá" },
+  { value: "missing", label: "Chưa có giá" },
+];
 
 function formatMoney(value: number | null | undefined, currency = "VND") {
   if (value == null) {
@@ -53,19 +77,45 @@ function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
 export function MaterialsListClient() {
   const [hasMounted, setHasMounted] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const deferredKeyword = useDeferredValue(keyword);
+  const [unitFilter, setUnitFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [manufacturerFilter, setManufacturerFilter] = useState("");
+  const [originFilter, setOriginFilter] = useState("");
+  const [priceStatus, setPriceStatus] = useState<PriceStatus>("all");
+  const [sortBy, setSortBy] = useState<MaterialSortBy>("updatedAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const utils = api.useUtils();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const materialSearchInput = useMemo(
-    () => ({
-      keyword,
+    (): MaterialSearchInput => ({
+      keyword: deferredKeyword.trim() || undefined,
+      unit: unitFilter || undefined,
+      category: categoryFilter || undefined,
+      manufacturer: manufacturerFilter || undefined,
+      originCountry: originFilter || undefined,
+      priceStatus,
+      sortBy,
+      sortOrder,
       limit: 80,
       offset: 0,
     }),
-    [keyword],
+    [
+      deferredKeyword,
+      unitFilter,
+      categoryFilter,
+      manufacturerFilter,
+      originFilter,
+      priceStatus,
+      sortBy,
+      sortOrder,
+    ],
   );
   const { data: materials = [], isLoading } =
     api.material.searchMaterials.useQuery(materialSearchInput);
+  const { data: filterOptions } =
+    api.material.getMaterialFilterOptions.useQuery();
 
   useEffect(() => {
     setHasMounted(true);
@@ -77,11 +127,32 @@ export function MaterialsListClient() {
   );
   const showInitialLoading =
     !hasMounted || (isLoading && visibleMaterials.length === 0);
+  const activeFilterCount = [
+    keyword.trim(),
+    unitFilter,
+    categoryFilter,
+    manufacturerFilter,
+    originFilter,
+    priceStatus !== "all" ? priceStatus : "",
+  ].filter(Boolean).length;
+  const hasActiveViewControls =
+    activeFilterCount > 0 || sortBy !== "updatedAt" || sortOrder !== "desc";
   const allIds = useMemo(
     () => visibleMaterials.map((m) => m.id),
     [visibleMaterials],
   );
   const sel = useRowSelection(allIds);
+
+  const resetViewControls = () => {
+    setKeyword("");
+    setUnitFilter("");
+    setCategoryFilter("");
+    setManufacturerFilter("");
+    setOriginFilter("");
+    setPriceStatus("all");
+    setSortBy("updatedAt");
+    setSortOrder("desc");
+  };
 
   const removeMaterialsFromCurrentList = (ids: number[]) => {
     const deletedIds = new Set(ids);
@@ -296,7 +367,7 @@ export function MaterialsListClient() {
           id="material-catalog"
           className="-mx-4 mt-4 scroll-mt-6 border-t border-slate-200 bg-white px-4 pt-4"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
             <div>
               <h2 className="text-sm font-bold text-slate-950">
                 Danh mục vật tư
@@ -309,19 +380,186 @@ export function MaterialsListClient() {
                 khi upload ở trang nhập.
               </p>
             </div>
-            <label className="relative w-full sm:w-80">
-              <Search
-                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
-                aria-hidden
-              />
-              <input
-                className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm"
-                placeholder="Tìm tên, mã, ĐVT hoặc nhóm"
-                aria-label="Tìm sản phẩm hoặc vật tư"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-              />
-            </label>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                <Filter className="h-3.5 w-3.5" aria-hidden />
+                {activeFilterCount.toLocaleString("vi-VN")} bộ lọc
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!hasActiveViewControls}
+                leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                onClick={resetViewControls}
+              >
+                Đặt lại
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-2 lg:grid-cols-[minmax(18rem,1.2fr)_repeat(2,minmax(10rem,0.6fr))]">
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Tìm kiếm
+                </span>
+                <span className="relative">
+                  <Search
+                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    aria-hidden
+                  />
+                  <input
+                    className="w-full rounded-lg border border-slate-300 bg-white py-2 pr-3 pl-9 text-sm"
+                    placeholder="Tên, mã, thông số, NCC, xuất xứ"
+                    aria-label="Tìm sản phẩm hoặc vật tư"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                  />
+                </span>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Sắp xếp
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Sắp xếp vật tư"
+                  value={sortBy}
+                  onChange={(event) =>
+                    setSortBy(event.target.value as MaterialSortBy)
+                  }
+                >
+                  {materialSortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Thứ tự
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Thứ tự sắp xếp"
+                  value={sortOrder}
+                  onChange={(event) =>
+                    setSortOrder(event.target.value as SortOrder)
+                  }
+                >
+                  <option value="desc">Giảm dần</option>
+                  <option value="asc">Tăng dần</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  ĐVT
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo ĐVT"
+                  value={unitFilter}
+                  onChange={(event) => setUnitFilter(event.target.value)}
+                >
+                  <option value="">Tất cả ĐVT</option>
+                  {filterOptions?.units.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Nhóm
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo nhóm"
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                >
+                  <option value="">Tất cả nhóm</option>
+                  {filterOptions?.categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  NCC
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo NCC"
+                  value={manufacturerFilter}
+                  onChange={(event) =>
+                    setManufacturerFilter(event.target.value)
+                  }
+                >
+                  <option value="">Tất cả NCC</option>
+                  {filterOptions?.manufacturers.map((manufacturer) => (
+                    <option key={manufacturer} value={manufacturer}>
+                      {manufacturer}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Xuất xứ
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo xuất xứ"
+                  value={originFilter}
+                  onChange={(event) => setOriginFilter(event.target.value)}
+                >
+                  <option value="">Tất cả xuất xứ</option>
+                  {filterOptions?.origins.map((origin) => (
+                    <option key={origin} value={origin}>
+                      {origin}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Giá
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo giá"
+                  value={priceStatus}
+                  onChange={(event) =>
+                    setPriceStatus(event.target.value as PriceStatus)
+                  }
+                >
+                  {priceStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+              <span>Đang xem tối đa 80 dòng phù hợp với bộ lọc hiện tại.</span>
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-1.5">
