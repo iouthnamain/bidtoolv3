@@ -14,12 +14,8 @@ const rootDir = path.resolve(scriptDir, "..");
 const rootName = path.basename(rootDir).toLowerCase();
 const defaultDelayMs = 0;
 const devPorts = [3000, 3001];
-const composeServiceNames = ["postgres", "searxng", "searxng-valkey"];
-const composeContainerNames = [
-  "bidtoolv3-postgres",
-  "bidtoolv3-searxng",
-  "bidtoolv3-searxng-valkey",
-];
+const composeServiceNames = ["postgres"];
+const composeContainerNames = ["bidtoolv3-postgres"];
 
 function readDelayMs() {
   const delayArg = process.argv.find((arg) => arg.startsWith("--delay="));
@@ -90,13 +86,7 @@ async function stopDockerCompose() {
     return;
   }
 
-  const args = [
-    "compose",
-    "--profile",
-    "search",
-    "stop",
-    ...composeServiceNames,
-  ];
+  const args = ["compose", "stop", ...composeServiceNames];
   const result = await runCommand("docker", args);
 
   if (result.code === 0) {

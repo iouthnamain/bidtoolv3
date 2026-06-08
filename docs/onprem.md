@@ -6,7 +6,6 @@ stack is:
 - Caddy reverse proxy on the host port you choose
 - BidTool Next.js application container
 - PostgreSQL database with a named Docker volume
-- SearXNG and Valkey for product web search
 
 ## Requirements
 
@@ -24,7 +23,7 @@ sh scripts/onprem-install.sh
 ```
 
 The installer creates `deploy/onprem/.env.customer` from the template if it is
-missing and generates local secrets for PostgreSQL and SearXNG.
+missing and generates a local secret for PostgreSQL.
 
 Review these values before exposing the server:
 

@@ -1,13 +1,13 @@
 # BidTool v3
 
-BidTool v3 is a Next.js dashboard for tender discovery workflows, Excel-based material review, and product candidate matching. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, Tailwind CSS, and self-hosted SearXNG search for Excel product sourcing.
+BidTool v3 is a Next.js dashboard for tender discovery workflows, material catalog import, and BidWinner operations. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, and Tailwind CSS.
 
 ## Requirements
 
 - Node.js `20+` and Bun
 - Docker Engine with the Docker Compose plugin
 
-The local workflow starts PostgreSQL and SearXNG through Docker Compose. PostgreSQL powers the app database; SearXNG powers the Excel product web search flow.
+The local workflow starts PostgreSQL through Docker Compose. PostgreSQL powers the app database.
 
 ## Local Workflow
 
@@ -27,7 +27,7 @@ Use this once on a new machine or fresh clone.
 bun run dev:install
 ```
 
-It installs dependencies, creates `.env` from `.env.example` only if missing, starts the local PostgreSQL and SearXNG containers, waits for readiness, and applies migrations. It does not seed demo data and it does not overwrite an existing `.env`.
+It installs dependencies, creates `.env` from `.env.example` only if missing, starts the local PostgreSQL container, waits for readiness, and applies migrations. It does not seed demo data and it does not overwrite an existing `.env`.
 
 ### `bun run dev:update`
 
@@ -38,7 +38,7 @@ git pull
 bun run dev:update
 ```
 
-It refreshes dependencies, preserves your local `.env`, ensures PostgreSQL and SearXNG are running, and applies any new migrations. It does not run `git pull` for you.
+It refreshes dependencies, preserves your local `.env`, ensures PostgreSQL is running, and applies any new migrations. It does not run `git pull` for you.
 
 ### `bun run dev:run`
 
@@ -48,7 +48,7 @@ Use this for normal daily startup.
 bun run dev:run
 ```
 
-It ensures `.env` exists, starts PostgreSQL and SearXNG if needed, waits for readiness, applies migrations, and then starts the Next.js dev server. After it boots, open `http://localhost:3000`.
+It ensures `.env` exists, starts PostgreSQL if needed, waits for readiness, applies migrations, and then starts the Next.js dev server. After it boots, open `http://localhost:3000`.
 
 ## Windows Quick Launch
 
@@ -78,7 +78,6 @@ production Docker stack:
 - Caddy reverse proxy
 - BidTool Next.js app container
 - PostgreSQL
-- SearXNG and Valkey
 
 Create or update the customer stack:
 
@@ -133,8 +132,8 @@ or open `/desktop` inside the desktop app and save the customer server URL. When
 `BIDTOOL_SERVER_URL` is set by an admin, the in-app setting is read-only.
 
 When no server URL is configured, the desktop app runs the same Next.js
-application in a local Electron window. PostgreSQL and SearXNG still run through
-the existing Docker workflow.
+application in a local Electron window. PostgreSQL still runs through the
+existing Docker workflow.
 
 ### GitHub Releases
 
@@ -157,33 +156,19 @@ The Windows installer is currently unsigned, so Windows SmartScreen can show a w
 
 Packaged desktop builds use the release tag as the Electron app version, check GitHub Releases in the background, and show an in-app desktop update notice when a newer version is available. The notice downloads the installer update first, then switches the button to restart and install.
 
-## Local SearXNG Search
+## Local PostgreSQL
 
-The main dev workflow now starts SearXNG automatically:
-
-```bash
-bun run dev:run
-```
-
-New `.env` files use non-default host ports to avoid common local conflicts:
+New `.env` files use a non-default Postgres host port to avoid common local conflicts:
 
 - `POSTGRES_HOST_PORT="55432"`
-- `SEARXNG_HOST_PORT="18080"`
 - `DATABASE_URL="postgresql://bidtool:bidtool@localhost:55432/bidtoolv3"`
-- `SEARXNG_BASE_URL="http://localhost:18080"`
 
 If your `.env` was created before these defaults existed, update those values manually.
-
-Check the local JSON API:
-
-```bash
-curl 'http://localhost:18080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json'
-```
 
 ## Troubleshooting
 
 - If Docker commands fail, make sure Docker Desktop or the Docker daemon is running before `dev:install`, `dev:update`, or `dev:run`.
-- If `/maintenance` shows Postgres or SearXNG not running, click `Khởi động Docker` or rerun `bun run dev:run`.
+- If `/maintenance` shows Postgres not running, click `Khởi động Docker` or rerun `bun run dev:run`.
 - If PostgreSQL is still starting, rerun `bun run dev:run` or `bun run db:migrate` after a few seconds.
 - If you see a Smart View schema warning after pulling new code, run `bun run dev:update` or `bun run db:migrate`, then reload the page.
 - If startup fails with env validation, refresh `.env` from the latest `.env.example` and re-apply your local changes.
@@ -191,9 +176,9 @@ curl 'http://localhost:18080/search?q=may%20khoan%20gia%20Viet%20Nam&format=json
 
 ## Scripts
 
-- `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, SearXNG, and migrations.
-- `bun run dev:update` - post-pull sync: deps, PostgreSQL, SearXNG, and migrations.
-- `bun run dev:run` - daily startup with env, PostgreSQL, SearXNG, and migration checks before Next.js.
+- `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, and migrations.
+- `bun run dev:update` - post-pull sync: deps, PostgreSQL, and migrations.
+- `bun run dev:run` - daily startup with env, PostgreSQL, and migration checks before Next.js.
 - `bun run dev:kill` - stop Docker Compose services and BidTool local dev processes when ports are stuck; it uses stop-only Docker commands and does not delete containers or volumes.
 - `bun run dev` - start Next.js only, without local stack checks.
 - `bun run desktop:dev` - start the local stack and open the app in Electron for development.
@@ -224,7 +209,5 @@ Project docs live in `docs/`:
 - [Technical Architecture](docs/03-technical-architecture.md)
 - [MVP Roadmap](docs/04-mvp-roadmap.md)
 - [Data Source Strategy](docs/05-data-source-strategy.md)
-- [Excel Workspace](docs/07-excel-workspace.md)
-- [SearXNG Self-hosted Search](docs/08-searxng-self-hosted-search.md)
 - [On-Prem Deployment](docs/onprem.md)
 - [Workflow Library](docs/workflows/README.md)

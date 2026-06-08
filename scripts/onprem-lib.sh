@@ -67,7 +67,6 @@ ensure_env_file() {
   cp "$ENV_EXAMPLE_FILE" "$ENV_FILE"
   chmod 600 "$ENV_FILE" 2>/dev/null || true
   replace_env_value "POSTGRES_PASSWORD" "$(random_secret)"
-  replace_env_value "SEARXNG_SECRET" "$(random_secret)"
 
   log "Created customer env file at $ENV_FILE"
   log "Review APP_BASE_URL, BIDTOOL_SITE_ADDRESS, and host ports before exposing this server."

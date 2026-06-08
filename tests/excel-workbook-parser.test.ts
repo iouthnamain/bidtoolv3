@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -50,6 +51,73 @@ describe("standard Excel workbook parser", () => {
     expect(sheet.suggestedMapping.materialName).toBe("Tên Vật tư");
     expect(sheet.suggestedMapping.unit).toBe("Đơn vị tính");
     expect(sheet.suggestedMapping.qtyTotal).toBe("Số lượng");
+  });
+
+  it("maps Details headers to row notes", async () => {
+    const source = new ExcelJS.Workbook();
+    const sheet = source.addWorksheet("Materials");
+    sheet.addRow(["Name", "Unit", "Details"]);
+    sheet.addRow(["Cable", "m", "Install in conduit"]);
+
+    const buffer = await source.xlsx.writeBuffer();
+    const workbook = await parseWorkbookBase64(
+      "details.xlsx",
+      Buffer.from(buffer).toString("base64"),
+    );
+    const parsedSheet = workbook.sheets[0]!;
+
+    expect(parsedSheet.suggestedMapping.notes).toBe("Details");
+    expect(
+      rowsFromMapping(parsedSheet, parsedSheet.suggestedMapping)[0],
+    ).toMatchObject({
+      notes: "Install in conduit",
+    });
+  });
+
+  it("parses the provided sample material workbooks without phantom row warnings", async () => {
+    const sampleOne = await parseWorkbookBase64(
+      "sample materials 1.xlsx",
+      sampleBase64("docs/sample/sample materials 1.xlsx"),
+    );
+    const sampleOneSheet = sampleOne.sheets[0]!;
+    const sampleOneRows = rowsFromMapping(
+      sampleOneSheet,
+      sampleOneSheet.suggestedMapping,
+    );
+
+    expect(sampleOne.warnings).toEqual([]);
+    expect(sampleOneSheet.name).toBe("Tổng hợp");
+    expect(sampleOneSheet.rows).toHaveLength(618);
+    expect(sampleOneRows).toHaveLength(471);
+    expect(sampleOneRows[0]).toMatchObject({
+      materialName: "Dây điện đơn mềm VCm 0.5mm2",
+      unit: "m",
+      vendorHint: "Cadivi",
+      originHint: "Việt Nam",
+      unitPrice: 5000,
+    });
+
+    const sampleTwo = await parseWorkbookBase64(
+      "sample materials 2.xlsx",
+      sampleBase64("docs/sample/sample materials 2.xlsx"),
+    );
+    const sampleTwoSheet = sampleTwo.sheets[0]!;
+    const sampleTwoRows = rowsFromMapping(
+      sampleTwoSheet,
+      sampleTwoSheet.suggestedMapping,
+    );
+
+    expect(sampleTwo.warnings).toEqual([]);
+    expect(sampleTwoSheet.name).toBe("Sheet1");
+    expect(sampleTwoSheet.rows).toHaveLength(71);
+    expect(sampleTwoRows).toHaveLength(68);
+    expect(sampleTwoRows[0]).toMatchObject({
+      materialName: "Van tiết lưu 1 chiều M5 Φ4 (SL4-M5)",
+      unit: "Cái",
+      vendorHint: "OEM",
+      originHint: "Việt Nam",
+      unitPrice: 15000,
+    });
   });
 
   it("rejects legacy xls files", async () => {

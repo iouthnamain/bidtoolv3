@@ -44,7 +44,7 @@ type PageDirectoryItem = {
 type HelpVisual =
   | "local-stack"
   | "source-matrix"
-  | "excel-pipeline"
+  | "import-pipeline"
   | "maintenance-commands"
   | "troubleshooting";
 
@@ -82,7 +82,8 @@ type TroubleshootingCard = {
 const quickLinks: HelpLink[] = [
   { href: "/dashboard", label: "Tổng quan" },
   { href: "/search", label: "Tìm kiếm" },
-  { href: "/excel-workspace", label: "Excel Workspace" },
+  { href: "/documents", label: "Documents" },
+  { href: "/import-mapping", label: "Import & Mapping" },
   { href: "/materials", label: "Vật tư" },
   { href: "/workflows", label: "Workflows" },
   { href: "/maintenance", label: "Bảo trì" },
@@ -111,11 +112,11 @@ const taskFlow: TaskFlow[] = [
     signal: "Dùng khi bộ lọc đã ổn và cần nhắc tự động.",
   },
   {
-    title: "4. Chuẩn hóa Excel và vật tư",
-    body: "Tạo workspace Excel, map cột, đối chiếu catalog vật tư và xuất workbook enriched.",
-    href: "/excel-workspace",
-    cta: "Excel Workspace",
-    signal: "Dùng khi có file vật tư hoặc bảng sản phẩm cần kiểm chứng.",
+    title: "4. Nhập và chuẩn hóa vật tư",
+    body: "Dùng Import & Mapping hoặc nhập catalog để preview Excel/CSV trước khi đưa vào danh mục.",
+    href: "/import-mapping",
+    cta: "Import & Mapping",
+    signal: "Dùng khi có file vật tư hoặc catalog cần chuẩn hóa.",
   },
 ];
 
@@ -131,14 +132,14 @@ const helpMetrics: HelpMetric[] = [
     body: "Tìm kiếm, Smart View, workflow cảnh báo và notification queue.",
   },
   {
-    value: "6",
-    label: "bước Excel",
-    body: "Setup, import, map, review, match evidence và export.",
+    value: "2",
+    label: "luồng nhập vật tư",
+    body: "Import & Mapping cho không gian mới và nhập catalog hàng loạt.",
   },
   {
     value: "1",
     label: "máy local",
-    body: "Thiết kế hiện tại là single-user, chạy với Postgres và SearXNG cục bộ.",
+    body: "Thiết kế hiện tại là single-user, chạy với Postgres cục bộ.",
   },
 ];
 
@@ -165,8 +166,8 @@ const flowNodes: FlowNode[] = [
   },
   {
     step: "05",
-    label: "Chuẩn hóa Excel",
-    body: "Map vật tư, chọn evidence, xuất workbook enriched cho review.",
+    label: "Chuẩn hóa vật tư",
+    body: "Preview Excel/CSV, map dữ liệu và đưa vật tư sạch vào catalog.",
   },
 ];
 
@@ -174,7 +175,7 @@ const localStackLayers: FlowNode[] = [
   {
     step: "UI",
     label: "Browser hoặc Electron",
-    body: "Người dùng thao tác dashboard, help, search và Excel workspace.",
+    body: "Người dùng thao tác dashboard, help, search, import và catalog vật tư.",
   },
   {
     step: "API",
@@ -184,12 +185,12 @@ const localStackLayers: FlowNode[] = [
   {
     step: "DB",
     label: "PostgreSQL",
-    body: "Lưu tender, Smart View, Watchlist, workflow, material và workspace.",
+    body: "Lưu tender, Smart View, Watchlist, workflow và catalog vật tư.",
   },
   {
     step: "WEB",
-    label: "SearXNG",
-    body: "Tìm ứng viên sản phẩm web cho các dòng Excel cần evidence.",
+    label: "Nguồn public",
+    body: "BidWinner public là nguồn dữ liệu chính cho tìm kiếm và theo dõi.",
   },
 ];
 
@@ -226,36 +227,26 @@ const sourceMatrixRows: SourceMatrixRow[] = [
   },
 ];
 
-const excelPipeline: FlowNode[] = [
-  {
-    step: "Setup",
-    label: "Chọn mẫu",
-    body: "Đặt tên workspace, chọn bộ sheet chuẩn và header cần xuất.",
-  },
+const importPipeline: FlowNode[] = [
   {
     step: "Import",
-    label: "Đọc workbook",
-    body: "Upload `.xlsx`, chọn sheet và kiểm tra app đọc được bao nhiêu dòng.",
+    label: "Chọn nguồn",
+    body: "Upload `.xlsx` hoặc dán CSV từ catalog vật tư có sẵn.",
+  },
+  {
+    step: "Preview",
+    label: "Kiểm tra dữ liệu",
+    body: "Xem header, số dòng đọc được, mapping gợi ý và các dòng mẫu.",
   },
   {
     step: "Map",
     label: "Ánh xạ cột",
-    body: "Nối cột file gốc vào tên vật tư, thông số, đơn vị, số lượng và giá.",
+    body: "Ghép tên vật tư, đơn vị, thông số, NCC, xuất xứ và đơn giá.",
   },
   {
-    step: "Review",
-    label: "Sửa dòng",
-    body: "Chuẩn hóa tên, đơn vị, số lượng tồn, hao mòn và dòng được export.",
-  },
-  {
-    step: "Find",
-    label: "Chọn evidence",
-    body: "Tìm web bằng SearXNG hoặc chọn catalog vật tư/manual match.",
-  },
-  {
-    step: "Export",
-    label: "Tải Excel",
-    body: "Chỉ xuất khi mọi dòng included đã matched hoặc manual.",
+    step: "Save",
+    label: "Nhập catalog",
+    body: "Chỉ lưu khi preview hợp lệ; dòng trùng name + unit được bỏ qua.",
   },
 ];
 
@@ -268,7 +259,7 @@ const maintenanceCommands: CommandCard[] = [
   {
     command: "bun run dev:run",
     when: "Mỗi ngày làm việc.",
-    result: "Kiểm tra env, bật Postgres/SearXNG và mở Next dev server.",
+    result: "Kiểm tra env, bật Postgres và mở Next dev server.",
   },
   {
     command: "bun run dev:update",
@@ -300,7 +291,7 @@ const troubleshootingCards: TroubleshootingCard[] = [
   },
   {
     symptom: "Maintenance báo đỏ",
-    checks: ["Postgres container", "SearXNG container", "Valkey container"],
+    checks: ["Postgres container", "Docker daemon", "Database migration"],
     action: "Bấm `Khởi động Docker` hoặc chạy lại daily startup.",
   },
   {
@@ -315,21 +306,21 @@ const troubleshootingCards: TroubleshootingCard[] = [
   {
     symptom: "Tìm sản phẩm không ra",
     checks: [
-      "SEARXNG_BASE_URL",
-      "SearXNG chạy ở cổng 18080?",
       "Từ khóa quá hẹp?",
+      "Nguồn BidWinner có dữ liệu?",
+      "Bộ lọc quá chặt?",
     ],
     action: "Mở `/maintenance`, bật Docker, sau đó tìm lại với ít filter hơn.",
   },
   {
-    symptom: "Excel không export",
+    symptom: "Import Excel lỗi",
     checks: [
-      "Có dòng included chưa match?",
-      "Có dòng thiếu tên/đơn vị?",
-      "Đã manual match?",
+      "File có đúng `.xlsx`?",
+      "Sheet/header có đúng dữ liệu?",
+      "Có dòng thiếu tên hoặc đơn vị?",
     ],
     action:
-      "Vào bước Review/Find và xử lý hết lỗi blocking trước khi tải Excel.",
+      "Mở `/materials/import`, xem preview sau upload và chỉnh file trước khi nhập lại.",
   },
 ];
 
@@ -350,6 +341,11 @@ const pageDirectory: PageDirectoryItem[] = [
     body: "Quản lý Smart View đã lưu và các package/KHLCNT/dự án cần theo dõi.",
   },
   {
+    href: "/documents",
+    title: "Documents",
+    body: "Hub hồ sơ thầu, file import và các bản ghi liên quan cần mở cùng tài liệu.",
+  },
+  {
     href: "/workflows",
     title: "Quy trình",
     body: "Tạo, bật/tạm dừng, chạy thủ công và xem lịch sử workflow cảnh báo.",
@@ -360,9 +356,9 @@ const pageDirectory: PageDirectoryItem[] = [
     body: "Xử lý cảnh báo in-app được tạo từ workflow và đánh dấu đã đọc.",
   },
   {
-    href: "/excel-workspace",
-    title: "Không gian Excel",
-    body: "Upload workbook, map cột, review dòng vật tư, tìm evidence và export.",
+    href: "/import-mapping",
+    title: "Import & Mapping",
+    body: "Không gian mới cho luồng nhập và ánh xạ dữ liệu vật tư.",
   },
   {
     href: "/materials",
@@ -387,7 +383,7 @@ const sections: Section[] = [
     eyebrow: "Khởi động",
     title: "Lần đầu mở app",
     intro:
-      "BidTool chạy cục bộ với Next.js, Bun, PostgreSQL và SearXNG trong Docker. Luồng chuẩn là cài một lần, sau đó dùng lệnh chạy hằng ngày.",
+      "BidTool chạy cục bộ với Next.js, Bun và PostgreSQL trong Docker. Luồng chuẩn là cài một lần, sau đó dùng lệnh chạy hằng ngày.",
     steps: [
       "Cài Bun và Docker Desktop trên máy Windows hoặc máy dev đang dùng.",
       "Mở project trong terminal và chạy `bun run dev:install` cho lần setup đầu tiên.",
@@ -429,7 +425,7 @@ const sections: Section[] = [
     eyebrow: "Vận hành",
     title: "Chạy và cập nhật hằng ngày",
     intro:
-      "Dùng các lệnh bảo trì để đồng bộ dependencies, đảm bảo Postgres + SearXNG đang chạy và áp migrations mới trước khi thao tác dữ liệu thật.",
+      "Dùng các lệnh bảo trì để đồng bộ dependencies, đảm bảo Postgres đang chạy và áp migrations mới trước khi thao tác dữ liệu thật.",
     steps: [
       "Mỗi ngày làm việc, chạy `bun run dev:run` hoặc dùng `launch-maintenance.bat`.",
       "Sau khi kéo code mới bằng `git pull`, chạy `bun run dev:update` hoặc dùng `update-maintenance.bat`.",
@@ -553,45 +549,43 @@ const sections: Section[] = [
     },
   },
   {
-    id: "excel-workspace",
-    eyebrow: "Excel",
-    title: "Không gian Excel",
+    id: "import-mapping",
+    eyebrow: "Import",
+    title: "Import & Mapping",
     intro:
-      "Excel Workspace biến file sản phẩm bất kỳ thành workbook đã bổ sung thông tin match, nguồn chứng cứ và dữ liệu xuất.",
+      "Import & Mapping là trang mới cho luồng nhập dữ liệu và ánh xạ catalog vật tư. Catalog hiện vẫn nhập thực tế qua `/materials/import` với preview sau upload.",
     steps: [
-      "Tạo workspace mới, đặt tên dễ nhận biết và upload file `.xlsx`.",
-      "Chọn sheet, map cột sản phẩm/spec/đơn vị/số lượng/giá/vendor/origin.",
-      "Review và sửa dòng đã parse trước khi tìm nguồn web.",
-      "Ở bước Find, dùng bộ lọc gợi ý để tinh lọc kết quả. Khi bộ lọc đang bật, bấm `Tìm thêm theo bộ lọc` để tìm web với nhiều kết quả hơn.",
-      "Khi mọi dòng đã matched/manual, export file enriched `.xlsx`.",
+      "Mở `/import-mapping` khi cần không gian riêng cho luồng import/mapping mới.",
+      "Mở `/materials/import` để upload `.xlsx` hoặc dán CSV catalog.",
+      "Sau khi chọn file Excel, xem preview header, mapping gợi ý, cảnh báo và 10 dòng mẫu trước khi nhập.",
+      "Kiểm tra các cột bắt buộc như tên vật tư và đơn vị; bổ sung thông số, NCC, xuất xứ và đơn giá nếu có.",
+      "Bấm nhập khi preview hợp lệ; dòng trùng name + unit sẽ được bỏ qua để giữ catalog sạch.",
     ],
     notes: [
-      "Hệ thống không tự chọn candidate thay người dùng.",
-      "SearXNG chỉ cần khi chạy luồng tìm web cho sản phẩm.",
+      "Preview giúp kiểm tra dữ liệu trước khi ghi vào catalog.",
+      "File `.xls` cũ cần chuyển sang `.xlsx` trước khi upload.",
     ],
-    links: [{ href: "/excel-workspace", label: "Mở Không gian Excel" }],
-    visual: "excel-pipeline",
-    image: {
-      src: "/help/excel-workspace.png",
-      alt: "Không gian Excel với danh sách workspace và trạng thái xử lý",
-      caption: "Workspace giữ file gốc và tạo file enriched mới khi export.",
-    },
+    links: [
+      { href: "/import-mapping", label: "Mở Import & Mapping" },
+      { href: "/materials/import", label: "Nhập catalog" },
+    ],
+    visual: "import-pipeline",
   },
   {
     id: "vat-tu",
     eyebrow: "Catalog",
     title: "Sản phẩm / vật tư",
     intro:
-      "Danh mục vật tư là catalog nội bộ dùng lại trong Excel Workspace để chuẩn hóa tên, đơn vị, giá tham khảo và nguồn sản phẩm.",
+      "Danh mục vật tư là catalog nội bộ dùng để chuẩn hóa tên, đơn vị, giá tham khảo và nguồn sản phẩm.",
     steps: [
       "Mở `/materials` để kiểm tra danh sách vật tư đã có.",
-      "Tạo vật tư thủ công khi cần một item chuẩn trước khi map Excel.",
+      "Tạo vật tư thủ công khi cần một item chuẩn trước khi nhập hàng loạt.",
       "Dùng trang nhập hàng loạt nếu đã có sheet catalog riêng.",
       "Mở chi tiết vật tư để cập nhật thông số, link nhà cung cấp hoặc nguồn giá.",
-      "Khi review Excel Workspace, dùng catalog này để chọn sản phẩm nội bộ phù hợp.",
+      "Dùng catalog này làm nguồn chuẩn cho các luồng nhập và mapping tiếp theo.",
     ],
     notes: [
-      "Xóa vật tư khỏi catalog không xóa file workspace đã upload.",
+      "Xóa vật tư khỏi catalog không ảnh hưởng đến file nguồn đã upload.",
       "Giữ tên, đơn vị và nguồn giá nhất quán để workbook export dễ kiểm tra.",
     ],
     links: [
@@ -602,7 +596,7 @@ const sections: Section[] = [
       src: "/help/materials.png",
       alt: "Trang Sản phẩm vật tư hiển thị catalog nội bộ",
       caption:
-        "Catalog vật tư là lớp chuẩn hóa trước khi xuất workbook enriched.",
+        "Catalog vật tư là lớp chuẩn hóa trước khi dùng dữ liệu cho các bước sau.",
     },
   },
   {
@@ -613,7 +607,7 @@ const sections: Section[] = [
       "Khi app không mở hoặc dữ liệu chưa đúng, ưu tiên kiểm tra các phần phụ thuộc cục bộ trước: Docker, `.env`, migration và trạng thái server.",
     steps: [
       "Nếu Docker lỗi, bật Docker Desktop rồi chạy lại `bun run dev:run`.",
-      "Nếu Postgres hoặc SearXNG chưa chạy, mở `/maintenance` và bấm `Khởi động Docker`.",
+      "Nếu Postgres chưa chạy, mở `/maintenance` và bấm `Khởi động Docker`.",
       "Nếu báo thiếu biến môi trường, so sánh `.env` với `.env.example` và bổ sung giá trị còn thiếu.",
       "Nếu dashboard cảnh báo schema, chạy `bun run dev:update` hoặc `bun run db:migrate`.",
       "Nếu port hoặc process local bị kẹt, mở `/maintenance` và dùng `Dừng toàn bộ`, hoặc chạy `bun run dev:kill`. Lệnh này chỉ dừng Docker, không xóa container hoặc volume.",
@@ -759,14 +753,14 @@ function SourceMatrixVisual() {
   );
 }
 
-function ExcelPipelineVisual() {
+function ImportPipelineVisual() {
   return (
     <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3">
       <p className="text-xs font-bold tracking-wide text-emerald-800 uppercase">
-        Pipeline Excel
+        Pipeline import
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {excelPipeline.map((step, index) => (
+        {importPipeline.map((step, index) => (
           <div
             key={step.step}
             className="rounded-xl border border-emerald-200 bg-white p-3"
@@ -851,8 +845,8 @@ function SectionVisual({ visual }: { visual?: HelpVisual }) {
       return <LocalStackVisual />;
     case "source-matrix":
       return <SourceMatrixVisual />;
-    case "excel-pipeline":
-      return <ExcelPipelineVisual />;
+    case "import-pipeline":
+      return <ImportPipelineVisual />;
     case "maintenance-commands":
       return <MaintenanceCommandsVisual />;
     case "troubleshooting":
@@ -868,7 +862,7 @@ export default function HelpPage() {
   return (
     <DashboardShell
       title="Trợ giúp & Hướng dẫn"
-      description="Hướng dẫn vận hành BidTool v3 từ lúc mở app, tìm gói thầu, lưu bộ lọc, chạy Excel workspace đến bảo trì cục bộ."
+      description="Hướng dẫn vận hành BidTool v3 từ lúc mở app, tìm gói thầu, lưu bộ lọc, nhập catalog đến bảo trì cục bộ."
       sectionNavItems={helpSectionNavItems}
       sectionNavTitle="Mục trợ giúp chính"
     >
@@ -904,7 +898,7 @@ export default function HelpPage() {
                 <p className="mt-1 max-w-3xl text-sm text-slate-600">
                   Nếu mới mở app, bắt đầu ở Tổng quan. Nếu đang làm việc với
                   nguồn thầu, đi thẳng vào Tìm kiếm; nếu đang xử lý bảng vật tư,
-                  mở Excel Workspace hoặc catalog Vật tư.
+                  mở Import & Mapping hoặc catalog Vật tư.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -930,8 +924,8 @@ export default function HelpPage() {
                 </h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
                   Bắt đầu từ dữ liệu public, lưu tiêu chí cần theo dõi, tự động
-                  tạo cảnh báo, rồi dùng Excel Workspace để chuẩn hóa bảng vật
-                  tư có chứng cứ nguồn.
+                  tạo cảnh báo, rồi dùng import catalog để chuẩn hóa bảng vật
+                  tư.
                 </p>
                 <div className="mt-4">
                   <FlowMap />

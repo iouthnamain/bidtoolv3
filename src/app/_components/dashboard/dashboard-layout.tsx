@@ -12,6 +12,7 @@ import {
   CircleHelp,
   Download,
   FileSpreadsheet,
+  FileText,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
@@ -47,6 +48,7 @@ type IconName =
   | "dashboard"
   | "search"
   | "excel"
+  | "documents"
   | "materials"
   | "saved"
   | "workflow"
@@ -88,8 +90,13 @@ const navSections: NavSection[] = [
     items: [
       { href: "/search", label: "Tìm kiếm", icon: "search" },
       {
-        href: "/excel-workspace",
-        label: "Không gian Excel",
+        href: "/documents",
+        label: "Documents",
+        icon: "documents",
+      },
+      {
+        href: "/import-mapping",
+        label: "Import & Mapping",
         icon: "excel",
       },
       { href: "/materials", label: "Sản phẩm / vật tư", icon: "materials" },
@@ -129,7 +136,7 @@ const navSections: NavSection[] = [
           { href: "/help#smart-view", label: "Smart Views" },
           { href: "/help#quy-trinh", label: "Quy trình" },
           { href: "/help#thong-bao", label: "Thông báo" },
-          { href: "/help#excel-workspace", label: "Excel Workspace" },
+          { href: "/help#import-mapping", label: "Import & Mapping" },
           { href: "/help#vat-tu", label: "Vật tư" },
           { href: "/help#khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
@@ -158,6 +165,7 @@ const navIconMap: Record<IconName, LucideIcon> = {
   dashboard: LayoutDashboard,
   search: Search,
   excel: FileSpreadsheet,
+  documents: FileText,
   materials: Boxes,
   saved: BookmarkCheck,
   workflow: Workflow,

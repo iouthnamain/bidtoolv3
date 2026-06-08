@@ -128,6 +128,12 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     icon: "plus",
   },
   {
+    href: "/import-mapping",
+    label: "Import & Mapping",
+    description: "Không gian mới cho luồng nhập và map dữ liệu.",
+    icon: "sheet",
+  },
+  {
     href: "/materials/import",
     label: "Nhập hàng loạt",
     description: "Upload Excel hoặc dán CSV.",
@@ -157,35 +163,8 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
   {
     href: "#material-edit",
     label: "Chỉnh sửa",
-    description: "Thông tin catalog, THVT, metadata và usage.",
+    description: "Thông tin catalog, nguồn giá và metadata.",
     icon: "pencil",
-  },
-];
-
-export const excelWorkspaceSectionNavItems: PageSectionNavItem[] = [
-  {
-    href: "/excel-workspace#create-workspace",
-    label: "Tạo workspace",
-    description: "Đặt tên và tạo workbook vật tư mới.",
-    icon: "plus",
-  },
-  {
-    href: "/excel-workspace#workspace-list",
-    label: "Danh sách",
-    description: "Mở workspace, xem trạng thái và tiến độ match.",
-    icon: "sheet",
-  },
-  {
-    href: "/materials",
-    label: "Catalog vật tư",
-    description: "Nguồn match nội bộ dùng trong workspace.",
-    icon: "boxes",
-  },
-  {
-    href: "/help#excel-workspace",
-    label: "Hướng dẫn Excel",
-    description: "Luồng setup, import, map, review, find và export.",
-    icon: "file",
   },
 ];
 
@@ -253,7 +232,7 @@ export const maintenanceSectionNavItems: PageSectionNavItem[] = [
   {
     href: "#maintenance-services",
     label: "Phiên bản & services",
-    description: "Git version, Postgres, SearXNG và Docker status.",
+    description: "Git version, Postgres và Docker status.",
     icon: "server",
   },
   {
@@ -317,6 +296,12 @@ export const sourceDetailSectionNavItems: PageSectionNavItem[] = [
     icon: "table",
   },
   {
+    href: "#source-documents",
+    label: "Hồ sơ",
+    description: "File hoặc trang Hồ sơ mời thầu trích xuất được.",
+    icon: "file",
+  },
+  {
     href: "#source-products",
     label: "Sản phẩm & link",
     description: "Products heuristic và danh sách link khả dụng.",
@@ -338,9 +323,9 @@ export const helpSectionNavItems: PageSectionNavItem[] = [
     icon: "search",
   },
   {
-    href: "#excel-workspace",
-    label: "Excel",
-    description: "Workspace, vật tư, evidence và export.",
+    href: "#import-mapping",
+    label: "Import",
+    description: "Nhập Excel/CSV, preview và catalog vật tư.",
     icon: "sheet",
   },
   {

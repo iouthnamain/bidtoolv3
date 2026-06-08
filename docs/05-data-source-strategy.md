@@ -12,7 +12,7 @@
 
 - Dữ liệu đấu thầu công khai, website công bố thông tin.
 - Mục tiêu: bao phủ tin mới và metadata cơ bản.
-- Với web product matching, truy vấn qua SearXNG tự host để metasearch nhiều engine và giảm phụ thuộc API SaaS; nếu cần raw content/ảnh sâu hơn thì thêm crawler riêng sau bước người dùng chọn nguồn.
+- Với dữ liệu public, ưu tiên endpoint/HTML hợp lệ của nguồn chính; nếu cần raw content sâu hơn thì thêm crawler riêng sau khi chốt phạm vi pháp lý.
 
 2. Nguồn import thủ công
 

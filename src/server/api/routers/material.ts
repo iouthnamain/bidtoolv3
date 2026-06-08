@@ -1,18 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, not, or } from "drizzle-orm";
 import Papa from "papaparse";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import {
-  excelWorkspaceItems,
-  excelWorkspaces,
-  materials,
-} from "~/server/db/schema";
+import { materials } from "~/server/db/schema";
 import {
   parseWorkbookBase64,
+  parseOptionalNumber,
   rowsFromMapping,
   type ColumnMapping,
 } from "~/server/services/excel-workbook";
@@ -25,6 +22,7 @@ import {
 } from "~/server/services/material-price-sources";
 
 type AppDb = typeof appDb;
+type MaterialInput = z.infer<typeof materialInput>;
 
 const materialInput = z.object({
   code: z.string().trim().optional(),
@@ -61,6 +59,20 @@ function parseMaterialsCsv(csv: string) {
 
   const emptyToUndefined = (value: string | undefined) =>
     value && value.length > 0 ? value : undefined;
+  const optionalNumber = (value: string | undefined) => {
+    const raw = emptyToUndefined(value);
+    if (!raw) {
+      return null;
+    }
+    return parseOptionalNumber(raw) ?? Number.NaN;
+  };
+  const numberOrDefault = (value: string | undefined, fallback: number) => {
+    const raw = emptyToUndefined(value);
+    if (!raw) {
+      return fallback;
+    }
+    return parseOptionalNumber(raw) ?? Number.NaN;
+  };
 
   return result.data.map((row) => ({
     code: emptyToUndefined(row.code),
@@ -70,18 +82,78 @@ function parseMaterialsCsv(csv: string) {
     specText: emptyToUndefined(row.spec_text),
     manufacturer: emptyToUndefined(row.manufacturer),
     originCountry: emptyToUndefined(row.origin_country),
-    defaultUnitPrice:
-      Number(emptyToUndefined(row.default_unit_price) ?? 0) || null,
+    defaultUnitPrice: optionalNumber(row.default_unit_price),
     currency: emptyToUndefined(row.currency) ?? "VND",
     sourceUrl: emptyToUndefined(row.source_url),
-    defaultDepreciation: Number(
-      emptyToUndefined(row.default_depreciation) ?? 1,
-    ),
-    defaultReusePct: Number.parseInt(
-      emptyToUndefined(row.default_reuse_pct) ?? "0",
-      10,
-    ),
+    defaultDepreciation: numberOrDefault(row.default_depreciation, 1),
+    defaultReusePct: Math.trunc(numberOrDefault(row.default_reuse_pct, 0)),
   }));
+}
+
+async function assertMaterialCodeAvailable(
+  db: AppDb,
+  code: string | null | undefined,
+  excludeId?: number,
+) {
+  const normalizedCode = code?.trim();
+  if (!normalizedCode) {
+    return;
+  }
+
+  const [existing] = await db
+    .select({ id: materials.id })
+    .from(materials)
+    .where(
+      and(
+        eq(materials.code, normalizedCode),
+        excludeId ? not(eq(materials.id, excludeId)) : undefined,
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Mã vật tư "${normalizedCode}" đã tồn tại.`,
+    });
+  }
+}
+
+async function findMaterialByNameUnit(db: AppDb, name: string, unit: string) {
+  const [existing] = await db
+    .select({ id: materials.id })
+    .from(materials)
+    .where(
+      and(
+        isNull(materials.deletedAt),
+        eq(materials.name, name),
+        eq(materials.unit, unit),
+      ),
+    )
+    .limit(1);
+
+  return existing;
+}
+
+function materialValues(input: MaterialInput, now: string) {
+  return {
+    ...input,
+    code: input.code?.trim() ? input.code : null,
+    category: input.category?.trim() ? input.category : null,
+    specText: input.specText ?? "",
+    manufacturer: input.manufacturer?.trim() ? input.manufacturer : null,
+    originCountry: input.originCountry?.trim() ? input.originCountry : null,
+    defaultUnitPrice: input.defaultUnitPrice ?? null,
+    sourceUrl: input.sourceUrl?.trim() ? input.sourceUrl : null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function materialUpdateValues(input: MaterialInput, now: string) {
+  const { createdAt, ...updateValues } = materialValues(input, now);
+  void createdAt;
+  return updateValues;
 }
 
 async function getActiveMaterialById(db: AppDb, id: number) {
@@ -126,45 +198,6 @@ export const materialRouter = createTRPCRouter({
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
       return getActiveMaterialById(ctx.db, input.id);
-    }),
-
-  getUsage: publicProcedure
-    .input(
-      z.object({
-        materialId: z.number().int().positive(),
-        limit: z.number().int().min(1).max(50).default(20),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      return ctx.db
-        .select({
-          itemId: excelWorkspaceItems.id,
-          workspaceId: excelWorkspaces.id,
-          workspaceName: excelWorkspaces.name,
-          workspaceStatus: excelWorkspaces.status,
-          productName: excelWorkspaceItems.productName,
-          unit: excelWorkspaceItems.unit,
-          term: excelWorkspaceItems.term,
-          qtyTotal: excelWorkspaceItems.qtyTotal,
-          qtyInStock: excelWorkspaceItems.qtyInStock,
-          unitPrice: excelWorkspaceItems.unitPrice,
-          includedInExport: excelWorkspaceItems.includedInExport,
-          updatedAt: excelWorkspaceItems.updatedAt,
-        })
-        .from(excelWorkspaceItems)
-        .innerJoin(
-          excelWorkspaces,
-          eq(excelWorkspaceItems.workspaceId, excelWorkspaces.id),
-        )
-        .innerJoin(materials, eq(excelWorkspaceItems.materialId, materials.id))
-        .where(
-          and(
-            eq(excelWorkspaceItems.materialId, input.materialId),
-            isNull(materials.deletedAt),
-          ),
-        )
-        .orderBy(desc(excelWorkspaceItems.updatedAt))
-        .limit(input.limit);
     }),
 
   addPriceSource: publicProcedure
@@ -476,15 +509,10 @@ export const materialRouter = createTRPCRouter({
     .input(materialInput)
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
+      await assertMaterialCodeAvailable(ctx.db, input.code);
       const [created] = await ctx.db
         .insert(materials)
-        .values({
-          ...input,
-          code: input.code ?? null,
-          category: input.category ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(materialValues(input, now))
         .returning();
 
       return created;
@@ -500,23 +528,10 @@ export const materialRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
       if (input.id) {
+        await assertMaterialCodeAvailable(ctx.db, input.patch.code, input.id);
         const [updated] = await ctx.db
           .update(materials)
-          .set({
-            ...input.patch,
-            code: input.patch.code === "" ? null : input.patch.code,
-            category: input.patch.category === "" ? null : input.patch.category,
-            manufacturer:
-              input.patch.manufacturer === "" ? null : input.patch.manufacturer,
-            originCountry:
-              input.patch.originCountry === ""
-                ? null
-                : input.patch.originCountry,
-            defaultUnitPrice: input.patch.defaultUnitPrice ?? null,
-            sourceUrl:
-              input.patch.sourceUrl === "" ? null : input.patch.sourceUrl,
-            updatedAt: now,
-          })
+          .set(materialUpdateValues(input.patch, now))
           .where(eq(materials.id, input.id))
           .returning();
         if (!updated) {
@@ -528,20 +543,10 @@ export const materialRouter = createTRPCRouter({
         return updated;
       }
 
+      await assertMaterialCodeAvailable(ctx.db, input.patch.code);
       const [created] = await ctx.db
         .insert(materials)
-        .values({
-          ...input.patch,
-          code: input.patch.code ?? null,
-          category: input.patch.category ?? null,
-          specText: input.patch.specText ?? "",
-          manufacturer: input.patch.manufacturer ?? null,
-          originCountry: input.patch.originCountry ?? null,
-          defaultUnitPrice: input.patch.defaultUnitPrice ?? null,
-          sourceUrl: input.patch.sourceUrl ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(materialValues(input.patch, now))
         .returning();
       return created;
     }),
@@ -555,6 +560,7 @@ export const materialRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const patch = input.patch;
+      await assertMaterialCodeAvailable(ctx.db, patch.code, input.id);
       const [updated] = await ctx.db
         .update(materials)
         .set({
@@ -636,17 +642,89 @@ export const materialRouter = createTRPCRouter({
           }
         }
 
-        await ctx.db.insert(materials).values({
-          ...parsed.data,
-          code: parsed.data.code ?? null,
-          category: parsed.data.category ?? null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
+        const existingNameUnit = await findMaterialByNameUnit(
+          ctx.db,
+          parsed.data.name,
+          parsed.data.unit,
+        );
+        if (existingNameUnit) {
+          skipped += 1;
+          continue;
+        }
+
+        const now = new Date().toISOString();
+        await ctx.db.insert(materials).values(materialValues(parsed.data, now));
         inserted += 1;
       }
 
       return { inserted, skipped, errors };
+    }),
+
+  previewMaterialsXlsx: publicProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1).default("materials.xlsx"),
+        workbookBase64: z.string().min(1),
+        sheetName: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const workbook = await parseWorkbookBase64(
+        input.fileName,
+        input.workbookBase64,
+      );
+      const selectedSheet =
+        workbook.sheets.find((item) => item.name === input.sheetName) ??
+        workbook.sheets[0];
+      if (!selectedSheet) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Không tìm thấy trang tính hợp lệ.",
+        });
+      }
+
+      return {
+        selectedSheetName: selectedSheet.name,
+        warnings: workbook.warnings,
+        sheets: workbook.sheets.map((sheet) => {
+          let previewRows: ReturnType<typeof rowsFromMapping> = [];
+          const warnings = [...sheet.warnings];
+          try {
+            previewRows = rowsFromMapping(sheet, sheet.suggestedMapping).slice(
+              0,
+              10,
+            );
+          } catch (error) {
+            warnings.push(
+              error instanceof Error
+                ? error.message
+                : "Không tạo được preview cho sheet này.",
+            );
+          }
+
+          return {
+            name: sheet.name,
+            detectedHeaderRowIndex: sheet.detectedHeaderRowIndex,
+            activeHeaderRowIndex: sheet.activeHeaderRowIndex,
+            rowCount: sheet.rows.length,
+            importablePreviewCount: previewRows.length,
+            headers: sheet.headers.slice(0, 24),
+            suggestedMapping: sheet.suggestedMapping,
+            warnings,
+            previewRows: previewRows.map((row) => ({
+              rowNumber: row.originalRowIndex,
+              name: row.productName,
+              unit: row.unit,
+              specText: row.specText,
+              details: row.notes,
+              manufacturer: row.vendorHint,
+              originCountry: row.originHint,
+              defaultUnitPrice: row.unitPrice,
+              sourceUrl: row.sourceUrl,
+            })),
+          };
+        }),
+      };
     }),
 
   importMaterialsXlsx: publicProcedure
@@ -698,32 +776,17 @@ export const materialRouter = createTRPCRouter({
           );
           continue;
         }
-        const [existing] = await ctx.db
-          .select({ id: materials.id })
-          .from(materials)
-          .where(
-            and(
-              eq(materials.name, parsed.data.name),
-              eq(materials.unit, parsed.data.unit),
-            ),
-          )
-          .limit(1);
+        const existing = await findMaterialByNameUnit(
+          ctx.db,
+          parsed.data.name,
+          parsed.data.unit,
+        );
         if (existing) {
           skipped += 1;
           continue;
         }
-        await ctx.db.insert(materials).values({
-          ...parsed.data,
-          code: parsed.data.code ?? null,
-          category: parsed.data.category ?? null,
-          specText: parsed.data.specText ?? "",
-          manufacturer: parsed.data.manufacturer ?? null,
-          originCountry: parsed.data.originCountry ?? null,
-          defaultUnitPrice: parsed.data.defaultUnitPrice ?? null,
-          sourceUrl: parsed.data.sourceUrl ?? null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
+        const now = new Date().toISOString();
+        await ctx.db.insert(materials).values(materialValues(parsed.data, now));
         inserted += 1;
       }
 

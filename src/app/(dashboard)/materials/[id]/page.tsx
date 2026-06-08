@@ -16,7 +16,6 @@ type MaterialDetailsPageProps = {
 
 function prefetchMaterialDetailsPageData(id: number) {
   void api.material.getById.prefetch({ id });
-  void api.material.getUsage.prefetch({ materialId: id, limit: 20 });
 }
 
 export default async function MaterialDetailsPage({
@@ -34,7 +33,7 @@ export default async function MaterialDetailsPage({
   return (
     <DashboardShell
       title="Chi tiết vật tư"
-      description="Xem, chỉnh sửa và kiểm tra lịch sử sử dụng vật tư trong các workspace Excel"
+      description="Xem, chỉnh sửa và kiểm tra thông tin catalog vật tư"
       sectionNavItems={materialDetailSectionNavItems}
       sectionNavTitle="Chi tiết vật tư"
     >

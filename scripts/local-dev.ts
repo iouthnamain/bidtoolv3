@@ -19,12 +19,8 @@ const envPath = path.join(rootDir, ".env");
 const envExamplePath = path.join(rootDir, ".env.example");
 const bunExecutable = process.execPath;
 const defaultDatabasePort = 5432;
-const defaultSearxngBaseUrl = "http://localhost:18080";
 const databaseReadyAttempts = 30;
 const databaseReadyDelayMs = 2_000;
-const searxngReadyAttempts = 30;
-const searxngReadyDelayMs = 2_000;
-const searxngProbeTimeoutMs = 5_000;
 const migrationAttempts = 3;
 const migrationRetryDelayMs = 2_000;
 
@@ -212,27 +208,6 @@ async function readDatabaseConfig(): Promise<{ host: string; port: number }> {
   };
 }
 
-async function readSearxngProbeUrl(): Promise<string> {
-  const envContents = await readFile(envPath, "utf8");
-  const baseUrl = parseEnvValue(envContents, "SEARXNG_BASE_URL");
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(baseUrl ?? defaultSearxngBaseUrl);
-  } catch {
-    throw new Error("SEARXNG_BASE_URL in .env is not a valid URL.");
-  }
-
-  if (!parsedUrl.pathname.endsWith("/")) {
-    parsedUrl.pathname = `${parsedUrl.pathname}/`;
-  }
-
-  const probeUrl = new URL("search", parsedUrl);
-  probeUrl.searchParams.set("q", "bidtool");
-  probeUrl.searchParams.set("format", "json");
-  return probeUrl.toString();
-}
-
 async function canConnectToPort(host: string, port: number): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const socket = net.createConnection({ host, port });
@@ -283,43 +258,8 @@ async function ensureDockerIsReady(): Promise<void> {
 async function ensureDockerStack(): Promise<void> {
   await runCheckedCommand(
     "docker",
-    ["compose", "--profile", "search", "up", "-d", "postgres", "searxng"],
-    "Starting PostgreSQL and SearXNG containers",
-  );
-}
-
-async function canQuerySearxng(probeUrl: string): Promise<boolean> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), searxngProbeTimeoutMs);
-
-  try {
-    const response = await fetch(probeUrl, {
-      signal: controller.signal,
-    });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function waitForSearxngEndpoint(): Promise<void> {
-  const probeUrl = await readSearxngProbeUrl();
-  logStep(`Waiting for SearXNG at ${probeUrl}`);
-
-  for (let attempt = 1; attempt <= searxngReadyAttempts; attempt += 1) {
-    if (await canQuerySearxng(probeUrl)) {
-      return;
-    }
-
-    if (attempt < searxngReadyAttempts) {
-      await sleep(searxngReadyDelayMs);
-    }
-  }
-
-  throw new Error(
-    `SearXNG did not become reachable at ${probeUrl} within ${Math.round((searxngReadyAttempts * searxngReadyDelayMs) / 1_000)} seconds.`,
+    ["compose", "up", "-d", "postgres"],
+    "Starting PostgreSQL container",
   );
 }
 
@@ -381,7 +321,6 @@ async function prepareLocalDatabase(): Promise<void> {
   await ensureDockerIsReady();
   await ensureDockerStack();
   await waitForDatabaseSocket();
-  await waitForSearxngEndpoint();
   await runMigrations();
 }
 

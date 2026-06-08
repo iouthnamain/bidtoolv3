@@ -10,7 +10,7 @@ export default function NewMaterialPage() {
   return (
     <DashboardShell
       title="Thêm sản phẩm / vật tư"
-      description="Tạo thủ công một vật tư catalog để dùng trong Workspace Excel"
+      description="Tạo thủ công một vật tư catalog để dùng trong nhập liệu"
       sectionNavItems={materialsSectionNavItems}
       sectionNavTitle="Khu vực vật tư"
     >

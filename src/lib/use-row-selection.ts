@@ -1,9 +1,31 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function useRowSelection<K extends string | number = number>(
   allIds: K[],
 ) {
   const [selected, setSelected] = useState<Set<K>>(new Set());
+  const allIdSet = useMemo(() => new Set(allIds), [allIds]);
+
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+
+      let changed = false;
+      const next = new Set<K>();
+
+      for (const id of prev) {
+        if (allIdSet.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [allIdSet]);
 
   const allSelected =
     allIds.length > 0 && allIds.every((id) => selected.has(id));

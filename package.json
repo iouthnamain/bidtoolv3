@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.cjs",
-  "description": "Single-user local dashboard for tender discovery, Excel material review, and product candidate matching against BidWinner and SearXNG.",
+  "description": "Single-user local dashboard for tender discovery, material catalog import, and BidWinner workflows.",
   "type": "module",
   "engines": {
     "node": ">=20",
@@ -18,7 +18,6 @@
     "nextjs",
     "trpc",
     "drizzle",
-    "searxng",
     "excel",
     "internal-tool"
   ],

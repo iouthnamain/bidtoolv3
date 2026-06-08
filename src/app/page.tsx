@@ -54,10 +54,16 @@ export default async function Home() {
       icon: "search",
     },
     {
-      href: "/excel-workspace",
-      label: "Xử lý Excel",
+      href: "/documents",
+      label: "Documents",
+      description: "Mở hồ sơ thầu, file import và bản ghi liên quan.",
+      icon: "file",
+    },
+    {
+      href: "/import-mapping",
+      label: "Import & Mapping",
       description:
-        "Import bảng sản phẩm, map cột, chọn evidence và export enriched file.",
+        "Chuẩn bị luồng nhập dữ liệu và map catalog vật tư từ Excel/CSV.",
       icon: "sheet",
     },
     {
@@ -93,6 +99,12 @@ export default async function Home() {
               Trợ giúp
             </Link>
             <Link
+              href="/documents"
+              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              Documents
+            </Link>
+            <Link
               href="/search"
               className="rounded-md bg-sky-700 px-3 py-1.5 text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
@@ -112,7 +124,7 @@ export default async function Home() {
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-cyan-50/90 sm:text-base">
                 BidTool gom tìm kiếm BidWinner, Smart View, workflow cảnh báo và
-                Excel product sourcing vào một luồng làm việc cục bộ, rõ trạng
+                import catalog vật tư vào một luồng làm việc cục bộ, rõ trạng
                 thái và dễ tiếp tục sau mỗi lần mở app.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">

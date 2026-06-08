@@ -10,19 +10,11 @@ Mục tiêu của bộ tài liệu này là định nghĩa rõ sản phẩm dash
 4. [04-mvp-roadmap.md](./04-mvp-roadmap.md)
 5. [05-data-source-strategy.md](./05-data-source-strategy.md)
 6. [06-bidwinner-public-research.md](./06-bidwinner-public-research.md)
-7. [07-excel-workspace.md](./07-excel-workspace.md)
-8. [08-searxng-self-hosted-search.md](./08-searxng-self-hosted-search.md)
-
-## Plan triển khai
-
-- [plans/01-excel-workspace-edit.md](./plans/01-excel-workspace-edit.md) - flow `import Excel → map columns → review rows → find/choose product → export enriched Excel`.
-- [plans/02-excel-workspace-publish.md](./plans/02-excel-workspace-publish.md) - flow `catalog PDF → check → final review` (phụ thuộc Plan 01).
 
 ## Workflow library
 
 - [workflows/README.md](./workflows/README.md) - index các workflow vận hành chính.
 - [workflows/01-search-review-yckt-export.md](./workflows/01-search-review-yckt-export.md) - `search -> open link -> review -> wait confirm -> receive YCKT -> export YCKT Excel`.
-- [workflows/02-excel-product-sourcing.md](./workflows/02-excel-product-sourcing.md) - `excel workspace -> import Excel -> map columns -> review rows -> find/choose product -> export enriched Excel`.
 - [workflows/03-smart-filter-alert-automation.md](./workflows/03-smart-filter-alert-automation.md) - `search -> save smart view -> create workflow -> notification`.
 - [workflows/04-workflow-monitor-optimize.md](./workflows/04-workflow-monitor-optimize.md) - `workflows -> inspect runs -> optimize -> audit`.
 
@@ -53,8 +45,6 @@ Mục tiêu của bộ tài liệu này là định nghĩa rõ sản phẩm dash
 ## New Flow (v2 target)
 
 1. `search -> open link -> review -> wait confirm -> receive YCKT -> export YCKT Excel`
-2. `excel workspace -> import Excel -> map columns -> review product rows -> find web candidates -> choose correct product -> export enriched Excel -> final review`
-
 
 search co khi
 

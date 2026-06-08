@@ -144,7 +144,8 @@ export function MaterialCreateClient() {
               <Badge tone="info">Manual</Badge>
             </div>
             <p className="mt-1 text-sm text-slate-600">
-              Tạo một bản ghi catalog đầy đủ để dùng lại trong Workspace Excel.
+              Tạo một bản ghi catalog đầy đủ để dùng lại khi nhập và chuẩn hóa
+              vật tư.
             </p>
           </div>
 

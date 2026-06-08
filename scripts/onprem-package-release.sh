@@ -21,7 +21,6 @@ copy_path() {
 copy_path "compose.production.yml"
 copy_path "deploy/caddy"
 copy_path "deploy/onprem/.env.customer.example"
-copy_path "deploy/searxng"
 copy_path "docs/onprem.md"
 copy_path "README.md"
 copy_path "scripts/onprem-backup.sh"

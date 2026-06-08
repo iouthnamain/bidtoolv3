@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ExternalLink,
   Link as LinkIcon,
-  PackageCheck,
   Plus,
   RefreshCw,
   Save,
@@ -27,7 +26,6 @@ import {
 import { type RouterOutputs, api } from "~/trpc/react";
 
 type Material = RouterOutputs["material"]["getById"];
-type UsageRow = RouterOutputs["material"]["getUsage"][number];
 
 type MaterialFormState = {
   code: string;
@@ -62,33 +60,6 @@ const emptyPriceSourceForm: PriceSourceFormState = {
   currency: "VND",
   note: "",
   isPrimary: false,
-};
-
-const workspaceStatusLabels: Record<UsageRow["workspaceStatus"], string> = {
-  draft: "Bản nháp",
-  imported: "Đã nhập tệp",
-  mapped: "Đã ghép cột",
-  reviewed: "Đang chuẩn hóa",
-  matched: "Đã có evidence",
-  exported: "Đã xuất tệp",
-  catalog_generated: "Đã tạo danh mục",
-  checked: "Đã kiểm tra",
-  approved: "Đã duyệt cuối",
-};
-
-const workspaceStatusTone: Record<
-  UsageRow["workspaceStatus"],
-  "neutral" | "success" | "warning" | "critical" | "info"
-> = {
-  draft: "neutral",
-  imported: "info",
-  mapped: "info",
-  reviewed: "warning",
-  matched: "success",
-  exported: "success",
-  catalog_generated: "warning",
-  checked: "warning",
-  approved: "success",
 };
 
 function formFromMaterial(material: Material): MaterialFormState {
@@ -165,23 +136,6 @@ function sourceUsablePrice(source: MaterialPriceSource) {
   return source.mode === "fixed" ? source.fixedPrice : source.lastPrice;
 }
 
-function formatQuantity(value: number | null | undefined) {
-  if (value == null) {
-    return "-";
-  }
-  return value.toLocaleString("vi-VN");
-}
-
-function termLabel(term: string) {
-  if (term === "term_1") {
-    return "Học kỳ I";
-  }
-  if (term === "term_2") {
-    return "Học kỳ II";
-  }
-  return term || "-";
-}
-
 function Field({
   label,
   children,
@@ -198,82 +152,6 @@ function Field({
       </span>
       {children}
     </label>
-  );
-}
-
-function UsageCard({ item }: { item: UsageRow }) {
-  const buyQty = Number(item.qtyTotal ?? 0) - Number(item.qtyInStock ?? 0);
-  const hasStockOverflow =
-    item.qtyTotal != null &&
-    item.qtyInStock != null &&
-    Number(item.qtyInStock) > Number(item.qtyTotal);
-
-  return (
-    <li className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/excel-workspace/${item.workspaceId}?step=rows`}
-              className="text-sm font-bold text-slate-950 hover:text-sky-700 hover:underline"
-            >
-              {item.workspaceName}
-            </Link>
-            <Badge tone={workspaceStatusTone[item.workspaceStatus]}>
-              {workspaceStatusLabels[item.workspaceStatus]}
-            </Badge>
-            <Badge tone={item.includedInExport ? "success" : "neutral"}>
-              {item.includedInExport ? "Đưa vào xuất" : "Đã loại khỏi xuất"}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-slate-600">
-            {item.productName} • {termLabel(item.term)} • cập nhật{" "}
-            {formatDateTime(item.updatedAt)}
-          </p>
-        </div>
-      </div>
-
-      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-5">
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">ĐVT</dt>
-          <dd className="mt-0.5 font-semibold text-slate-700">{item.unit}</dd>
-        </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">SL tổng</dt>
-          <dd className="mt-0.5 font-semibold text-slate-700">
-            {formatQuantity(item.qtyTotal)}
-          </dd>
-        </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">SL tồn</dt>
-          <dd className="mt-0.5 font-semibold text-slate-700">
-            {formatQuantity(item.qtyInStock)}
-          </dd>
-        </div>
-        <div
-          className={`rounded-md px-2 py-1.5 ${
-            hasStockOverflow ? "bg-rose-50" : "bg-slate-50"
-          }`}
-        >
-          <dt className={hasStockOverflow ? "text-rose-500" : "text-slate-400"}>
-            Thực mua
-          </dt>
-          <dd
-            className={`mt-0.5 font-semibold ${
-              hasStockOverflow ? "text-rose-700" : "text-slate-700"
-            }`}
-          >
-            {buyQty.toLocaleString("vi-VN")}
-          </dd>
-        </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">Đơn giá</dt>
-          <dd className="mt-0.5 font-semibold text-slate-700">
-            {formatMoney(item.unitPrice)}
-          </dd>
-        </div>
-      </dl>
-    </li>
   );
 }
 
@@ -419,10 +297,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const materialQuery = api.material.getById.useQuery({ id }, { retry: false });
-  const usageQuery = api.material.getUsage.useQuery(
-    { materialId: id, limit: 20 },
-    { retry: false },
-  );
 
   useEffect(() => {
     if (materialQuery.data) {
@@ -530,7 +404,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const canSave =
     !!form?.name.trim() && !!form.unit.trim() && !updateMaterial.isPending;
 
-  const usageRows = usageQuery.data ?? [];
   const material = materialQuery.data;
   const priceSources = useMemo(
     () =>
@@ -752,7 +625,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         ) : null}
 
-        <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
             <dt className="text-xs font-semibold text-slate-500">
               Đơn giá catalog
@@ -771,14 +644,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
             <dt className="text-xs font-semibold text-emerald-700">Link giá</dt>
             <dd className="mt-1 text-lg font-bold text-emerald-950">
               {priceSources.length.toLocaleString("vi-VN")}
-            </dd>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-            <dt className="text-xs font-semibold text-slate-500">
-              Workspace dùng
-            </dt>
-            <dd className="mt-1 text-lg font-bold text-slate-950">
-              {usageRows.length.toLocaleString("vi-VN")}
             </dd>
           </div>
         </dl>
@@ -994,7 +859,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
               Thông tin vật tư
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              Chỉnh sửa dữ liệu catalog dùng cho Excel Workspace.
+              Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật tư.
             </p>
           </div>
 
@@ -1123,7 +988,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
         <aside className="space-y-4">
           <article className="panel p-4">
-            <h3 className="text-sm font-bold text-slate-950">Thiết lập THVT</h3>
+            <h3 className="text-sm font-bold text-slate-950">
+              Thiết lập vật tư
+            </h3>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
                 <dt className="text-slate-500">Khấu hao</dt>
@@ -1161,45 +1028,6 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </dl>
           </article>
         </aside>
-      </section>
-
-      <section className="panel p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-          <div>
-            <h3 className="text-sm font-bold text-slate-950">
-              Đang dùng trong workspace
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Các dòng Excel Workspace đang liên kết với vật tư này.
-            </p>
-          </div>
-          <Badge tone="info" count={usageRows.length}>
-            <PackageCheck className="h-3.5 w-3.5" aria-hidden />
-            Usage
-          </Badge>
-        </div>
-
-        {usageQuery.isLoading ? (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-            Đang tải lịch sử sử dụng…
-          </div>
-        ) : usageQuery.isError ? (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-            Không tải được usage: {usageQuery.error.message}
-          </div>
-        ) : usageRows.length === 0 ? (
-          <EmptyState
-            className="mt-3"
-            title="Vật tư này chưa được liên kết với workspace nào."
-            description="Khi liên kết vật tư trong Excel Workspace, các dòng sử dụng sẽ xuất hiện tại đây."
-          />
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {usageRows.map((item) => (
-              <UsageCard key={item.itemId} item={item} />
-            ))}
-          </ul>
-        )}
       </section>
     </div>
   );

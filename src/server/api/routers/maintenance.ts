@@ -55,7 +55,7 @@ type AppDb = typeof appDb;
 
 type DockerServiceStatus = {
   containerName: string;
-  key: "postgres" | "searxng" | "searxng-valkey";
+  key: "postgres";
   label: string;
   running: boolean;
   status: string;
@@ -70,20 +70,6 @@ const dockerServices: DockerServiceStatus[] = [
     containerName: "bidtoolv3-postgres",
     key: "postgres",
     label: "Postgres",
-    running: false,
-    status: "unknown",
-  },
-  {
-    containerName: "bidtoolv3-searxng",
-    key: "searxng",
-    label: "SearXNG",
-    running: false,
-    status: "unknown",
-  },
-  {
-    containerName: "bidtoolv3-searxng-valkey",
-    key: "searxng-valkey",
-    label: "SearXNG Valkey",
     running: false,
     status: "unknown",
   },
@@ -662,15 +648,7 @@ export const maintenanceRouter = createTRPCRouter({
 
   runDockerStack: publicProcedure.mutation(({ ctx }) =>
     runMaintenanceCommand({
-      args: [
-        "compose",
-        "--profile",
-        "search",
-        "up",
-        "-d",
-        "postgres",
-        "searxng",
-      ],
+      args: ["compose", "up", "-d", "postgres"],
       command: "docker",
       db: ctx.db,
       displayName: "Khởi động Docker",
@@ -680,15 +658,7 @@ export const maintenanceRouter = createTRPCRouter({
 
   runDockerStop: publicProcedure.mutation(({ ctx }) =>
     runMaintenanceCommand({
-      args: [
-        "compose",
-        "--profile",
-        "search",
-        "stop",
-        "postgres",
-        "searxng",
-        "searxng-valkey",
-      ],
+      args: ["compose", "stop", "postgres"],
       command: "docker",
       db: ctx.db,
       displayName: "Dừng Docker",

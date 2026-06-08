@@ -1,20 +1,30 @@
 import ExcelJS from "exceljs";
 
-import {
-  standardColumnKeys,
-  type StandardColumnKey,
-  type StandardColumnMapping,
-  type WorkspaceTerm,
-} from "~/lib/excel-workspace-standard";
-import type { ExtractedProductSpec } from "~/server/services/product-web-search";
-
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_IMPORT_COLS = 80;
 const HEADER_SCAN_ROWS = 40;
 
-export const columnKeys = standardColumnKeys;
-export type ColumnKey = StandardColumnKey;
-export type ColumnMapping = StandardColumnMapping;
+export const columnKeys = [
+  "materialName",
+  "specText",
+  "unit",
+  "term",
+  "qtyTotal",
+  "qtyInStock",
+  "depreciation",
+  "reusePct",
+  "inspectionQtyTerm1",
+  "inspectionQtyTerm2",
+  "unitPrice",
+  "vendorHint",
+  "originHint",
+  "sourceUrl",
+  "notes",
+] as const;
+
+export type ColumnKey = (typeof columnKeys)[number];
+export type ColumnMapping = Partial<Record<ColumnKey, string | null>>;
+export type WorkbookTerm = "term_1" | "term_2";
 
 export type ParsedWorkbookRow = {
   originalRowIndex: number;
@@ -30,7 +40,7 @@ export type ParsedWorkbookSheet = {
   headers: string[];
   rows: ParsedWorkbookRow[];
   previewRows: Array<Record<string, string>>;
-  suggestedMapping: StandardColumnMapping;
+  suggestedMapping: ColumnMapping;
   warnings: string[];
 };
 
@@ -46,7 +56,7 @@ export type ImportedWorkbookRow = {
   materialName: string;
   specText: string;
   unit: string;
-  term: WorkspaceTerm;
+  term: WorkbookTerm;
   quantity: number | null;
   targetPrice: number | null;
   currency: string;
@@ -64,20 +74,9 @@ export type ImportedWorkbookRow = {
   searchKeywords: string[];
 };
 
-type ExportRowInput = {
-  originalDataJson: Record<string, unknown>;
-  enrichedSnapshotJson: Record<string, unknown>;
-  matchStatus: "unmatched" | "candidates_found" | "matched" | "manual";
-  selectedCandidate?: {
-    confidenceScore: number;
-    provider: string;
-    rawEvidence: string;
-  } | null;
-};
+const REQUIRED_PRODUCT_KEY: ColumnKey = "materialName";
 
-const REQUIRED_PRODUCT_KEY: StandardColumnKey = "materialName";
-
-const aliases: Record<StandardColumnKey, string[]> = {
+const aliases: Record<ColumnKey, string[]> = {
   materialName: [
     "product",
     "product name",
@@ -159,7 +158,16 @@ const aliases: Record<StandardColumnKey, string[]> = {
   ],
   originHint: ["origin", "xuat xu", "nuoc san xuat"],
   sourceUrl: ["link", "url", "source", "nguon", "link sp"],
-  notes: ["note", "notes", "ghi chu", "luu y"],
+  notes: [
+    "note",
+    "notes",
+    "detail",
+    "details",
+    "chi tiet",
+    "noi dung",
+    "ghi chu",
+    "luu y",
+  ],
 };
 
 function normalizeHeader(value: unknown): string {
@@ -304,10 +312,10 @@ export function detectHeaderIndex(rows: unknown[][]): number {
   return bestIndex;
 }
 
-export function suggestColumnMapping(headers: string[]): StandardColumnMapping {
+export function suggestColumnMapping(headers: string[]): ColumnMapping {
   return Object.fromEntries(
-    standardColumnKeys.map((key) => [key, matchHeader(headers, aliases[key])]),
-  ) as StandardColumnMapping;
+    columnKeys.map((key) => [key, matchHeader(headers, aliases[key])]),
+  ) as ColumnMapping;
 }
 
 function buildSheetFromMatrix(input: {
@@ -363,14 +371,36 @@ export function rebuildSheetWithHeaderRow(
   });
 }
 
+function worksheetDataBounds(sheet: ExcelJS.Worksheet) {
+  let lastRowNumber = 0;
+  let lastColumnNumber = 0;
+
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    let rowHasValue = false;
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      if (cleanCell(cell.value).length > 0) {
+        rowHasValue = true;
+        lastColumnNumber = Math.max(lastColumnNumber, colNumber);
+      }
+    });
+    if (rowHasValue) {
+      lastRowNumber = Math.max(lastRowNumber, row.number);
+    }
+  });
+
+  return { lastRowNumber, lastColumnNumber };
+}
+
 function excelWorksheetToMatrix(sheet: ExcelJS.Worksheet): string[][] {
-  const rowLimit = Math.min(sheet.rowCount, MAX_IMPORT_ROWS);
+  const bounds = worksheetDataBounds(sheet);
+  const rowLimit = Math.min(bounds.lastRowNumber, MAX_IMPORT_ROWS);
+  const columnLimit = Math.min(bounds.lastColumnNumber, MAX_IMPORT_COLS);
   const matrix: string[][] = [];
 
   for (let rowNumber = 1; rowNumber <= rowLimit; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
     const values: string[] = [];
-    for (let colNumber = 1; colNumber <= MAX_IMPORT_COLS; colNumber += 1) {
+    for (let colNumber = 1; colNumber <= columnLimit; colNumber += 1) {
       const cell = row.getCell(colNumber);
       if (cell.isMerged && cell.master.address !== cell.address) {
         values.push("");
@@ -409,12 +439,13 @@ export async function parseWorkbookBase64(
 
   const sheets = workbook.worksheets.map((sheet) => {
     const warnings: string[] = [];
-    if (sheet.rowCount > MAX_IMPORT_ROWS) {
+    const bounds = worksheetDataBounds(sheet);
+    if (bounds.lastRowNumber > MAX_IMPORT_ROWS) {
       warnings.push(
         `Trang tính ${sheet.name} có hơn ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng; chỉ đọc ${MAX_IMPORT_ROWS.toLocaleString("vi-VN")} dòng đầu.`,
       );
     }
-    if (sheet.columnCount > MAX_IMPORT_COLS) {
+    if (bounds.lastColumnNumber > MAX_IMPORT_COLS) {
       warnings.push(
         `Trang tính ${sheet.name} có hơn ${MAX_IMPORT_COLS} cột; chỉ đọc ${MAX_IMPORT_COLS} cột đầu.`,
       );
@@ -441,7 +472,7 @@ export async function parseWorkbookBase64(
   return { sheets, warnings: Array.from(new Set(workbookWarnings)) };
 }
 
-function normalizeTerm(value: string): WorkspaceTerm {
+function normalizeTerm(value: string): WorkbookTerm {
   const normalized = normalizeToken(value);
   if (
     normalized.includes("ii") ||
@@ -456,7 +487,7 @@ function normalizeTerm(value: string): WorkspaceTerm {
 
 export function rowsFromMapping(
   sheet: ParsedWorkbookSheet,
-  mapping: StandardColumnMapping,
+  mapping: ColumnMapping,
 ): ImportedWorkbookRow[] {
   const productColumn = mapping[REQUIRED_PRODUCT_KEY];
   if (!productColumn) {
@@ -465,7 +496,7 @@ export function rowsFromMapping(
 
   return sheet.rows
     .map((row) => {
-      const get = (key: StandardColumnKey) => {
+      const get = (key: ColumnKey) => {
         const column = mapping[key];
         return column ? (row.values[column] ?? "") : "";
       };
@@ -523,43 +554,4 @@ export function rowsFromMapping(
 
       return hasMappedText || row.qtyTotal != null || row.unitPrice != null;
     });
-}
-
-export async function buildEnrichedWorkbookBase64(
-  rows: ExportRowInput[],
-): Promise<string> {
-  const outputRows = rows.map((row) => {
-    const spec = row.enrichedSnapshotJson as Partial<ExtractedProductSpec>;
-    return {
-      ...row.originalDataJson,
-      matched_product_name: spec.productName ?? "",
-      matched_brand: spec.brand ?? "",
-      matched_model: spec.model ?? "",
-      matched_spec: spec.specSummary ?? "",
-      matched_price: spec.priceText ?? spec.priceVnd ?? "",
-      matched_currency: "VND",
-      matched_origin: spec.originCountry ?? "",
-      matched_vendor: spec.vendorName ?? spec.vendorDomain ?? "",
-      matched_source_url: spec.sourceUrl ?? "",
-      match_confidence: row.selectedCandidate?.confidenceScore ?? "",
-      match_method: row.matchStatus,
-      evidence: spec.evidenceText ?? row.selectedCandidate?.rawEvidence ?? "",
-    };
-  });
-
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("enriched");
-  const headers = Array.from(
-    outputRows.reduce<Set<string>>((keys, row) => {
-      Object.keys(row).forEach((key) => keys.add(key));
-      return keys;
-    }, new Set<string>()),
-  );
-  sheet.columns = headers.map((header) => ({
-    header,
-    key: header,
-  }));
-  sheet.addRows(outputRows);
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer).toString("base64");
 }

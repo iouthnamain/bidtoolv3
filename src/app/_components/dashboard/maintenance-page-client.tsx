@@ -30,21 +30,21 @@ const tasks: TaskMeta[] = [
   {
     key: "docker",
     label: "Khởi động Docker",
-    description: "Chạy Postgres, SearXNG và Valkey bằng Docker Compose.",
+    description: "Chạy Postgres bằng Docker Compose.",
     variant: "secondary",
   },
   {
     key: "dockerStop",
     label: "Dừng Docker",
     description:
-      "Dừng Postgres, SearXNG và Valkey bằng `docker compose stop`. Không xóa container hoặc volume.",
+      "Dừng Postgres bằng `docker compose stop`. Không xóa container hoặc volume.",
     variant: "secondary",
   },
   {
     key: "setup",
     label: "Chạy setup",
     description:
-      "Chạy `bun run dev:install`: cài deps, tạo `.env` nếu thiếu, đảm bảo Postgres + SearXNG, áp migrations.",
+      "Chạy `bun run dev:install`: cài deps, tạo `.env` nếu thiếu, đảm bảo Postgres, áp migrations.",
     variant: "secondary",
   },
   {
@@ -65,7 +65,7 @@ const tasks: TaskMeta[] = [
     key: "update",
     label: "Chạy update",
     description:
-      "Chạy `bun run dev:update`: refresh deps, đảm bảo Postgres + SearXNG, áp migrations. `git pull` chạy riêng trước đó.",
+      "Chạy `bun run dev:update`: refresh deps, đảm bảo Postgres, áp migrations. `git pull` chạy riêng trước đó.",
     variant: "secondary",
   },
   {
@@ -465,21 +465,18 @@ export function MaintenancePageClient() {
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
             <p className="section-title">Docker stack</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">
-              Postgres và SearXNG
-            </h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">Postgres</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Startup scripts hiện chạy cả Postgres, SearXNG và Valkey bằng{" "}
+              Startup scripts hiện chạy Postgres bằng{" "}
               <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-                docker compose --profile search up -d postgres searxng
+                docker compose up -d postgres
               </code>
               .
             </p>
             <p className="mt-1 text-sm text-slate-600">
               Stop scripts chỉ dùng{" "}
               <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-                docker compose --profile search stop postgres searxng
-                searxng-valkey
+                docker compose stop postgres
               </code>
               , không chạy <code>docker compose down</code>,{" "}
               <code>docker rm</code> hoặc xóa volumes.

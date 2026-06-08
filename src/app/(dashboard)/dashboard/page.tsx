@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   Bell,
   BookmarkCheck,
+  FileText,
   Search,
   Workflow,
   type LucideIcon,
@@ -45,10 +46,16 @@ function workflowStatusTone(status: string | null | undefined) {
   return "neutral";
 }
 
-type MiniIconName = "search" | "saved" | "workflow" | "notification";
+type MiniIconName =
+  | "search"
+  | "documents"
+  | "saved"
+  | "workflow"
+  | "notification";
 
 const miniIconMap: Record<MiniIconName, LucideIcon> = {
   search: Search,
+  documents: FileText,
   saved: BookmarkCheck,
   workflow: Workflow,
   notification: Bell,
@@ -75,6 +82,12 @@ export default async function DashboardPage() {
       label: "Tạo bộ lọc mới",
       body: "Tìm realtime, lưu Smart View và chọn gói cần theo dõi.",
       icon: "search" as const,
+    },
+    {
+      href: "/documents",
+      label: "Mở Documents",
+      body: "Gom hồ sơ thầu, file import và bản ghi liên quan.",
+      icon: "documents" as const,
     },
     {
       href: "/saved-items",

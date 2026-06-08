@@ -25,11 +25,9 @@ fi
 set -a
 . ./.env
 set +a
-SEARXNG_PROBE_URL="${SEARXNG_BASE_URL:-http://localhost:18080}"
-SEARXNG_PROBE_URL="${SEARXNG_PROBE_URL%/}/search?q=bidtool&format=json"
 
-echo "==> Starting Postgres and SearXNG"
-docker compose --profile search up -d postgres searxng
+echo "==> Starting Postgres"
+docker compose up -d postgres
 
 echo "==> Waiting for Postgres to be ready"
 for i in $(seq 1 30); do
@@ -46,19 +44,6 @@ done
 
 echo "==> Applying database migrations"
 bun run db:migrate
-
-echo "==> Waiting for SearXNG to be reachable"
-for i in $(seq 1 30); do
-  if curl -fsS "$SEARXNG_PROBE_URL" >/dev/null 2>&1; then
-    echo "    SearXNG ready"
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    echo "Error: SearXNG did not become reachable within 30s." >&2
-    exit 1
-  fi
-  sleep 1
-done
 
 if grep -Eq '^ENABLE_DEMO_SEED=("?)true("?)$' .env; then
   echo "==> ENABLE_DEMO_SEED=true; seeding demo data"

@@ -21,7 +21,7 @@ export default function MaterialsPage() {
   return (
     <DashboardShell
       title="Sản phẩm / vật tư"
-      description="Quản lý danh mục nội bộ để đối chiếu và chọn sản phẩm trong Không gian Excel"
+      description="Quản lý danh mục nội bộ để nhập, đối chiếu và chuẩn hóa vật tư"
       sectionNavItems={materialsSectionNavItems}
       sectionNavTitle="Khu vực vật tư"
     >
