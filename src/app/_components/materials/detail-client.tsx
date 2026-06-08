@@ -8,16 +8,24 @@ import {
   ArrowLeft,
   BadgeDollarSign,
   CheckCircle2,
+  Clock,
   ExternalLink,
+  Factory,
+  FileText,
+  Globe2,
   Link as LinkIcon,
+  Package,
+  Percent,
   Plus,
   RefreshCw,
+  Ruler,
   Save,
   Star,
+  Tag,
   Trash2,
 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import {
   normalizeMaterialMetadata,
   type MaterialPriceSource,
@@ -136,6 +144,12 @@ function sourceUsablePrice(source: MaterialPriceSource) {
   return source.mode === "fixed" ? source.fixedPrice : source.lastPrice;
 }
 
+const inputClass =
+  "min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+
+const textareaClass =
+  "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+
 function Field({
   label,
   children,
@@ -152,6 +166,82 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  helper,
+  icon,
+  tone = "neutral",
+}: {
+  label: string;
+  value: ReactNode;
+  helper?: ReactNode;
+  icon: ReactNode;
+  tone?: "neutral" | "sky" | "emerald" | "amber";
+}) {
+  const toneClass = {
+    neutral: "border-slate-200 bg-white text-slate-500",
+    sky: "border-sky-200 bg-sky-50 text-sky-700",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+  }[tone];
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+      <div className="flex items-start gap-3">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${toneClass}`}
+          aria-hidden
+        >
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            {label}
+          </p>
+          <div className="mt-1 text-base leading-snug font-bold [overflow-wrap:anywhere] text-slate-950">
+            {value}
+          </div>
+          {helper ? (
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              {helper}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: ReactNode;
+  icon: ReactNode;
+}) {
+  const displayValue =
+    value === null || value === undefined || value === "" ? "-" : value;
+
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+      <span className="mt-0.5 text-slate-400" aria-hidden>
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <dt className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+          {label}
+        </dt>
+        <dd className="mt-0.5 text-sm font-medium [overflow-wrap:anywhere] text-slate-900">
+          {displayValue}
+        </dd>
+      </div>
+    </div>
   );
 }
 
@@ -182,7 +272,7 @@ function PriceSourceCard({
   const canRefresh = source.mode === "linked" && !!source.url;
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+    <li className="rounded-lg border border-slate-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -199,21 +289,26 @@ function PriceSourceCard({
               </Badge>
             ) : null}
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-600">
-            Giá:{" "}
-            <span className="font-semibold text-slate-900">
-              {sourcePriceLabel(source)}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            <span>
+              Giá:{" "}
+              <span className="font-semibold text-slate-900">
+                {sourcePriceLabel(source)}
+              </span>
             </span>
-            {source.lastCheckedAt ? (
-              <> • cập nhật {formatDateTime(source.lastCheckedAt)}</>
-            ) : null}
-          </p>
+            <span>
+              Cập nhật:{" "}
+              <span className="font-semibold text-slate-900">
+                {formatDateTime(source.lastCheckedAt)}
+              </span>
+            </span>
+          </div>
           {source.url ? (
             <a
               href={source.url}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs font-medium text-sky-700 hover:underline"
+              className="mt-2 inline-flex max-w-full items-center gap-1 truncate text-xs font-medium text-sky-700 hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="truncate">{source.url}</span>
@@ -295,6 +390,10 @@ export function MaterialDetailClient({ id }: { id: number }) {
     useState<PriceSourceFormState>(emptyPriceSourceForm);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteMaterialTarget, setDeleteMaterialTarget] =
+    useState<Material | null>(null);
+  const [deleteSourceTarget, setDeleteSourceTarget] =
+    useState<MaterialPriceSource | null>(null);
 
   const materialQuery = api.material.getById.useQuery({ id }, { retry: false });
 
@@ -326,6 +425,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
       router.push("/materials");
     },
     onError: (error) => {
+      setDeleteMaterialTarget(null);
       setActionError(error.message || "Không thể xóa vật tư.");
     },
   });
@@ -368,10 +468,12 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const deletePriceSource = api.material.deletePriceSource.useMutation({
     onSuccess: async (material) => {
       setActionError(null);
+      setDeleteSourceTarget(null);
       setSuccessMessage("Đã xóa link sản phẩm / nguồn giá.");
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
+      setDeleteSourceTarget(null);
       setSuccessMessage(null);
       setActionError(error.message || "Không thể xóa nguồn giá.");
     },
@@ -423,7 +525,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
       : parsedSourceFixedPrice != null) &&
     !addPriceSource.isPending;
 
-  const metadataRows = useMemo(
+  const metadataRows = useMemo<Array<[string, string]>>(
     () =>
       material
         ? [
@@ -434,6 +536,66 @@ export function MaterialDetailClient({ id }: { id: number }) {
         : [],
     [material],
   );
+  const sourceCount = priceSources.length + (material?.sourceUrl ? 1 : 0);
+  const latestCheckedSource = useMemo(
+    () =>
+      priceSources
+        .filter((source) => source.lastCheckedAt)
+        .sort(
+          (a, b) =>
+            new Date(b.lastCheckedAt ?? "").getTime() -
+            new Date(a.lastCheckedAt ?? "").getTime(),
+        )[0],
+    [priceSources],
+  );
+  const readinessItems = useMemo(
+    () =>
+      material
+        ? [
+            {
+              label: "Giá",
+              done: material.defaultUnitPrice != null,
+            },
+            {
+              label: "Nguồn",
+              done: sourceCount > 0,
+            },
+            {
+              label: "Thông số",
+              done: Boolean(material.specText.trim()),
+            },
+            {
+              label: "NCC",
+              done: Boolean(material.manufacturer?.trim()),
+            },
+            {
+              label: "Xuất xứ",
+              done: Boolean(material.originCountry?.trim()),
+            },
+          ]
+        : [],
+    [material, sourceCount],
+  );
+  const completedReadiness = readinessItems.filter((item) => item.done).length;
+  const primarySourceLabel =
+    primarySource?.label ?? (material?.sourceUrl ? "URL nguồn vật tư" : null);
+  const primarySourcePrice = primarySource
+    ? sourcePriceLabel(primarySource)
+    : null;
+  const hasImportantGaps =
+    material != null && completedReadiness < readinessItems.length;
+  const deletingSourceId = deletePriceSource.isPending
+    ? deletePriceSource.variables?.sourceId
+    : null;
+  const refreshingSourceId = refreshPriceSource.isPending
+    ? refreshPriceSource.variables?.sourceId
+    : null;
+  const applyingSourceId = applyPriceSourcePrice.isPending
+    ? applyPriceSourcePrice.variables?.sourceId
+    : null;
+  const updatingSourceId = updatePriceSource.isPending
+    ? updatePriceSource.variables?.sourceId
+    : null;
 
   const save = () => {
     if (!form || !canSave) {
@@ -485,13 +647,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
   };
 
   const deleteSource = (source: MaterialPriceSource) => {
-    const confirmed = window.confirm("Xóa link giá này khỏi vật tư?");
-    if (!confirmed) {
-      return;
-    }
-    setSuccessMessage(null);
-    setActionError(null);
-    deletePriceSource.mutate({ materialId: id, sourceId: source.id });
+    setDeleteSourceTarget(source);
   };
 
   const makePrimarySource = (source: MaterialPriceSource) => {
@@ -508,13 +664,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
     if (!material) {
       return;
     }
-    const confirmed = window.confirm(
-      "Xóa vật tư này khỏi danh mục? Các dòng workspace đã liên kết sẽ giữ dữ liệu hiện tại nhưng không còn dùng vật tư này làm catalog active.",
-    );
-    if (!confirmed) {
-      return;
-    }
-    deleteMaterial.mutate({ id: material.id });
+    setDeleteMaterialTarget(material);
   };
 
   if (materialQuery.isLoading) {
@@ -555,105 +705,233 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
   return (
     <div className="space-y-4">
-      <section id="material-overview" className="panel scroll-mt-6 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <Link
-              href="/materials"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-              Quay lại danh mục
-            </Link>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h2 className="min-w-0 text-xl font-bold [overflow-wrap:anywhere] text-slate-950">
+      <ConfirmDialog
+        open={deleteMaterialTarget !== null}
+        title={`Xóa vật tư "${deleteMaterialTarget?.name ?? ""}"?`}
+        description="Vật tư sẽ bị ẩn khỏi danh mục hiện tại. Các dữ liệu đã nhập trước đó vẫn giữ nguyên giá trị đã lưu."
+        confirmLabel="Xóa vật tư"
+        variant="danger"
+        isLoading={deleteMaterial.isPending}
+        onConfirm={() => {
+          if (!deleteMaterialTarget) return;
+          setSuccessMessage(null);
+          setActionError(null);
+          deleteMaterial.mutate({ id: deleteMaterialTarget.id });
+        }}
+        onCancel={() => setDeleteMaterialTarget(null)}
+      />
+      <ConfirmDialog
+        open={deleteSourceTarget !== null}
+        title={`Xóa nguồn "${deleteSourceTarget?.label ?? ""}"?`}
+        description="Nguồn giá này sẽ bị gỡ khỏi vật tư. Đơn giá catalog hiện tại không tự thay đổi."
+        confirmLabel="Xóa nguồn"
+        variant="danger"
+        isLoading={deleteSourceTarget?.id === deletingSourceId}
+        onConfirm={() => {
+          if (!deleteSourceTarget) return;
+          setSuccessMessage(null);
+          setActionError(null);
+          deletePriceSource.mutate({
+            materialId: id,
+            sourceId: deleteSourceTarget.id,
+          });
+        }}
+        onCancel={() => setDeleteSourceTarget(null)}
+      />
+
+      <section
+        id="material-overview"
+        className="panel scroll-mt-6 overflow-hidden"
+      >
+        <div className="border-b border-slate-200 bg-white px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <Link
+                href="/materials"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                Quay lại danh mục
+              </Link>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+                  Catalog vật tư
+                </p>
+                {material.code ? (
+                  <Badge tone="info">{material.code}</Badge>
+                ) : null}
+                <Badge tone="success">{material.currency}</Badge>
+              </div>
+              <h2 className="mt-2 max-w-4xl text-2xl leading-tight font-bold [overflow-wrap:anywhere] text-slate-950">
                 {material.name}
               </h2>
-              {material.code ? (
-                <Badge tone="info">{material.code}</Badge>
-              ) : null}
-              {material.category ? (
-                <Badge tone="neutral">{material.category}</Badge>
-              ) : null}
-              <Badge tone="success">{material.currency}</Badge>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <Badge
+                  tone={
+                    material.defaultUnitPrice == null ? "warning" : "success"
+                  }
+                >
+                  {material.defaultUnitPrice == null ? "Thiếu giá" : "Có giá"}
+                </Badge>
+                <Badge tone={sourceCount === 0 ? "warning" : "info"}>
+                  {sourceCount.toLocaleString("vi-VN")} nguồn
+                </Badge>
+                {material.category ? (
+                  <Badge tone="neutral">{material.category}</Badge>
+                ) : null}
+              </div>
             </div>
-            <p className="mt-1 text-sm text-slate-600">
-              {material.specText || "Chưa có thông số kỹ thuật."}
-            </p>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
-            {material.sourceUrl ? (
-              <a
-                href={material.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            <div className="flex flex-wrap gap-2">
+              {material.sourceUrl ? (
+                <a
+                  href={material.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden />
+                  Mở nguồn
+                </a>
+              ) : null}
+              <Button
+                variant="primary"
+                leftIcon={<Save className="h-4 w-4" />}
+                isLoading={updateMaterial.isPending}
+                disabled={!canSave}
+                onClick={save}
               >
-                <ExternalLink className="h-4 w-4" aria-hidden />
-                Mở nguồn
-              </a>
-            ) : null}
-            <Button
-              variant="primary"
-              leftIcon={<Save className="h-4 w-4" />}
-              isLoading={updateMaterial.isPending}
-              disabled={!canSave}
-              onClick={save}
-            >
-              Lưu thay đổi
-            </Button>
-            <Button
-              variant="danger"
-              leftIcon={<Trash2 className="h-4 w-4" />}
-              isLoading={deleteMaterial.isPending}
-              onClick={remove}
-            >
-              Xóa vật tư
-            </Button>
+                Lưu
+              </Button>
+              <Button
+                variant="danger"
+                leftIcon={<Trash2 className="h-4 w-4" />}
+                isLoading={deleteMaterial.isPending}
+                onClick={remove}
+              >
+                Xóa
+              </Button>
+            </div>
           </div>
         </div>
 
         {successMessage ? (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="mx-5 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {successMessage}
           </div>
         ) : null}
         {actionError ? (
-          <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mx-5 mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {actionError}
           </div>
         ) : null}
 
-        <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-            <dt className="text-xs font-semibold text-slate-500">
-              Đơn giá catalog
-            </dt>
-            <dd className="mt-1 text-lg font-bold text-slate-950">
-              {formatMoney(material.defaultUnitPrice, material.currency)}
-            </dd>
+        <div className="p-5">
+          <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryTile
+              label="Đơn giá catalog"
+              value={formatMoney(material.defaultUnitPrice, material.currency)}
+              helper={
+                primarySourcePrice
+                  ? `Nguồn chính: ${primarySourcePrice}`
+                  : "Giá dùng mặc định khi map vật tư"
+              }
+              icon={<BadgeDollarSign className="h-4 w-4" />}
+              tone={material.defaultUnitPrice == null ? "amber" : "emerald"}
+            />
+            <SummaryTile
+              label="Đơn vị"
+              value={material.unit}
+              helper={
+                material.category?.trim() ? material.category : "Chưa phân nhóm"
+              }
+              icon={<Ruler className="h-4 w-4" />}
+              tone="sky"
+            />
+            <SummaryTile
+              label="Nhà sản xuất"
+              value={
+                material.manufacturer?.trim()
+                  ? material.manufacturer
+                  : "Chưa có"
+              }
+              helper={
+                material.originCountry?.trim()
+                  ? material.originCountry
+                  : "Chưa có xuất xứ"
+              }
+              icon={<Factory className="h-4 w-4" />}
+            />
+            <SummaryTile
+              label="Nguồn giá"
+              value={primarySourceLabel ?? "Chưa có nguồn"}
+              helper={
+                latestCheckedSource?.lastCheckedAt
+                  ? `Cập nhật ${formatDateTime(latestCheckedSource.lastCheckedAt)}`
+                  : `${sourceCount.toLocaleString("vi-VN")} nguồn đã lưu`
+              }
+              icon={<LinkIcon className="h-4 w-4" />}
+              tone={sourceCount === 0 ? "amber" : "sky"}
+            />
+          </dl>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <article className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500">
+                  <FileText className="h-4 w-4" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                    Thông số kỹ thuật
+                  </p>
+                  <p className="mt-1 text-sm leading-6 [overflow-wrap:anywhere] text-slate-800">
+                    {material.specText || "Chưa có thông số kỹ thuật."}
+                  </p>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                    Mức sẵn sàng
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-950">
+                    {completedReadiness}/{readinessItems.length} thông tin quan
+                    trọng
+                  </p>
+                </div>
+                <Badge tone={hasImportantGaps ? "warning" : "success"}>
+                  {hasImportantGaps ? "Cần bổ sung" : "Đủ dùng"}
+                </Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {readinessItems.map((item) => (
+                  <span
+                    key={item.label}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
+                      item.done
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-slate-50 text-slate-500"
+                    }`}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </article>
           </div>
-          <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3">
-            <dt className="text-xs font-semibold text-sky-700">Nguồn chính</dt>
-            <dd className="mt-1 truncate text-sm font-bold text-sky-950">
-              {primarySource?.label ?? material.sourceUrl ?? "Chưa có"}
-            </dd>
-          </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
-            <dt className="text-xs font-semibold text-emerald-700">Link giá</dt>
-            <dd className="mt-1 text-lg font-bold text-emerald-950">
-              {priceSources.length.toLocaleString("vi-VN")}
-            </dd>
-          </div>
-        </dl>
+        </div>
       </section>
 
       <section
         id="material-prices"
         className="grid scroll-mt-6 gap-4 xl:grid-cols-[0.85fr_1.15fr]"
       >
-        <article className="panel p-4">
+        <article className="panel p-5">
           <div className="border-b border-slate-200 pb-3">
             <div className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4 text-sky-700" aria-hidden />
@@ -670,7 +948,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
           <div className="mt-4 grid gap-3">
             <Field label="Tên nguồn">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 placeholder="Nhà cung cấp, sàn TMĐT, báo giá…"
                 value={priceSourceForm.label}
                 onChange={(event) =>
@@ -685,7 +963,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Kiểu giá">
                 <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClass}
                   value={priceSourceForm.mode}
                   onChange={(event) =>
                     setPriceSourceForm({
@@ -700,7 +978,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
               </Field>
               <Field label="Tiền tệ">
                 <input
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClass}
                   value={priceSourceForm.currency}
                   onChange={(event) =>
                     setPriceSourceForm({
@@ -714,7 +992,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="URL sản phẩm">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 placeholder="https://example.com/bao-gia…"
                 value={priceSourceForm.url}
                 onChange={(event) =>
@@ -728,7 +1006,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="Giá cố định">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 type="number"
                 min={0}
                 placeholder="Để trống nếu chỉ theo link"
@@ -744,7 +1022,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="Ghi chú">
               <textarea
-                className="min-h-20 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={`${textareaClass} min-h-20`}
                 value={priceSourceForm.note}
                 onChange={(event) =>
                   setPriceSourceForm({
@@ -782,7 +1060,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         </article>
 
-        <article className="panel p-4">
+        <article className="panel p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-950">
@@ -810,10 +1088,10 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 <PriceSourceCard
                   key={source.id}
                   source={source}
-                  refreshPending={refreshPriceSource.isPending}
-                  applyPending={applyPriceSourcePrice.isPending}
-                  deletePending={deletePriceSource.isPending}
-                  updatePending={updatePriceSource.isPending}
+                  refreshPending={refreshingSourceId === source.id}
+                  applyPending={applyingSourceId === source.id}
+                  deletePending={deletingSourceId === source.id}
+                  updatePending={updatingSourceId === source.id}
                   onRefresh={() => {
                     setSuccessMessage(null);
                     setActionError(null);
@@ -853,7 +1131,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
         id="material-edit"
         className="grid scroll-mt-6 gap-4 xl:grid-cols-[1.25fr_0.75fr]"
       >
-        <article className="panel p-4">
+        <article className="panel p-5">
           <div className="border-b border-slate-200 pb-3">
             <h3 className="text-sm font-bold text-slate-950">
               Thông tin vật tư
@@ -866,7 +1144,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Mã vật tư">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.code}
                 onChange={(event) =>
                   setForm({ ...form, code: event.target.value })
@@ -875,7 +1153,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Tên vật tư">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.name}
                 onChange={(event) =>
                   setForm({ ...form, name: event.target.value })
@@ -884,7 +1162,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="ĐVT">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.unit}
                 onChange={(event) =>
                   setForm({ ...form, unit: event.target.value })
@@ -893,7 +1171,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Nhóm">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.category}
                 onChange={(event) =>
                   setForm({ ...form, category: event.target.value })
@@ -902,7 +1180,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Nhà sản xuất / NCC">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.manufacturer}
                 onChange={(event) =>
                   setForm({ ...form, manufacturer: event.target.value })
@@ -911,7 +1189,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Xuất xứ">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.originCountry}
                 onChange={(event) =>
                   setForm({ ...form, originCountry: event.target.value })
@@ -920,7 +1198,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Đơn giá mặc định">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 type="number"
                 min={0}
                 value={form.defaultUnitPrice}
@@ -931,7 +1209,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Tiền tệ">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.currency}
                 onChange={(event) =>
                   setForm({ ...form, currency: event.target.value })
@@ -940,7 +1218,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Khấu hao mặc định">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 type="number"
                 min={0}
                 step={0.1}
@@ -955,7 +1233,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="% sử dụng lại mặc định">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 type="number"
                 min={0}
                 max={100}
@@ -967,7 +1245,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="URL nguồn" className="md:col-span-2">
               <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
                 value={form.sourceUrl}
                 onChange={(event) =>
                   setForm({ ...form, sourceUrl: event.target.value })
@@ -976,7 +1254,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Thông số kỹ thuật" className="md:col-span-2">
               <textarea
-                className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className={`${textareaClass} min-h-28`}
                 value={form.specText}
                 onChange={(event) =>
                   setForm({ ...form, specText: event.target.value })
@@ -987,43 +1265,59 @@ export function MaterialDetailClient({ id }: { id: number }) {
         </article>
 
         <aside className="space-y-4">
-          <article className="panel p-4">
+          <article className="panel p-5">
             <h3 className="text-sm font-bold text-slate-950">
               Thiết lập vật tư
             </h3>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                <dt className="text-slate-500">Khấu hao</dt>
-                <dd className="font-semibold text-slate-900">
-                  {material.defaultDepreciation}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                <dt className="text-slate-500">Sử dụng lại</dt>
-                <dd className="font-semibold text-slate-900">
-                  {material.defaultReusePct}%
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                <dt className="text-slate-500">Tiền tệ</dt>
-                <dd className="font-semibold text-slate-900">
-                  {material.currency}
-                </dd>
-              </div>
+            <dl className="mt-3 space-y-2">
+              <DetailRow
+                label="Mã catalog"
+                value={
+                  material.code?.trim() ? material.code : `#${material.id}`
+                }
+                icon={<Package className="h-4 w-4" />}
+              />
+              <DetailRow
+                label="Nhóm"
+                value={
+                  material.category?.trim()
+                    ? material.category
+                    : "Chưa phân nhóm"
+                }
+                icon={<Tag className="h-4 w-4" />}
+              />
+              <DetailRow
+                label="Xuất xứ"
+                value={
+                  material.originCountry?.trim()
+                    ? material.originCountry
+                    : "Chưa có"
+                }
+                icon={<Globe2 className="h-4 w-4" />}
+              />
+              <DetailRow
+                label="Khấu hao"
+                value={material.defaultDepreciation}
+                icon={<Percent className="h-4 w-4" />}
+              />
+              <DetailRow
+                label="Sử dụng lại"
+                value={`${material.defaultReusePct}%`}
+                icon={<RefreshCw className="h-4 w-4" />}
+              />
             </dl>
           </article>
 
-          <article className="panel p-4">
+          <article className="panel p-5">
             <h3 className="text-sm font-bold text-slate-950">Metadata</h3>
-            <dl className="mt-3 space-y-2 text-xs">
+            <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
-                <div
+                <DetailRow
                   key={label}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
-                >
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="font-semibold text-slate-800">{value}</dd>
-                </div>
+                  label={label}
+                  value={value}
+                  icon={<Clock className="h-4 w-4" />}
+                />
               ))}
             </dl>
           </article>
