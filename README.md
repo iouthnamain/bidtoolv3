@@ -165,6 +165,56 @@ New `.env` files use a non-default Postgres host port to avoid common local conf
 
 If your `.env` was created before these defaults existed, update those values manually.
 
+## Vercel Production
+
+The GitHub `main` branch deploys to Vercel at `https://bidtoolv3.vercel.app`.
+Vercel Web Analytics is enabled in the app through `@vercel/analytics`.
+
+Production server routes require a real PostgreSQL connection string:
+
+- `DATABASE_URL` must be a non-empty Postgres URL for the production database.
+- `APP_BASE_URL` should be `https://bidtoolv3.vercel.app`.
+- Keep `ENABLE_DEMO_SEED="false"` unless intentionally loading demo data.
+
+After pushing schema changes, apply production migrations before testing write
+flows such as material create/import/delete. Use the runtime migration script so
+it reads only process environment variables and does not load local `.env`:
+
+```bash
+node scripts/db-migrate-runtime.mjs
+```
+
+When running through Vercel CLI, avoid running the migration from a directory
+that contains a local `.env`, because `vercel env run` can merge local env values
+into the child process. A safe pattern is:
+
+```bash
+repo_dir="$(pwd)"
+tmp_dir="$(mktemp -d)"
+cp -R .vercel "$tmp_dir/.vercel"
+(
+  cd "$tmp_dir"
+  vercel env run --environment production -- node "$repo_dir/scripts/db-migrate-runtime.mjs"
+)
+rm -rf "$tmp_dir"
+```
+
+Before running migrations, verify the production env is actually present without
+printing secrets:
+
+```bash
+tmp_dir="$(mktemp -d)"
+cp -R .vercel "$tmp_dir/.vercel"
+(
+  cd "$tmp_dir"
+  vercel env run --environment production -- node -e "console.log(process.env.DATABASE_URL ? 'DATABASE_URL set' : 'DATABASE_URL missing')"
+)
+rm -rf "$tmp_dir"
+```
+
+If `DATABASE_URL` is missing or empty, production pages may still render, but
+tRPC write functions that touch the database will fail.
+
 ## Troubleshooting
 
 - If Docker commands fail, make sure Docker Desktop or the Docker daemon is running before `dev:install`, `dev:update`, or `dev:run`.
@@ -173,6 +223,9 @@ If your `.env` was created before these defaults existed, update those values ma
 - If you see a Smart View schema warning after pulling new code, run `bun run dev:update` or `bun run db:migrate`, then reload the page.
 - If startup fails with env validation, refresh `.env` from the latest `.env.example` and re-apply your local changes.
 - If `bun run db:seed` says demo seed was skipped, set `ENABLE_DEMO_SEED="true"` in `.env` first.
+- If Vercel material create/import/delete fails with a raw database query error,
+  confirm production `DATABASE_URL` is non-empty and production migrations have
+  been applied.
 
 ## Scripts
 
