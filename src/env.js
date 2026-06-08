@@ -8,7 +8,7 @@ export const env = createEnv({
    */
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
-    DATABASE_URL: z.string().url(),
+    DATABASE_URL: z.string().optional(),
     APP_BASE_URL: z.string().url().optional(),
     BIDWINNER_BASE_URL: z.string().url().default("https://bidwinner.info"),
     BIDWINNER_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),

@@ -1,10 +1,19 @@
 import { Suspense } from "react";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { materialsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { MaterialCreateClient } from "~/app/_components/materials/new-client";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = createPageMetadata({
+  title: "Thêm vật tư",
+  description:
+    "Tạo thủ công một vật tư catalog với đơn vị, thông số, nhà cung cấp, xuất xứ và giá tham khảo.",
+  path: "/materials/new",
+  keywords: ["thêm vật tư", "tạo catalog vật tư", "giá vật tư"],
+});
 
 export default function NewMaterialPage() {
   return (

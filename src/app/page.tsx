@@ -5,11 +5,20 @@ import {
   type PageSectionNavItem,
 } from "~/app/_components/dashboard/page-section-nav";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { Logo } from "~/app/_components/brand/logo";
 import { Badge, EmptyState } from "~/app/_components/ui";
 import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = createPageMetadata({
+  title: "Procurement OS cho BidWinner",
+  description:
+    "Điều hành tìm thầu, Smart View, workflow cảnh báo và sourcing vật tư từ một màn hình BidTool v3.",
+  path: "/",
+  keywords: ["procurement OS", "BidWinner", "sourcing vật tư"],
+});
 
 const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
   dateStyle: "short",

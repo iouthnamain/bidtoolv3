@@ -1,6 +1,15 @@
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { savedItemsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { SavedItemsPageClient } from "~/app/_components/dashboard/saved-items-page-client";
+
+export const metadata = createPageMetadata({
+  title: "Smart Views & Watchlist",
+  description:
+    "Quản lý bộ lọc đã lưu, watchlist và các nguồn thầu cần theo dõi tiếp trong BidTool v3.",
+  path: "/saved-items",
+  keywords: ["Smart View", "watchlist đấu thầu", "bộ lọc đã lưu"],
+});
 
 export default function SavedItemsPage() {
   return (

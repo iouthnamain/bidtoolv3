@@ -1,8 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { helpSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
+
+export const metadata = createPageMetadata({
+  title: "Hướng dẫn sử dụng",
+  description:
+    "Hướng dẫn setup, tìm kiếm BidWinner, Smart View, workflow, import vật tư và bảo trì BidTool v3.",
+  path: "/help",
+  keywords: ["hướng dẫn BidTool", "setup BidTool", "quy trình đấu thầu"],
+});
 
 type HelpLink = {
   href: string;

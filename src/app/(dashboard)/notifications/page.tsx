@@ -1,9 +1,18 @@
 import { Suspense } from "react";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { notificationsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { NotificationsPageClient } from "~/app/_components/dashboard/notifications-page-client";
 import { HydrateClient, api } from "~/trpc/server";
+
+export const metadata = createPageMetadata({
+  title: "Trung tâm thông báo",
+  description:
+    "Quản lý cảnh báo in-app từ workflow, xem trạng thái đã đọc và theo dõi tín hiệu thầu mới.",
+  path: "/notifications",
+  keywords: ["thông báo đấu thầu", "workflow alert", "cảnh báo gói thầu"],
+});
 
 function prefetchNotificationsPageData() {
   void api.notification.list.prefetch({

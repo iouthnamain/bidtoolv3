@@ -1,6 +1,8 @@
 import { Suspense } from "react";
+import { type Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { materialDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { MaterialDetailClient } from "~/app/_components/materials/detail-client";
@@ -13,6 +15,20 @@ type MaterialDetailsPageProps = {
     id: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: MaterialDetailsPageProps): Promise<Metadata> {
+  const { id } = await params;
+
+  return createPageMetadata({
+    title: `Chi tiết vật tư #${id}`,
+    description:
+      "Xem và chỉnh sửa thông tin catalog vật tư, đơn vị tính, thông số, nguồn cung và giá tham khảo.",
+    path: `/materials/${id}`,
+    keywords: ["chi tiết vật tư", "catalog vật tư", "thông tin vật tư"],
+  });
+}
 
 function prefetchMaterialDetailsPageData(id: number) {
   void api.material.getById.prefetch({ id });

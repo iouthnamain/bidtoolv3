@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { type inferRouterInputs } from "@trpc/server";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { searchSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { SearchPageClient } from "~/app/_components/dashboard/search-page-client";
@@ -17,6 +18,14 @@ import { HydrateClient, api } from "~/trpc/server";
 type SearchPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+export const metadata = createPageMetadata({
+  title: "Tìm kiếm BidWinner",
+  description:
+    "Tìm kiếm gói thầu, KHLCNT và dự án đầu tư phát triển từ BidWinner theo từ khóa, ngành nghề, địa phương và ngân sách.",
+  path: "/search",
+  keywords: ["tìm kiếm BidWinner", "tìm gói thầu", "KHLCNT", "dự án đầu tư"],
+});
 
 type SearchQueryInput =
   inferRouterInputs<AppRouter>["search"]["querySearchResults"];

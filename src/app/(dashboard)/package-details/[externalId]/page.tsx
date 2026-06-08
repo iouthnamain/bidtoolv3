@@ -1,5 +1,7 @@
 import { Suspense } from "react";
+import { type Metadata } from "next";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { PackageDetailsPageClient } from "~/app/_components/dashboard/package-details-page-client";
 import { sourceDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
@@ -13,6 +15,20 @@ type PackageDetailsPageProps = {
     sourceUrl?: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: PackageDetailsPageProps): Promise<Metadata> {
+  const { externalId } = await params;
+
+  return createPageMetadata({
+    title: `Chi tiết gói thầu ${externalId}`,
+    description:
+      "Xem chi tiết gói thầu từ trang nguồn BidWinner, link tài liệu, sản phẩm trích xuất và thông tin liên quan.",
+    path: `/package-details/${externalId}`,
+    keywords: ["chi tiết gói thầu", "BidWinner", "hồ sơ mời thầu"],
+  });
+}
 
 function prefetchPackageDetailsPageData(input: {
   externalId: string;

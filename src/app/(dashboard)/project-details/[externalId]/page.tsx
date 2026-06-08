@@ -1,5 +1,7 @@
 import { Suspense } from "react";
+import { type Metadata } from "next";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { BidWinnerSourceDetailsPageClient } from "~/app/_components/dashboard/package-details-page-client";
 import { sourceDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
@@ -13,6 +15,20 @@ type ProjectDetailsPageProps = {
     sourceUrl?: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: ProjectDetailsPageProps): Promise<Metadata> {
+  const { externalId } = await params;
+
+  return createPageMetadata({
+    title: `Chi tiết dự án ${externalId}`,
+    description:
+      "Xem chi tiết dự án đầu tư phát triển từ BidWinner, link nguồn và dữ liệu trích xuất.",
+    path: `/project-details/${externalId}`,
+    keywords: ["dự án đầu tư", "chi tiết dự án", "BidWinner"],
+  });
+}
 
 function prefetchProjectDetailsPageData(input: {
   externalId: string;

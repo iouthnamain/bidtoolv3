@@ -4,24 +4,50 @@ import { type Metadata } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 
+import { getSiteUrl, siteConfig } from "~/app/_lib/seo";
 import { ToastProvider } from "~/app/_components/ui/toast";
 import { TRPCReactProvider } from "~/trpc/react";
-import { env } from "~/env";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(env.APP_BASE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(getSiteUrl()),
   title: {
-    default: "BidTool v3",
-    template: "%s · BidTool v3",
+    default: siteConfig.title,
+    template: `%s · ${siteConfig.name}`,
   },
-  description: "Nền tảng điều hành, tìm kiếm và tự động hóa đấu thầu",
-  applicationName: "BidTool v3",
+  description: siteConfig.description,
+  applicationName: siteConfig.name,
+  generator: "Next.js",
+  keywords: siteConfig.keywords,
+  authors: [{ name: siteConfig.name }],
+  creator: siteConfig.name,
+  publisher: siteConfig.name,
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/desktop-icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+  },
+  alternates: {
+    canonical: "/",
+    languages: {
+      vi: "/",
+    },
+  },
   openGraph: {
-    title: "BidTool v3",
-    description: "Nền tảng điều hành, tìm kiếm và tự động hóa đấu thầu",
-    locale: "vi_VN",
+    title: siteConfig.title,
+    description: siteConfig.description,
+    url: "/",
+    siteName: siteConfig.name,
+    locale: siteConfig.locale,
     type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: siteConfig.title,
+    description: siteConfig.description,
+  },
+  category: "procurement software",
 };
 
 const beVietnamPro = Be_Vietnam_Pro({

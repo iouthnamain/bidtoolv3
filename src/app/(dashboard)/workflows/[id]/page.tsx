@@ -1,5 +1,7 @@
+import { type Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { workflowDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { WorkflowDetailPageClient } from "~/app/_components/dashboard/workflow-detail-page-client";
@@ -8,6 +10,20 @@ import { HydrateClient, api } from "~/trpc/server";
 type WorkflowDetailPageProps = {
   params: Promise<{ id: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: WorkflowDetailPageProps): Promise<Metadata> {
+  const { id } = await params;
+
+  return createPageMetadata({
+    title: `Chi tiết workflow #${id}`,
+    description:
+      "Xem cấu hình, trạng thái kích hoạt và lịch sử chạy của workflow cảnh báo đấu thầu.",
+    path: `/workflows/${id}`,
+    keywords: ["chi tiết workflow", "lịch sử workflow", "cảnh báo đấu thầu"],
+  });
+}
 
 function prefetchWorkflowDetailPageData(workflowId: number) {
   void api.workflow.getRuns.prefetch({ workflowId });

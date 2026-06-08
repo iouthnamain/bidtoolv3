@@ -1,7 +1,16 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+
+export const metadata = createPageMetadata({
+  title: "Documents",
+  description:
+    "Mở nhanh hồ sơ thầu, file import vật tư và các tài liệu liên quan trong BidTool v3.",
+  path: "/documents",
+  keywords: ["hồ sơ thầu", "tài liệu đấu thầu", "file vật tư"],
+});
 
 const documentLinks = [
   {

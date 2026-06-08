@@ -8,11 +8,20 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { AlertCard } from "~/app/_components/dashboard/alert-card";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
 import { Badge, EmptyState } from "~/app/_components/ui";
 import { getDashboardSnapshot } from "~/app/_lib/dashboard-data";
+
+export const metadata = createPageMetadata({
+  title: "Dashboard điều hành",
+  description:
+    "Theo dõi tổng quan gói thầu, cảnh báo, workflow và trạng thái vận hành trong BidTool v3.",
+  path: "/dashboard",
+  keywords: ["dashboard đấu thầu", "theo dõi gói thầu", "cảnh báo đấu thầu"],
+});
 
 const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
   dateStyle: "short",

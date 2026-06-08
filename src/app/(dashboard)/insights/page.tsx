@@ -1,9 +1,18 @@
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { KpiCard } from "~/app/_components/dashboard/kpi-card";
 import { insightsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { api } from "~/trpc/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = createPageMetadata({
+  title: "Phân tích tín hiệu thầu",
+  description:
+    "Xem xu hướng thị trường, sức khỏe workflow và các tín hiệu gói thầu nổi bật trong BidTool v3.",
+  path: "/insights",
+  keywords: ["phân tích đấu thầu", "tín hiệu gói thầu", "workflow health"],
+});
 
 const emptySummary = {
   totalPackages: 0,

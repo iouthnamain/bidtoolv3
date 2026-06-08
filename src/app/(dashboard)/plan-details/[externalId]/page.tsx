@@ -1,5 +1,7 @@
 import { Suspense } from "react";
+import { type Metadata } from "next";
 
+import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { BidWinnerSourceDetailsPageClient } from "~/app/_components/dashboard/package-details-page-client";
 import { sourceDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
@@ -13,6 +15,20 @@ type PlanDetailsPageProps = {
     sourceUrl?: string;
   }>;
 };
+
+export async function generateMetadata({
+  params,
+}: PlanDetailsPageProps): Promise<Metadata> {
+  const { externalId } = await params;
+
+  return createPageMetadata({
+    title: `Chi tiết KHLCNT ${externalId}`,
+    description:
+      "Xem chi tiết kế hoạch lựa chọn nhà thầu từ BidWinner, link nguồn và dữ liệu trích xuất.",
+    path: `/plan-details/${externalId}`,
+    keywords: ["KHLCNT", "kế hoạch lựa chọn nhà thầu", "BidWinner"],
+  });
+}
 
 function prefetchPlanDetailsPageData(input: {
   externalId: string;
