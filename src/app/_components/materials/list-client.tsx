@@ -403,7 +403,7 @@ export function MaterialsListClient() {
           </div>
 
           <div className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="grid gap-2 lg:grid-cols-[minmax(18rem,1.2fr)_repeat(2,minmax(10rem,0.6fr))]">
+            <div className="grid gap-2 lg:grid-cols-[minmax(16rem,1.1fr)_minmax(14rem,0.9fr)_repeat(2,minmax(9rem,0.55fr))]">
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   Tìm kiếm
@@ -421,6 +421,25 @@ export function MaterialsListClient() {
                     onChange={(event) => setKeyword(event.target.value)}
                   />
                 </span>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Tên vật tư có sẵn
+                </span>
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  aria-label="Lọc theo tên vật tư"
+                  value={nameFilter}
+                  onChange={(event) => setNameFilter(event.target.value)}
+                >
+                  <option value="">Tất cả tên vật tư</option>
+                  {filterOptions?.names.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="grid gap-1">
@@ -461,26 +480,7 @@ export function MaterialsListClient() {
               </label>
             </div>
 
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
-              <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
-                  Tên vật tư
-                </span>
-                <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                  aria-label="Lọc theo tên vật tư"
-                  value={nameFilter}
-                  onChange={(event) => setNameFilter(event.target.value)}
-                >
-                  <option value="">Tất cả tên vật tư</option>
-                  {filterOptions?.names.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   ĐVT
@@ -582,7 +582,10 @@ export function MaterialsListClient() {
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-              <span>Đang xem tối đa 80 dòng phù hợp với bộ lọc hiện tại.</span>
+              <span>
+                Tên vật tư lấy từ catalog hiện có; mặc định sắp xếp theo tên
+                A-Z.
+              </span>
             </div>
           </div>
 
