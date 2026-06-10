@@ -175,6 +175,39 @@ test("material page keeps navigation compact on mobile", async ({ page }) => {
   await expect(drawer).toBeHidden();
 });
 
+test("material import page keeps upload controls high on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/materials/import");
+  await page.waitForLoadState("networkidle");
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Nhập sản phẩm / vật tư" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Chọn file Excel")).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const firstPanel = document
+      .querySelector(".panel")
+      ?.getBoundingClientRect();
+    const fileLabel = document
+      .querySelector("label[for='material-import-xlsx']")
+      ?.getBoundingClientRect();
+
+    return {
+      bodyWidth: document.body.scrollWidth,
+      viewportWidth: window.innerWidth,
+      firstPanelTop: firstPanel?.top ?? 0,
+      fileLabelHeight: fileLabel?.height ?? 0,
+    };
+  });
+
+  expect(metrics.bodyWidth).toBe(metrics.viewportWidth);
+  expect(metrics.firstPanelTop).toBeLessThan(420);
+  expect(metrics.fileLabelHeight).toBeLessThan(160);
+});
+
 test("material catalog paginates server-backed table rows", async ({
   page,
 }) => {

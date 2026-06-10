@@ -147,13 +147,18 @@ export function cancelShopScrapeJob(jobId: string) {
 }
 
 function runShopScrapeJob(job: ShopScrapeJob) {
+  const abortController = job.abortController;
+  if (!abortController) {
+    return Promise.resolve();
+  }
+
   job.status = "running";
   return scrapeShopMaterialsFromUrl({
     url: job.url,
     maxPages: job.maxPages,
     maxProducts: job.maxProducts,
     method: job.method,
-    signal: job.abortController.signal,
+    signal: abortController.signal,
     onProgress: (progress) => updateJobProgress(job, progress),
   })
     .then((result) => {

@@ -263,6 +263,7 @@ export function MaterialImportClient() {
   const activePreviewSheet =
     xlsxPreview?.sheets.find((sheet) => sheet.name === sheetName) ??
     xlsxPreview?.sheets[0];
+  const showStatusPanel = importError !== null || lastResult !== null;
 
   const previewXlsx = api.material.previewMaterialsXlsx.useMutation();
 
@@ -393,32 +394,28 @@ export function MaterialImportClient() {
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
-        <ResultPanel result={lastResult} />
-        {importError ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <p>{importError}</p>
+      {showStatusPanel ? (
+        <section className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+          <ResultPanel result={lastResult} />
+          {importError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <div className="flex items-start gap-2">
+                <AlertTriangle
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  aria-hidden
+                />
+                <p>{importError}</p>
+              </div>
             </div>
-          </div>
-        ) : lastResult ? null : (
-          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-            <div className="flex items-start gap-2">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <p>
-                Excel tự dò header; CSV cần dùng đúng tên cột ở mẫu bên dưới.
-              </p>
-            </div>
-          </div>
-        )}
-        <Link
-          href="/materials/new"
-          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-        >
-          Thêm thủ công
-        </Link>
-      </section>
+          ) : null}
+          <Link
+            href="/materials/new"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Thêm thủ công
+          </Link>
+        </section>
+      ) : null}
 
       <section className="grid gap-4">
         <article className="panel overflow-hidden">
@@ -430,7 +427,8 @@ export function MaterialImportClient() {
               <div>
                 <h3 className="text-sm font-bold text-sky-950">Upload Excel</h3>
                 <p className="text-xs text-sky-800">
-                  Hỗ trợ `.xlsx`; nhập tên sheet nếu workbook có nhiều trang.
+                  Tự dò header `.xlsx`; nhập tên sheet nếu workbook có nhiều
+                  trang.
                 </p>
               </div>
             </div>
@@ -439,7 +437,7 @@ export function MaterialImportClient() {
           <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
             <label
               htmlFor="material-import-xlsx"
-              className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-4 py-6 text-center transition-colors ${
+              className={`flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors sm:min-h-44 sm:gap-3 sm:py-6 ${
                 xlsxFile
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900"
                   : "border-sky-300 bg-gradient-to-br from-sky-50 to-white text-sky-900 hover:bg-sky-100"
@@ -447,7 +445,10 @@ export function MaterialImportClient() {
             >
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
                 {xlsxFile ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-700" aria-hidden />
+                  <CheckCircle2
+                    className="h-5 w-5 text-emerald-700"
+                    aria-hidden
+                  />
                 ) : (
                   <Upload className="h-5 w-5 text-sky-700" aria-hidden />
                 )}
@@ -501,7 +502,8 @@ export function MaterialImportClient() {
                 </label>
               )}
               <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                <p className="font-bold text-slate-800">
+                <p className="flex items-center gap-1.5 font-bold text-slate-800">
+                  <Info className="h-3.5 w-3.5" aria-hidden />
                   Cột Excel được nhận diện
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -594,7 +596,7 @@ export function MaterialImportClient() {
 
             <div>
               <textarea
-                className="h-56 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="h-40 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 sm:h-56"
                 name="materialsCsv"
                 autoComplete="off"
                 value={csv}
