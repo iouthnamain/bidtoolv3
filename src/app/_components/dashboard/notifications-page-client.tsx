@@ -44,7 +44,6 @@ export function NotificationsPageClient() {
     await Promise.all([
       utils.notification.unreadCount.invalidate(),
       utils.notification.list.invalidate(),
-      utils.insight.getDashboardSummary.invalidate(),
     ]);
   };
 

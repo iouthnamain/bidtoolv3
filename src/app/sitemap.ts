@@ -19,7 +19,6 @@ const routes: Array<{
   { path: "/materials/import", priority: 0.7, changeFrequency: "weekly" },
   { path: "/materials/scrape", priority: 0.7, changeFrequency: "weekly" },
   { path: "/materials/new", priority: 0.5, changeFrequency: "monthly" },
-  { path: "/insights", priority: 0.7, changeFrequency: "daily" },
   { path: "/help", priority: 0.8, changeFrequency: "monthly" },
 ];
 

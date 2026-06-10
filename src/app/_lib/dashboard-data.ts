@@ -1,3 +1,12 @@
+import { count, eq } from "drizzle-orm";
+
+import { db } from "~/server/db";
+import {
+  notifications,
+  tenderPackages,
+  workflowRuns,
+  workflows,
+} from "~/server/db/schema";
 import { api } from "~/trpc/server";
 
 const emptySummary = {
@@ -10,10 +19,41 @@ const emptySummary = {
 const describeError = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+async function getDashboardSummary() {
+  const [
+    totalPackagesResult,
+    unreadAlertsResult,
+    workflowRows,
+    workflowRunRows,
+  ] = await Promise.all([
+    db.select({ value: count() }).from(tenderPackages),
+    db
+      .select({ value: count() })
+      .from(notifications)
+      .where(eq(notifications.isRead, false)),
+    db.select({ isActive: workflows.isActive }).from(workflows),
+    db.select({ status: workflowRuns.status }).from(workflowRuns),
+  ]);
+
+  const successfulRuns = workflowRunRows.filter(
+    (run) => run.status === "success",
+  );
+
+  return {
+    totalPackages: totalPackagesResult[0]?.value ?? 0,
+    unreadAlerts: unreadAlertsResult[0]?.value ?? 0,
+    activeWorkflows: workflowRows.filter((workflow) => workflow.isActive)
+      .length,
+    workflowSuccessRate: workflowRunRows.length
+      ? Math.round((successfulRuns.length / workflowRunRows.length) * 100)
+      : 0,
+  };
+}
+
 export async function getDashboardSnapshot(alertLimit = 3) {
   const [summaryResult, alertsResult, workflowsResult] =
     await Promise.allSettled([
-      api.insight.getDashboardSummary(),
+      getDashboardSummary(),
       api.notification.list({ limit: alertLimit }),
       api.workflow.list(),
     ]);

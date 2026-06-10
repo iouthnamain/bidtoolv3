@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3,
   Bell,
   BookmarkCheck,
   Boxes,
@@ -17,7 +16,6 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  RefreshCw,
   RotateCw,
   Search,
   Workflow,
@@ -40,8 +38,6 @@ import { STORAGE_KEYS } from "~/lib/storage-keys";
 import { api } from "~/trpc/react";
 
 const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
-const APP_VERSION_SEEN_KEY = STORAGE_KEYS.appVersionSeen;
-const APP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.appUpdateDismissed;
 const DESKTOP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.desktopUpdateDismissed;
 const UNREAD_COUNT_POLL_MS = 30_000;
 
@@ -53,7 +49,6 @@ type IconName =
   | "materials"
   | "saved"
   | "workflow"
-  | "insight"
   | "notification"
   | "help"
   | "tools";
@@ -76,9 +71,6 @@ type NavSection = {
   title: string;
   items: NavItem[];
 };
-
-const isDevEnvironment = process.env.NODE_ENV === "development";
-const VERSION_CHECK_POLL_MS = isDevEnvironment ? 120_000 : 300_000;
 
 function readLocalStorageValue(key: string) {
   try {
@@ -135,7 +127,6 @@ const navSections: NavSection[] = [
     title: "Hoạt động",
     items: [
       { href: "/notifications", label: "Thông báo", icon: "notification" },
-      { href: "/insights", label: "Phân tích", icon: "insight" },
     ],
   },
   {
@@ -148,7 +139,6 @@ const navSections: NavSection[] = [
         icon: "help",
         subItems: [
           { href: "/help#bat-dau", label: "Bắt đầu" },
-          { href: "/help#windows-launch", label: "Windows" },
           { href: "/help#cap-nhat-hang-ngay", label: "Vận hành" },
           { href: "/help#tim-kiem", label: "Tìm kiếm" },
           { href: "/help#smart-view", label: "Smart Views" },
@@ -162,21 +152,6 @@ const navSections: NavSection[] = [
       { href: "/desktop", label: "Desktop client", icon: "tools" },
     ],
   },
-  ...(isDevEnvironment
-    ? [
-        {
-          id: "system",
-          title: "Hệ thống",
-          items: [
-            {
-              href: "/maintenance",
-              label: "Bảo trì cục bộ",
-              icon: "tools" as const,
-            },
-          ],
-        } satisfies NavSection,
-      ]
-    : []),
 ];
 
 const navIconMap: Record<IconName, LucideIcon> = {
@@ -187,7 +162,6 @@ const navIconMap: Record<IconName, LucideIcon> = {
   materials: Boxes,
   saved: BookmarkCheck,
   workflow: Workflow,
-  insight: BarChart3,
   notification: Bell,
   help: CircleHelp,
   tools: Wrench,
@@ -323,8 +297,7 @@ function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
-  const shouldReadUnreadCount =
-    !pathname.startsWith("/help") && !pathname.startsWith("/maintenance");
+  const shouldReadUnreadCount = !pathname.startsWith("/help");
   const unreadCountQuery = api.notification.unreadCount.useQuery(undefined, {
     enabled: shouldReadUnreadCount,
     refetchInterval: UNREAD_COUNT_POLL_MS,
@@ -612,127 +585,6 @@ function DesktopUpdateNotice() {
   );
 }
 
-function VersionUpdateNotice() {
-  const { error, info, success, warning } = useToast();
-  const utils = api.useUtils();
-  const versionQuery = api.maintenance.version.useQuery(undefined, {
-    refetchInterval: VERSION_CHECK_POLL_MS,
-    refetchOnWindowFocus: false,
-    staleTime: 60_000,
-  });
-  const checkForUpdates = api.maintenance.checkForUpdates.useMutation({
-    onSuccess: async (result) => {
-      if (result.exitCode !== 0) {
-        error(`Kiểm tra bản cập nhật thất bại (exit ${result.exitCode}).`);
-      } else if (result.versionInfo.updateAvailable) {
-        warning("Có bản cập nhật BidTool mới.");
-      } else {
-        success("BidTool đang ở bản mới nhất trong upstream đã fetch.");
-      }
-
-      await Promise.all([
-        utils.maintenance.version.invalidate(),
-        utils.maintenance.status.invalidate(),
-        utils.notification.unreadCount.invalidate(),
-        utils.notification.list.invalidate(),
-      ]);
-    },
-    onError: (mutationError) => {
-      error(mutationError.message || "Không thể kiểm tra bản cập nhật.");
-    },
-  });
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const versionInfo = versionQuery.data;
-  const noticeKey = versionInfo
-    ? [
-        versionInfo.version,
-        versionInfo.upstreamVersion ?? "no-upstream-version",
-        versionInfo.git.commitShort ?? "no-commit",
-        versionInfo.git.behind,
-      ].join(":")
-    : null;
-
-  useEffect(() => {
-    setDismissedKey(readLocalStorageValue(APP_UPDATE_DISMISSED_KEY));
-  }, []);
-
-  useEffect(() => {
-    if (!versionInfo?.version) {
-      return;
-    }
-
-    const lastSeen = readLocalStorageValue(APP_VERSION_SEEN_KEY);
-    if (lastSeen && lastSeen !== versionInfo.version) {
-      info(`BidTool đã chuyển từ v${lastSeen} sang v${versionInfo.version}.`);
-    }
-    writeLocalStorageValue(APP_VERSION_SEEN_KEY, versionInfo.version);
-  }, [info, versionInfo?.version]);
-
-  if (!versionInfo?.updateAvailable || dismissedKey === noticeKey) {
-    return null;
-  }
-
-  const dismiss = () => {
-    if (!noticeKey) {
-      return;
-    }
-
-    writeLocalStorageValue(APP_UPDATE_DISMISSED_KEY, noticeKey);
-    setDismissedKey(noticeKey);
-  };
-
-  return (
-    <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-950">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
-            aria-hidden
-          >
-            <Bell className="h-4 w-4" />
-          </span>
-          <p className="min-w-0 text-xs font-semibold sm:text-sm">
-            {versionInfo.versionUpdateAvailable && versionInfo.upstreamVersion
-              ? `Có phiên bản v${versionInfo.upstreamVersion} mới hơn v${versionInfo.version}.`
-              : `Có ${versionInfo.git.behind} commit mới trên upstream.`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {isDevEnvironment ? (
-            <button
-              type="button"
-              onClick={() => checkForUpdates.mutate()}
-              disabled={checkForUpdates.isPending}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 text-xs font-bold text-amber-900 transition-colors hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${
-                  checkForUpdates.isPending ? "animate-spin" : ""
-                }`}
-              />
-              Kiểm tra
-            </button>
-          ) : null}
-          <Link
-            href="/maintenance"
-            className="inline-flex h-8 items-center rounded-md bg-amber-900 px-2.5 text-xs font-bold text-white transition-colors hover:bg-amber-950 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-          >
-            Cập nhật
-          </Link>
-          <button
-            type="button"
-            onClick={dismiss}
-            aria-label="Ẩn thông báo cập nhật"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-amber-800 transition-colors hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -773,10 +625,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    writeLocalStorageValue(
-      SIDEBAR_COLLAPSE_KEY,
-      sidebarCollapsed ? "1" : "0",
-    );
+    writeLocalStorageValue(SIDEBAR_COLLAPSE_KEY, sidebarCollapsed ? "1" : "0");
   }, [hasLoadedSidebarPreference, sidebarCollapsed]);
 
   return (
@@ -790,9 +639,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <aside
         className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
           hasLoadedSidebarPreference ? "transition-[width]" : "transition-none"
-        } ${
-          sidebarCollapsed ? "sm:w-16" : "sm:w-64"
-        }`}
+        } ${sidebarCollapsed ? "sm:w-16" : "sm:w-64"}`}
         aria-label="Thanh điều hướng chính"
       >
         <div
@@ -837,7 +684,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         <MobileBanner />
         <DesktopUpdateNotice />
-        <VersionUpdateNotice />
         <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
             {children}

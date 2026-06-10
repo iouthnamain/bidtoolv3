@@ -191,11 +191,7 @@ function SavedFiltersSection() {
     onSuccess: async (workflow) => {
       setActionError(null);
       toast.success("Đã tạo workflow từ Smart View.");
-      await Promise.all([
-        utils.workflow.list.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
-      ]);
+      await Promise.all([utils.workflow.list.invalidate()]);
       if (workflow) {
         router.push(`/workflows/${workflow.id}`);
       }

@@ -66,15 +66,6 @@ bun run dev:run
 
 It ensures `.env` exists, starts PostgreSQL if needed, waits for readiness, applies migrations, and then starts the Next.js dev server. After it boots, open `http://localhost:3000`.
 
-## Windows Quick Launch
-
-If you want a double-click launcher from File Explorer on Windows:
-
-- `launch-maintenance.bat` starts the app and opens `http://localhost:3000/maintenance` when ready. If dependencies are missing, it runs install first, then starts the app.
-- `update-maintenance.bat` is the same idea for after `git pull`: it runs `bun run dev:update`, then starts the app, then opens `/maintenance`.
-
-Keep the PowerShell window that opens in the background running while you use the app. These launchers still require Bun on `PATH` and Docker Desktop running.
-
 ### Optional Demo Data
 
 Install, update, and run never seed automatically. If you want demo data:
@@ -232,7 +223,7 @@ tRPC write functions that touch the database will fail.
 ## Troubleshooting
 
 - If Docker commands fail, make sure Docker Desktop or the Docker daemon is running before `dev:install`, `dev:update`, or `dev:run`.
-- If `/maintenance` shows Postgres not running, click `Khởi động Docker` or rerun `bun run dev:run`.
+- If PostgreSQL is not running, make sure Docker Desktop is open and rerun `bun run dev:run`.
 - If PostgreSQL is still starting, rerun `bun run dev:run` or `bun run db:migrate` after a few seconds.
 - If you see a Smart View schema warning after pulling new code, run `bun run dev:update` or `bun run db:migrate`, then reload the page.
 - If startup fails with env validation, refresh `.env` from the latest `.env.example` and re-apply your local changes.

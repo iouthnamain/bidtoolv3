@@ -144,10 +144,10 @@ export default async function Home() {
                   Mở trung tâm điều hành
                 </Link>
                 <Link
-                  href="/maintenance"
+                  href="/help"
                   className="inline-flex items-center rounded-md border border-white/40 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
                 >
-                  Kiểm tra bảo trì
+                  Xem hướng dẫn
                 </Link>
               </div>
             </div>

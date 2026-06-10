@@ -36,8 +36,6 @@ export function WorkflowsPageClient() {
         utils.workflow.getRuns.invalidate(),
         utils.notification.unreadCount.invalidate(),
         utils.notification.list.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
     onError: () => {
@@ -53,8 +51,6 @@ export function WorkflowsPageClient() {
       await Promise.all([
         utils.workflow.list.invalidate(),
         utils.workflow.getById.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
     onError: () => {

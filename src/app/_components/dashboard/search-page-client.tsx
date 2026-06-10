@@ -1087,7 +1087,6 @@ export function SearchPageClient() {
         `Đã lưu ${saveResult.savedCount} mục, bỏ qua ${saveResult.skippedCount} mục trùng.`,
       );
       setSelectedKeys(new Set<string>());
-      await utils.insight.getDashboardSummary.invalidate();
     },
     onError: (error) => {
       setSaveSelectedSuccess(null);

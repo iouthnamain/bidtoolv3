@@ -1,5 +1,3 @@
-import { insightRouter } from "~/server/api/routers/insight";
-import { maintenanceRouter } from "~/server/api/routers/maintenance";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
@@ -13,8 +11,6 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
-  insight: insightRouter,
-  maintenance: maintenanceRouter,
   material: materialRouter,
   notification: notificationRouter,
   search: searchRouter,

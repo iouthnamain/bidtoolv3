@@ -8,7 +8,7 @@ import { helpSectionNavItems } from "~/app/_components/dashboard/page-nav-preset
 export const metadata = createPageMetadata({
   title: "Hướng dẫn sử dụng",
   description:
-    "Hướng dẫn setup, tìm kiếm BidWinner, Smart View, workflow, import vật tư và bảo trì BidTool v3.",
+    "Hướng dẫn setup, tìm kiếm BidWinner, Smart View, workflow, import vật tư và vận hành BidTool v3.",
   path: "/help",
   keywords: ["hướng dẫn BidTool", "setup BidTool", "quy trình đấu thầu"],
 });
@@ -54,7 +54,7 @@ type HelpVisual =
   | "local-stack"
   | "source-matrix"
   | "import-pipeline"
-  | "maintenance-commands"
+  | "local-commands"
   | "troubleshooting";
 
 type SourceMatrixRow = {
@@ -95,7 +95,6 @@ const quickLinks: HelpLink[] = [
   { href: "/import-mapping", label: "Import & Mapping" },
   { href: "/materials", label: "Vật tư" },
   { href: "/workflows", label: "Workflows" },
-  { href: "/maintenance", label: "Bảo trì" },
 ];
 
 const taskFlow: TaskFlow[] = [
@@ -189,7 +188,7 @@ const localStackLayers: FlowNode[] = [
   {
     step: "API",
     label: "Next.js + tRPC",
-    body: "Router xử lý tìm kiếm, vật tư, workflow, notification và maintenance.",
+    body: "Router xử lý tìm kiếm, vật tư, workflow và notification.",
   },
   {
     step: "DB",
@@ -259,7 +258,7 @@ const importPipeline: FlowNode[] = [
   },
 ];
 
-const maintenanceCommands: CommandCard[] = [
+const localCommands: CommandCard[] = [
   {
     command: "bun run dev:install",
     when: "Máy mới hoặc clone mới.",
@@ -299,9 +298,9 @@ const troubleshootingCards: TroubleshootingCard[] = [
     action: "Chạy `bun run dev:kill`, sau đó chạy lại `bun run dev:run`.",
   },
   {
-    symptom: "Maintenance báo đỏ",
+    symptom: "Docker hoặc database lỗi",
     checks: ["Postgres container", "Docker daemon", "Database migration"],
-    action: "Bấm `Khởi động Docker` hoặc chạy lại daily startup.",
+    action: "Bật Docker Desktop rồi chạy lại `bun run dev:run`.",
   },
   {
     symptom: "Schema warning",
@@ -319,7 +318,8 @@ const troubleshootingCards: TroubleshootingCard[] = [
       "Nguồn BidWinner có dữ liệu?",
       "Bộ lọc quá chặt?",
     ],
-    action: "Mở `/maintenance`, bật Docker, sau đó tìm lại với ít filter hơn.",
+    action:
+      "Bật Docker Desktop, chạy lại `bun run dev:run`, sau đó tìm lại với ít filter hơn.",
   },
   {
     symptom: "Import Excel lỗi",
@@ -379,16 +379,6 @@ const pageDirectory: PageDirectoryItem[] = [
     title: "Scrape shop",
     body: "Preview URL shop để kiểm tra sản phẩm, giá và nguồn trước khi nhập catalog.",
   },
-  {
-    href: "/insights",
-    title: "Phân tích",
-    body: "Tổng quan thị trường và chỉ số vận hành khi dữ liệu đã đủ.",
-  },
-  {
-    href: "/maintenance",
-    title: "Bảo trì cục bộ",
-    body: "Chạy setup/update/migration và kiểm tra phụ thuộc local trong development.",
-  },
 ];
 
 const sections: Section[] = [
@@ -417,46 +407,22 @@ const sections: Section[] = [
     },
   },
   {
-    id: "windows-launch",
-    eyebrow: "Windows",
-    title: "Mở nhanh bằng file `.bat`",
-    intro:
-      "Trên Windows, có thể dùng file launcher ở thư mục gốc để mở app từ File Explorer và đi thẳng vào trang bảo trì.",
-    steps: [
-      "Double-click `launch-maintenance.bat` để khởi động app và tự mở `/maintenance` khi server sẵn sàng.",
-      "Sau khi đã `git pull`, double-click `update-maintenance.bat` để chạy update rồi mở lại app.",
-      "Giữ cửa sổ PowerShell đang chạy server trong nền trong suốt thời gian sử dụng.",
-      "Nếu trình duyệt chưa tự mở sau vài phút, mở thủ công `http://localhost:3000/maintenance`.",
-    ],
-    notes: [
-      "Launcher vẫn cần Bun có trong PATH và Docker Desktop đang chạy.",
-      "Nếu dependencies chưa có, launcher tự rơi về luồng install-plus-run.",
-    ],
-    links: [{ href: "/maintenance", label: "Mở Bảo trì" }],
-  },
-  {
     id: "cap-nhat-hang-ngay",
     eyebrow: "Vận hành",
     title: "Chạy và cập nhật hằng ngày",
     intro:
-      "Dùng các lệnh bảo trì để đồng bộ dependencies, đảm bảo Postgres đang chạy và áp migrations mới trước khi thao tác dữ liệu thật.",
+      "Dùng các lệnh cục bộ để đồng bộ dependencies, đảm bảo Postgres đang chạy và áp migrations mới trước khi thao tác dữ liệu thật.",
     steps: [
-      "Mỗi ngày làm việc, chạy `bun run dev:run` hoặc dùng `launch-maintenance.bat`.",
-      "Sau khi kéo code mới bằng `git pull`, chạy `bun run dev:update` hoặc dùng `update-maintenance.bat`.",
-      "Nếu chỉ nghi ngờ thiếu schema, mở `/maintenance` và bấm `Áp migrations`.",
-      "Khi lệnh đang chạy, chờ trạng thái về `Sẵn sàng` trước khi bấm lệnh khác.",
+      "Mỗi ngày làm việc, chạy `bun run dev:run`.",
+      "Sau khi kéo code mới bằng `git pull`, chạy `bun run dev:update`.",
+      "Nếu chỉ nghi ngờ thiếu schema, chạy riêng `bun run db:migrate`.",
+      "Khi lệnh đang chạy, chờ terminal hoàn tất trước khi chạy lệnh khác.",
     ],
     notes: [
       "`dev:update` không tự chạy `git pull`; kéo code trước để tránh ghi đè thay đổi local ngoài ý muốn.",
-      "Các lệnh maintenance chỉ khả dụng trong môi trường development.",
+      "Các lệnh vận hành cục bộ chỉ khả dụng trong môi trường development.",
     ],
-    visual: "maintenance-commands",
-    image: {
-      src: "/help/maintenance-status.png",
-      alt: "Trang bảo trì hiển thị trạng thái sẵn sàng và các nút chạy setup update migration",
-      caption:
-        "Trang Bảo trì giúp chạy các lệnh cục bộ mà không rời trình duyệt.",
-    },
+    visual: "local-commands",
   },
   {
     id: "tim-kiem",
@@ -623,17 +589,16 @@ const sections: Section[] = [
       "Khi app không mở hoặc dữ liệu chưa đúng, ưu tiên kiểm tra các phần phụ thuộc cục bộ trước: Docker, `.env`, migration và trạng thái server.",
     steps: [
       "Nếu Docker lỗi, bật Docker Desktop rồi chạy lại `bun run dev:run`.",
-      "Nếu Postgres chưa chạy, mở `/maintenance` và bấm `Khởi động Docker`.",
+      "Nếu Postgres chưa chạy, bật Docker Desktop rồi chạy lại `bun run dev:run`.",
       "Nếu báo thiếu biến môi trường, so sánh `.env` với `.env.example` và bổ sung giá trị còn thiếu.",
       "Nếu dashboard cảnh báo schema, chạy `bun run dev:update` hoặc `bun run db:migrate`.",
-      "Nếu port hoặc process local bị kẹt, mở `/maintenance` và dùng `Dừng toàn bộ`, hoặc chạy `bun run dev:kill`. Lệnh này chỉ dừng Docker, không xóa container hoặc volume.",
-      "Nếu một tab maintenance đang chạy lệnh, chờ trạng thái về sẵn sàng trước khi chạy lệnh khác.",
+      "Nếu port hoặc process local bị kẹt, chạy `bun run dev:kill`. Lệnh này chỉ dừng Docker, không xóa container hoặc volume.",
+      "Nếu một lệnh vận hành đang chạy, chờ terminal hoàn tất trước khi chạy lệnh khác.",
     ],
     notes: [
       "Không đóng terminal hoặc PowerShell đang chạy server khi vẫn đang dùng app.",
       'Demo seed chỉ chạy khi `ENABLE_DEMO_SEED="true"` trong `.env`.',
     ],
-    links: [{ href: "/maintenance", label: "Mở Bảo trì" }],
     visual: "troubleshooting",
   },
   {
@@ -802,10 +767,10 @@ function ImportPipelineVisual() {
   );
 }
 
-function MaintenanceCommandsVisual() {
+function LocalCommandsVisual() {
   return (
     <div className="mt-4 grid gap-2 md:grid-cols-2">
-      {maintenanceCommands.map((item) => (
+      {localCommands.map((item) => (
         <div
           key={item.command}
           className="rounded-xl border border-slate-200 bg-slate-50 p-3"
@@ -863,8 +828,8 @@ function SectionVisual({ visual }: { visual?: HelpVisual }) {
       return <SourceMatrixVisual />;
     case "import-pipeline":
       return <ImportPipelineVisual />;
-    case "maintenance-commands":
-      return <MaintenanceCommandsVisual />;
+    case "local-commands":
+      return <LocalCommandsVisual />;
     case "troubleshooting":
       return <TroubleshootingVisual />;
     default:
@@ -878,7 +843,7 @@ export default function HelpPage() {
   return (
     <DashboardShell
       title="Trợ giúp & Hướng dẫn"
-      description="Hướng dẫn vận hành BidTool v3 từ lúc mở app, tìm gói thầu, lưu bộ lọc, nhập catalog đến bảo trì cục bộ."
+      description="Hướng dẫn vận hành BidTool v3 từ lúc mở app, tìm gói thầu, lưu bộ lọc, nhập catalog đến vận hành cục bộ."
       sectionNavItems={helpSectionNavItems}
       sectionNavTitle="Mục trợ giúp chính"
     >

@@ -201,60 +201,6 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
   },
 ];
 
-export const insightsSectionNavItems: PageSectionNavItem[] = [
-  {
-    href: "#insight-kpis",
-    label: "KPI",
-    description: "Tổng gói, cảnh báo, workflow và tỉ lệ thành công.",
-    icon: "bar-chart",
-  },
-  {
-    href: "#market-trend",
-    label: "Xu hướng",
-    description: "Biến động gói thầu 7 ngày.",
-    icon: "activity",
-  },
-  {
-    href: "#workflow-health",
-    label: "Workflow",
-    description: "Sức khỏe tự động hóa và trạng thái vận hành.",
-    icon: "workflow",
-  },
-  {
-    href: "#top-signals",
-    label: "Tín hiệu",
-    description: "Bên mời thầu và lĩnh vực nổi bật.",
-    icon: "tags",
-  },
-];
-
-export const maintenanceSectionNavItems: PageSectionNavItem[] = [
-  {
-    href: "#maintenance-status",
-    label: "Trạng thái",
-    description: "Tác vụ đang chạy và trạng thái sẵn sàng.",
-    icon: "activity",
-  },
-  {
-    href: "#maintenance-services",
-    label: "Phiên bản & services",
-    description: "Git version, Postgres và Docker status.",
-    icon: "server",
-  },
-  {
-    href: "#maintenance-commands",
-    label: "Lệnh cục bộ",
-    description: "Setup, update, migrate và restart services.",
-    icon: "wrench",
-  },
-  {
-    href: "#maintenance-results",
-    label: "Kết quả",
-    description: "Output gần nhất, exit code và thời gian chạy.",
-    icon: "database",
-  },
-];
-
 export const desktopSectionNavItems: PageSectionNavItem[] = [
   {
     href: "#desktop-server",
@@ -267,18 +213,6 @@ export const desktopSectionNavItems: PageSectionNavItem[] = [
     label: "Cấu hình hiện tại",
     description: "Nguồn cấu hình, server và trạng thái editable.",
     icon: "settings",
-  },
-  {
-    href: "/maintenance",
-    label: "Bảo trì",
-    description: "Kiểm tra local server và lệnh vận hành.",
-    icon: "wrench",
-  },
-  {
-    href: "/help#windows-launch",
-    label: "Windows",
-    description: "Cách mở nhanh bằng file launcher.",
-    icon: "file",
   },
 ];
 

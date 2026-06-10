@@ -130,8 +130,6 @@ export function WorkflowDetailPageClient({
       await Promise.all([
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.list.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
   });
@@ -141,8 +139,6 @@ export function WorkflowDetailPageClient({
       await Promise.all([
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.list.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
   });
@@ -155,8 +151,6 @@ export function WorkflowDetailPageClient({
         utils.workflow.list.invalidate(),
         utils.notification.unreadCount.invalidate(),
         utils.notification.list.invalidate(),
-        utils.insight.getWorkflowHealth.invalidate(),
-        utils.insight.getDashboardSummary.invalidate(),
       ]);
     },
   });
