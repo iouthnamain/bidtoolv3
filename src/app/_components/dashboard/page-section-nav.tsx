@@ -166,14 +166,14 @@ export function PageSectionNav({
               key={`${item.href}-${item.label}`}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`group flex min-w-[9.25rem] shrink-0 items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:px-3 sm:py-3 ${
+              className={`group flex min-h-11 min-w-[9.25rem] shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-0 sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:py-3 ${
                 active
                   ? "border-sky-300 bg-sky-50 text-sky-950"
                   : "border-slate-200 bg-white text-slate-900 hover:border-sky-300 hover:bg-sky-50/70"
               }`}
             >
               <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md sm:mt-0.5 sm:h-8 sm:w-8 ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md sm:mt-0.5 ${
                   active
                     ? "bg-sky-100 text-sky-700"
                     : "bg-slate-100 text-slate-600 group-hover:bg-sky-100 group-hover:text-sky-700"

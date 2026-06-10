@@ -664,21 +664,21 @@ export function MaterialScrapeClient() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/materials"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
             >
               <Boxes className="h-4 w-4" aria-hidden />
               Danh mục
             </Link>
             <Link
               href="/materials/import"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
             >
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
             </Link>
             <Link
               href="/materials/new"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Thêm thủ công
@@ -717,8 +717,8 @@ export function MaterialScrapeClient() {
                     type="button"
                     className={
                       scrapeMode === mode
-                        ? "min-h-8 rounded-md bg-white px-2 text-xs font-bold text-sky-800 shadow-sm"
-                        : "min-h-8 rounded-md px-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                        ? "min-h-10 rounded-md bg-white px-2 text-xs font-bold text-sky-800 shadow-sm sm:min-h-8"
+                        : "min-h-10 rounded-md px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 sm:min-h-8"
                     }
                     disabled={isStartingScrape || isActive}
                     onClick={() => setScrapeMode(mode)}
@@ -732,7 +732,7 @@ export function MaterialScrapeClient() {
             <label className="grid gap-1.5">
               <span className="text-xs font-bold text-slate-700">Cách đọc</span>
               <select
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                 value={scrapeMethod}
                 disabled={isStartingScrape || isActive}
                 onChange={(event) =>
@@ -762,7 +762,7 @@ export function MaterialScrapeClient() {
                 step={1}
                 inputMode="numeric"
                 autoComplete="off"
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                 value={maxPages}
                 disabled={scrapeMode === "all" || isStartingScrape || isActive}
                 onChange={(event) =>
@@ -785,7 +785,7 @@ export function MaterialScrapeClient() {
                 step={1}
                 inputMode="numeric"
                 autoComplete="off"
-                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                 value={maxProducts}
                 disabled={scrapeMode === "all" || isStartingScrape || isActive}
                 onChange={(event) =>

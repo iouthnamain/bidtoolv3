@@ -118,7 +118,7 @@ export function WorkflowCard({
 
         <Link
           href={`/workflows/${id}`}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:min-h-9"
         >
           <Settings className="h-3.5 w-3.5" aria-hidden />
           Quản lý

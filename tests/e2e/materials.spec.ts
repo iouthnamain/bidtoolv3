@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const materialFixtureDir = "tests/fixtures/materials";
 
@@ -53,6 +53,15 @@ async function importMaterialRowsViaCsv(
   await expect(
     page.getByText(`Đã nhập ${count.toLocaleString("vi-VN")} dòng`),
   ).toBeVisible();
+}
+
+async function expectMinTouchTarget(locator: Locator, minSize = 40) {
+  await expect(locator).toBeVisible();
+
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box?.width ?? 0)).toBeGreaterThanOrEqual(minSize);
+  expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(minSize);
 }
 
 test("previews an uploaded materials workbook before import", async ({
@@ -173,6 +182,66 @@ test("material page keeps navigation compact on mobile", async ({ page }) => {
 
   await drawer.getByRole("button", { name: "Đóng menu" }).click();
   await expect(drawer).toBeHidden();
+});
+
+test("material mobile controls keep touch targets usable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/materials");
+  await page.waitForLoadState("networkidle");
+
+  await expectMinTouchTarget(
+    page.getByRole("button", { name: "Mở menu điều hướng" }),
+    44,
+  );
+  await page.getByRole("button", { name: "Mở menu điều hướng" }).click();
+  await expectMinTouchTarget(
+    page
+      .getByRole("dialog", { name: "Thanh điều hướng chính" })
+      .getByRole("button", { name: "Đóng menu" }),
+    44,
+  );
+  await page
+    .getByRole("dialog", { name: "Thanh điều hướng chính" })
+    .getByRole("button", { name: "Đóng menu" })
+    .click();
+
+  await expectMinTouchTarget(
+    page
+      .getByRole("navigation", { name: "Khu vực vật tư" })
+      .getByRole("link", { name: /Danh mục/i }),
+    44,
+  );
+  await expectMinTouchTarget(
+    page.locator("#material-summary").getByRole("link", {
+      name: "Thêm thủ công",
+    }),
+    40,
+  );
+  await expectMinTouchTarget(
+    page.locator("#material-summary").getByRole("link", {
+      name: "Nhập sheet",
+    }),
+    40,
+  );
+  await expectMinTouchTarget(
+    page.locator("#material-summary").getByRole("link", {
+      name: "Scrape shop",
+    }),
+    40,
+  );
+
+  await page.goto("/materials/scrape");
+  await page.waitForLoadState("networkidle");
+  await expectMinTouchTarget(page.getByRole("button", { name: "Giới hạn" }));
+  await expectMinTouchTarget(page.getByRole("button", { name: "Scrape hết" }));
+  await expectMinTouchTarget(
+    page.getByLabel("Phương thức scrape sản phẩm"),
+    40,
+  );
+  await expectMinTouchTarget(
+    page.getByLabel("Số sản phẩm tối đa cần scrape"),
+    40,
+  );
 });
 
 test("material import page keeps upload controls high on mobile", async ({

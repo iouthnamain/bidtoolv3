@@ -684,7 +684,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Mở menu điều hướng"
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="flex h-11 w-11 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -719,7 +719,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Đóng menu"
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="flex h-11 w-11 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>

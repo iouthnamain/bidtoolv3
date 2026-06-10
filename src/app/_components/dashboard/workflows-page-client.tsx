@@ -144,7 +144,7 @@ export function WorkflowsPageClient() {
               key={filterKey}
               type="button"
               onClick={() => setActiveFilter(filterKey)}
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+              className={`inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 ${
                 activeFilter === filterKey
                   ? "border-sky-700 bg-sky-700 text-white"
                   : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"

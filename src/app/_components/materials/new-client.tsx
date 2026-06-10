@@ -40,7 +40,7 @@ const emptyForm: MaterialCreateFormState = {
 };
 
 const inputClass =
-  "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-10";
 
 const textareaClass =
   "min-h-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
@@ -144,7 +144,7 @@ export function MaterialCreateClient() {
           <div>
             <Link
               href="/materials"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
+              className="inline-flex min-h-10 items-center gap-1 rounded-md py-1.5 pr-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900 sm:min-h-0 sm:py-0"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
               Quay lại danh mục

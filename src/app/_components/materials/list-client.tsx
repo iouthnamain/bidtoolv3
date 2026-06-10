@@ -86,7 +86,7 @@ const priceStatusOptions: Array<{ value: PriceStatus; label: string }> = [
 ];
 
 const materialControlClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
+  "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
 
 type MaterialViewSearchParams = {
   get(name: string): string | null;
@@ -917,21 +917,21 @@ export function MaterialsListClient() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/materials/new"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Thêm thủ công
             </Link>
             <Link
               href="/materials/import"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
             >
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
             </Link>
             <Link
               href="/materials/scrape"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
             >
               <Search className="h-4 w-4" aria-hidden />
               Scrape shop
@@ -1559,7 +1559,7 @@ export function MaterialsListClient() {
               <label className="inline-flex items-center gap-2">
                 <span>Số dòng</span>
                 <select
-                  className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none"
+                  className="h-10 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
                   aria-label="Số dòng mỗi trang"
                   value={pagination.pageSize}
                   onChange={(event) => {
@@ -1586,7 +1586,7 @@ export function MaterialsListClient() {
               </span>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
                 aria-label="Trang đầu"
                 disabled={!canGoToPreviousPage || isFetching}
                 onClick={() => goToPage(0)}
@@ -1595,7 +1595,7 @@ export function MaterialsListClient() {
               </button>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
                 aria-label="Trang trước"
                 disabled={!canGoToPreviousPage || isFetching}
                 onClick={() => goToPage(pagination.pageIndex - 1)}
@@ -1604,7 +1604,7 @@ export function MaterialsListClient() {
               </button>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
                 aria-label="Trang sau"
                 disabled={!canGoToNextPage || isFetching}
                 onClick={() => goToPage(pagination.pageIndex + 1)}
@@ -1613,7 +1613,7 @@ export function MaterialsListClient() {
               </button>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
                 aria-label="Trang cuối"
                 disabled={!canGoToNextPage || isFetching}
                 onClick={() => goToPage(totalPages - 1)}
