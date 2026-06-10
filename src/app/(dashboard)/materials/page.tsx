@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
 import { materialsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
@@ -21,7 +23,15 @@ export default function MaterialsPage() {
       sectionNavItems={materialsSectionNavItems}
       sectionNavTitle="Khu vực vật tư"
     >
-      <MaterialsListClient />
+      <Suspense
+        fallback={
+          <div className="panel p-5 text-sm text-slate-600">
+            Đang tải danh mục vật tư…
+          </div>
+        }
+      >
+        <MaterialsListClient />
+      </Suspense>
     </DashboardShell>
   );
 }

@@ -133,8 +133,9 @@ bun run desktop:build
 ```
 
 For on-prem customers, set `BIDTOOL_SERVER_URL` next to the desktop executable
-or open `/desktop` inside the desktop app and save the customer server URL. When
-`BIDTOOL_SERVER_URL` is set by an admin, the in-app setting is read-only.
+or open `/settings#desktop-client` inside the desktop app and save the customer
+server URL. When `BIDTOOL_SERVER_URL` is set by an admin, the in-app setting is
+read-only.
 
 When no server URL is configured, the desktop app runs the same Next.js
 application in a local Electron window. PostgreSQL still runs through the

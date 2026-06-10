@@ -614,8 +614,12 @@ export function MaterialScrapeClient() {
               </span>
               <input
                 type="number"
+                name="maxPages"
                 min={1}
                 max={MAX_PAGE_LIMIT}
+                step={1}
+                inputMode="numeric"
+                autoComplete="off"
                 className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 value={maxPages}
                 disabled={isStartingScrape || isActive}
@@ -633,9 +637,12 @@ export function MaterialScrapeClient() {
               </span>
               <input
                 type="number"
+                name="maxProducts"
                 min={1}
                 max={MAX_PRODUCT_LIMIT}
                 step={1}
+                inputMode="numeric"
+                autoComplete="off"
                 className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 value={maxProducts}
                 disabled={isStartingScrape || isActive}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ChangeEventHandler } from "react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -9,6 +10,7 @@ import {
   useReactTable,
   type ColumnDef,
   type PaginationState,
+  type Row,
   type RowSelectionState,
 } from "@tanstack/react-table";
 import {
@@ -85,6 +87,54 @@ const priceStatusOptions: Array<{ value: PriceStatus; label: string }> = [
 
 const materialControlClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
+
+type MaterialViewSearchParams = {
+  get(name: string): string | null;
+};
+
+function readSearchParam(params: MaterialViewSearchParams, name: string) {
+  return params.get(name)?.trim() ?? "";
+}
+
+function isMaterialSortBy(value: string): value is MaterialSortBy {
+  return materialSortOptions.some((option) => option.value === value);
+}
+
+function isSortOrder(value: string): value is SortOrder {
+  return value === "asc" || value === "desc";
+}
+
+function isPriceStatus(value: string): value is PriceStatus {
+  return priceStatusOptions.some((option) => option.value === value);
+}
+
+function parsePageSize(value: string) {
+  const pageSize = Number(value);
+  return MATERIAL_PAGE_SIZE_OPTIONS.includes(
+    pageSize as (typeof MATERIAL_PAGE_SIZE_OPTIONS)[number],
+  )
+    ? pageSize
+    : DEFAULT_MATERIAL_PAGE_SIZE;
+}
+
+function parsePageIndex(value: string) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page - 1 : 0;
+}
+
+function updateUrlParam(
+  params: URLSearchParams,
+  name: string,
+  value: string | number,
+  defaultValue: string | number = "",
+) {
+  const stringValue = String(value).trim();
+  if (!stringValue || stringValue === String(defaultValue)) {
+    params.delete(name);
+    return;
+  }
+  params.set(name, stringValue);
+}
 
 function formatMoney(value: number | null | undefined, currency = "VND") {
   if (value == null) {
@@ -201,22 +251,144 @@ function SelectionCheckbox({
   );
 }
 
+function MaterialMobileCard({
+  row,
+  isDeleting,
+  onDelete,
+}: {
+  row: Row<EnrichedMaterialListItem>;
+  isDeleting: boolean;
+  onDelete: (material: EnrichedMaterialListItem) => void;
+}) {
+  const material = row.original;
+
+  return (
+    <article
+      className={`rounded-lg border p-3 shadow-sm transition-colors ${
+        row.getIsSelected()
+          ? "border-sky-200 bg-sky-50/80"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <SelectionCheckbox
+          checked={row.getIsSelected()}
+          disabled={!row.getCanSelect()}
+          ariaLabel={`Chọn ${material.name}`}
+          onChange={row.getToggleSelectedHandler()}
+        />
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/materials/${material.id}`}
+            className="line-clamp-2 text-sm font-bold text-slate-950 hover:text-sky-700 hover:underline"
+          >
+            {material.name}
+          </Link>
+          <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+            {material.details || material.specText || "Chưa có thông tin phụ"}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+          {material.unit}
+        </span>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-500">Giá</dt>
+          <dd className="mt-0.5 font-bold text-slate-950 tabular-nums">
+            {formatMoney(material.defaultUnitPrice, material.currency)}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-500">NCC</dt>
+          <dd className="mt-0.5 truncate font-semibold text-slate-700">
+            {material.manufacturer ?? "-"}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-500">Xuất xứ</dt>
+          <dd className="mt-0.5 truncate font-semibold text-slate-700">
+            {material.originCountry ?? "-"}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-500">Cập nhật</dt>
+          <dd className="mt-0.5 font-semibold text-slate-700">
+            {formatDate(material.updatedAt)}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="truncate text-xs text-slate-500">
+          {material.sourceCount > 0
+            ? `${material.sourceCount.toLocaleString("vi-VN")} nguồn giá`
+            : "Chưa có nguồn giá"}
+        </span>
+        <div className="flex shrink-0 gap-1.5">
+          <Link
+            href={`/materials/${material.id}`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            aria-label={`Mở chi tiết ${material.name}`}
+          >
+            <ArrowUpRight className="h-4 w-4" aria-hidden />
+          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 px-0 text-rose-700 hover:bg-rose-50"
+            disabled={isDeleting}
+            onClick={() => onDelete(material)}
+            aria-label={`Xóa ${material.name}`}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function MaterialsListClient() {
+  const initialSearchParams = useSearchParams();
   const [hasMounted, setHasMounted] = useState(false);
-  const [keyword, setKeyword] = useState("");
+  const didInitializeViewControlsRef = useRef(false);
+  const [keyword, setKeyword] = useState(() =>
+    readSearchParam(initialSearchParams, "q"),
+  );
   const deferredKeyword = useDeferredValue(keyword);
-  const [nameFilter, setNameFilter] = useState("");
-  const [unitFilter, setUnitFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [manufacturerFilter, setManufacturerFilter] = useState("");
-  const [originFilter, setOriginFilter] = useState("");
-  const [priceStatus, setPriceStatus] = useState<PriceStatus>("all");
-  const [sortBy, setSortBy] = useState<MaterialSortBy>("name");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: DEFAULT_MATERIAL_PAGE_SIZE,
+  const [nameFilter, setNameFilter] = useState(() =>
+    readSearchParam(initialSearchParams, "name"),
+  );
+  const [unitFilter, setUnitFilter] = useState(() =>
+    readSearchParam(initialSearchParams, "unit"),
+  );
+  const [categoryFilter, setCategoryFilter] = useState(() =>
+    readSearchParam(initialSearchParams, "category"),
+  );
+  const [manufacturerFilter, setManufacturerFilter] = useState(() =>
+    readSearchParam(initialSearchParams, "manufacturer"),
+  );
+  const [originFilter, setOriginFilter] = useState(() =>
+    readSearchParam(initialSearchParams, "origin"),
+  );
+  const [priceStatus, setPriceStatus] = useState<PriceStatus>(() => {
+    const value = readSearchParam(initialSearchParams, "price");
+    return isPriceStatus(value) ? value : "all";
   });
+  const [sortBy, setSortBy] = useState<MaterialSortBy>(() => {
+    const value = readSearchParam(initialSearchParams, "sort");
+    return isMaterialSortBy(value) ? value : "name";
+  });
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    const value = readSearchParam(initialSearchParams, "order");
+    return isSortOrder(value) ? value : "asc";
+  });
+  const [pagination, setPagination] = useState<PaginationState>(() => ({
+    pageIndex: parsePageIndex(readSearchParam(initialSearchParams, "page")),
+    pageSize: parsePageSize(readSearchParam(initialSearchParams, "pageSize")),
+  }));
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const utils = api.useUtils();
   const toast = useToast();
@@ -302,6 +474,50 @@ export function MaterialsListClient() {
     setHasMounted(true);
   }, []);
 
+  useEffect(() => {
+    if (!hasMounted || typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    updateUrlParam(params, "q", keyword);
+    updateUrlParam(params, "name", nameFilter);
+    updateUrlParam(params, "unit", unitFilter);
+    updateUrlParam(params, "category", categoryFilter);
+    updateUrlParam(params, "manufacturer", manufacturerFilter);
+    updateUrlParam(params, "origin", originFilter);
+    updateUrlParam(params, "price", priceStatus, "all");
+    updateUrlParam(params, "sort", sortBy, "name");
+    updateUrlParam(params, "order", sortOrder, "asc");
+    updateUrlParam(params, "page", pagination.pageIndex + 1, 1);
+    updateUrlParam(
+      params,
+      "pageSize",
+      pagination.pageSize,
+      DEFAULT_MATERIAL_PAGE_SIZE,
+    );
+
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, "", nextUrl);
+    }
+  }, [
+    categoryFilter,
+    hasMounted,
+    keyword,
+    manufacturerFilter,
+    nameFilter,
+    originFilter,
+    pagination.pageIndex,
+    pagination.pageSize,
+    priceStatus,
+    sortBy,
+    sortOrder,
+    unitFilter,
+  ]);
+
   const materials = materialsData ?? EMPTY_MATERIAL_ROWS;
   const visibleMaterials = useMemo(
     () =>
@@ -334,6 +550,11 @@ export function MaterialsListClient() {
     pagination.pageIndex * pagination.pageSize + visibleMaterials.length,
     summary.total,
   );
+  const resultRangeLabel = `${pageStart.toLocaleString(
+    "vi-VN",
+  )}-${pageEnd.toLocaleString("vi-VN")}/${summary.total.toLocaleString(
+    "vi-VN",
+  )} vật tư`;
   const canGoToPreviousPage = pagination.pageIndex > 0;
   const canGoToNextPage =
     !showSummaryLoading && pagination.pageIndex + 1 < totalPages;
@@ -350,7 +571,8 @@ export function MaterialsListClient() {
     activeFilterCount > 0 ||
     sortBy !== "name" ||
     sortOrder !== "asc" ||
-    pagination.pageIndex > 0;
+    pagination.pageIndex > 0 ||
+    pagination.pageSize !== DEFAULT_MATERIAL_PAGE_SIZE;
   const selectedIds = useMemo(
     () =>
       Object.entries(rowSelection)
@@ -370,6 +592,11 @@ export function MaterialsListClient() {
   };
 
   useEffect(() => {
+    if (!didInitializeViewControlsRef.current) {
+      didInitializeViewControlsRef.current = true;
+      return;
+    }
+
     setPagination((current) =>
       current.pageIndex === 0 ? current : { ...current, pageIndex: 0 },
     );
@@ -428,7 +655,10 @@ export function MaterialsListClient() {
     setPriceStatus("all");
     setSortBy("name");
     setSortOrder("asc");
-    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    setPagination({
+      pageIndex: 0,
+      pageSize: DEFAULT_MATERIAL_PAGE_SIZE,
+    });
     clearSelection();
   };
 
@@ -635,6 +865,13 @@ export function MaterialsListClient() {
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
   });
+  const visibleRows = materialTable.getRowModel().rows;
+  const openSingleDeleteDialog = (material: EnrichedMaterialListItem) => {
+    setSingleDeleteTarget({
+      id: material.id,
+      name: material.name,
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -710,7 +947,10 @@ export function MaterialsListClient() {
               </p>
               <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
+            <p
+              className="mt-1 text-2xl font-bold text-slate-950"
+              aria-label="Tổng vật tư theo bộ lọc"
+            >
               {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
             <p className="mt-1 text-[11px] font-medium text-slate-500">
@@ -724,7 +964,10 @@ export function MaterialsListClient() {
               </p>
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-emerald-900">
+            <p
+              className="mt-1 text-2xl font-bold text-emerald-900"
+              aria-label="Vật tư có giá theo bộ lọc"
+            >
               {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
@@ -740,7 +983,10 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
               <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-amber-900">
+            <p
+              className="mt-1 text-2xl font-bold text-amber-900"
+              aria-label="Vật tư thiếu giá theo bộ lọc"
+            >
               {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
@@ -754,7 +1000,10 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-sky-950">
+            <p
+              className="mt-1 text-2xl font-bold text-sky-950"
+              aria-label="Vật tư có nguồn giá theo bộ lọc"
+            >
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
@@ -808,14 +1057,10 @@ export function MaterialsListClient() {
               <h2 className="text-sm font-bold text-slate-950">
                 Danh mục vật tư
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-500" aria-live="polite">
                 {showInitialLoading
                   ? "Đang tải…"
-                  : `${pageStart.toLocaleString("vi-VN")}-${pageEnd.toLocaleString(
-                      "vi-VN",
-                    )}/${summary.total.toLocaleString(
-                      "vi-VN",
-                    )} vật tư • Trang ${currentPage.toLocaleString(
+                  : `${resultRangeLabel} • Trang ${currentPage.toLocaleString(
                       "vi-VN",
                     )}/${totalPages.toLocaleString(
                       "vi-VN",
@@ -1085,7 +1330,10 @@ export function MaterialsListClient() {
                 ariaLabel="Chọn tất cả vật tư đang hiển thị"
               />
               <SquareCheckBig className="h-4 w-4" aria-hidden />
-              <span>Chọn tất cả đang hiển thị</span>
+              <span className="sm:hidden">Chọn trang này</span>
+              <span className="hidden sm:inline">
+                Chọn tất cả đang hiển thị
+              </span>
               <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 tabular-nums">
                 {selectedCount}/{visibleMaterials.length}
               </span>
@@ -1114,7 +1362,67 @@ export function MaterialsListClient() {
           </div>
 
           <div
-            className="relative mt-3 overflow-x-auto rounded-lg border border-slate-200"
+            className="mt-3 grid gap-2 md:hidden"
+            aria-label="Danh sách vật tư dạng thẻ"
+          >
+            {showInitialLoading ? (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-8 text-center text-sm font-medium text-slate-500">
+                Đang tải danh mục vật tư…
+              </div>
+            ) : null}
+            {!showInitialLoading
+              ? visibleRows.map((row) => (
+                  <MaterialMobileCard
+                    key={row.id}
+                    row={row}
+                    isDeleting={deleteMaterial.isPending}
+                    onDelete={openSingleDeleteDialog}
+                  />
+                ))
+              : null}
+            {!showInitialLoading && catalogError && visibleRows.length === 0 ? (
+              <div className="rounded-lg border border-rose-200 bg-white px-3 py-6">
+                <EmptyState
+                  title="Không tải được danh mục vật tư."
+                  description={catalogError}
+                  cta={
+                    <Button variant="secondary" onClick={refetchCatalog}>
+                      Thử lại
+                    </Button>
+                  }
+                />
+              </div>
+            ) : null}
+            {!showInitialLoading &&
+            !catalogError &&
+            visibleRows.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-6">
+                <EmptyState
+                  title="Chưa có sản phẩm / vật tư."
+                  description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
+                  cta={
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Link
+                        href="/materials/new"
+                        className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                      >
+                        Thêm thủ công
+                      </Link>
+                      <Link
+                        href="/materials/import"
+                        className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Nhập sheet
+                      </Link>
+                    </div>
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            className="relative mt-3 hidden overflow-x-auto rounded-lg border border-slate-200 md:block"
             aria-busy={isCatalogBusy}
           >
             {isRefreshing ? (
@@ -1157,7 +1465,7 @@ export function MaterialsListClient() {
                   </tr>
                 ) : null}
                 {!showInitialLoading
-                  ? materialTable.getRowModel().rows.map((row) => (
+                  ? visibleRows.map((row) => (
                       <tr
                         key={row.id}
                         className={`transition-colors ${
@@ -1182,7 +1490,7 @@ export function MaterialsListClient() {
                   : null}
                 {!showInitialLoading &&
                 catalogError &&
-                materialTable.getRowModel().rows.length === 0 ? (
+                visibleRows.length === 0 ? (
                   <tr>
                     <td colSpan={materialColumns.length} className="px-3 py-8">
                       <EmptyState
@@ -1199,7 +1507,7 @@ export function MaterialsListClient() {
                 ) : null}
                 {!showInitialLoading &&
                 !catalogError &&
-                materialTable.getRowModel().rows.length === 0 ? (
+                visibleRows.length === 0 ? (
                   <tr>
                     <td colSpan={materialColumns.length} className="px-3 py-8">
                       <EmptyState
@@ -1236,7 +1544,10 @@ export function MaterialsListClient() {
           </div>
 
           <div className="mt-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+            <div
+              className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
+              aria-live="polite"
+            >
               <span className="font-semibold text-slate-900">
                 {pageStart.toLocaleString("vi-VN")}-
                 {pageEnd.toLocaleString("vi-VN")}

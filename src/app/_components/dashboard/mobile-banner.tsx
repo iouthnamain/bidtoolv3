@@ -24,15 +24,15 @@ export function MobileBanner() {
   if (!visible) return null;
 
   return (
-    <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900 lg:hidden">
+    <div className="flex items-start gap-3 border-b border-sky-200 bg-sky-50 px-4 py-2.5 text-xs text-sky-900 lg:hidden">
       <span className="flex-1">
-        Tool tối ưu cho màn hình ≥ 1024px. Một số bảng có thể cuộn ngang.
+        Màn hình nhỏ: bảng có thể vuốt ngang, menu nằm ở góc trên.
       </span>
       <button
         type="button"
         onClick={dismiss}
         aria-label="Đóng thông báo"
-        className="shrink-0 rounded p-0.5 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+        className="shrink-0 rounded p-0.5 hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

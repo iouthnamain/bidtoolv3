@@ -18,8 +18,8 @@ import {
   PanelLeftOpen,
   RotateCw,
   Search,
+  Settings,
   Workflow,
-  Wrench,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -51,7 +51,7 @@ type IconName =
   | "workflow"
   | "notification"
   | "help"
-  | "tools";
+  | "settings";
 
 type SubNavItem = {
   href: string;
@@ -149,7 +149,15 @@ const navSections: NavSection[] = [
           { href: "/help#khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
       },
-      { href: "/desktop", label: "Desktop client", icon: "tools" },
+      {
+        href: "/settings",
+        label: "Cài đặt",
+        icon: "settings",
+        subItems: [
+          { href: "/settings#desktop-client", label: "Desktop client" },
+          { href: "/settings#desktop-server", label: "Server URL" },
+        ],
+      },
     ],
   },
 ];
@@ -164,7 +172,7 @@ const navIconMap: Record<IconName, LucideIcon> = {
   workflow: Workflow,
   notification: Bell,
   help: CircleHelp,
-  tools: Wrench,
+  settings: Settings,
 };
 
 function NavItemIcon({
@@ -629,7 +637,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, [hasLoadedSidebarPreference, sidebarCollapsed]);
 
   return (
-    <div className="flex h-screen flex-col text-slate-900 sm:flex-row">
+    <div className="flex h-dvh flex-col text-slate-900 sm:flex-row">
       <a
         href="#main-content"
         className="sr-only z-[60] rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -670,7 +678,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-2.5 backdrop-blur sm:hidden">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur sm:hidden">
           <BrandHeader collapsed={false} />
           <button
             type="button"
@@ -685,7 +693,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <MobileBanner />
         <DesktopUpdateNotice />
         <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1440px] px-4 py-5">
+          <div className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}
           </div>
         </main>
@@ -700,7 +708,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             onClick={() => setMobileOpen(false)}
           />
           <aside
-            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white shadow-xl sm:hidden"
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2rem))] flex-col overscroll-contain border-r border-slate-200 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl sm:hidden"
             aria-label="Thanh điều hướng chính"
           >
             <div className="flex items-center justify-between border-b border-slate-200/70 px-3 py-3">

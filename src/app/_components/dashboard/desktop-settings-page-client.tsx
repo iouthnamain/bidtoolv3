@@ -7,8 +7,6 @@ import { Badge } from "~/app/_components/ui/badge";
 import { Button } from "~/app/_components/ui/button";
 import { FilterField } from "~/app/_components/ui/filter-field";
 import { useToast } from "~/app/_components/ui/toast";
-import { PageSectionNav } from "~/app/_components/dashboard/page-section-nav";
-import { desktopSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import type { DesktopServerConfig } from "~/types/bidtool-desktop";
 
 const emptyConfig: DesktopServerConfig = {
@@ -46,7 +44,7 @@ function validateServerUrl(value: string) {
   return null;
 }
 
-export function DesktopSettingsPageClient() {
+export function DesktopSettingsSection() {
   const { error, success } = useToast();
   const [isDesktop, setIsDesktop] = useState(false);
   const [config, setConfig] = useState<DesktopServerConfig>(emptyConfig);
@@ -162,36 +160,36 @@ export function DesktopSettingsPageClient() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <header className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-950 text-white">
-                <MonitorCog className="h-4 w-4" aria-hidden />
-              </span>
-              <Badge tone={isDesktop ? "success" : "neutral"}>
-                {isDesktop ? "Đã nhận Electron" : "Chế độ trình duyệt"}
-              </Badge>
+    <section id="desktop-client" className="scroll-mt-6 space-y-4">
+      <div className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-950 text-white">
+              <MonitorCog className="h-4 w-4" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Badge tone={isDesktop ? "success" : "neutral"}>
+                  {isDesktop ? "Đã nhận Electron" : "Chế độ trình duyệt"}
+                </Badge>
+              </div>
+              <h2 className="text-lg font-bold tracking-tight text-slate-950">
+                Desktop client
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Trỏ desktop app tới server on-prem của khách hàng, hoặc xóa cấu
+                hình để dùng server local đi kèm.
+              </p>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950">
-              Desktop client
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Trỏ desktop app tới server on-prem của khách hàng, hoặc xóa cấu
-              hình để dùng server local đi kèm.
-            </p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+          <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
             <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
               Chế độ hiện tại
             </p>
             <p className="mt-1 font-bold text-slate-950">{activeMode}</p>
           </div>
         </div>
-      </header>
-
-      <PageSectionNav title="Khu vực desktop" items={desktopSectionNavItems} />
+      </div>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div
@@ -304,6 +302,6 @@ export function DesktopSettingsPageClient() {
           </dl>
         </aside>
       </section>
-    </div>
+    </section>
   );
 }

@@ -2,19 +2,57 @@ import { expect, test, type Page } from "@playwright/test";
 
 const materialFixtureDir = "tests/fixtures/materials";
 
+function materialCatalogRows(page: Page) {
+  return page.getByRole("table", { name: "Danh mục vật tư" }).locator("tbody");
+}
+
 async function deleteVisibleMaterials(page: Page) {
-  const checkboxes = page.locator("tbody").getByLabel(/^Chọn /);
+  const checkboxes = materialCatalogRows(page).getByLabel(/^Chọn /);
   const count = await checkboxes.count();
   if (count === 0) {
     return;
   }
 
-  for (let index = 0; index < count; index += 1) {
-    await checkboxes.nth(index).check();
-  }
+  await page.getByLabel("Chọn tất cả vật tư đang hiển thị").check();
 
   await page.getByRole("button", { name: "Xóa vật tư đã chọn" }).click();
   await page.locator("dialog").getByRole("button", { name: "Xóa" }).click();
+}
+
+async function importMaterialRowsViaCsv(
+  page: Page,
+  prefix: string,
+  count: number,
+) {
+  const rows = Array.from({ length: count }, (_, index) => {
+    const rowNumber = String(index + 1).padStart(2, "0");
+    return [
+      `${prefix}-${rowNumber}`,
+      `${prefix} pagination row ${rowNumber}`,
+      "Cái",
+      "E2E",
+      "",
+      "",
+      "",
+      String(10_000 + index),
+      "VND",
+      "",
+      "1",
+      "0",
+    ].join(",");
+  });
+  const csv = [
+    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct",
+    ...rows,
+  ].join("\n");
+
+  await page.goto("/materials/import");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Nội dung CSV sản phẩm hoặc vật tư").fill(csv);
+  await page.getByRole("button", { name: "Nhập CSV" }).click();
+  await expect(
+    page.getByText(`Đã nhập ${count.toLocaleString("vi-VN")} dòng`),
+  ).toBeVisible();
 }
 
 test("previews an uploaded materials workbook before import", async ({
@@ -96,42 +134,140 @@ test("material summary shows import-preview-style important fields", async ({
   await expect(page.getByText("Nhập catalog vật tư hàng loạt")).toHaveCount(0);
 });
 
+test("material page keeps navigation compact on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/materials");
+  await page.waitForLoadState("networkidle");
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Sản phẩm / vật tư" }),
+  ).toBeVisible();
+
+  const metrics = await page.evaluate(() => ({
+    bodyWidth: document.body.scrollWidth,
+    viewportWidth: window.innerWidth,
+    firstPanelTop:
+      document.querySelector("#material-summary")?.getBoundingClientRect()
+        .top ?? 0,
+    sectionNavHeight:
+      document
+        .querySelector("nav[aria-label='Khu vực vật tư']")
+        ?.getBoundingClientRect().height ?? 0,
+  }));
+
+  expect(metrics.bodyWidth).toBe(metrics.viewportWidth);
+  expect(metrics.sectionNavHeight).toBeLessThan(140);
+  expect(metrics.firstPanelTop).toBeLessThan(480);
+  await expect(
+    page.locator("[aria-label='Danh sách vật tư dạng thẻ']"),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Mở menu điều hướng" }).click();
+  const drawer = page.getByRole("dialog", {
+    name: "Thanh điều hướng chính",
+  });
+  await expect(drawer).toBeVisible();
+  await expect(
+    drawer.getByRole("link", { name: "Sản phẩm / vật tư" }),
+  ).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Đóng menu" }).click();
+  await expect(drawer).toBeHidden();
+});
+
 test("material catalog paginates server-backed table rows", async ({
   page,
 }) => {
-  await page.goto("/materials#material-catalog");
+  const prefix = `E2E-PAGE-${Date.now()}`;
+  await importMaterialRowsViaCsv(page, prefix, 30);
+
+  try {
+    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.waitForLoadState("networkidle");
+
+    const catalog = page.locator("#material-catalog");
+    await expect(
+      catalog.getByRole("table", { name: "Danh mục vật tư" }),
+    ).toBeVisible();
+    await expect(
+      page.locator("[aria-label='Tổng vật tư theo bộ lọc']"),
+    ).toHaveText("30");
+    await expect(
+      page.locator("[aria-label='Vật tư có giá theo bộ lọc']"),
+    ).toHaveText("30");
+    await expect(
+      page.locator("[aria-label='Vật tư thiếu giá theo bộ lọc']"),
+    ).toHaveText("0");
+    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
+
+    const rowChecks = catalog.locator("tbody").getByLabel(/^Chọn /);
+    await expect(rowChecks).toHaveCount(30);
+
+    await page.getByLabel("Số dòng mỗi trang").selectOption("25");
+    await expect(page).toHaveURL(/pageSize=25/);
+    await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(25);
+    await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+
+    const nextPage = page.getByLabel("Trang sau");
+    await expect(nextPage).toBeEnabled();
+    await catalog
+      .locator("tbody")
+      .getByLabel(/^Chọn /)
+      .first()
+      .check();
+    await expect(catalog.getByText("1/25", { exact: true })).toBeVisible();
+    await nextPage.click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+    await expect(catalog.getByText("0/25", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Trang trước")).toBeEnabled();
+
+    await page.getByRole("button", { name: "Đặt lại" }).click();
+    await expect(page).not.toHaveURL(/pageSize=25/);
+    await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
+
+    await page.goto(
+      `/materials?q=${prefix}&pageSize=25&page=2#material-catalog`,
+    );
+    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("25");
+    await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+  } finally {
+    await page.goto(`/materials?q=${prefix}`);
+    await page.waitForLoadState("networkidle");
+    await deleteVisibleMaterials(page);
+  }
+});
+
+test("shop scrape accepts whole max product values without saved URL shortcuts", async ({
+  page,
+}) => {
+  await page.goto("/materials/scrape");
   await page.waitForLoadState("networkidle");
 
-  const catalog = page.locator("#material-catalog");
+  const maxProducts = page.getByLabel("Số sản phẩm tối đa cần scrape");
+  await maxProducts.fill("1500");
+  await expect(maxProducts).toHaveValue("1500");
+  await expect
+    .poll(() =>
+      maxProducts.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        return {
+          step: input.step,
+          valid: input.checkValidity(),
+          validationMessage: input.validationMessage,
+        };
+      }),
+    )
+    .toEqual({
+      step: "1",
+      valid: true,
+      validationMessage: "",
+    });
+
   await expect(
-    catalog.getByRole("table", { name: "Danh mục vật tư" }),
-  ).toBeVisible();
-  await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
-
-  const rowChecks = catalog.locator("tbody").getByLabel(/^Chọn /);
-  const initialRowCount = await rowChecks.count();
-  expect(initialRowCount).toBeGreaterThan(0);
-  expect(initialRowCount).toBeLessThanOrEqual(50);
-
-  await page.getByLabel("Số dòng mỗi trang").selectOption("25");
-  await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(25);
-  await expect(catalog.getByText("Trang 1 /")).toBeVisible();
-
-  const nextPage = page.getByLabel("Trang sau");
-  await expect(nextPage).toBeEnabled();
-  await catalog
-    .locator("tbody")
-    .getByLabel(/^Chọn /)
-    .first()
-    .check();
-  await expect(catalog.getByText("1/25", { exact: true })).toBeVisible();
-  await nextPage.click();
-  await expect(catalog.getByText("Trang 2 /")).toBeVisible();
-  await expect(catalog.getByText("0/25", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Trang trước")).toBeEnabled();
-
-  await page.getByRole("button", { name: "Đặt lại" }).click();
-  await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+    page.getByRole("button", { name: /Cơ Điện Hải Âu|Thegioiic/i }),
+  ).toHaveCount(0);
 });
 
 test("shop scrape shows progress while the server starts the job", async ({
@@ -216,10 +352,12 @@ test("CSV import skips duplicate material name and unit", async ({ page }) => {
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
-  await expect(page.getByLabel(`Chọn ${prefix}`)).toHaveCount(1);
+  await expect(
+    materialCatalogRows(page).getByLabel(`Chọn ${prefix}`),
+  ).toHaveCount(1);
 
   await deleteVisibleMaterials(page);
-  await expect(page.getByText(prefix)).toHaveCount(0);
+  await expect(materialCatalogRows(page).getByText(prefix)).toHaveCount(0);
 });
 
 test("manual material save shows a friendly duplicate code error", async ({
@@ -250,11 +388,15 @@ test("manual material save shows a friendly duplicate code error", async ({
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(code);
-  await expect(page.getByLabel(`Chọn ${firstName}`)).toHaveCount(1);
-  await expect(page.getByLabel(`Chọn ${secondName}`)).toHaveCount(0);
+  await expect(
+    materialCatalogRows(page).getByLabel(`Chọn ${firstName}`),
+  ).toHaveCount(1);
+  await expect(
+    materialCatalogRows(page).getByLabel(`Chọn ${secondName}`),
+  ).toHaveCount(0);
 
   await deleteVisibleMaterials(page);
-  await expect(page.getByText(code)).toHaveCount(0);
+  await expect(materialCatalogRows(page).getByText(code)).toHaveCount(0);
 
   const reusedName = `${code} reused`;
   await page.goto("/materials/new");
@@ -272,9 +414,11 @@ test("manual material save shows a friendly duplicate code error", async ({
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(code);
-  await expect(page.getByLabel(`Chọn ${reusedName}`)).toHaveCount(1);
+  await expect(
+    materialCatalogRows(page).getByLabel(`Chọn ${reusedName}`),
+  ).toHaveCount(1);
   await deleteVisibleMaterials(page);
-  await expect(page.getByText(code)).toHaveCount(0);
+  await expect(materialCatalogRows(page).getByText(code)).toHaveCount(0);
 });
 
 test("bulk deletes selected materials without requiring a reload", async ({
@@ -297,9 +441,12 @@ test("bulk deletes selected materials without requiring a reload", async ({
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
+  await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(
+    names.length,
+  );
 
   for (const name of names) {
-    await page.getByLabel(`Chọn ${name}`).check();
+    await materialCatalogRows(page).getByLabel(`Chọn ${name}`).check();
   }
 
   await expect(page.getByText("2/2", { exact: true })).toBeVisible();
@@ -312,7 +459,7 @@ test("bulk deletes selected materials without requiring a reload", async ({
   await page.locator("dialog").getByRole("button", { name: "Xóa" }).click();
 
   for (const name of names) {
-    await expect(page.getByText(name)).toHaveCount(0);
+    await expect(materialCatalogRows(page).getByText(name)).toHaveCount(0);
   }
 
   await page.reload();
@@ -320,6 +467,6 @@ test("bulk deletes selected materials without requiring a reload", async ({
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
 
   for (const name of names) {
-    await expect(page.getByText(name)).toHaveCount(0);
+    await expect(materialCatalogRows(page).getByText(name)).toHaveCount(0);
   }
 });

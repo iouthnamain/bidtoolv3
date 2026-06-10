@@ -201,7 +201,19 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
   },
 ];
 
-export const desktopSectionNavItems: PageSectionNavItem[] = [
+export const settingsSectionNavItems: PageSectionNavItem[] = [
+  {
+    href: "#settings-overview",
+    label: "Tổng quan",
+    description: "Các nhóm cấu hình hiện có trong BidTool.",
+    icon: "settings",
+  },
+  {
+    href: "#desktop-client",
+    label: "Desktop client",
+    description: "Cấu hình cách Electron kết nối server.",
+    icon: "monitor",
+  },
   {
     href: "#desktop-server",
     label: "Server URL",

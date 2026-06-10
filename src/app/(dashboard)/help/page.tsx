@@ -95,6 +95,7 @@ const quickLinks: HelpLink[] = [
   { href: "/import-mapping", label: "Import & Mapping" },
   { href: "/materials", label: "Vật tư" },
   { href: "/workflows", label: "Workflows" },
+  { href: "/settings", label: "Cài đặt" },
 ];
 
 const taskFlow: TaskFlow[] = [
@@ -378,6 +379,11 @@ const pageDirectory: PageDirectoryItem[] = [
     href: "/materials/scrape",
     title: "Scrape shop",
     body: "Preview URL shop để kiểm tra sản phẩm, giá và nguồn trước khi nhập catalog.",
+  },
+  {
+    href: "/settings",
+    title: "Cài đặt",
+    body: "Cấu hình desktop client và các thiết lập vận hành liên quan.",
   },
 ];
 

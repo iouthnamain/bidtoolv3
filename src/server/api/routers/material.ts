@@ -33,6 +33,7 @@ import {
   type MaterialMetadata,
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import {
   cancelShopImportJob,
@@ -64,6 +65,7 @@ const materialSortByInput = z
   .default("updatedAt");
 const sortOrderInput = z.enum(["asc", "desc"]).default("desc");
 const priceStatusInput = z.enum(["all", "priced", "missing"]).default("all");
+const MATERIAL_FILTER_OPTION_LIMIT = 200;
 
 const materialInput = z.object({
   code: z.string().trim().optional(),
@@ -408,7 +410,9 @@ function findExistingScrapedMaterial(
   );
 }
 
-function materialFilterConditions(input: z.infer<typeof materialSearchFiltersInput>) {
+function materialFilterConditions(
+  input: z.infer<typeof materialSearchFiltersInput>,
+) {
   const keyword = input.keyword ? `%${input.keyword}%` : undefined;
 
   return [
@@ -427,8 +431,12 @@ function materialFilterConditions(input: z.infer<typeof materialSearchFiltersInp
     input.name ? eq(materials.name, input.name) : undefined,
     input.unit ? eq(materials.unit, input.unit) : undefined,
     input.category ? eq(materials.category, input.category) : undefined,
-    input.manufacturer ? eq(materials.manufacturer, input.manufacturer) : undefined,
-    input.originCountry ? eq(materials.originCountry, input.originCountry) : undefined,
+    input.manufacturer
+      ? eq(materials.manufacturer, input.manufacturer)
+      : undefined,
+    input.originCountry
+      ? eq(materials.originCountry, input.originCountry)
+      : undefined,
     input.priceStatus === "priced"
       ? isNotNull(materials.defaultUnitPrice)
       : undefined,
@@ -436,6 +444,27 @@ function materialFilterConditions(input: z.infer<typeof materialSearchFiltersInp
       ? isNull(materials.defaultUnitPrice)
       : undefined,
   ];
+}
+
+async function selectMaterialTextOptions(db: AppDb, column: AnyPgColumn) {
+  const trimmedColumn = sql<string>`btrim(${column})`;
+  const rows = await db
+    .select({ value: trimmedColumn })
+    .from(materials)
+    .where(
+      and(
+        isNull(materials.deletedAt),
+        sql`nullif(btrim(${column}), '') is not null`,
+      ),
+    )
+    .groupBy(trimmedColumn)
+    .orderBy(asc(trimmedColumn))
+    .limit(MATERIAL_FILTER_OPTION_LIMIT);
+
+  return rows
+    .map((row) => row.value.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "vi"));
 }
 
 function scrapedShopMetadata(
@@ -609,7 +638,8 @@ async function importScrapedProducts(
     }
 
     const scrapedUnit = product.unit?.trim();
-    const unit = scrapedUnit && scrapedUnit.length > 0 ? scrapedUnit : "unknown";
+    const unit =
+      scrapedUnit && scrapedUnit.length > 0 ? scrapedUnit : "unknown";
     const now = new Date().toISOString();
 
     try {
@@ -652,7 +682,9 @@ async function importScrapedProducts(
             metadataJson,
             updatedAt: now,
           })
-          .where(and(eq(materials.id, existing.id), isNull(materials.deletedAt)))
+          .where(
+            and(eq(materials.id, existing.id), isNull(materials.deletedAt)),
+          )
           .returning();
 
         const updatedRow = requireUpdatedMaterial(row);
@@ -756,10 +788,7 @@ async function importMaterialRows(db: AppDb, rows: MaterialImportRow[]) {
   for (const row of rows) {
     const code = row.input.code?.trim().toLowerCase();
     const nameUnit = importNameUnitKey(row.input.name, row.input.unit);
-    if (
-      (code && existingCodes.has(code)) ||
-      existingNameUnits.has(nameUnit)
-    ) {
+    if ((code && existingCodes.has(code)) || existingNameUnits.has(nameUnit)) {
       skipped += 1;
       continue;
     }
@@ -1164,9 +1193,7 @@ export const materialRouter = createTRPCRouter({
         });
       }
 
-      const sourceUrlSet = input.sourceUrls
-        ? new Set(input.sourceUrls)
-        : null;
+      const sourceUrlSet = input.sourceUrls ? new Set(input.sourceUrls) : null;
       const products = sourceUrlSet
         ? job.products.filter((product) => sourceUrlSet.has(product.sourceUrl))
         : job.products;
@@ -1260,9 +1287,10 @@ export const materialRouter = createTRPCRouter({
       const [summary] = await ctx.db
         .select({
           total: sql<number>`count(*)::int`.as("total"),
-          priced: sql<number>`count(*) filter (where ${materials.defaultUnitPrice} is not null)::int`.as(
-            "priced",
-          ),
+          priced:
+            sql<number>`count(*) filter (where ${materials.defaultUnitPrice} is not null)::int`.as(
+              "priced",
+            ),
           withSources: sql<number>`count(*) filter (
             where nullif(btrim(${materials.sourceUrl}), '') is not null
               or jsonb_array_length(
@@ -1276,15 +1304,17 @@ export const materialRouter = createTRPCRouter({
           withManufacturer: sql<number>`count(*) filter (
             where nullif(btrim(${materials.manufacturer}), '') is not null
           )::int`.as("withManufacturer"),
-          uniqueManufacturers: sql<number>`count(distinct nullif(btrim(${materials.manufacturer}), ''))::int`.as(
-            "uniqueManufacturers",
-          ),
+          uniqueManufacturers:
+            sql<number>`count(distinct nullif(btrim(${materials.manufacturer}), ''))::int`.as(
+              "uniqueManufacturers",
+            ),
           withOrigin: sql<number>`count(*) filter (
             where nullif(btrim(${materials.originCountry}), '') is not null
           )::int`.as("withOrigin"),
-          uniqueOrigins: sql<number>`count(distinct nullif(btrim(${materials.originCountry}), ''))::int`.as(
-            "uniqueOrigins",
-          ),
+          uniqueOrigins:
+            sql<number>`count(distinct nullif(btrim(${materials.originCountry}), ''))::int`.as(
+              "uniqueOrigins",
+            ),
         })
         .from(materials)
         .where(and(...materialFilterConditions(input)));
@@ -1305,57 +1335,21 @@ export const materialRouter = createTRPCRouter({
     }),
 
   getMaterialFilterOptions: publicProcedure.query(async ({ ctx }) => {
-    const [options] = await ctx.db
-      .select({
-        names: sql<string[]>`coalesce(
-          array_agg(distinct btrim(${materials.name}))
-            filter (where nullif(btrim(${materials.name}), '') is not null),
-          array[]::text[]
-        )`.as("names"),
-        units: sql<string[]>`coalesce(
-          array_agg(distinct btrim(${materials.unit}))
-            filter (where nullif(btrim(${materials.unit}), '') is not null),
-          array[]::text[]
-        )`.as("units"),
-        categories: sql<string[]>`coalesce(
-          array_agg(distinct btrim(${materials.category}))
-            filter (where nullif(btrim(${materials.category}), '') is not null),
-          array[]::text[]
-        )`.as("categories"),
-        manufacturers: sql<string[]>`coalesce(
-          array_agg(distinct btrim(${materials.manufacturer}))
-            filter (where nullif(btrim(${materials.manufacturer}), '') is not null),
-          array[]::text[]
-        )`.as("manufacturers"),
-        origins: sql<string[]>`coalesce(
-          array_agg(distinct btrim(${materials.originCountry}))
-            filter (where nullif(btrim(${materials.originCountry}), '') is not null),
-          array[]::text[]
-        )`.as("origins"),
-      })
-      .from(materials)
-      .where(isNull(materials.deletedAt));
-
-    const toSortedOptions = (values: unknown) => {
-      if (!Array.isArray(values)) {
-        return [];
-      }
-
-      return Array.from(
-        new Set(
-          values
-            .map((value) => (typeof value === "string" ? value.trim() : ""))
-            .filter(Boolean),
-        ),
-      ).sort((a, b) => a.localeCompare(b, "vi"));
-    };
+    const [names, units, categories, manufacturers, origins] =
+      await Promise.all([
+        selectMaterialTextOptions(ctx.db, materials.name),
+        selectMaterialTextOptions(ctx.db, materials.unit),
+        selectMaterialTextOptions(ctx.db, materials.category),
+        selectMaterialTextOptions(ctx.db, materials.manufacturer),
+        selectMaterialTextOptions(ctx.db, materials.originCountry),
+      ]);
 
     return {
-      names: toSortedOptions(options?.names),
-      units: toSortedOptions(options?.units),
-      categories: toSortedOptions(options?.categories),
-      manufacturers: toSortedOptions(options?.manufacturers),
-      origins: toSortedOptions(options?.origins),
+      names,
+      units,
+      categories,
+      manufacturers,
+      origins,
     };
   }),
 
@@ -1487,10 +1481,7 @@ export const materialRouter = createTRPCRouter({
         });
       }
 
-      const { inserted, skipped } = await importMaterialRows(
-        ctx.db,
-        validRows,
-      );
+      const { inserted, skipped } = await importMaterialRows(ctx.db, validRows);
       return { inserted, skipped, errors };
     }),
 
@@ -1611,10 +1602,7 @@ export const materialRouter = createTRPCRouter({
         });
       }
 
-      const { inserted, skipped } = await importMaterialRows(
-        ctx.db,
-        validRows,
-      );
+      const { inserted, skipped } = await importMaterialRows(ctx.db, validRows);
       return { inserted, skipped, errors, warnings: workbook.warnings };
     }),
 
