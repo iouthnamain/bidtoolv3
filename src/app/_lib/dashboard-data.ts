@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
@@ -19,21 +19,27 @@ const emptySummary = {
 const describeError = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
-async function getDashboardSummary() {
-  const [
-    totalPackagesResult,
-    unreadAlertsResult,
-    workflowRows,
-    workflowRunRows,
-  ] = await Promise.all([
-    db.select({ value: count() }).from(tenderPackages),
-    db
-      .select({ value: count() })
+async function getUnreadAlertCount() {
+  try {
+    const result = await db
+      .select({ value: sql<number>`count(*)::int`.as("value") })
       .from(notifications)
-      .where(eq(notifications.isRead, false)),
-    db.select({ isActive: workflows.isActive }).from(workflows),
-    db.select({ status: workflowRuns.status }).from(workflowRuns),
-  ]);
+      .where(eq(notifications.isRead, false));
+
+    return result[0]?.value ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function getDashboardSummary() {
+  const [totalPackagesResult, unreadAlerts, workflowRows, workflowRunRows] =
+    await Promise.all([
+      db.select({ value: count() }).from(tenderPackages),
+      getUnreadAlertCount(),
+      db.select({ isActive: workflows.isActive }).from(workflows),
+      db.select({ status: workflowRuns.status }).from(workflowRuns),
+    ]);
 
   const successfulRuns = workflowRunRows.filter(
     (run) => run.status === "success",
@@ -41,7 +47,7 @@ async function getDashboardSummary() {
 
   return {
     totalPackages: totalPackagesResult[0]?.value ?? 0,
-    unreadAlerts: unreadAlertsResult[0]?.value ?? 0,
+    unreadAlerts,
     activeWorkflows: workflowRows.filter((workflow) => workflow.isActive)
       .length,
     workflowSuccessRate: workflowRunRows.length
