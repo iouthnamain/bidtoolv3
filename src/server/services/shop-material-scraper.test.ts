@@ -167,6 +167,51 @@ describe("extractProductsFromPageSnapshot", () => {
       sourceUrl: "https://shop.example.com/may-cat-sat-2200w",
     });
   });
+
+  it("supports JSON-LD-only and DOM-card-only scrape methods", () => {
+    const snapshot = {
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [
+        JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: "Sản phẩm schema",
+          offers: {
+            price: "120000",
+            priceCurrency: "VND",
+            url: "/schema-product",
+          },
+        }),
+      ],
+      cards: [
+        {
+          name: "Sản phẩm card",
+          href: "https://shop.example.com/card-product",
+          imageUrl: null,
+          category: null,
+          text: "Sản phẩm card Giá: 90.000 vnđ",
+        },
+      ],
+      nextLinks: [],
+    };
+
+    expect(
+      extractProductsFromPageSnapshot(snapshot, "json_ld").map(
+        (product) => product.name,
+      ),
+    ).toEqual(["Sản phẩm schema"]);
+    expect(
+      extractProductsFromPageSnapshot(snapshot, "dom_cards").map(
+        (product) => product.name,
+      ),
+    ).toEqual(["Sản phẩm card"]);
+    expect(
+      extractProductsFromPageSnapshot(snapshot, "auto").map(
+        (product) => product.name,
+      ),
+    ).toEqual(["Sản phẩm schema", "Sản phẩm card"]);
+  });
 });
 
 describe("extractPriceFromText", () => {

@@ -29,7 +29,15 @@ export type ShopScrapeResult = {
   pagesVisited: string[];
   failedPages: Array<{ url: string; message: string }>;
   durationMs: number;
+  stopReason: ShopScrapeStopReason;
 };
+
+export const SHOP_SCRAPE_METHODS = ["auto", "json_ld", "dom_cards"] as const;
+export type ShopScrapeMethod = (typeof SHOP_SCRAPE_METHODS)[number];
+export type ShopScrapeStopReason =
+  | "queue_empty"
+  | "page_limit"
+  | "product_limit";
 
 export type ShopScrapeProgress = {
   status: "starting" | "reading" | "extracting" | "complete";
@@ -38,16 +46,20 @@ export type ShopScrapeProgress = {
   failedPages: Array<{ url: string; message: string }>;
   productCount: number;
   queueLength: number;
-  maxPages: number;
-  maxProducts: number;
+  maxPages: number | null;
+  maxProducts: number | null;
+  method: ShopScrapeMethod;
   elapsedMs: number;
   products?: ScrapedShopProduct[];
+  stopReason?: ShopScrapeStopReason;
+  message?: string;
 };
 
 type ShopScrapeOptions = {
   url: string;
-  maxPages?: number;
-  maxProducts?: number;
+  maxPages?: number | null;
+  maxProducts?: number | null;
+  method?: ShopScrapeMethod;
   signal?: AbortSignal;
   onProgress?: (progress: ShopScrapeProgress) => void;
 };
@@ -80,6 +92,7 @@ const PAGE_NETWORK_IDLE_TIMEOUT_MS = 2_000;
 const SCRAPE_BASE_TIMEOUT_MS = 15_000;
 const SCRAPE_PAGE_TIMEOUT_MS = 8_000;
 const SCRAPE_MAX_TIMEOUT_PAGES = 100;
+const SCRAPE_ALL_TIMEOUT_MS = 20 * 60_000;
 const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
 const PUBLIC_HOST_CACHE = new Map<string, Promise<void>>();
 let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
@@ -88,6 +101,7 @@ export async function scrapeShopMaterialsFromUrl({
   url,
   maxPages = DEFAULT_MAX_PAGES,
   maxProducts = DEFAULT_MAX_PRODUCTS,
+  method = "auto",
   signal,
   onProgress,
 }: ShopScrapeOptions): Promise<ShopScrapeResult> {
@@ -134,9 +148,14 @@ export async function scrapeShopMaterialsFromUrl({
         const seenPages = new Set<string>();
         const products = new Map<string, ScrapedShopProduct>();
         const failedPages: ShopScrapeResult["failedPages"] = [];
+        const productList = () => {
+          const values = Array.from(products.values());
+          return maxProducts == null ? values : values.slice(0, maxProducts);
+        };
         const reportProgress = (
           status: ShopScrapeProgress["status"],
           currentUrl: string | null,
+          stopReason?: ShopScrapeStopReason,
         ) => {
           onProgress?.({
             status,
@@ -147,25 +166,42 @@ export async function scrapeShopMaterialsFromUrl({
             queueLength: queue.length,
             maxPages,
             maxProducts,
+            method,
             elapsedMs: Date.now() - startedAt,
-            products: Array.from(products.values()).slice(0, maxProducts),
+            products: productList(),
+            stopReason,
+            message: stopReason
+              ? shopScrapeStopReasonMessage(stopReason)
+              : undefined,
           });
         };
-        const scrapeDeadline =
-          startedAt +
-          SCRAPE_BASE_TIMEOUT_MS +
-          Math.min(maxPages, SCRAPE_MAX_TIMEOUT_PAGES) *
-            SCRAPE_PAGE_TIMEOUT_MS;
+        const scrapeTimeout = scrapeTimeoutMs(maxPages);
+        const scrapeDeadline = startedAt + scrapeTimeout;
+        const assertWithinScrapeDeadline = () => {
+          if (Date.now() >= scrapeDeadline) {
+            throw new Error(
+              `Scrape shop quá thời gian bảo vệ trước khi đọc hết queue. Đã đọc ${seenPages.size.toLocaleString(
+                "vi-VN",
+              )} trang, còn ${queue.length.toLocaleString("vi-VN")} URL chờ.`,
+            );
+          }
+        };
 
         throwIfAborted(signal);
         reportProgress("starting", startUrl.href);
-        while (
-          queue.length > 0 &&
-          seenPages.size < maxPages &&
-          products.size < maxProducts &&
-          Date.now() < scrapeDeadline
-        ) {
+        let stopReason: ShopScrapeStopReason | null = null;
+        while (queue.length > 0) {
           throwIfAborted(signal);
+          assertWithinScrapeDeadline();
+          if (maxPages != null && seenPages.size >= maxPages) {
+            stopReason = "page_limit";
+            break;
+          }
+          if (maxProducts != null && products.size >= maxProducts) {
+            stopReason = "product_limit";
+            break;
+          }
+
           const pageUrl = queue.shift();
           if (!pageUrl || seenPages.has(pageUrl)) {
             continue;
@@ -197,27 +233,36 @@ export async function scrapeShopMaterialsFromUrl({
             await assertSafeScrapeUrl(page.url(), expectedHostname);
             const snapshot = await page.evaluate(collectShopPageSnapshot);
             reportProgress("extracting", pageUrl);
-            const pageProducts = extractProductsFromPageSnapshot(snapshot);
+            const pageProducts = extractProductsFromPageSnapshot(
+              snapshot,
+              method,
+            );
             for (const product of pageProducts) {
-              if (products.size >= maxProducts) {
+              if (maxProducts != null && products.size >= maxProducts) {
+                stopReason = "product_limit";
                 break;
               }
               products.set(productIdentity(product), product);
             }
 
-            for (const href of snapshot.nextLinks) {
-              if (queue.length + seenPages.size >= maxPages) {
-                break;
-              }
-              const nextUrl = await assertSafeScrapeUrl(
-                href,
-                startUrl.hostname,
-              );
-              if (
-                !seenPages.has(nextUrl.href) &&
-                !queue.includes(nextUrl.href)
-              ) {
-                queue.push(nextUrl.href);
+            if (maxProducts == null || products.size < maxProducts) {
+              for (const href of snapshot.nextLinks) {
+                if (
+                  maxPages != null &&
+                  queue.length + seenPages.size >= maxPages
+                ) {
+                  break;
+                }
+                const nextUrl = await assertSafeScrapeUrl(
+                  href,
+                  startUrl.hostname,
+                );
+                if (
+                  !seenPages.has(nextUrl.href) &&
+                  !queue.includes(nextUrl.href)
+                ) {
+                  queue.push(nextUrl.href);
+                }
               }
             }
             reportProgress("reading", pageUrl);
@@ -234,16 +279,23 @@ export async function scrapeShopMaterialsFromUrl({
         }
 
         throwIfAborted(signal);
-        reportProgress("complete", null);
+        stopReason ??=
+          maxPages != null && seenPages.size >= maxPages
+            ? "page_limit"
+            : maxProducts != null && products.size >= maxProducts
+              ? "product_limit"
+              : "queue_empty";
+        reportProgress("complete", null, stopReason);
         return {
-          products: Array.from(products.values()).slice(0, maxProducts),
+          products: productList(),
           pagesVisited: Array.from(seenPages),
           failedPages,
           durationMs: Date.now() - startedAt,
+          stopReason,
         };
       })(),
       scrapeTimeoutMs(maxPages),
-      "Scrape shop quá thời gian cho phép.",
+      "Scrape shop quá thời gian bảo vệ trước khi đọc hết queue.",
     );
   } finally {
     await withTimeout(
@@ -284,21 +336,26 @@ export async function closeShopScraperBrowser() {
 
 export function extractProductsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
+  method: ShopScrapeMethod = "auto",
 ): ScrapedShopProduct[] {
   const products: ScrapedShopProduct[] = [];
 
-  for (const jsonLdText of snapshot.jsonLdTexts) {
-    for (const value of parseJsonLdText(jsonLdText)) {
-      for (const product of productsFromJsonLd(value, snapshot.pageUrl)) {
-        products.push(product);
+  if (method === "auto" || method === "json_ld") {
+    for (const jsonLdText of snapshot.jsonLdTexts) {
+      for (const value of parseJsonLdText(jsonLdText)) {
+        for (const product of productsFromJsonLd(value, snapshot.pageUrl)) {
+          products.push(product);
+        }
       }
     }
   }
 
-  for (const card of snapshot.cards) {
-    const product = productFromCardSnapshot(card, snapshot.pageUrl);
-    if (product) {
-      products.push(product);
+  if (method === "auto" || method === "dom_cards") {
+    for (const card of snapshot.cards) {
+      const product = productFromCardSnapshot(card, snapshot.pageUrl);
+      if (product) {
+        products.push(product);
+      }
     }
   }
 
@@ -454,11 +511,26 @@ function withTimeout<T>(
   });
 }
 
-function scrapeTimeoutMs(maxPages: number) {
+function scrapeTimeoutMs(maxPages: number | null) {
+  if (maxPages == null) {
+    return SCRAPE_ALL_TIMEOUT_MS;
+  }
+
   return (
     SCRAPE_BASE_TIMEOUT_MS +
     Math.min(maxPages, SCRAPE_MAX_TIMEOUT_PAGES) * SCRAPE_PAGE_TIMEOUT_MS
   );
+}
+
+function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
+  switch (stopReason) {
+    case "queue_empty":
+      return "Đã đọc hết pagination/queue trong cùng domain.";
+    case "page_limit":
+      return "Dừng vì đã đạt giới hạn trang đã chọn.";
+    case "product_limit":
+      return "Dừng vì đã đạt giới hạn sản phẩm đã chọn.";
+  }
 }
 
 function isPrivateIp(address: string) {

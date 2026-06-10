@@ -26,12 +26,16 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type ScrapeJob = RouterOutputs["material"]["getShopScrapeJob"];
 type ScrapedProduct = ScrapeJob["products"][number];
+type ScrapeMode = ScrapeJob["scrapeMode"];
+type ScrapeMethod = ScrapeJob["method"];
 type ImportJob = RouterOutputs["material"]["getShopImportJob"];
 type ImportShopItem = ImportJob["items"][number];
 type PendingScrapeJob = {
   url: string;
-  maxPages: number;
-  maxProducts: number;
+  scrapeMode: ScrapeMode;
+  maxPages: number | null;
+  maxProducts: number | null;
+  method: ScrapeMethod;
   startedAt: number;
 };
 
@@ -45,6 +49,23 @@ const DEFAULT_MAX_PAGES = 25;
 const DEFAULT_MAX_PRODUCTS = 500;
 const MAX_PAGE_LIMIT = 100;
 const MAX_PRODUCT_LIMIT = 2_000;
+
+const scrapeModeLabel: Record<ScrapeMode, string> = {
+  limited: "Giới hạn",
+  all: "Scrape hết",
+};
+
+const scrapeMethodLabel: Record<ScrapeMethod, string> = {
+  auto: "Tự động",
+  json_ld: "JSON-LD",
+  dom_cards: "DOM cards",
+};
+
+const scrapeMethodHelp: Record<ScrapeMethod, string> = {
+  auto: "Dùng dữ liệu có cấu trúc trước, bổ sung bằng thẻ sản phẩm.",
+  json_ld: "Chỉ đọc schema Product/ItemList trong JSON-LD.",
+  dom_cards: "Chỉ đọc các card sản phẩm hiển thị trên trang.",
+};
 
 const actionTone: Record<
   ImportShopItem["action"],
@@ -80,6 +101,16 @@ const statusTone: Record<
   completed: "success",
   failed: "critical",
   cancelled: "warning",
+};
+
+const stopReasonLabel: Record<NonNullable<ScrapeJob["stopReason"]>, string> = {
+  queue_empty: "Đã đọc hết queue",
+  page_limit: "Đạt giới hạn trang",
+  product_limit: "Đạt giới hạn sản phẩm",
+  timeout: "Quá thời gian",
+  cancelled: "Đã hủy",
+  error: "Lỗi",
+  expired: "Hết hạn",
 };
 
 const importStatusLabel: Record<ImportJob["status"], string> = {
@@ -141,6 +172,10 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+function formatLimit(value: number | null | undefined) {
+  return value == null ? "Không giới hạn" : value.toLocaleString("vi-VN");
+}
+
 function readStoredJobId(storageKey: string) {
   try {
     return window.localStorage.getItem(storageKey);
@@ -165,11 +200,21 @@ function productKey(product: ScrapedProduct) {
   return product.sourceUrl;
 }
 
-function progressPercent(value: number, total: number) {
+function progressPercent(value: number, total: number | null | undefined) {
+  if (total == null) {
+    return null;
+  }
   if (total <= 0) {
     return 0;
   }
   return Math.min(100, Math.round((value / total) * 100));
+}
+
+function progressWidth(percent: number | null, active: boolean) {
+  if (percent != null) {
+    return `${percent}%`;
+  }
+  return active ? "55%" : "100%";
 }
 
 function isJobActive(job: ScrapeJob | null | undefined) {
@@ -182,10 +227,7 @@ function isImportJobActive(job: ImportJob | null | undefined) {
 
 function canImportJob(job: ScrapeJob | null | undefined) {
   return (
-    !!job &&
-    !isJobActive(job) &&
-    job.status !== "failed" &&
-    job.products.length > 0
+    !!job && !job.isExpired && !isJobActive(job) && job.products.length > 0
   );
 }
 
@@ -210,6 +252,8 @@ function isNotFoundTRPCError(error: unknown) {
 
 export function MaterialScrapeClient() {
   const [shopUrl, setShopUrl] = useState("");
+  const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
+  const [scrapeMethod, setScrapeMethod] = useState<ScrapeMethod>("auto");
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -220,6 +264,9 @@ export function MaterialScrapeClient() {
   const [startedImportJob, setStartedImportJob] = useState<ImportJob | null>(
     null,
   );
+  const [finalizedScrapeJobId, setFinalizedScrapeJobId] = useState<
+    string | null
+  >(null);
   const [finalizedImportJobId, setFinalizedImportJobId] = useState<
     string | null
   >(null);
@@ -343,9 +390,24 @@ export function MaterialScrapeClient() {
     setJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
+    setFinalizedScrapeJobId(null);
     setSelectedSourceUrls(new Set());
     toast.warning("Job scrape đã hết hạn trên server, đã xóa trạng thái cũ.");
   }, [jobId, jobQuery.error, jobQuery.isError, toast]);
+
+  useEffect(() => {
+    const job = jobQuery.data;
+    if (!jobId || !job?.isExpired) {
+      return;
+    }
+
+    setJobId(null);
+    setStartedJob(null);
+    setPendingScrapeJob(null);
+    setFinalizedScrapeJobId(null);
+    setSelectedSourceUrls(new Set());
+    toast.warning(job.error ?? "Job scrape đã hết hạn trên server.");
+  }, [jobId, jobQuery.data, toast]);
 
   useEffect(() => {
     if (
@@ -371,6 +433,7 @@ export function MaterialScrapeClient() {
       setPendingScrapeJob(null);
       setStartedImportJob(null);
       setImportJobId(null);
+      setFinalizedScrapeJobId(null);
       setFinalizedImportJobId(null);
       setSelectedSourceUrls(new Set());
       utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
@@ -447,6 +510,30 @@ export function MaterialScrapeClient() {
     }
   }, [activeImportJob, finalizedImportJobId, toast, utils.material]);
 
+  useEffect(() => {
+    const job = activeJob;
+    if (
+      !job ||
+      job.isExpired ||
+      isJobActive(job) ||
+      finalizedScrapeJobId === job.id
+    ) {
+      return;
+    }
+
+    setFinalizedScrapeJobId(job.id);
+    if (job.status === "completed") {
+      toast.success(
+        job.message ??
+          `Đã scrape ${job.productCount.toLocaleString("vi-VN")} sản phẩm.`,
+      );
+    } else if (job.status === "failed") {
+      toast.error(job.error ?? "Job scrape shop đã lỗi.");
+    } else if (job.status === "cancelled") {
+      toast.warning(job.message ?? "Job scrape shop đã bị hủy.");
+    }
+  }, [activeJob, finalizedScrapeJobId, toast]);
+
   const startScrape = (url = shopUrl.trim()) => {
     const normalizedUrl = url.trim();
     if (!normalizedUrl || isStartingScrape || isActive || isImportActive) {
@@ -457,19 +544,24 @@ export function MaterialScrapeClient() {
     setJobId(null);
     setPendingScrapeJob({
       url: normalizedUrl,
-      maxPages,
-      maxProducts,
+      scrapeMode,
+      maxPages: scrapeMode === "all" ? null : maxPages,
+      maxProducts: scrapeMode === "all" ? null : maxProducts,
+      method: scrapeMethod,
       startedAt: Date.now(),
     });
     setClockMs(Date.now());
     setStartedImportJob(null);
     setImportJobId(null);
+    setFinalizedScrapeJobId(null);
     setFinalizedImportJobId(null);
     setSelectedSourceUrls(new Set());
     startShopScrapeJob.mutate({
       url: normalizedUrl,
-      maxPages,
-      maxProducts,
+      scrapeMode,
+      maxPages: scrapeMode === "all" ? null : maxPages,
+      maxProducts: scrapeMode === "all" ? null : maxProducts,
+      method: scrapeMethod,
     });
   };
 
@@ -526,18 +618,24 @@ export function MaterialScrapeClient() {
     setImportJobId(null);
     setStartedImportJob(null);
     setFinalizedImportJobId(null);
+    setFinalizedScrapeJobId(null);
     setSelectedSourceUrls(new Set());
   };
 
   const pagePercent = activeJob
     ? progressPercent(activeJob.pagesVisited.length, activeJob.maxPages)
-    : 0;
+    : null;
   const productPercent = activeJob
     ? progressPercent(activeJob.productCount, activeJob.maxProducts)
-    : 0;
+    : null;
   const importPercent = activeImportJob
     ? progressPercent(activeImportJob.processed, activeImportJob.total)
-    : 0;
+    : null;
+  const activeJobStopReason = activeJob?.stopReason
+    ? stopReasonLabel[activeJob.stopReason]
+    : null;
+  const activeJobMessage =
+    activeJob?.message ?? activeJob?.error ?? activeJobStopReason;
   const importResult =
     activeImportJob &&
     !isImportJobActive(activeImportJob) &&
@@ -607,7 +705,51 @@ export function MaterialScrapeClient() {
             </span>
           </label>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[8rem_11rem] lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[12rem_minmax(12rem,1fr)_8rem_11rem] lg:items-end">
+            <fieldset className="grid gap-1.5">
+              <legend className="text-xs font-bold text-slate-700">
+                Phạm vi
+              </legend>
+              <div className="grid grid-cols-2 rounded-lg border border-slate-300 bg-slate-50 p-0.5">
+                {(["limited", "all"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={
+                      scrapeMode === mode
+                        ? "min-h-8 rounded-md bg-white px-2 text-xs font-bold text-sky-800 shadow-sm"
+                        : "min-h-8 rounded-md px-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    }
+                    disabled={isStartingScrape || isActive}
+                    onClick={() => setScrapeMode(mode)}
+                    aria-pressed={scrapeMode === mode}
+                  >
+                    {scrapeModeLabel[mode]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <label className="grid gap-1.5">
+              <span className="text-xs font-bold text-slate-700">Cách đọc</span>
+              <select
+                className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                value={scrapeMethod}
+                disabled={isStartingScrape || isActive}
+                onChange={(event) =>
+                  setScrapeMethod(event.target.value as ScrapeMethod)
+                }
+                aria-label="Phương thức scrape sản phẩm"
+              >
+                {(["auto", "json_ld", "dom_cards"] as const).map((method) => (
+                  <option key={method} value={method}>
+                    {scrapeMethodLabel[method]}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-500">
+                {scrapeMethodHelp[scrapeMethod]}
+              </span>
+            </label>
             <label className="grid gap-1.5">
               <span className="text-xs font-bold text-slate-700">
                 Trang tối đa
@@ -622,7 +764,7 @@ export function MaterialScrapeClient() {
                 autoComplete="off"
                 className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 value={maxPages}
-                disabled={isStartingScrape || isActive}
+                disabled={scrapeMode === "all" || isStartingScrape || isActive}
                 onChange={(event) =>
                   setMaxPages(
                     clampNumber(Number(event.target.value), 1, MAX_PAGE_LIMIT),
@@ -645,7 +787,7 @@ export function MaterialScrapeClient() {
                 autoComplete="off"
                 className="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 value={maxProducts}
-                disabled={isStartingScrape || isActive}
+                disabled={scrapeMode === "all" || isStartingScrape || isActive}
                 onChange={(event) =>
                   setMaxProducts(
                     clampNumber(
@@ -763,8 +905,8 @@ export function MaterialScrapeClient() {
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
               <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-700">
-                <span>Trang tối đa</span>
-                <span>{pendingScrapeJob.maxPages.toLocaleString("vi-VN")}</span>
+                <span>Trang</span>
+                <span>{formatLimit(pendingScrapeJob.maxPages)}</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-sky-600" />
@@ -772,10 +914,8 @@ export function MaterialScrapeClient() {
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-700">
-                <span>Sản phẩm tối đa</span>
-                <span>
-                  {pendingScrapeJob.maxProducts.toLocaleString("vi-VN")}
-                </span>
+                <span>Sản phẩm</span>
+                <span>{formatLimit(pendingScrapeJob.maxProducts)}</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-600" />
@@ -783,9 +923,19 @@ export function MaterialScrapeClient() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-            <span className="font-semibold text-slate-800">URL: </span>
-            {pendingScrapeJob.url}
+          <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-3">
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">Phạm vi: </span>
+              {scrapeModeLabel[pendingScrapeJob.scrapeMode]}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">Cách đọc: </span>
+              {scrapeMethodLabel[pendingScrapeJob.method]}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">URL: </span>
+              <span className="break-all">{pendingScrapeJob.url}</span>
+            </div>
           </div>
         </section>
       ) : null}
@@ -816,6 +966,9 @@ export function MaterialScrapeClient() {
                 Trang đã đọc
               </Badge>
               <Badge tone="neutral">
+                {scrapeMethodLabel[activeJob.method]}
+              </Badge>
+              <Badge tone="neutral">
                 <Clock3 className="h-3 w-3" aria-hidden />
                 {formatDuration(activeJob.durationMs)}
               </Badge>
@@ -828,13 +981,17 @@ export function MaterialScrapeClient() {
                 <span>Trang đã đọc</span>
                 <span>
                   {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-                  {activeJob.maxPages.toLocaleString("vi-VN")}
+                  {formatLimit(activeJob.maxPages)}
                 </span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                 <div
-                  className="h-full rounded-full bg-sky-600"
-                  style={{ width: `${pagePercent}%` }}
+                  className={
+                    pagePercent == null && isActive
+                      ? "h-full animate-pulse rounded-full bg-sky-600"
+                      : "h-full rounded-full bg-sky-600"
+                  }
+                  style={{ width: progressWidth(pagePercent, isActive) }}
                 />
               </div>
             </div>
@@ -843,13 +1000,17 @@ export function MaterialScrapeClient() {
                 <span>Sản phẩm tìm thấy</span>
                 <span>
                   {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
-                  {activeJob.maxProducts.toLocaleString("vi-VN")}
+                  {formatLimit(activeJob.maxProducts)}
                 </span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                 <div
-                  className="h-full rounded-full bg-emerald-600"
-                  style={{ width: `${productPercent}%` }}
+                  className={
+                    productPercent == null && isActive
+                      ? "h-full animate-pulse rounded-full bg-emerald-600"
+                      : "h-full rounded-full bg-emerald-600"
+                  }
+                  style={{ width: progressWidth(productPercent, isActive) }}
                 />
               </div>
             </div>
@@ -858,7 +1019,7 @@ export function MaterialScrapeClient() {
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Đang đọc: </span>
-              {activeJob.currentUrl ?? "-"}
+              <span className="break-all">{activeJob.currentUrl ?? "-"}</span>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">
@@ -866,11 +1027,32 @@ export function MaterialScrapeClient() {
               </span>
               {activeJob.queueLength.toLocaleString("vi-VN")}
             </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">Phạm vi: </span>
+              {scrapeModeLabel[activeJob.scrapeMode]}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">
+                Cập nhật cuối:{" "}
+              </span>
+              {activeJob.lastProgressAt
+                ? new Date(activeJob.lastProgressAt).toLocaleString("vi-VN")
+                : "-"}
+            </div>
           </div>
 
-          {activeJob.error ? (
-            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
-              {activeJob.error}
+          {activeJobMessage ? (
+            <div
+              className={
+                activeJob.status === "failed"
+                  ? "mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900"
+                  : "mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900"
+              }
+            >
+              {activeJobStopReason ? (
+                <span className="font-semibold">{activeJobStopReason}: </span>
+              ) : null}
+              {activeJobMessage}
             </div>
           ) : null}
 
@@ -968,18 +1150,22 @@ export function MaterialScrapeClient() {
                 <span>Sản phẩm scrape</span>
                 <span>
                   {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
-                  {activeJob.maxProducts.toLocaleString("vi-VN")}
+                  {formatLimit(activeJob.maxProducts)}
                 </span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                 <div
-                  className="h-full rounded-full bg-emerald-600"
-                  style={{ width: `${productPercent}%` }}
+                  className={
+                    productPercent == null && isActive
+                      ? "h-full animate-pulse rounded-full bg-emerald-600"
+                      : "h-full rounded-full bg-emerald-600"
+                  }
+                  style={{ width: progressWidth(productPercent, isActive) }}
                 />
               </div>
               <p className="mt-2 text-xs text-slate-500">
                 Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-                {activeJob.maxPages.toLocaleString("vi-VN")} trang trong{" "}
+                {formatLimit(activeJob.maxPages)} trang trong{" "}
                 {formatDuration(activeJob.durationMs)}.
               </p>
             </div>
@@ -1040,12 +1226,14 @@ export function MaterialScrapeClient() {
 
               <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
                 <span>Tiến độ ghi DB</span>
-                <span>{activeImportJob ? `${importPercent}%` : "0%"}</span>
+                <span>{activeImportJob ? `${importPercent ?? 0}%` : "0%"}</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div
                   className="h-full rounded-full bg-sky-600"
-                  style={{ width: `${importPercent}%` }}
+                  style={{
+                    width: progressWidth(importPercent, isImportActive),
+                  }}
                 />
               </div>
 

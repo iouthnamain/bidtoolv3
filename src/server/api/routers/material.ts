@@ -34,7 +34,10 @@ import {
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import {
+  SHOP_SCRAPE_METHODS,
+  type ScrapedShopProduct,
+} from "~/server/services/shop-material-scraper";
 import {
   cancelShopImportJob,
   getShopImportJob,
@@ -44,6 +47,7 @@ import {
 } from "~/server/services/shop-import-jobs";
 import {
   cancelShopScrapeJob,
+  createExpiredShopScrapeJobSnapshot,
   getShopScrapeJob,
   startShopScrapeJob,
 } from "~/server/services/shop-scrape-jobs";
@@ -92,18 +96,26 @@ const materialSearchFiltersInput = z.object({
   priceStatus: priceStatusInput,
 });
 
-const shopScrapeInput = z.object({
-  url: z.string().trim().min(1),
-  maxPages: z.number().int().min(1).max(100).default(25),
-  maxProducts: z.number().int().min(1).max(2000).default(500),
-});
+const shopScrapeInput = z
+  .object({
+    url: z.string().trim().min(1),
+    scrapeMode: z.enum(["limited", "all"]).default("limited"),
+    maxPages: z.number().int().min(1).max(100).nullable().optional(),
+    maxProducts: z.number().int().min(1).max(2000).nullable().optional(),
+    method: z.enum(SHOP_SCRAPE_METHODS).default("auto"),
+  })
+  .transform((input) => ({
+    ...input,
+    maxPages: input.scrapeMode === "all" ? null : (input.maxPages ?? 25),
+    maxProducts: input.scrapeMode === "all" ? null : (input.maxProducts ?? 500),
+  }));
 
 const shopScrapeJobInput = z.object({
   jobId: z.string().uuid(),
 });
 
 const startShopImportJobInput = shopScrapeJobInput.extend({
-  sourceUrls: z.array(z.string().min(1)).max(2000).optional(),
+  sourceUrls: z.array(z.string().min(1)).max(25_000).optional(),
 });
 
 const shopImportJobInput = z.object({
@@ -1146,13 +1158,7 @@ export const materialRouter = createTRPCRouter({
     .input(shopScrapeJobInput)
     .query(({ input }) => {
       const job = getShopScrapeJob(input.jobId);
-      if (!job) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy job scrape shop.",
-        });
-      }
-      return job;
+      return job ?? createExpiredShopScrapeJobSnapshot(input.jobId);
     }),
 
   cancelShopScrapeJob: publicProcedure
@@ -1186,7 +1192,7 @@ export const materialRouter = createTRPCRouter({
         });
       }
 
-      if (job.status === "failed") {
+      if (job.status === "failed" && job.products.length === 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: job.error ?? "Job scrape shop đã lỗi.",
