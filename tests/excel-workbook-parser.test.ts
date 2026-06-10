@@ -14,11 +14,13 @@ function sampleBase64(path: string) {
   return readFileSync(path).toString("base64");
 }
 
+const materialFixtureDir = "tests/fixtures/materials";
+
 describe("standard Excel workbook parser", () => {
   it("detects and maps the Long Thanh sample header row", async () => {
     const workbook = await parseWorkbookBase64(
       "khoa điện long thành.xlsx",
-      sampleBase64("docs/sample/khoa điện long thành.xlsx"),
+      sampleBase64(`${materialFixtureDir}/khoa điện long thành.xlsx`),
     );
     const sheet = workbook.sheets[0]!;
 
@@ -42,7 +44,9 @@ describe("standard Excel workbook parser", () => {
   it("detects row 4 and suffixes duplicate headers in the Bang ke sample", async () => {
     const workbook = await parseWorkbookBase64(
       "Copy of Bảng kê VT.xlsx",
-      sampleBase64("docs/sample/Copy of Bảng kê  VT -22- 3-2025 (chốt).xlsx"),
+      sampleBase64(
+        `${materialFixtureDir}/Copy of Bảng kê  VT -22- 3-2025 (chốt).xlsx`,
+      ),
     );
     const sheet = workbook.sheets[0]!;
 
@@ -78,7 +82,7 @@ describe("standard Excel workbook parser", () => {
   it("parses the provided sample material workbooks without phantom row warnings", async () => {
     const sampleOne = await parseWorkbookBase64(
       "sample materials 1.xlsx",
-      sampleBase64("docs/sample/sample materials 1.xlsx"),
+      sampleBase64(`${materialFixtureDir}/sample materials 1.xlsx`),
     );
     const sampleOneSheet = sampleOne.sheets[0]!;
     const sampleOneRows = rowsFromMapping(
@@ -100,7 +104,7 @@ describe("standard Excel workbook parser", () => {
 
     const sampleTwo = await parseWorkbookBase64(
       "sample materials 2.xlsx",
-      sampleBase64("docs/sample/sample materials 2.xlsx"),
+      sampleBase64(`${materialFixtureDir}/sample materials 2.xlsx`),
     );
     const sampleTwoSheet = sampleTwo.sheets[0]!;
     const sampleTwoRows = rowsFromMapping(
@@ -126,7 +130,7 @@ describe("standard Excel workbook parser", () => {
       parseWorkbookBase64(
         "Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
         sampleBase64(
-          "docs/sample/Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls",
+          `${materialFixtureDir}/Tong hop vat tu Khoa co khi nam hoc 2026-2027.final.xls`,
         ),
       ),
     ).rejects.toThrow(".xlsx");

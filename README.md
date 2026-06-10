@@ -9,6 +9,22 @@ BidTool v3 is a Next.js dashboard for tender discovery workflows, material catal
 
 The local workflow starts PostgreSQL through Docker Compose. PostgreSQL powers the app database.
 
+## Project Conventions
+
+BidTool is intentionally a single-user local tool. Do not add authentication,
+authorization, user/session tables, ownership columns, protected tRPC
+procedures, login pages, OAuth, or per-user rate limiting. Global safety limits
+are fine because they protect the local app from runaway client loops.
+
+Use `bun run db:migrate` for database migrations. Do not run `drizzle-kit
+migrate` directly. To add a migration, edit `src/server/db/schema.ts`, run `bun
+run db:generate`, review the generated SQL in `drizzle/`, then run `bun run
+db:migrate`.
+
+Keep server-only code under `src/server/`, client utilities under `src/lib/` or
+`src/app/_components/`, and reuse `src/lib/search-criteria.ts` for search
+criteria validation. User-facing copy should be Vietnamese (`vi-VN`).
+
 ## Local Workflow
 
 Use these three commands on every machine:
@@ -100,9 +116,7 @@ bun run onprem:bundle
 ```
 
 Customer configuration lives in `deploy/onprem/.env.customer`, created from
-`deploy/onprem/.env.customer.example` on first install. See
-[On-Prem Deployment](docs/onprem.md) for ports, HTTPS, update, backup, restore,
-and operations details.
+`deploy/onprem/.env.customer.example` on first install.
 
 ## Desktop App
 
@@ -251,16 +265,3 @@ tRPC write functions that touch the database will fail.
 - `bun run db:migrate` - apply Drizzle migrations.
 - `bun run db:seed` - seed demo data only when `ENABLE_DEMO_SEED=true`.
 - `bun run db:studio` - open Drizzle Studio.
-
-## Documentation
-
-Project docs live in `docs/`:
-
-- [Docs overview](docs/README.md)
-- [Product Brief](docs/01-product-brief.md)
-- [UX/UI Dashboard Workflows](docs/02-uxui-dashboard-workflows.md)
-- [Technical Architecture](docs/03-technical-architecture.md)
-- [MVP Roadmap](docs/04-mvp-roadmap.md)
-- [Data Source Strategy](docs/05-data-source-strategy.md)
-- [On-Prem Deployment](docs/onprem.md)
-- [Workflow Library](docs/workflows/README.md)

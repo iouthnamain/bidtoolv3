@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { ArrowLeft, PackagePlus, Save } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
@@ -38,6 +38,12 @@ const emptyForm: MaterialCreateFormState = {
   defaultDepreciation: "1",
   defaultReusePct: "0",
 };
+
+const inputClass =
+  "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+
+const textareaClass =
+  "min-h-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
 
 function parseOptionalNumber(value: string) {
   if (!value.trim()) {
@@ -88,7 +94,12 @@ export function MaterialCreateClient() {
         setActionError("Đã lưu nhưng không nhận được ID vật tư.");
         return;
       }
-      await utils.material.searchMaterials.invalidate();
+      utils.material.getById.setData({ id: material.id }, material);
+      await Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
       router.push(`/materials/${material.id}`);
     },
     onError: (error) => {
@@ -101,7 +112,8 @@ export function MaterialCreateClient() {
     form.unit.trim().length > 0 &&
     !createMaterial.isPending;
 
-  const submit = () => {
+  const submit = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!canCreate) {
       return;
     }
@@ -126,7 +138,7 @@ export function MaterialCreateClient() {
   };
 
   return (
-    <div className="space-y-4">
+    <form className="space-y-4" onSubmit={submit}>
       <section className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -150,11 +162,11 @@ export function MaterialCreateClient() {
           </div>
 
           <Button
+            type="submit"
             variant="primary"
             leftIcon={<Save className="h-4 w-4" />}
             disabled={!canCreate}
             isLoading={createMaterial.isPending}
-            onClick={submit}
           >
             Lưu và mở chi tiết
           </Button>
@@ -184,7 +196,9 @@ export function MaterialCreateClient() {
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <Field label="Mã vật tư">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="code"
+              autoComplete="off"
+              className={inputClass}
               value={form.code}
               onChange={(event) =>
                 setForm({ ...form, code: event.target.value })
@@ -193,7 +207,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Tên vật tư">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="name"
+              autoComplete="off"
+              className={inputClass}
               value={form.name}
               onChange={(event) =>
                 setForm({ ...form, name: event.target.value })
@@ -202,7 +218,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="ĐVT">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="unit"
+              autoComplete="off"
+              className={inputClass}
               value={form.unit}
               onChange={(event) =>
                 setForm({ ...form, unit: event.target.value })
@@ -211,7 +229,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Nhóm">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="category"
+              autoComplete="off"
+              className={inputClass}
               value={form.category}
               onChange={(event) =>
                 setForm({ ...form, category: event.target.value })
@@ -220,7 +240,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Nhà sản xuất / NCC">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="manufacturer"
+              autoComplete="organization"
+              className={inputClass}
               value={form.manufacturer}
               onChange={(event) =>
                 setForm({ ...form, manufacturer: event.target.value })
@@ -229,7 +251,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Xuất xứ">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="originCountry"
+              autoComplete="country-name"
+              className={inputClass}
               value={form.originCountry}
               onChange={(event) =>
                 setForm({ ...form, originCountry: event.target.value })
@@ -238,9 +262,12 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Đơn giá mặc định">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="defaultUnitPrice"
+              autoComplete="off"
+              className={inputClass}
               type="number"
               min={0}
+              inputMode="decimal"
               value={form.defaultUnitPrice}
               onChange={(event) =>
                 setForm({ ...form, defaultUnitPrice: event.target.value })
@@ -249,7 +276,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Tiền tệ">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="currency"
+              autoComplete="off"
+              className={inputClass}
               value={form.currency}
               onChange={(event) =>
                 setForm({ ...form, currency: event.target.value })
@@ -258,10 +287,13 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Khấu hao mặc định">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="defaultDepreciation"
+              autoComplete="off"
+              className={inputClass}
               type="number"
               min={0}
               step={0.1}
+              inputMode="decimal"
               value={form.defaultDepreciation}
               onChange={(event) =>
                 setForm({ ...form, defaultDepreciation: event.target.value })
@@ -270,10 +302,13 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="% sử dụng lại mặc định">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="defaultReusePct"
+              autoComplete="off"
+              className={inputClass}
               type="number"
               min={0}
               max={100}
+              inputMode="numeric"
               value={form.defaultReusePct}
               onChange={(event) =>
                 setForm({ ...form, defaultReusePct: event.target.value })
@@ -282,7 +317,10 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="URL nguồn" className="md:col-span-2">
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="sourceUrl"
+              type="url"
+              autoComplete="url"
+              className={inputClass}
               placeholder="https://example.com/bao-gia…"
               value={form.sourceUrl}
               onChange={(event) =>
@@ -292,7 +330,9 @@ export function MaterialCreateClient() {
           </Field>
           <Field label="Thông số kỹ thuật" className="md:col-span-2">
             <textarea
-              className="min-h-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              name="specText"
+              autoComplete="off"
+              className={textareaClass}
               value={form.specText}
               onChange={(event) =>
                 setForm({ ...form, specText: event.target.value })
@@ -301,6 +341,6 @@ export function MaterialCreateClient() {
           </Field>
         </div>
       </section>
-    </div>
+    </form>
   );
 }

@@ -248,6 +248,7 @@ function MultiSelectDropdown({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -276,7 +277,7 @@ function MultiSelectDropdown({
   }, [options, query]);
 
   const toggleItem = (value: string) => {
-    if (selected.includes(value)) {
+    if (selectedSet.has(value)) {
       onChange(selected.filter((item) => item !== value));
       return;
     }
@@ -343,7 +344,7 @@ function MultiSelectDropdown({
                 >
                   <input
                     type="checkbox"
-                    checked={selected.includes(item)}
+                    checked={selectedSet.has(item)}
                     onChange={() => toggleItem(item)}
                   />
                   <span className="text-sm text-slate-700">{item}</span>
@@ -918,6 +919,7 @@ export function SearchPageClient() {
     }),
     [appliedCriteria, limit, mode, page, sortOrder],
   );
+  const currentSearchParamsKey = searchParams.toString();
 
   const resultQuery = api.search.querySearchResults.useQuery(queryInput, {
     placeholderData: (previousData) =>
@@ -1000,11 +1002,18 @@ export function SearchPageClient() {
     });
 
     const query = params.toString();
+    if (query === currentSearchParamsKey) {
+      lastParamsKeyRef.current = currentSearchParamsKey;
+      return;
+    }
+
+    lastParamsKeyRef.current = query;
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
     });
   }, [
     appliedCriteria,
+    currentSearchParamsKey,
     limit,
     mode,
     page,
@@ -1015,7 +1024,7 @@ export function SearchPageClient() {
   ]);
 
   useEffect(() => {
-    const key = searchParams.toString();
+    const key = currentSearchParamsKey;
     if (key === lastParamsKeyRef.current) {
       return;
     }
@@ -1030,7 +1039,7 @@ export function SearchPageClient() {
     setLimit(parsePositiveInt(searchParams.get("limit"), 20));
     setSortOrder(readSortOrderFromSearchParams(searchParams));
     setSavedFilterId(parsePositiveId(searchParams.get("savedFilterId")));
-  }, [searchParams]);
+  }, [currentSearchParamsKey, searchParams]);
 
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
@@ -1129,8 +1138,9 @@ export function SearchPageClient() {
     setPage(1);
   }, [savedFilterId, savedFilterQuery.data]);
 
-  const selectedItems = items.filter((item) =>
-    selectedKeys.has(selectedKey(item)),
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedKeys.has(selectedKey(item))),
+    [items, selectedKeys],
   );
   const appliedChips = summarizeSearchCriteria(mode, appliedCriteria);
 

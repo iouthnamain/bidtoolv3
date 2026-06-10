@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   BadgeDollarSign,
@@ -404,11 +404,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
     onSuccess: async (material) => {
       setActionError(null);
       setSuccessMessage("Đã lưu thay đổi vật tư.");
-      setForm(formFromMaterial(material));
-      await Promise.all([
-        utils.material.getById.invalidate({ id }),
-        utils.material.searchMaterials.invalidate(),
-      ]);
+      await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setSuccessMessage(null);
@@ -418,7 +414,11 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: async () => {
-      await utils.material.searchMaterials.invalidate();
+      await Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
       router.push("/materials");
     },
     onError: (error) => {
@@ -430,10 +430,12 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const refreshMaterialQueries = async (material?: Material | null) => {
     if (material) {
       setForm(formFromMaterial(material));
+      utils.material.getById.setData({ id }, material);
     }
     await Promise.all([
-      utils.material.getById.invalidate({ id }),
       utils.material.searchMaterials.invalidate(),
+      utils.material.getMaterialSummary.invalidate(),
+      utils.material.getMaterialFilterOptions.invalidate(),
     ]);
   };
 
@@ -594,7 +596,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
     ? updatePriceSource.variables?.sourceId
     : null;
 
-  const save = () => {
+  const save = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!form || !canSave) {
       return;
     }
@@ -617,7 +620,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
     });
   };
 
-  const addSource = () => {
+  const addSource = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!canAddPriceSource) {
       return;
     }
@@ -791,7 +795,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 leftIcon={<Save className="h-4 w-4" />}
                 isLoading={updateMaterial.isPending}
                 disabled={!canSave}
-                onClick={save}
+                onClick={() => save()}
               >
                 Lưu
               </Button>
@@ -937,9 +941,11 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </p>
           </div>
 
-          <div className="mt-4 grid gap-3">
+          <form className="mt-4 grid gap-3" onSubmit={addSource}>
             <Field label="Tên nguồn">
               <input
+                name="priceSourceLabel"
+                autoComplete="organization"
                 className={inputClass}
                 placeholder="Nhà cung cấp, sàn TMĐT, báo giá…"
                 value={priceSourceForm.label}
@@ -955,6 +961,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Kiểu giá">
                 <select
+                  name="priceSourceMode"
                   className={inputClass}
                   value={priceSourceForm.mode}
                   onChange={(event) =>
@@ -970,6 +977,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
               </Field>
               <Field label="Tiền tệ">
                 <input
+                  name="priceSourceCurrency"
+                  autoComplete="off"
                   className={inputClass}
                   value={priceSourceForm.currency}
                   onChange={(event) =>
@@ -984,6 +993,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="URL sản phẩm">
               <input
+                name="priceSourceUrl"
+                type="url"
+                autoComplete="url"
                 className={inputClass}
                 placeholder="https://example.com/bao-gia…"
                 value={priceSourceForm.url}
@@ -998,9 +1010,11 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="Giá cố định">
               <input
+                name="priceSourceFixedPrice"
                 className={inputClass}
                 type="number"
                 min={0}
+                inputMode="decimal"
                 placeholder="Để trống nếu chỉ theo link"
                 value={priceSourceForm.fixedPrice}
                 onChange={(event) =>
@@ -1014,6 +1028,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <Field label="Ghi chú">
               <textarea
+                name="priceSourceNote"
+                autoComplete="off"
                 className={`${textareaClass} min-h-20`}
                 value={priceSourceForm.note}
                 onChange={(event) =>
@@ -1027,6 +1043,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
             <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
               <input
+                name="priceSourcePrimary"
                 type="checkbox"
                 className="h-4 w-4 rounded border-slate-300 text-sky-700"
                 checked={priceSourceForm.isPrimary}
@@ -1041,15 +1058,15 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </label>
 
             <Button
+              type="submit"
               variant="primary"
               leftIcon={<Plus className="h-4 w-4" />}
               disabled={!canAddPriceSource}
               isLoading={addPriceSource.isPending}
-              onClick={addSource}
             >
               Thêm link / nguồn giá
             </Button>
-          </div>
+          </form>
         </article>
 
         <article className="panel p-5">
@@ -1133,9 +1150,11 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </p>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={save}>
             <Field label="Mã vật tư">
               <input
+                name="code"
+                autoComplete="off"
                 className={inputClass}
                 value={form.code}
                 onChange={(event) =>
@@ -1145,6 +1164,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Tên vật tư">
               <input
+                name="name"
+                autoComplete="off"
                 className={inputClass}
                 value={form.name}
                 onChange={(event) =>
@@ -1154,6 +1175,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="ĐVT">
               <input
+                name="unit"
+                autoComplete="off"
                 className={inputClass}
                 value={form.unit}
                 onChange={(event) =>
@@ -1163,6 +1186,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Nhóm">
               <input
+                name="category"
+                autoComplete="off"
                 className={inputClass}
                 value={form.category}
                 onChange={(event) =>
@@ -1172,6 +1197,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Nhà sản xuất / NCC">
               <input
+                name="manufacturer"
+                autoComplete="organization"
                 className={inputClass}
                 value={form.manufacturer}
                 onChange={(event) =>
@@ -1181,6 +1208,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Xuất xứ">
               <input
+                name="originCountry"
+                autoComplete="country-name"
                 className={inputClass}
                 value={form.originCountry}
                 onChange={(event) =>
@@ -1190,9 +1219,11 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Đơn giá mặc định">
               <input
+                name="defaultUnitPrice"
                 className={inputClass}
                 type="number"
                 min={0}
+                inputMode="decimal"
                 value={form.defaultUnitPrice}
                 onChange={(event) =>
                   setForm({ ...form, defaultUnitPrice: event.target.value })
@@ -1201,6 +1232,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Tiền tệ">
               <input
+                name="currency"
+                autoComplete="off"
                 className={inputClass}
                 value={form.currency}
                 onChange={(event) =>
@@ -1210,6 +1243,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="URL nguồn" className="md:col-span-2">
               <input
+                name="sourceUrl"
+                type="url"
+                autoComplete="url"
                 className={inputClass}
                 value={form.sourceUrl}
                 onChange={(event) =>
@@ -1219,6 +1255,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </Field>
             <Field label="Thông số kỹ thuật" className="md:col-span-2">
               <textarea
+                name="specText"
+                autoComplete="off"
                 className={`${textareaClass} min-h-28`}
                 value={form.specText}
                 onChange={(event) =>
@@ -1226,7 +1264,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 }
               />
             </Field>
-          </div>
+          </form>
         </article>
 
         <aside className="space-y-4">

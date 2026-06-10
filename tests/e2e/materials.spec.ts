@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const materialFixtureDir = "tests/fixtures/materials";
+
 async function deleteVisibleMaterials(page: Page) {
   const checkboxes = page.locator("tbody").getByLabel(/^Chọn /);
   const count = await checkboxes.count();
@@ -23,7 +25,7 @@ test("previews an uploaded materials workbook before import", async ({
 
   await page
     .getByLabel("Chọn file Excel")
-    .setInputFiles("docs/sample/khoa điện long thành.xlsx");
+    .setInputFiles(`${materialFixtureDir}/khoa điện long thành.xlsx`);
 
   await expect(page.getByText("Preview trước khi nhập")).toBeVisible();
   await expect(
@@ -41,7 +43,7 @@ test("previews provided sample material workbooks without phantom row warnings",
 
   await page
     .getByLabel("Chọn file Excel")
-    .setInputFiles("docs/sample/sample materials 1.xlsx");
+    .setInputFiles(`${materialFixtureDir}/sample materials 1.xlsx`);
   await expect(page.locator("select").first()).toHaveValue("Tổng hợp");
   await expect(
     page.getByText("Header dòng 1; 618 dòng dữ liệu đọc được."),
@@ -50,7 +52,7 @@ test("previews provided sample material workbooks without phantom row warnings",
 
   await page
     .getByLabel("Chọn file Excel")
-    .setInputFiles("docs/sample/sample materials 2.xlsx");
+    .setInputFiles(`${materialFixtureDir}/sample materials 2.xlsx`);
   await expect(page.locator("select").first()).toHaveValue("Sheet1");
   await expect(
     page.getByText("Header dòng 1; 71 dòng dữ liệu đọc được."),
@@ -65,7 +67,10 @@ test("material summary shows import-preview-style important fields", async ({
   await page.waitForLoadState("networkidle");
 
   const summary = page.locator("#material-summary");
-  await expect(summary.getByText("Thông tin vật tư quan trọng")).toBeVisible();
+  await expect(
+    summary.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
+  ).toBeVisible();
+  await expect(summary.getByText("Items / Vật tư / Sản phẩm")).toBeVisible();
   await expect(summary.getByText("Thiếu giá")).toBeVisible();
   await expect(summary.locator(":scope > #material-catalog")).toBeVisible();
   await expect(summary.getByText("Snapshot catalog")).toHaveCount(0);
@@ -89,6 +94,108 @@ test("material summary shows import-preview-style important fields", async ({
   }
 
   await expect(page.getByText("Nhập catalog vật tư hàng loạt")).toHaveCount(0);
+});
+
+test("material catalog paginates server-backed table rows", async ({
+  page,
+}) => {
+  await page.goto("/materials#material-catalog");
+  await page.waitForLoadState("networkidle");
+
+  const catalog = page.locator("#material-catalog");
+  await expect(
+    catalog.getByRole("table", { name: "Danh mục vật tư" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
+
+  const rowChecks = catalog.locator("tbody").getByLabel(/^Chọn /);
+  const initialRowCount = await rowChecks.count();
+  expect(initialRowCount).toBeGreaterThan(0);
+  expect(initialRowCount).toBeLessThanOrEqual(50);
+
+  await page.getByLabel("Số dòng mỗi trang").selectOption("25");
+  await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(25);
+  await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+
+  const nextPage = page.getByLabel("Trang sau");
+  await expect(nextPage).toBeEnabled();
+  await catalog
+    .locator("tbody")
+    .getByLabel(/^Chọn /)
+    .first()
+    .check();
+  await expect(catalog.getByText("1/25", { exact: true })).toBeVisible();
+  await nextPage.click();
+  await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+  await expect(catalog.getByText("0/25", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Trang trước")).toBeEnabled();
+
+  await page.getByRole("button", { name: "Đặt lại" }).click();
+  await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+});
+
+test("shop scrape shows progress while the server starts the job", async ({
+  page,
+}) => {
+  let releaseStartRequest: () => void = () => undefined;
+  const blockedStartRequest = new Promise<void>((resolve) => {
+    releaseStartRequest = resolve;
+  });
+
+  await page.route("**/api/trpc/**", async (route) => {
+    if (route.request().url().includes("material.startShopScrapeJob")) {
+      await blockedStartRequest;
+      await route.abort("aborted");
+      return;
+    }
+
+    await route.continue();
+  });
+
+  await page.goto("/materials/scrape");
+  await page.waitForLoadState("networkidle");
+
+  await page
+    .getByLabel("URL shop để scrape sản phẩm")
+    .fill("https://codienhaiau.com/");
+  await page.getByLabel("Số trang tối đa cần scrape").fill("2");
+  await page.getByLabel("Số sản phẩm tối đa cần scrape").fill("20");
+  await page.getByRole("button", { name: "Bắt đầu scrape" }).click();
+
+  await expect(page.getByText("Đang tạo job nền trên server")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Đang khởi động" }),
+  ).toBeDisabled();
+
+  releaseStartRequest();
+  await expect(page.getByText("Đang tạo job nền trên server")).toHaveCount(0);
+});
+
+test("shop scrape clears expired stored job ids", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "bidtool:shop-scrape-job:v1",
+      "00000000-0000-4000-8000-000000000001",
+    );
+    window.localStorage.setItem(
+      "bidtool:shop-import-job:v1",
+      "00000000-0000-4000-8000-000000000002",
+    );
+  });
+
+  await page.goto("/materials/scrape");
+  await page.waitForLoadState("networkidle");
+
+  await expect(page.getByLabel("URL shop để scrape sản phẩm")).toBeEnabled();
+  await expect(page.getByText(/Job ID:/)).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        scrapeJobId: window.localStorage.getItem("bidtool:shop-scrape-job:v1"),
+        importJobId: window.localStorage.getItem("bidtool:shop-import-job:v1"),
+      })),
+    )
+    .toEqual({ scrapeJobId: null, importJobId: null });
 });
 
 test("CSV import skips duplicate material name and unit", async ({ page }) => {
@@ -195,7 +302,7 @@ test("bulk deletes selected materials without requiring a reload", async ({
     await page.getByLabel(`Chọn ${name}`).check();
   }
 
-  await expect(page.getByText("2/2")).toBeVisible();
+  await expect(page.getByText("2/2", { exact: true })).toBeVisible();
   const deleteSelected = page.getByRole("button", {
     name: "Xóa vật tư đã chọn",
   });

@@ -1,0 +1,887 @@
+import { lookup } from "node:dns/promises";
+import { existsSync } from "node:fs";
+import { isIP } from "node:net";
+
+import type { Browser } from "playwright";
+
+import { extractPriceFromText } from "~/lib/material-price-sources";
+
+export type ScrapedShopProduct = {
+  name: string;
+  unit: string | null;
+  category: string | null;
+  specText: string;
+  manufacturer: string | null;
+  originCountry: string | null;
+  price: number | null;
+  priceText: string | null;
+  currency: string;
+  sourceUrl: string;
+  imageUrl: string | null;
+  sku: string | null;
+  model: string | null;
+  availability: string | null;
+  shopCategory: string | null;
+};
+
+export type ShopScrapeResult = {
+  products: ScrapedShopProduct[];
+  pagesVisited: string[];
+  failedPages: Array<{ url: string; message: string }>;
+  durationMs: number;
+};
+
+export type ShopScrapeProgress = {
+  status: "starting" | "reading" | "extracting" | "complete";
+  currentUrl: string | null;
+  pagesVisited: string[];
+  failedPages: Array<{ url: string; message: string }>;
+  productCount: number;
+  queueLength: number;
+  maxPages: number;
+  maxProducts: number;
+  elapsedMs: number;
+  products?: ScrapedShopProduct[];
+};
+
+type ShopScrapeOptions = {
+  url: string;
+  maxPages?: number;
+  maxProducts?: number;
+  signal?: AbortSignal;
+  onProgress?: (progress: ShopScrapeProgress) => void;
+};
+
+type ProductCardSnapshot = {
+  text: string;
+  name: string | null;
+  href: string | null;
+  imageUrl: string | null;
+  category: string | null;
+};
+
+type ShopPageSnapshot = {
+  pageUrl: string;
+  title: string;
+  jsonLdTexts: string[];
+  cards: ProductCardSnapshot[];
+  nextLinks: string[];
+};
+
+type BrowserWithProcess = Browser & {
+  process?: () => { kill: (signal?: string) => boolean };
+};
+
+const DEFAULT_MAX_PAGES = 5;
+const DEFAULT_MAX_PRODUCTS = 100;
+const DNS_TIMEOUT_MS = 5_000;
+const PAGE_GOTO_TIMEOUT_MS = 15_000;
+const PAGE_NETWORK_IDLE_TIMEOUT_MS = 2_000;
+const SCRAPE_BASE_TIMEOUT_MS = 15_000;
+const SCRAPE_PAGE_TIMEOUT_MS = 8_000;
+const SCRAPE_MAX_TIMEOUT_PAGES = 100;
+const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
+const PUBLIC_HOST_CACHE = new Map<string, Promise<void>>();
+let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
+
+export async function scrapeShopMaterialsFromUrl({
+  url,
+  maxPages = DEFAULT_MAX_PAGES,
+  maxProducts = DEFAULT_MAX_PRODUCTS,
+  signal,
+  onProgress,
+}: ShopScrapeOptions): Promise<ShopScrapeResult> {
+  const startedAt = Date.now();
+  const startUrl = await assertSafeScrapeUrl(url);
+  const expectedHostname = startUrl.hostname.toLowerCase();
+  const browser = await getSharedBrowser();
+  const context = await browser.newContext({
+    locale: "vi-VN",
+    viewport: { width: 1366, height: 900 },
+    userAgent:
+      "Mozilla/5.0 (compatible; BidTool/1.0; +https://localhost) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+  });
+
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const resourceType = request.resourceType();
+    if (["font", "image", "media"].includes(resourceType)) {
+      await route.abort();
+      return;
+    }
+
+    try {
+      const requestUrl = new URL(request.url());
+      if (!["http:", "https:"].includes(requestUrl.protocol)) {
+        await route.abort();
+        return;
+      }
+      if (requestUrl.hostname.toLowerCase() !== expectedHostname) {
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    } catch {
+      await route.abort();
+    }
+  });
+
+  try {
+    return await withTimeout(
+      (async () => {
+        const page = await context.newPage();
+        const queue = [startUrl.href];
+        const seenPages = new Set<string>();
+        const products = new Map<string, ScrapedShopProduct>();
+        const failedPages: ShopScrapeResult["failedPages"] = [];
+        const reportProgress = (
+          status: ShopScrapeProgress["status"],
+          currentUrl: string | null,
+        ) => {
+          onProgress?.({
+            status,
+            currentUrl,
+            pagesVisited: Array.from(seenPages),
+            failedPages: [...failedPages],
+            productCount: products.size,
+            queueLength: queue.length,
+            maxPages,
+            maxProducts,
+            elapsedMs: Date.now() - startedAt,
+            products: Array.from(products.values()).slice(0, maxProducts),
+          });
+        };
+        const scrapeDeadline =
+          startedAt +
+          SCRAPE_BASE_TIMEOUT_MS +
+          Math.min(maxPages, SCRAPE_MAX_TIMEOUT_PAGES) *
+            SCRAPE_PAGE_TIMEOUT_MS;
+
+        throwIfAborted(signal);
+        reportProgress("starting", startUrl.href);
+        while (
+          queue.length > 0 &&
+          seenPages.size < maxPages &&
+          products.size < maxProducts &&
+          Date.now() < scrapeDeadline
+        ) {
+          throwIfAborted(signal);
+          const pageUrl = queue.shift();
+          if (!pageUrl || seenPages.has(pageUrl)) {
+            continue;
+          }
+          seenPages.add(pageUrl);
+          reportProgress("reading", pageUrl);
+
+          try {
+            await page.goto(pageUrl, {
+              waitUntil: "domcontentloaded",
+              timeout: Math.max(
+                1_000,
+                Math.min(PAGE_GOTO_TIMEOUT_MS, scrapeDeadline - Date.now()),
+              ),
+            });
+            await page
+              .waitForLoadState("networkidle", {
+                timeout: Math.max(
+                  500,
+                  Math.min(
+                    PAGE_NETWORK_IDLE_TIMEOUT_MS,
+                    scrapeDeadline - Date.now(),
+                  ),
+                ),
+              })
+              .catch(() => undefined);
+            await page.waitForTimeout(250).catch(() => undefined);
+
+            await assertSafeScrapeUrl(page.url(), expectedHostname);
+            const snapshot = await page.evaluate(collectShopPageSnapshot);
+            reportProgress("extracting", pageUrl);
+            const pageProducts = extractProductsFromPageSnapshot(snapshot);
+            for (const product of pageProducts) {
+              if (products.size >= maxProducts) {
+                break;
+              }
+              products.set(productIdentity(product), product);
+            }
+
+            for (const href of snapshot.nextLinks) {
+              if (queue.length + seenPages.size >= maxPages) {
+                break;
+              }
+              const nextUrl = await assertSafeScrapeUrl(
+                href,
+                startUrl.hostname,
+              );
+              if (
+                !seenPages.has(nextUrl.href) &&
+                !queue.includes(nextUrl.href)
+              ) {
+                queue.push(nextUrl.href);
+              }
+            }
+            reportProgress("reading", pageUrl);
+          } catch (error) {
+            failedPages.push({
+              url: pageUrl,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Không thể đọc trang shop.",
+            });
+            reportProgress("reading", pageUrl);
+          }
+        }
+
+        throwIfAborted(signal);
+        reportProgress("complete", null);
+        return {
+          products: Array.from(products.values()).slice(0, maxProducts),
+          pagesVisited: Array.from(seenPages),
+          failedPages,
+          durationMs: Date.now() - startedAt,
+        };
+      })(),
+      scrapeTimeoutMs(maxPages),
+      "Scrape shop quá thời gian cho phép.",
+    );
+  } finally {
+    await withTimeout(
+      context.close().catch(() => undefined),
+      BROWSER_CLOSE_TIMEOUT_MS,
+      "Đóng browser context quá thời gian.",
+    ).catch(() => undefined);
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined) {
+  if (signal?.aborted) {
+    throw new Error("Đã hủy job scrape shop.");
+  }
+}
+
+export async function closeShopScraperBrowser() {
+  const browserPromise = SHARED_BROWSER_PROMISE;
+  SHARED_BROWSER_PROMISE = null;
+  if (!browserPromise) {
+    return;
+  }
+
+  const browser = await browserPromise.catch(() => null);
+  if (!browser) {
+    return;
+  }
+
+  const browserClosed = await withTimeout(
+    browser.close().then(() => true),
+    BROWSER_CLOSE_TIMEOUT_MS,
+    "Đóng browser quá thời gian.",
+  ).catch(() => false);
+  if (!browserClosed) {
+    (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
+  }
+}
+
+export function extractProductsFromPageSnapshot(
+  snapshot: ShopPageSnapshot,
+): ScrapedShopProduct[] {
+  const products: ScrapedShopProduct[] = [];
+
+  for (const jsonLdText of snapshot.jsonLdTexts) {
+    for (const value of parseJsonLdText(jsonLdText)) {
+      for (const product of productsFromJsonLd(value, snapshot.pageUrl)) {
+        products.push(product);
+      }
+    }
+  }
+
+  for (const card of snapshot.cards) {
+    const product = productFromCardSnapshot(card, snapshot.pageUrl);
+    if (product) {
+      products.push(product);
+    }
+  }
+
+  const byIdentity = new Map<string, ScrapedShopProduct>();
+  for (const product of products) {
+    const existing = byIdentity.get(productIdentity(product));
+    if (!existing || scoreProduct(product) > scoreProduct(existing)) {
+      byIdentity.set(productIdentity(product), product);
+    }
+  }
+
+  return Array.from(byIdentity.values());
+}
+
+async function getSharedBrowser() {
+  SHARED_BROWSER_PROMISE ??= launchBrowser().catch((error) => {
+    SHARED_BROWSER_PROMISE = null;
+    throw error;
+  });
+
+  return SHARED_BROWSER_PROMISE;
+}
+
+async function launchBrowser(): Promise<Browser> {
+  const { chromium } = await import("playwright");
+  const executablePath = findSystemBrowserExecutable();
+  const launchOptions = {
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"],
+  };
+
+  if (executablePath) {
+    try {
+      return registerBrowser(
+        await chromium.launch({ ...launchOptions, executablePath }),
+      );
+    } catch {
+      // Fall back to Playwright-managed browsers below.
+    }
+  }
+
+  try {
+    return registerBrowser(await chromium.launch(launchOptions));
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Không khởi động được browser scrape. Cài Chrome/Chromium hoặc chạy "bunx playwright install chromium". ${error.message}`
+        : "Không khởi động được browser scrape.",
+    );
+  }
+}
+
+function registerBrowser(browser: Browser) {
+  browser.on("disconnected", () => {
+    SHARED_BROWSER_PROMISE = null;
+  });
+  return browser;
+}
+
+function findSystemBrowserExecutable() {
+  const candidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  ].filter((value): value is string => Boolean(value));
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+async function assertSafeScrapeUrl(input: string, expectedHostname?: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error("URL shop không hợp lệ.");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Chỉ hỗ trợ URL http hoặc https.");
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (expectedHostname && hostname !== expectedHostname.toLowerCase()) {
+    throw new Error("Chỉ theo pagination trong cùng domain shop.");
+  }
+
+  const cached = PUBLIC_HOST_CACHE.get(hostname);
+  if (cached) {
+    await cached;
+    return parsed;
+  }
+
+  const promise = assertPublicHostname(hostname);
+  PUBLIC_HOST_CACHE.set(hostname, promise);
+  try {
+    await promise;
+  } catch (error) {
+    PUBLIC_HOST_CACHE.delete(hostname);
+    throw error;
+  }
+  return parsed;
+}
+
+async function assertPublicHostname(hostname: string) {
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local")
+  ) {
+    throw new Error("Không hỗ trợ scrape URL nội bộ.");
+  }
+
+  const directIpVersion = isIP(hostname);
+  if (directIpVersion !== 0) {
+    if (isPrivateIp(hostname)) {
+      throw new Error("Không hỗ trợ scrape IP nội bộ.");
+    }
+    return;
+  }
+
+  const addresses = await withTimeout(
+    lookup(hostname, { all: true, verbatim: true }),
+    DNS_TIMEOUT_MS,
+    "Không thể xác thực host shop trong thời gian cho phép.",
+  );
+  if (
+    addresses.length === 0 ||
+    addresses.some((item) => isPrivateIp(item.address))
+  ) {
+    throw new Error("Không hỗ trợ scrape host nội bộ.");
+  }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+function scrapeTimeoutMs(maxPages: number) {
+  return (
+    SCRAPE_BASE_TIMEOUT_MS +
+    Math.min(maxPages, SCRAPE_MAX_TIMEOUT_PAGES) * SCRAPE_PAGE_TIMEOUT_MS
+  );
+}
+
+function isPrivateIp(address: string) {
+  if (address.includes(":")) {
+    const normalized = address.toLowerCase();
+    const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
+    if (mappedIpv4?.[1]) {
+      return isPrivateIpv4(mappedIpv4[1]);
+    }
+
+    return (
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe80:")
+    );
+  }
+
+  return isPrivateIpv4(address);
+}
+
+function isPrivateIpv4(address: string) {
+  const parts = address.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
+    return true;
+  }
+  const [a = 0, b = 0, c = 0] = parts;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && c === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
+function collectShopPageSnapshot(): ShopPageSnapshot {
+  const abs = (value: string | null | undefined) => {
+    if (!value) return null;
+    try {
+      return new URL(value, window.location.href).href;
+    } catch {
+      return null;
+    }
+  };
+  const text = (element: Element | null | undefined) =>
+    element?.textContent?.replace(/\s+/g, " ").trim() ?? null;
+  const pricePattern =
+    /(?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?/i;
+  const likelyNodeSet = new Set<Element>();
+  const productAnchors = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>("a[href]"),
+  ).filter((anchor) => {
+    const value = text(anchor) ?? anchor.getAttribute("title")?.trim();
+    const href = anchor.getAttribute("href") ?? "";
+    if (!value || value.length < 6 || value.length > 260) return false;
+    if (/^(xem thêm|chi tiết|mua ngay|add to cart|giỏ hàng)$/i.test(value)) {
+      return false;
+    }
+    return !/^(#|javascript:|mailto:|tel:)/i.test(href);
+  });
+
+  for (const anchor of productAnchors) {
+    let node: Element | null = anchor;
+    for (let depth = 0; node && depth < 7; depth += 1) {
+      const value = text(node);
+      if (
+        value &&
+        value.length >= 12 &&
+        value.length <= 1400 &&
+        pricePattern.test(value) &&
+        node.querySelectorAll("a[href]").length <= 8
+      ) {
+        likelyNodeSet.add(node);
+        break;
+      }
+      node = node.parentElement;
+    }
+  }
+
+  const fallbackNodes = Array.from(
+    document.querySelectorAll("article, li, [class*='product' i]"),
+  ).filter((node) => {
+    const value = text(node);
+    return Boolean(
+      value &&
+      value.length >= 12 &&
+      value.length <= 1400 &&
+      pricePattern.test(value) &&
+      node.querySelector("a[href]"),
+    );
+  });
+
+  fallbackNodes.slice(0, 120).forEach((node) => likelyNodeSet.add(node));
+  const likelyNodes = Array.from(likelyNodeSet).slice(0, 160);
+
+  const cards = likelyNodes.map((node) => {
+    const anchors = Array.from(
+      node.querySelectorAll<HTMLAnchorElement>("a[href]"),
+    );
+    const anchor =
+      anchors.find((item) => item.getAttribute("title")?.trim()) ??
+      anchors.find((item) => text(item) && (text(item)?.length ?? 0) > 5) ??
+      anchors[0];
+    const cardRoot =
+      node.closest("article, li, [class*='product' i]") ??
+      node.parentElement ??
+      node;
+    const image =
+      node.querySelector<HTMLImageElement>("img[src], img[data-src]") ??
+      cardRoot.querySelector<HTMLImageElement>("img[src], img[data-src]");
+    const titleElement = node.querySelector(
+      "h1, h2, h3, h4, [class*='name'], [class*='title'], [class*='product-name']",
+    );
+    const categoryElement = node.querySelector(
+      "[class*='category'], [class*='breadcrumb']",
+    );
+    const anchorTitle = anchor?.getAttribute("title")?.trim();
+    const anchorText = text(anchor);
+    const imageSrc =
+      image?.getAttribute("src") ?? image?.getAttribute("data-src");
+
+    return {
+      text: text(node) ?? "",
+      name:
+        anchorTitle && anchorTitle.length > 0
+          ? anchorTitle
+          : (text(titleElement) ?? anchorText),
+      href: abs(anchor?.getAttribute("href")),
+      imageUrl: abs(imageSrc),
+      category: text(categoryElement),
+    };
+  });
+
+  const paginationAnchors = new Set<HTMLAnchorElement>();
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+    "a[rel='next'], a[aria-label*='next' i], a[aria-label*='sau' i], a[aria-label*='tiếp' i], a[href]",
+  )) {
+    const label = `${anchor.textContent ?? ""} ${anchor.getAttribute("aria-label") ?? ""} ${anchor.getAttribute("rel") ?? ""}`;
+    if (/\b(next|sau|tiếp|trang sau)\b|[›»>]/i.test(label)) {
+      paginationAnchors.add(anchor);
+    }
+  }
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+    "nav[class*='pagination' i] a[href], [class*='pagination' i] a[href], a.page-numbers[href], a[href*='paged='], a[href*='/page/']",
+  )) {
+    paginationAnchors.add(anchor);
+  }
+  const nextLinks = Array.from(paginationAnchors)
+    .map((anchor) => abs(anchor.getAttribute("href")))
+    .filter((href): href is string => Boolean(href));
+
+  return {
+    pageUrl: window.location.href,
+    title: document.title,
+    jsonLdTexts: Array.from(
+      document.querySelectorAll<HTMLScriptElement>(
+        "script[type='application/ld+json']",
+      ),
+    )
+      .map((script) => script.textContent?.trim() ?? "")
+      .filter(Boolean),
+    cards,
+    nextLinks,
+  };
+}
+
+function parseJsonLdText(text: string): unknown[] {
+  try {
+    const value = JSON.parse(text) as unknown;
+    return Array.isArray(value) ? value : [value];
+  } catch {
+    return [];
+  }
+}
+
+function productsFromJsonLd(
+  value: unknown,
+  pageUrl: string,
+): ScrapedShopProduct[] {
+  const results: ScrapedShopProduct[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (!isRecord(node)) {
+      return;
+    }
+
+    const graph = node["@graph"];
+    if (Array.isArray(graph)) {
+      graph.forEach(visit);
+    }
+
+    const itemListElement = node.itemListElement;
+    if (Array.isArray(itemListElement)) {
+      itemListElement.forEach((item) => {
+        if (isRecord(item) && "item" in item) {
+          visit(item.item);
+        } else {
+          visit(item);
+        }
+      });
+    }
+
+    if (!jsonLdTypeIncludes(node, "Product")) {
+      return;
+    }
+
+    const name = cleanName(stringValue(node.name));
+    if (!name) {
+      return;
+    }
+    const offers = firstRecord(node.offers);
+    const brand = firstRecord(node.brand);
+    const manufacturer = firstRecord(node.manufacturer);
+    const rawPrice =
+      stringValue(offers?.price) ??
+      stringValue(firstRecord(offers?.priceSpecification)?.price);
+    const priceResult = rawPrice
+      ? extractPriceFromText(
+          `${rawPrice} ${stringValue(offers?.priceCurrency) ?? ""}`,
+        )
+      : extractPriceFromText(JSON.stringify(node).slice(0, 20_000));
+    const sourceUrl =
+      absoluteUrl(stringValue(node.url) ?? stringValue(offers?.url), pageUrl) ??
+      pageUrl;
+
+    results.push({
+      name,
+      unit: detectUnit(`${name} ${stringValue(node.description) ?? ""}`),
+      category: stringValue(node.category),
+      specText: stringValue(node.description) ?? "",
+      manufacturer:
+        stringValue(manufacturer?.name) ??
+        stringValue(brand?.name) ??
+        stringValue(node.brand),
+      originCountry: stringValue(node.countryOfOrigin),
+      price: priceResult.price,
+      priceText: priceResult.priceText ?? rawPrice,
+      currency:
+        stringValue(offers?.priceCurrency) ??
+        detectCurrency(priceResult.priceText) ??
+        "VND",
+      sourceUrl,
+      imageUrl: absoluteUrl(firstString(node.image), pageUrl),
+      sku: stringValue(node.sku),
+      model: stringValue(node.model) ?? stringValue(node.mpn),
+      availability: stringValue(offers?.availability),
+      shopCategory: stringValue(node.category),
+    });
+  };
+
+  visit(value);
+  return results;
+}
+
+function productFromCardSnapshot(
+  card: ProductCardSnapshot,
+  pageUrl: string,
+): ScrapedShopProduct | null {
+  const name = cleanName(card.name);
+  if (!name) {
+    return null;
+  }
+  const priceResult = extractPriceFromText(card.text);
+  if (!priceResult.price && !priceResult.priceText) {
+    return null;
+  }
+
+  return {
+    name,
+    unit: detectUnit(`${name} ${card.text}`),
+    category: card.category,
+    specText: cleanDescription(card.text, name),
+    manufacturer: null,
+    originCountry: null,
+    price: priceResult.price,
+    priceText: priceResult.priceText,
+    currency: detectCurrency(priceResult.priceText) ?? "VND",
+    sourceUrl: card.href ?? pageUrl,
+    imageUrl: card.imageUrl,
+    sku: detectSku(card.text),
+    model: null,
+    availability: detectAvailability(card.text),
+    shopCategory: card.category,
+  };
+}
+
+function productIdentity(product: ScrapedShopProduct) {
+  return (
+    product.sourceUrl || `${normalizeKey(product.name)}|${product.unit ?? ""}`
+  );
+}
+
+function scoreProduct(product: ScrapedShopProduct) {
+  return [
+    product.name,
+    product.price,
+    product.specText,
+    product.imageUrl,
+    product.sku,
+    product.availability,
+  ].filter(Boolean).length;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function firstRecord(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    return value.find(isRecord) ?? null;
+  }
+  return isRecord(value) ? value : null;
+}
+
+function stringValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim() || null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function firstString(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    return value.map(stringValue).find(Boolean) ?? null;
+  }
+  return stringValue(value);
+}
+
+function jsonLdTypeIncludes(record: Record<string, unknown>, typeName: string) {
+  const type = record["@type"];
+  if (typeof type === "string") {
+    return type.toLowerCase() === typeName.toLowerCase();
+  }
+  return (
+    Array.isArray(type) &&
+    type.some(
+      (item) =>
+        typeof item === "string" &&
+        item.toLowerCase() === typeName.toLowerCase(),
+    )
+  );
+}
+
+function absoluteUrl(value: string | null | undefined, baseUrl: string) {
+  if (!value) {
+    return null;
+  }
+  try {
+    return new URL(value, baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+
+function cleanName(value: string | null | undefined) {
+  const cleaned = value
+    ?.replace(/\s+/g, " ")
+    .replace(/\b(add to cart|mua ngay|chi tiết|xem thêm)\b/gi, " ")
+    .trim();
+  if (!cleaned || cleaned.length < 2) {
+    return null;
+  }
+  return cleaned.slice(0, 220);
+}
+
+function cleanDescription(text: string, name: string) {
+  return text.replace(name, " ").replace(/\s+/g, " ").trim().slice(0, 1000);
+}
+
+function detectUnit(text: string) {
+  const priceUnitMatch =
+    /(?:₫|đ|vnd|vnđ|dong|đồng)\s*\/\s*(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set)/i.exec(
+      text,
+    );
+  if (priceUnitMatch?.[1]) {
+    return priceUnitMatch[1].toLowerCase();
+  }
+
+  const match =
+    /\b(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set)\b/i.exec(
+      text,
+    );
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function detectCurrency(priceText: string | null | undefined) {
+  if (!priceText) {
+    return null;
+  }
+  if (/usd|\$/i.test(priceText)) return "USD";
+  if (/eur|€/i.test(priceText)) return "EUR";
+  return "VND";
+}
+
+function detectSku(text: string) {
+  const match =
+    /\b(?:sku|mã(?:\s+sp)?|model)\s*[:#-]?\s*([A-Z0-9._/-]{3,})/i.exec(text);
+  return match?.[1]?.trim() ?? null;
+}
+
+function detectAvailability(text: string) {
+  if (/còn hàng|in stock|available/i.test(text)) return "in_stock";
+  if (/hết hàng|out of stock|unavailable/i.test(text)) return "out_of_stock";
+  return null;
+}
+
+function normalizeKey(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}

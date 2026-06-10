@@ -375,6 +375,11 @@ const pageDirectory: PageDirectoryItem[] = [
     body: "Catalog nội bộ để nhập, sửa, chuẩn hóa đơn vị, giá và link nguồn.",
   },
   {
+    href: "/materials/scrape",
+    title: "Scrape shop",
+    body: "Preview URL shop để kiểm tra sản phẩm, giá và nguồn trước khi nhập catalog.",
+  },
+  {
     href: "/insights",
     title: "Phân tích",
     body: "Tổng quan thị trường và chỉ số vận hành khi dữ liệu đã đủ.",
@@ -577,6 +582,7 @@ const sections: Section[] = [
     links: [
       { href: "/import-mapping", label: "Mở Import & Mapping" },
       { href: "/materials/import", label: "Nhập catalog" },
+      { href: "/materials/scrape", label: "Scrape shop" },
     ],
     visual: "import-pipeline",
   },
@@ -600,6 +606,7 @@ const sections: Section[] = [
     links: [
       { href: "/materials", label: "Mở Vật tư" },
       { href: "/materials/import", label: "Nhập catalog" },
+      { href: "/materials/scrape", label: "Scrape shop" },
     ],
     image: {
       src: "/help/materials.png",

@@ -72,33 +72,50 @@ export const createCallerFactory = t.createCallerFactory;
  */
 export const createTRPCRouter = t.router;
 
+const trpcDebugEnabled = process.env.BIDTOOL_TRPC_DEBUG === "true";
+const trpcArtificialDelayEnabled = process.env.BIDTOOL_TRPC_DELAY === "true";
+const configuredSlowProcedureLogMs = Number(
+  process.env.BIDTOOL_TRPC_SLOW_MS ?? 750,
+);
+const slowProcedureLogMs =
+  Number.isFinite(configuredSlowProcedureLogMs) &&
+  configuredSlowProcedureLogMs >= 0
+    ? configuredSlowProcedureLogMs
+    : 750;
+
+function shouldLogProcedure(elapsedMs: number) {
+  return trpcDebugEnabled || elapsedMs >= slowProcedureLogMs;
+}
+
 /**
- * Middleware for timing procedure execution and adding an artificial delay in development.
+ * Middleware for timing procedure execution.
  *
- * You can remove this if you don't like it, but it can help catch unwanted waterfalls by simulating
- * network latency that would occur in production but not in local development.
+ * Set BIDTOOL_TRPC_DELAY=true to simulate local network latency when hunting
+ * waterfalls. Set BIDTOOL_TRPC_DEBUG=true to log every procedure; otherwise
+ * only slow procedures are logged.
  */
 const timingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
 
-  if (t._config.isDev) {
-    // artificial delay in dev
+  if (t._config.isDev && trpcArtificialDelayEnabled) {
     const waitMs = Math.floor(Math.random() * 400) + 100;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   const result = await next();
+  const elapsedMs = Date.now() - start;
 
-  const end = Date.now();
-  console.log(`[TRPC] ${path} took ${end - start}ms to execute`);
+  if (shouldLogProcedure(elapsedMs)) {
+    console.log(`[TRPC] ${path} took ${elapsedMs}ms to execute`);
+  }
 
   return result;
 });
 
 /**
- * Global rate-limit. BidTool is single-user (no auth — see CLAUDE.md), so this is a coarse
- * safety net against runaway client loops, not a per-user quota. Burst-friendly token bucket
- * shared across all paths.
+ * Global rate-limit. BidTool is single-user with no auth, so this is a coarse safety net
+ * against runaway client loops, not a per-user quota. Burst-friendly token bucket shared
+ * across all paths.
  */
 const RATE_LIMIT_CAPACITY = 200;
 const RATE_LIMIT_REFILL_PER_SEC = 50;
@@ -137,8 +154,8 @@ const rateLimitMiddleware = t.middleware(async ({ next, path }) => {
 });
 
 /**
- * Public procedure. BidTool intentionally has no authentication (see CLAUDE.md) — this is the
- * only procedure type and is used everywhere.
+ * Public procedure. BidTool intentionally has no authentication; this is the only procedure
+ * type and is used everywhere.
  */
 export const publicProcedure = t.procedure
   .use(rateLimitMiddleware)

@@ -1,12 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import type { ChangeEventHandler } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+  type PaginationState,
+  type RowSelectionState,
+} from "@tanstack/react-table";
 import {
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Factory,
   FileSpreadsheet,
   Filter,
   Link as LinkIcon,
+  MapPin,
   PackagePlus,
   Plus,
   RotateCcw,
@@ -17,16 +32,40 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
-import { useRowSelection } from "~/lib/use-row-selection";
-import { api, type RouterInputs } from "~/trpc/react";
+import { api, type RouterInputs, type RouterOutputs } from "~/trpc/react";
 
 type MaterialSearchInput = RouterInputs["material"]["searchMaterials"];
+type MaterialSummaryInput = RouterInputs["material"]["getMaterialSummary"];
+type MaterialListItem = RouterOutputs["material"]["searchMaterials"][number];
 type MaterialSortBy = NonNullable<MaterialSearchInput["sortBy"]>;
 type SortOrder = NonNullable<MaterialSearchInput["sortOrder"]>;
 type PriceStatus = NonNullable<MaterialSearchInput["priceStatus"]>;
+
+type EnrichedMaterialListItem = MaterialListItem & {
+  details: string;
+  sourceCount: number;
+};
+
+const EMPTY_MATERIAL_ROWS: MaterialListItem[] = [];
+const EMPTY_ENRICHED_MATERIAL_ROWS: EnrichedMaterialListItem[] = [];
+const DEFAULT_MATERIAL_PAGE_SIZE = 50;
+const MATERIAL_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
+const MATERIAL_SEARCH_STALE_MS = 10_000;
+const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
+
+const emptySummary = {
+  total: 0,
+  priced: 0,
+  missingPrice: 0,
+  withSources: 0,
+  withManufacturer: 0,
+  uniqueManufacturers: 0,
+  withOrigin: 0,
+  uniqueOrigins: 0,
+};
 
 const materialSortOptions: Array<{ value: MaterialSortBy; label: string }> = [
   { value: "name", label: "Tên vật tư" },
@@ -43,6 +82,9 @@ const priceStatusOptions: Array<{ value: PriceStatus; label: string }> = [
   { value: "priced", label: "Đã có giá" },
   { value: "missing", label: "Chưa có giá" },
 ];
+
+const materialControlClass =
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
 
 function formatMoney(value: number | null | undefined, currency = "VND") {
   if (value == null) {
@@ -74,6 +116,91 @@ function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
   return metadata.priceSources.length + (hasStandaloneSourceUrl ? 1 : 0);
 }
 
+function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
+  const sourceCount = getSourceCount(item.metadataJson, item.sourceUrl);
+  const details = [
+    item.code ? `Mã ${item.code}` : null,
+    item.category ? `Nhóm ${item.category}` : null,
+    sourceCount > 0 ? `${sourceCount.toLocaleString("vi-VN")} nguồn` : null,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
+  return {
+    ...item,
+    details,
+    sourceCount,
+  };
+}
+
+function formatCoverage(value: number, total: number) {
+  if (total <= 0) {
+    return "0%";
+  }
+  return `${Math.round((value / total) * 100).toLocaleString("vi-VN")}%`;
+}
+
+function materialTableHeaderClass(columnId: string) {
+  if (columnId === "select") {
+    return "px-3 py-2 text-center";
+  }
+  if (columnId === "actions") {
+    return "px-3 py-2 text-right";
+  }
+  return "px-3 py-2";
+}
+
+function materialTableCellClass(columnId: string) {
+  const classes: Record<string, string> = {
+    select: "px-3 py-2 text-center",
+    name: "max-w-72 px-3 py-2 font-semibold text-slate-900",
+    unit: "px-3 py-2 text-slate-700",
+    specText: "max-w-96 px-3 py-2 text-slate-600",
+    details: "max-w-80 px-3 py-2 text-slate-600",
+    manufacturer: "max-w-52 px-3 py-2 text-slate-600",
+    originCountry: "max-w-36 px-3 py-2 text-slate-600",
+    defaultUnitPrice: "px-3 py-2",
+    updatedAt: "px-3 py-2",
+    actions: "px-3 py-2",
+  };
+
+  return classes[columnId] ?? "px-3 py-2";
+}
+
+function SelectionCheckbox({
+  checked,
+  indeterminate = false,
+  disabled = false,
+  ariaLabel,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+  onChange: ChangeEventHandler<HTMLInputElement>;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = indeterminate && !checked;
+    }
+  }, [checked, indeterminate]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      disabled={disabled}
+      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600 disabled:cursor-not-allowed"
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 export function MaterialsListClient() {
   const [hasMounted, setHasMounted] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -86,11 +213,16 @@ export function MaterialsListClient() {
   const [priceStatus, setPriceStatus] = useState<PriceStatus>("all");
   const [sortBy, setSortBy] = useState<MaterialSortBy>("name");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: DEFAULT_MATERIAL_PAGE_SIZE,
+  });
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const utils = api.useUtils();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const materialSearchInput = useMemo(
-    (): MaterialSearchInput => ({
+  const materialSummaryInput = useMemo(
+    (): MaterialSummaryInput => ({
       keyword: deferredKeyword.trim() || undefined,
       name: nameFilter || undefined,
       unit: unitFilter || undefined,
@@ -98,10 +230,6 @@ export function MaterialsListClient() {
       manufacturer: manufacturerFilter || undefined,
       originCountry: originFilter || undefined,
       priceStatus,
-      sortBy,
-      sortOrder,
-      limit: 80,
-      offset: 0,
     }),
     [
       deferredKeyword,
@@ -111,25 +239,104 @@ export function MaterialsListClient() {
       manufacturerFilter,
       originFilter,
       priceStatus,
+    ],
+  );
+  const materialSearchInput = useMemo(
+    (): MaterialSearchInput => ({
+      ...materialSummaryInput,
+      sortBy,
+      sortOrder,
+      limit: pagination.pageSize,
+      offset: pagination.pageIndex * pagination.pageSize,
+    }),
+    [
+      materialSummaryInput,
+      pagination.pageIndex,
+      pagination.pageSize,
       sortBy,
       sortOrder,
     ],
   );
-  const { data: materials = [], isLoading } =
-    api.material.searchMaterials.useQuery(materialSearchInput);
-  const { data: filterOptions } =
-    api.material.getMaterialFilterOptions.useQuery();
+  const materialsQuery = api.material.searchMaterials.useQuery(
+    materialSearchInput,
+    {
+      placeholderData: (previousData) => previousData,
+      refetchOnWindowFocus: false,
+      staleTime: MATERIAL_SEARCH_STALE_MS,
+    },
+  );
+  const filterOptionsQuery = api.material.getMaterialFilterOptions.useQuery(
+    undefined,
+    {
+      refetchOnWindowFocus: false,
+      staleTime: MATERIAL_FILTER_OPTIONS_STALE_MS,
+    },
+  );
+  const summaryQuery = api.material.getMaterialSummary.useQuery(
+    materialSummaryInput,
+    {
+      placeholderData: (previousData) => previousData,
+      refetchOnWindowFocus: false,
+      staleTime: MATERIAL_SEARCH_STALE_MS,
+    },
+  );
+  const {
+    data: materialsData,
+    isFetching,
+    isLoading,
+    error: materialsError,
+  } = materialsQuery;
+  const {
+    data: filterOptions,
+    isError: isFilterOptionsError,
+    error: filterOptionsError,
+  } = filterOptionsQuery;
+  const {
+    data: summaryData,
+    isLoading: isSummaryLoading,
+    isFetching: isSummaryFetching,
+    error: summaryError,
+  } = summaryQuery;
 
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
+  const materials = materialsData ?? EMPTY_MATERIAL_ROWS;
   const visibleMaterials = useMemo(
-    () => (hasMounted ? materials : []),
+    () =>
+      hasMounted && materials.length > 0
+        ? materials.map(enrichMaterialRow)
+        : EMPTY_ENRICHED_MATERIAL_ROWS,
     [hasMounted, materials],
   );
   const showInitialLoading =
     !hasMounted || (isLoading && visibleMaterials.length === 0);
+  const summary = summaryData ?? emptySummary;
+  const showSummaryLoading =
+    !hasMounted || (isSummaryLoading && summaryData == null);
+  const catalogError = materialsError?.message ?? summaryError?.message ?? null;
+  const filterOptionsErrorMessage = filterOptionsError?.message ?? null;
+  const isRefreshing =
+    hasMounted &&
+    (isFetching || isSummaryFetching) &&
+    !showInitialLoading &&
+    !showSummaryLoading;
+  const isCatalogBusy = isFetching || isSummaryFetching;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(summary.total / pagination.pageSize),
+  );
+  const currentPage = pagination.pageIndex + 1;
+  const pageStart =
+    summary.total === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1;
+  const pageEnd = Math.min(
+    pagination.pageIndex * pagination.pageSize + visibleMaterials.length,
+    summary.total,
+  );
+  const canGoToPreviousPage = pagination.pageIndex > 0;
+  const canGoToNextPage =
+    !showSummaryLoading && pagination.pageIndex + 1 < totalPages;
   const activeFilterCount = [
     keyword.trim(),
     nameFilter,
@@ -140,12 +347,76 @@ export function MaterialsListClient() {
     priceStatus !== "all" ? priceStatus : "",
   ].filter(Boolean).length;
   const hasActiveViewControls =
-    activeFilterCount > 0 || sortBy !== "name" || sortOrder !== "asc";
-  const allIds = useMemo(
-    () => visibleMaterials.map((m) => m.id),
-    [visibleMaterials],
+    activeFilterCount > 0 ||
+    sortBy !== "name" ||
+    sortOrder !== "asc" ||
+    pagination.pageIndex > 0;
+  const selectedIds = useMemo(
+    () =>
+      Object.entries(rowSelection)
+        .filter(([, selected]) => selected)
+        .map(([id]) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    [rowSelection],
   );
-  const sel = useRowSelection(allIds);
+  const selectedCount = selectedIds.length;
+  const someSelected = selectedCount > 0;
+  const clearSelection = () => setRowSelection({});
+  const goToPage = (pageIndex: number) => {
+    setPagination((current) => ({
+      ...current,
+      pageIndex: Math.min(Math.max(pageIndex, 0), totalPages - 1),
+    }));
+  };
+
+  useEffect(() => {
+    setPagination((current) =>
+      current.pageIndex === 0 ? current : { ...current, pageIndex: 0 },
+    );
+    setRowSelection((current) =>
+      Object.keys(current).length > 0 ? {} : current,
+    );
+  }, [materialSummaryInput, sortBy, sortOrder]);
+
+  useEffect(() => {
+    const lastPageIndex = Math.max(0, totalPages - 1);
+    setPagination((current) =>
+      current.pageIndex > lastPageIndex
+        ? { ...current, pageIndex: lastPageIndex }
+        : current,
+    );
+  }, [totalPages]);
+
+  useEffect(() => {
+    setRowSelection((current) =>
+      Object.keys(current).length > 0 ? {} : current,
+    );
+  }, [pagination.pageIndex, pagination.pageSize]);
+
+  useEffect(() => {
+    if (visibleMaterials.length === 0) {
+      setRowSelection((current) =>
+        Object.keys(current).length > 0 ? {} : current,
+      );
+      return;
+    }
+
+    const visibleIds = new Set(visibleMaterials.map((item) => String(item.id)));
+    setRowSelection((current) => {
+      const next: RowSelectionState = {};
+      let changed = false;
+
+      for (const [id, selected] of Object.entries(current)) {
+        if (selected && visibleIds.has(id)) {
+          next[id] = true;
+        } else if (selected) {
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [visibleMaterials]);
 
   const resetViewControls = () => {
     setKeyword("");
@@ -157,6 +428,24 @@ export function MaterialsListClient() {
     setPriceStatus("all");
     setSortBy("name");
     setSortOrder("asc");
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    clearSelection();
+  };
+
+  const refetchCatalog = () => {
+    void Promise.all([materialsQuery.refetch(), summaryQuery.refetch()]);
+  };
+
+  const refetchFilterOptions = () => {
+    void filterOptionsQuery.refetch();
+  };
+
+  const moveToPreviousPageIfCurrentPageEmptied = (deletedCount: number) => {
+    setPagination((current) =>
+      visibleMaterials.length <= deletedCount && current.pageIndex > 0
+        ? { ...current, pageIndex: current.pageIndex - 1 }
+        : current,
+    );
   };
 
   const removeMaterialsFromCurrentList = (ids: number[]) => {
@@ -169,9 +458,14 @@ export function MaterialsListClient() {
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: (_result, variables) => {
       removeMaterialsFromCurrentList([variables.id]);
+      moveToPreviousPageIfCurrentPageEmptied(1);
       setSingleDeleteTarget(null);
       toast.success("Đã xóa vật tư.");
-      void utils.material.searchMaterials.invalidate();
+      void Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
     },
     onError: (error) => {
       toast.error(error.message || "Không thể xóa vật tư.");
@@ -182,10 +476,15 @@ export function MaterialsListClient() {
   const deleteMany = api.material.deleteMany.useMutation({
     onSuccess: (result, variables) => {
       removeMaterialsFromCurrentList(variables.ids);
+      moveToPreviousPageIfCurrentPageEmptied(variables.ids.length);
       toast.success(`Đã xóa ${result.count} vật tư.`);
-      sel.clear();
+      clearSelection();
       setConfirmDelete(false);
-      void utils.material.searchMaterials.invalidate();
+      void Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
     },
     onError: () => {
       toast.error("Không thể xóa vật tư.");
@@ -193,56 +492,162 @@ export function MaterialsListClient() {
     },
   });
 
-  const summary = useMemo(() => {
-    const categorySet = new Set(
-      visibleMaterials
-        .map((item) => item.category)
-        .filter((value): value is string => Boolean(value)),
-    );
-    const priced = visibleMaterials.filter(
-      (item) => item.defaultUnitPrice != null,
-    ).length;
-    const withSources = visibleMaterials.filter(
-      (item) => getSourceCount(item.metadataJson, item.sourceUrl) > 0,
-    ).length;
-    const manufacturerSet = new Set(
-      visibleMaterials
-        .map((item) => item.manufacturer)
-        .filter((value): value is string => Boolean(value)),
-    );
-    const originSet = new Set(
-      visibleMaterials
-        .map((item) => item.originCountry)
-        .filter((value): value is string => Boolean(value)),
-    );
-
-    return {
-      total: visibleMaterials.length,
-      priced,
-      withSources,
-      categories: categorySet.size,
-      manufacturers: manufacturerSet.size,
-      origins: originSet.size,
-      missingPrice: visibleMaterials.length - priced,
-    };
-  }, [visibleMaterials]);
   const [singleDeleteTarget, setSingleDeleteTarget] = useState<{
     id: number;
     name: string;
   } | null>(null);
 
+  const materialColumns = useMemo<ColumnDef<EnrichedMaterialListItem>[]>(
+    () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <SelectionCheckbox
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={table.getIsSomePageRowsSelected()}
+            disabled={visibleMaterials.length === 0}
+            ariaLabel="Chọn tất cả vật tư"
+            onChange={table.getToggleAllPageRowsSelectedHandler()}
+          />
+        ),
+        cell: ({ row }) => (
+          <SelectionCheckbox
+            checked={row.getIsSelected()}
+            disabled={!row.getCanSelect()}
+            ariaLabel={`Chọn ${row.original.name}`}
+            onChange={row.getToggleSelectedHandler()}
+          />
+        ),
+      },
+      {
+        accessorKey: "name",
+        header: "Tên vật tư",
+        cell: ({ row }) => (
+          <Link
+            href={`/materials/${row.original.id}`}
+            className="line-clamp-2 hover:text-sky-700 hover:underline"
+          >
+            {row.original.name}
+          </Link>
+        ),
+      },
+      {
+        accessorKey: "unit",
+        header: "ĐVT",
+        cell: ({ getValue }) => getValue<string>(),
+      },
+      {
+        accessorKey: "specText",
+        header: "Thông số",
+        cell: ({ row }) => (
+          <span className="line-clamp-2">{row.original.specText || "-"}</span>
+        ),
+      },
+      {
+        accessorKey: "details",
+        header: "Chi tiết",
+        cell: ({ row }) => (
+          <span className="line-clamp-2">{row.original.details || "-"}</span>
+        ),
+      },
+      {
+        accessorKey: "manufacturer",
+        header: "NCC",
+        cell: ({ row }) => (
+          <span className="line-clamp-2">
+            {row.original.manufacturer ?? "-"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "originCountry",
+        header: "Xuất xứ",
+        cell: ({ row }) => (
+          <span className="line-clamp-2">
+            {row.original.originCountry ?? "-"}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "defaultUnitPrice",
+        header: "Giá",
+        cell: ({ row }) => (
+          <span className="font-semibold text-slate-900 tabular-nums">
+            {formatMoney(row.original.defaultUnitPrice, row.original.currency)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "Cập nhật",
+        cell: ({ row }) => (
+          <span className="text-xs text-slate-500">
+            {formatDate(row.original.updatedAt)}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-1.5">
+            <Link
+              href={`/materials/${row.original.id}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700"
+              aria-label={`Mở chi tiết ${row.original.name}`}
+            >
+              <ArrowUpRight className="h-4 w-4" aria-hidden />
+            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 px-0 text-rose-700 hover:bg-rose-50"
+              disabled={deleteMaterial.isPending}
+              onClick={() =>
+                setSingleDeleteTarget({
+                  id: row.original.id,
+                  name: row.original.name,
+                })
+              }
+              aria-label={`Xóa ${row.original.name}`}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [deleteMaterial.isPending, visibleMaterials.length],
+  );
+
+  const materialTable = useReactTable({
+    data: visibleMaterials,
+    columns: materialColumns,
+    state: {
+      pagination,
+      rowSelection,
+    },
+    getRowId: (row) => String(row.id),
+    enableRowSelection: true,
+    manualPagination: true,
+    pageCount: totalPages,
+    onPaginationChange: setPagination,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   return (
     <div className="space-y-4">
       <ConfirmDialog
         open={confirmDelete}
-        title={`Xóa ${sel.selectedCount} vật tư?`}
+        title={`Xóa ${selectedCount} vật tư?`}
         description="Vật tư đã xóa sẽ không hiển thị trong danh mục. Dữ liệu nguồn đã upload không bị ảnh hưởng."
         confirmLabel="Xóa"
         variant="danger"
         isLoading={deleteMany.isPending}
         onConfirm={() => {
-          if (sel.selectedIds.length > 0) {
-            deleteMany.mutate({ ids: sel.selectedIds });
+          if (selectedIds.length > 0) {
+            deleteMany.mutate({ ids: selectedIds });
           }
         }}
         onCancel={() => setConfirmDelete(false)}
@@ -287,83 +692,109 @@ export function MaterialsListClient() {
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
             </Link>
+            <Link
+              href="/materials/scrape"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Search className="h-4 w-4" aria-hidden />
+              Scrape shop
+            </Link>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-500">Catalog</p>
+              <p className="text-xs font-semibold text-slate-500">
+                Items / Vật tư / Sản phẩm
+              </p>
               <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-950">
-              {showInitialLoading ? "-" : summary.total.toLocaleString("vi-VN")}
+              {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
+            </p>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">
+              Tổng dòng catalog trong DB theo bộ lọc
             </p>
           </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-emerald-700">Có giá</p>
+              <p className="text-xs font-semibold text-emerald-700">
+                Có giá catalog
+              </p>
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-emerald-900">
-              {showInitialLoading
+              {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
             </p>
+            <p className="mt-1 text-[11px] font-medium text-emerald-700">
+              {showSummaryLoading
+                ? "-"
+                : `${formatCoverage(summary.priced, summary.total)} đã có giá`}
+            </p>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
               <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-amber-900">
-              {showInitialLoading
+              {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
             </p>
+            <p className="mt-1 text-[11px] font-medium text-amber-700">
+              Cần bổ sung trước khi báo giá
+            </p>
           </div>
-          <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3">
+          <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-sky-700">Có nguồn</p>
+              <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-sky-950">
-              {showInitialLoading
+              {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
             </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-500">NCC</p>
-              <Badge tone="neutral">Maker</Badge>
-            </div>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
-              {showInitialLoading
+            <p className="mt-1 text-[11px] font-medium text-sky-700">
+              {showSummaryLoading
                 ? "-"
-                : summary.manufacturers.toLocaleString("vi-VN")}
+                : `${formatCoverage(summary.withSources, summary.total)} có link / nguồn`}
             </p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-500">Xuất xứ</p>
-              <Badge tone="neutral">Origin</Badge>
+              <p className="text-xs font-semibold text-slate-500">Có NCC</p>
+              <Factory className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-950">
-              {showInitialLoading
+              {showSummaryLoading
                 ? "-"
-                : summary.origins.toLocaleString("vi-VN")}
+                : summary.withManufacturer.toLocaleString("vi-VN")}
+            </p>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">
+              {showSummaryLoading
+                ? "-"
+                : `${summary.uniqueManufacturers.toLocaleString("vi-VN")} NCC khác nhau`}
             </p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-500">Nhóm</p>
-              <Badge tone="neutral">Category</Badge>
+              <p className="text-xs font-semibold text-slate-500">Có xuất xứ</p>
+              <MapPin className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
             <p className="mt-1 text-2xl font-bold text-slate-950">
-              {showInitialLoading
+              {showSummaryLoading
                 ? "-"
-                : summary.categories.toLocaleString("vi-VN")}
+                : summary.withOrigin.toLocaleString("vi-VN")}
+            </p>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">
+              {showSummaryLoading
+                ? "-"
+                : `${summary.uniqueOrigins.toLocaleString("vi-VN")} xuất xứ khác nhau`}
             </p>
           </div>
         </div>
@@ -380,12 +811,32 @@ export function MaterialsListClient() {
               <p className="mt-1 text-xs text-slate-500">
                 {showInitialLoading
                   ? "Đang tải…"
-                  : `${visibleMaterials.length.toLocaleString("vi-VN")} vật tư trong kết quả hiện tại`}{" "}
-                • Thông tin vật tư quan trọng, cùng cấu trúc cột với preview sau
-                khi upload ở trang nhập.
+                  : `${pageStart.toLocaleString("vi-VN")}-${pageEnd.toLocaleString(
+                      "vi-VN",
+                    )}/${summary.total.toLocaleString(
+                      "vi-VN",
+                    )} vật tư • Trang ${currentPage.toLocaleString(
+                      "vi-VN",
+                    )}/${totalPages.toLocaleString(
+                      "vi-VN",
+                    )} theo bộ lọc hiện tại.`}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              {isRefreshing ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
+                  Đang cập nhật
+                </span>
+              ) : null}
+              {catalogError ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                  onClick={refetchCatalog}
+                >
+                  Không cập nhật được
+                </button>
+              ) : null}
               <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
                 <Filter className="h-3.5 w-3.5" aria-hidden />
                 {activeFilterCount.toLocaleString("vi-VN")} bộ lọc
@@ -414,7 +865,7 @@ export function MaterialsListClient() {
                     aria-hidden
                   />
                   <input
-                    className="w-full rounded-lg border border-slate-300 bg-white py-2 pr-3 pl-9 text-sm"
+                    className={`${materialControlClass} w-full pr-3 pl-9`}
                     placeholder="Tên, mã, thông số, NCC, xuất xứ"
                     aria-label="Tìm sản phẩm hoặc vật tư"
                     value={keyword}
@@ -428,7 +879,7 @@ export function MaterialsListClient() {
                   Tên vật tư có sẵn
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo tên vật tư"
                   value={nameFilter}
                   onChange={(event) => setNameFilter(event.target.value)}
@@ -447,7 +898,7 @@ export function MaterialsListClient() {
                   Sắp xếp
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Sắp xếp vật tư"
                   value={sortBy}
                   onChange={(event) =>
@@ -467,7 +918,7 @@ export function MaterialsListClient() {
                   Thứ tự
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Thứ tự sắp xếp"
                   value={sortOrder}
                   onChange={(event) =>
@@ -486,7 +937,7 @@ export function MaterialsListClient() {
                   ĐVT
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo ĐVT"
                   value={unitFilter}
                   onChange={(event) => setUnitFilter(event.target.value)}
@@ -505,7 +956,7 @@ export function MaterialsListClient() {
                   Nhóm
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo nhóm"
                   value={categoryFilter}
                   onChange={(event) => setCategoryFilter(event.target.value)}
@@ -524,7 +975,7 @@ export function MaterialsListClient() {
                   NCC
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo NCC"
                   value={manufacturerFilter}
                   onChange={(event) =>
@@ -545,7 +996,7 @@ export function MaterialsListClient() {
                   Xuất xứ
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo xuất xứ"
                   value={originFilter}
                   onChange={(event) => setOriginFilter(event.target.value)}
@@ -564,7 +1015,7 @@ export function MaterialsListClient() {
                   Giá
                 </span>
                 <select
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className={materialControlClass}
                   aria-label="Lọc theo giá"
                   value={priceStatus}
                   onChange={(event) =>
@@ -582,10 +1033,20 @@ export function MaterialsListClient() {
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-              <span>
-                Tên vật tư lấy từ catalog hiện có; mặc định sắp xếp theo tên
-                A-Z.
-              </span>
+              {isFilterOptionsError ? (
+                <button
+                  type="button"
+                  className="font-semibold text-rose-700 hover:underline"
+                  onClick={refetchFilterOptions}
+                >
+                  Không tải được bộ lọc: {filterOptionsErrorMessage}. Thử lại
+                </button>
+              ) : (
+                <span>
+                  Tên vật tư lấy từ catalog hiện có; mặc định sắp xếp theo tên
+                  A-Z.
+                </span>
+              )}
             </div>
           </div>
 
@@ -616,30 +1077,26 @@ export function MaterialsListClient() {
                   : "cursor-pointer border-sky-200 bg-white text-slate-800 hover:bg-sky-50"
               }`}
             >
-              <input
-                type="checkbox"
-                checked={sel.allSelected}
-                ref={(el) => {
-                  if (el) el.indeterminate = sel.indeterminate;
-                }}
-                onChange={sel.toggleAll}
+              <SelectionCheckbox
+                checked={materialTable.getIsAllPageRowsSelected()}
+                indeterminate={materialTable.getIsSomePageRowsSelected()}
+                onChange={materialTable.getToggleAllPageRowsSelectedHandler()}
                 disabled={visibleMaterials.length === 0}
-                className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600 disabled:cursor-not-allowed"
-                aria-label="Chọn tất cả vật tư đang hiển thị"
+                ariaLabel="Chọn tất cả vật tư đang hiển thị"
               />
               <SquareCheckBig className="h-4 w-4" aria-hidden />
               <span>Chọn tất cả đang hiển thị</span>
               <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 tabular-nums">
-                {sel.selectedCount}/{visibleMaterials.length}
+                {selectedCount}/{visibleMaterials.length}
               </span>
             </label>
 
             <div className="flex flex-wrap items-center gap-2">
-              {sel.someSelected ? (
+              {someSelected ? (
                 <button
                   type="button"
                   className="text-xs font-semibold text-slate-500 hover:text-slate-900"
-                  onClick={sel.clear}
+                  onClick={clearSelection}
                 >
                   Bỏ chọn
                 </button>
@@ -647,7 +1104,7 @@ export function MaterialsListClient() {
               <Button
                 variant="danger"
                 size="sm"
-                disabled={!sel.someSelected}
+                disabled={!someSelected}
                 leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                 onClick={() => setConfirmDelete(true)}
               >
@@ -656,133 +1113,95 @@ export function MaterialsListClient() {
             </div>
           </div>
 
-          <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+          <div
+            className="relative mt-3 overflow-x-auto rounded-lg border border-slate-200"
+            aria-busy={isCatalogBusy}
+          >
+            {isRefreshing ? (
+              <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-full border border-sky-200 bg-white/95 px-2.5 py-1 text-xs font-semibold text-sky-700 shadow-sm">
+                Đang cập nhật kết quả
+              </div>
+            ) : null}
             <table
               aria-label="Danh mục vật tư"
               className="w-full min-w-[1280px] divide-y divide-slate-200 text-sm"
             >
               <thead className="bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
-                <tr>
-                  <th className="px-3 py-2 text-center">
-                    <input
-                      type="checkbox"
-                      checked={sel.allSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = sel.indeterminate;
-                      }}
-                      onChange={sel.toggleAll}
-                      disabled={visibleMaterials.length === 0}
-                      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
-                      aria-label="Chọn tất cả vật tư"
-                    />
-                  </th>
-                  <th className="px-3 py-2">Tên vật tư</th>
-                  <th className="px-3 py-2">ĐVT</th>
-                  <th className="px-3 py-2">Thông số</th>
-                  <th className="px-3 py-2">Chi tiết</th>
-                  <th className="px-3 py-2">NCC</th>
-                  <th className="px-3 py-2">Xuất xứ</th>
-                  <th className="px-3 py-2">Giá</th>
-                  <th className="px-3 py-2">Cập nhật</th>
-                  <th className="px-3 py-2"> </th>
-                </tr>
+                {materialTable.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <th
+                        key={header.id}
+                        className={materialTableHeaderClass(header.column.id)}
+                      >
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {visibleMaterials.map((item) => {
-                  const sourceCount = getSourceCount(
-                    item.metadataJson,
-                    item.sourceUrl,
-                  );
-                  const isSelected = sel.selected.has(item.id);
-                  const details = [
-                    item.code ? `Mã ${item.code}` : null,
-                    item.category ? `Nhóm ${item.category}` : null,
-                    sourceCount > 0
-                      ? `${sourceCount.toLocaleString("vi-VN")} nguồn`
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" • ");
-
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`transition-colors ${isSelected ? "bg-sky-50/60" : "hover:bg-slate-50/80"}`}
-                    >
-                      <td className="px-3 py-2 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => sel.toggle(item.id)}
-                          className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
-                          aria-label={`Chọn ${item.name}`}
-                        />
-                      </td>
-                      <td className="max-w-72 px-3 py-2 font-semibold text-slate-900">
-                        <Link
-                          href={`/materials/${item.id}`}
-                          className="line-clamp-2 hover:text-sky-700 hover:underline"
-                        >
-                          {item.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{item.unit}</td>
-                      <td className="max-w-96 px-3 py-2 text-slate-600">
-                        <span className="line-clamp-2">
-                          {item.specText || "-"}
-                        </span>
-                      </td>
-                      <td className="max-w-80 px-3 py-2 text-slate-600">
-                        <span className="line-clamp-2">{details || "-"}</span>
-                      </td>
-                      <td className="max-w-52 px-3 py-2 text-slate-600">
-                        <span className="line-clamp-2">
-                          {item.manufacturer ?? "-"}
-                        </span>{" "}
-                      </td>
-                      <td className="max-w-36 px-3 py-2 text-slate-600">
-                        <span className="line-clamp-2">
-                          {item.originCountry ?? "-"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
-                        {formatMoney(item.defaultUnitPrice, item.currency)}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-500">
-                        {formatDate(item.updatedAt)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex justify-end gap-1.5">
-                          <Link
-                            href={`/materials/${item.id}`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700"
-                            aria-label={`Mở chi tiết ${item.name}`}
-                          >
-                            <ArrowUpRight className="h-4 w-4" aria-hidden />
-                          </Link>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 px-0 text-rose-700 hover:bg-rose-50"
-                            disabled={deleteMaterial.isPending}
-                            onClick={() =>
-                              setSingleDeleteTarget({
-                                id: item.id,
-                                name: item.name,
-                              })
-                            }
-                            aria-label={`Xóa ${item.name}`}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {!showInitialLoading && visibleMaterials.length === 0 ? (
+                {showInitialLoading ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8">
+                    <td
+                      colSpan={materialColumns.length}
+                      className="px-3 py-10 text-center text-sm font-medium text-slate-500"
+                    >
+                      Đang tải danh mục vật tư...
+                    </td>
+                  </tr>
+                ) : null}
+                {!showInitialLoading
+                  ? materialTable.getRowModel().rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className={`transition-colors ${
+                          row.getIsSelected()
+                            ? "bg-sky-50/60"
+                            : "hover:bg-slate-50/80"
+                        }`}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td
+                            key={cell.id}
+                            className={materialTableCellClass(cell.column.id)}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  : null}
+                {!showInitialLoading &&
+                catalogError &&
+                materialTable.getRowModel().rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={materialColumns.length} className="px-3 py-8">
+                      <EmptyState
+                        title="Không tải được danh mục vật tư."
+                        description={catalogError}
+                        cta={
+                          <Button variant="secondary" onClick={refetchCatalog}>
+                            Thử lại
+                          </Button>
+                        }
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+                {!showInitialLoading &&
+                !catalogError &&
+                materialTable.getRowModel().rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={materialColumns.length} className="px-3 py-8">
                       <EmptyState
                         title="Chưa có sản phẩm / vật tư."
                         description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
@@ -800,6 +1219,12 @@ export function MaterialsListClient() {
                             >
                               Nhập sheet
                             </Link>
+                            <Link
+                              href="/materials/scrape"
+                              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Scrape shop
+                            </Link>
                           </div>
                         }
                       />
@@ -808,6 +1233,83 @@ export function MaterialsListClient() {
                 ) : null}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="font-semibold text-slate-900">
+                {pageStart.toLocaleString("vi-VN")}-
+                {pageEnd.toLocaleString("vi-VN")}
+              </span>
+              <span>/ {summary.total.toLocaleString("vi-VN")} vật tư</span>
+              <span className="text-slate-300" aria-hidden>
+                |
+              </span>
+              <label className="inline-flex items-center gap-2">
+                <span>Số dòng</span>
+                <select
+                  className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none"
+                  aria-label="Số dòng mỗi trang"
+                  value={pagination.pageSize}
+                  onChange={(event) => {
+                    const pageSize = Number(event.target.value);
+                    setPagination({
+                      pageIndex: 0,
+                      pageSize,
+                    });
+                  }}
+                >
+                  {MATERIAL_PAGE_SIZE_OPTIONS.map((pageSize) => (
+                    <option key={pageSize} value={pageSize}>
+                      {pageSize.toLocaleString("vi-VN")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-24 text-center text-xs font-semibold text-slate-600">
+                Trang {currentPage.toLocaleString("vi-VN")} /{" "}
+                {totalPages.toLocaleString("vi-VN")}
+              </span>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Trang đầu"
+                disabled={!canGoToPreviousPage || isFetching}
+                onClick={() => goToPage(0)}
+              >
+                <ChevronsLeft className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Trang trước"
+                disabled={!canGoToPreviousPage || isFetching}
+                onClick={() => goToPage(pagination.pageIndex - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Trang sau"
+                disabled={!canGoToNextPage || isFetching}
+                onClick={() => goToPage(pagination.pageIndex + 1)}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Trang cuối"
+                disabled={!canGoToNextPage || isFetching}
+                onClick={() => goToPage(totalPages - 1)}
+              >
+                <ChevronsRight className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
           </div>
         </div>
       </section>

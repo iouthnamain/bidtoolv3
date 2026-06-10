@@ -24,6 +24,11 @@ const documentLinks = [
     description: "Upload Excel/CSV và kiểm tra preview trước khi nhập catalog.",
   },
   {
+    href: "/materials/scrape",
+    label: "Scrape shop vật tư",
+    description: "Preview URL shop rồi nhập sản phẩm, giá và link nguồn.",
+  },
+  {
     href: "/saved-items",
     label: "Bộ lọc & Watchlist",
     description: "Quay lại Smart View hoặc nguồn đã lưu để theo dõi tiếp.",

@@ -14,8 +14,20 @@ export type MaterialPriceSource = {
   isPrimary: boolean;
 };
 
+export type MaterialShopScrapeMetadata = {
+  sourceUrl: string;
+  shopHost: string;
+  scrapedAt: string;
+  imageUrl: string | null;
+  sku: string | null;
+  model: string | null;
+  availability: string | null;
+  shopCategory: string | null;
+};
+
 export type MaterialMetadata = {
   priceSources: MaterialPriceSource[];
+  shopScrape?: MaterialShopScrapeMetadata;
 };
 
 export function normalizePriceSource(
@@ -59,6 +71,9 @@ export function normalizePriceSource(
 export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
   const record = value && typeof value === "object" ? value : {};
   const priceSourcesValue = (record as { priceSources?: unknown }).priceSources;
+  const shopScrape = normalizeShopScrapeMetadata(
+    (record as { shopScrape?: unknown }).shopScrape,
+  );
 
   return {
     priceSources: Array.isArray(priceSourcesValue)
@@ -66,12 +81,45 @@ export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
           .map(normalizePriceSource)
           .filter((source): source is MaterialPriceSource => source !== null)
       : [],
+    ...(shopScrape ? { shopScrape } : {}),
   };
 }
 
 export function buildMaterialMetadata(input: MaterialMetadata) {
   return {
     priceSources: input.priceSources,
+    ...(input.shopScrape ? { shopScrape: input.shopScrape } : {}),
+  };
+}
+
+function normalizeShopScrapeMetadata(
+  value: unknown,
+): MaterialShopScrapeMetadata | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const scrape = value as Partial<MaterialShopScrapeMetadata>;
+  if (
+    typeof scrape.sourceUrl !== "string" ||
+    scrape.sourceUrl.trim().length === 0 ||
+    typeof scrape.shopHost !== "string" ||
+    scrape.shopHost.trim().length === 0 ||
+    typeof scrape.scrapedAt !== "string" ||
+    scrape.scrapedAt.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    sourceUrl: scrape.sourceUrl,
+    shopHost: scrape.shopHost,
+    scrapedAt: scrape.scrapedAt,
+    imageUrl: scrape.imageUrl ?? null,
+    sku: scrape.sku ?? null,
+    model: scrape.model ?? null,
+    availability: scrape.availability ?? null,
+    shopCategory: scrape.shopCategory ?? null,
   };
 }
 
@@ -82,12 +130,12 @@ export function extractPriceFromText(text: string): {
   const normalized = text.replace(/\s+/g, " ").slice(0, 250_000);
   const matches = Array.from(
     normalized.matchAll(
-      /((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|dong|đồng)))/gi,
+      /((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng)))/gi,
     ),
   );
 
   const explicitMatch =
-    /(?:gia|giá|price|don gia|đơn giá)\s*[:\-]?\s*((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|dong|đồng))?)/i.exec(
+    /(?:gia|giá|price|don gia|đơn giá)\s*[:\-]?\s*((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?)/i.exec(
       normalized,
     );
 

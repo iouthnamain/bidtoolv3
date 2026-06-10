@@ -1,4 +1,4 @@
-import { count, eq, gte } from "drizzle-orm";
+import { count, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
@@ -90,6 +90,17 @@ function summarizeWorkflowHealth(input: {
 
 export const insightRouter = createTRPCRouter({
   getDashboardSummary: publicProcedure.query(async ({ ctx }) => {
+    const unreadAlertsPromise = (async () => {
+      try {
+        return await ctx.db
+          .select({ value: sql<number>`count(*)::int`.as("value") })
+          .from(notifications)
+          .where(eq(notifications.isRead, false));
+      } catch {
+        return [{ value: 0 }];
+      }
+    })();
+
     const [
       totalPackagesResult,
       unreadAlertsResult,
@@ -97,10 +108,7 @@ export const insightRouter = createTRPCRouter({
       workflowRunRows,
     ] = await Promise.all([
       ctx.db.select({ value: count() }).from(tenderPackages),
-      ctx.db
-        .select({ value: count() })
-        .from(notifications)
-        .where(eq(notifications.isRead, false)),
+      unreadAlertsPromise,
       ctx.db.select().from(workflows),
       ctx.db.select().from(workflowRuns),
     ]);

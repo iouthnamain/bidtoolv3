@@ -70,9 +70,9 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           {hasErrors ? (
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           ) : (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           )}
           <div>
             <p className="text-sm font-bold">Kết quả nhập {result.source}</p>
@@ -280,7 +280,11 @@ export function MaterialImportClient() {
       setXlsxBase64(null);
       setXlsxPreview(null);
       setSheetName("");
-      await utils.material.searchMaterials.invalidate();
+      await Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
     },
     onError: (error) => {
       setLastResult(null);
@@ -298,7 +302,11 @@ export function MaterialImportClient() {
       });
       setImportError(null);
       setCsv("");
-      await utils.material.searchMaterials.invalidate();
+      await Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
     },
     onError: (error) => {
       setLastResult(null);
@@ -390,14 +398,14 @@ export function MaterialImportClient() {
         {importError ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <p>{importError}</p>
             </div>
           </div>
         ) : lastResult ? null : (
           <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
             <div className="flex items-start gap-2">
-              <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <p>
                 Excel tự dò header; CSV cần dùng đúng tên cột ở mẫu bên dưới.
               </p>
@@ -439,9 +447,9 @@ export function MaterialImportClient() {
             >
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
                 {xlsxFile ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                  <CheckCircle2 className="h-5 w-5 text-emerald-700" aria-hidden />
                 ) : (
-                  <Upload className="h-5 w-5 text-sky-700" />
+                  <Upload className="h-5 w-5 text-sky-700" aria-hidden />
                 )}
               </span>
               <span className="text-sm font-bold">Chọn file Excel</span>
@@ -478,12 +486,19 @@ export function MaterialImportClient() {
                   </select>
                 </label>
               ) : (
-                <input
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Tên sheet (tuỳ chọn)"
-                  value={sheetName}
-                  onChange={(event) => setSheetName(event.target.value)}
-                />
+                <label className="grid gap-1">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Sheet cần nhập
+                  </span>
+                  <input
+                    name="sheetName"
+                    autoComplete="off"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                    placeholder="Tên sheet tuỳ chọn…"
+                    value={sheetName}
+                    onChange={(event) => setSheetName(event.target.value)}
+                  />
+                </label>
               )}
               <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                 <p className="font-bold text-slate-800">
@@ -568,7 +583,7 @@ export function MaterialImportClient() {
                   className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
                   onClick={() => setCsv(csvExample)}
                 >
-                  <Clipboard className="h-3.5 w-3.5" />
+                  <Clipboard className="h-3.5 w-3.5" aria-hidden />
                   Dùng mẫu
                 </button>
               </div>
@@ -580,9 +595,11 @@ export function MaterialImportClient() {
             <div>
               <textarea
                 className="h-56 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                name="materialsCsv"
+                autoComplete="off"
                 value={csv}
                 onChange={(event) => setCsv(event.target.value)}
-                placeholder="Dán CSV tại đây"
+                placeholder="Dán CSV tại đây…"
                 aria-label="Nội dung CSV sản phẩm hoặc vật tư"
               />
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

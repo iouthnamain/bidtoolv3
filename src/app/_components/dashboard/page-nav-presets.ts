@@ -128,6 +128,12 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     icon: "plus",
   },
   {
+    href: "/materials/scrape",
+    label: "Scrape shop",
+    description: "Preview URL shop rồi nhập sản phẩm vào catalog.",
+    icon: "search",
+  },
+  {
     href: "/import-mapping",
     label: "Import & Mapping",
     description: "Không gian mới cho luồng nhập và map dữ liệu.",

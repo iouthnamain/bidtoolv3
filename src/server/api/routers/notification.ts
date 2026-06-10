@@ -1,17 +1,21 @@
 import { z } from "zod";
-import { count, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { notifications } from "~/server/db/schema";
 
 export const notificationRouter = createTRPCRouter({
   unreadCount: publicProcedure.query(async ({ ctx }) => {
-    const result = await ctx.db
-      .select({ value: count() })
-      .from(notifications)
-      .where(eq(notifications.isRead, false));
+    try {
+      const result = await ctx.db
+        .select({ value: sql<number>`count(*)::int`.as("value") })
+        .from(notifications)
+        .where(eq(notifications.isRead, false));
 
-    return result[0]?.value ?? 0;
+      return result[0]?.value ?? 0;
+    } catch {
+      return 0;
+    }
   }),
 
   list: publicProcedure
@@ -27,12 +31,16 @@ export const notificationRouter = createTRPCRouter({
       const unreadOnly = input?.unreadOnly ?? false;
       const limit = input?.limit ?? 20;
 
-      return ctx.db
-        .select()
-        .from(notifications)
-        .where(unreadOnly ? eq(notifications.isRead, false) : undefined)
-        .orderBy(desc(notifications.createdAt))
-        .limit(limit);
+      try {
+        return await ctx.db
+          .select()
+          .from(notifications)
+          .where(unreadOnly ? eq(notifications.isRead, false) : undefined)
+          .orderBy(desc(notifications.createdAt))
+          .limit(limit);
+      } catch {
+        return [];
+      }
     }),
 
   markAsRead: publicProcedure

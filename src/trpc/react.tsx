@@ -46,8 +46,7 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
       links: [
         loggerLink({
           enabled: (op) =>
-            process.env.NODE_ENV === "development" ||
-            (op.direction === "down" && op.result instanceof Error),
+            op.direction === "down" && isTRPCErrorResult(op.result),
         }),
         httpBatchStreamLink({
           transformer: SuperJSON,
@@ -68,6 +67,20 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
         {props.children}
       </api.Provider>
     </QueryClientProvider>
+  );
+}
+
+function isTRPCErrorResult(result: unknown) {
+  if (result instanceof Error) return true;
+  if (!result || typeof result !== "object" || !("result" in result)) {
+    return false;
+  }
+
+  const envelopeResult = result.result;
+  return (
+    !!envelopeResult &&
+    typeof envelopeResult === "object" &&
+    "error" in envelopeResult
   );
 }
 

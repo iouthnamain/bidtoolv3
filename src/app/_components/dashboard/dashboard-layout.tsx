@@ -43,6 +43,7 @@ const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
 const APP_VERSION_SEEN_KEY = STORAGE_KEYS.appVersionSeen;
 const APP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.appUpdateDismissed;
 const DESKTOP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.desktopUpdateDismissed;
+const UNREAD_COUNT_POLL_MS = 30_000;
 
 type IconName =
   | "dashboard"
@@ -77,6 +78,23 @@ type NavSection = {
 };
 
 const isDevEnvironment = process.env.NODE_ENV === "development";
+const VERSION_CHECK_POLL_MS = isDevEnvironment ? 120_000 : 300_000;
+
+function readLocalStorageValue(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorageValue(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+}
 
 const navSections: NavSection[] = [
   {
@@ -250,7 +268,7 @@ function NavLink({
             <NavItemIcon icon={item.icon} className="h-5 w-5" />
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
-                className={`absolute -top-1 -right-1 inline-flex min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold ${
+                className={`absolute -top-1.5 -right-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 py-0.5 text-xs leading-none font-bold ${
                   isActive ? "bg-sky-700 text-white" : "bg-rose-600 text-white"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
@@ -305,10 +323,13 @@ function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
-  const shouldReadUnreadCount = !["/help", "/maintenance"].includes(pathname);
+  const shouldReadUnreadCount =
+    !pathname.startsWith("/help") && !pathname.startsWith("/maintenance");
   const unreadCountQuery = api.notification.unreadCount.useQuery(undefined, {
     enabled: shouldReadUnreadCount,
-    refetchInterval: 30000,
+    refetchInterval: UNREAD_COUNT_POLL_MS,
+    refetchOnWindowFocus: false,
+    staleTime: UNREAD_COUNT_POLL_MS,
   });
   const [expandedHrefs, setExpandedHrefs] = useState<Record<string, boolean>>(
     {},
@@ -443,7 +464,7 @@ function DesktopUpdateNotice() {
   const noticeKey = getDesktopUpdateNoticeKey(updateState);
 
   useEffect(() => {
-    setDismissedKey(window.localStorage.getItem(DESKTOP_UPDATE_DISMISSED_KEY));
+    setDismissedKey(readLocalStorageValue(DESKTOP_UPDATE_DISMISSED_KEY));
   }, []);
 
   if (
@@ -466,7 +487,7 @@ function DesktopUpdateNotice() {
   const isDownloadRetry = updateState?.errorContext === "download";
 
   const dismiss = () => {
-    window.localStorage.setItem(DESKTOP_UPDATE_DISMISSED_KEY, noticeKey);
+    writeLocalStorageValue(DESKTOP_UPDATE_DISMISSED_KEY, noticeKey);
     setDismissedKey(noticeKey);
   };
 
@@ -595,7 +616,9 @@ function VersionUpdateNotice() {
   const { error, info, success, warning } = useToast();
   const utils = api.useUtils();
   const versionQuery = api.maintenance.version.useQuery(undefined, {
-    refetchInterval: 60000,
+    refetchInterval: VERSION_CHECK_POLL_MS,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
   });
   const checkForUpdates = api.maintenance.checkForUpdates.useMutation({
     onSuccess: async (result) => {
@@ -630,7 +653,7 @@ function VersionUpdateNotice() {
     : null;
 
   useEffect(() => {
-    setDismissedKey(window.localStorage.getItem(APP_UPDATE_DISMISSED_KEY));
+    setDismissedKey(readLocalStorageValue(APP_UPDATE_DISMISSED_KEY));
   }, []);
 
   useEffect(() => {
@@ -638,11 +661,11 @@ function VersionUpdateNotice() {
       return;
     }
 
-    const lastSeen = window.localStorage.getItem(APP_VERSION_SEEN_KEY);
+    const lastSeen = readLocalStorageValue(APP_VERSION_SEEN_KEY);
     if (lastSeen && lastSeen !== versionInfo.version) {
       info(`BidTool đã chuyển từ v${lastSeen} sang v${versionInfo.version}.`);
     }
-    window.localStorage.setItem(APP_VERSION_SEEN_KEY, versionInfo.version);
+    writeLocalStorageValue(APP_VERSION_SEEN_KEY, versionInfo.version);
   }, [info, versionInfo?.version]);
 
   if (!versionInfo?.updateAvailable || dismissedKey === noticeKey) {
@@ -654,7 +677,7 @@ function VersionUpdateNotice() {
       return;
     }
 
-    window.localStorage.setItem(APP_UPDATE_DISMISSED_KEY, noticeKey);
+    writeLocalStorageValue(APP_UPDATE_DISMISSED_KEY, noticeKey);
     setDismissedKey(noticeKey);
   };
 
@@ -713,6 +736,8 @@ function VersionUpdateNotice() {
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [hasLoadedSidebarPreference, setHasLoadedSidebarPreference] =
+    useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -736,18 +761,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY);
+    const stored = readLocalStorageValue(SIDEBAR_COLLAPSE_KEY);
     if (stored === "1") {
       setSidebarCollapsed(true);
     }
+    setHasLoadedSidebarPreference(true);
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(
+    if (!hasLoadedSidebarPreference) {
+      return;
+    }
+
+    writeLocalStorageValue(
       SIDEBAR_COLLAPSE_KEY,
       sidebarCollapsed ? "1" : "0",
     );
-  }, [sidebarCollapsed]);
+  }, [hasLoadedSidebarPreference, sidebarCollapsed]);
 
   return (
     <div className="flex h-screen flex-col text-slate-900 sm:flex-row">
@@ -758,7 +788,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         Bỏ qua điều hướng
       </a>
       <aside
-        className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur transition-[width] duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
+        className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
+          hasLoadedSidebarPreference ? "transition-[width]" : "transition-none"
+        } ${
           sidebarCollapsed ? "sm:w-16" : "sm:w-64"
         }`}
         aria-label="Thanh điều hướng chính"
