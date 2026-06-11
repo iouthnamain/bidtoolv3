@@ -27,6 +27,7 @@ import {
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
+import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type ScrapeJob = RouterOutputs["material"]["getShopScrapeJob"];
@@ -968,9 +969,13 @@ export function MaterialScrapeClient() {
   const isStartingScrape = !!pendingScrapeJob;
   const canStart = shopUrl.trim().length > 0 && !isStartingScrape;
   const selectedCount = selectedSourceUrls.size;
-  const allProductKeys = useMemo(
-    () => new Set(activeJob?.products.map(productKey) ?? []),
+  const scrapeProducts = useMemo(
+    () => sanitizeScrapedProductList(activeJob?.products ?? []),
     [activeJob?.products],
+  );
+  const allProductKeys = useMemo(
+    () => new Set(scrapeProducts.map(productKey)),
+    [scrapeProducts],
   );
   const allSelected =
     allProductKeys.size > 0 &&
@@ -986,7 +991,7 @@ export function MaterialScrapeClient() {
   const canDeleteSelected = canEditScrapeProducts && selectedCount > 0;
   const detailProductIndex =
     activeJob && detailProductKey
-      ? activeJob.products.findIndex(
+      ? scrapeProducts.findIndex(
           (product) => productKey(product) === detailProductKey,
         )
       : -1;
@@ -1448,7 +1453,7 @@ export function MaterialScrapeClient() {
 
   const selectAllProducts = () => {
     setSelectedSourceUrls(
-      allSelected ? new Set() : new Set(activeJob?.products.map(productKey)),
+      allSelected ? new Set() : new Set(scrapeProducts.map(productKey)),
     );
   };
 
@@ -2361,7 +2366,7 @@ export function MaterialScrapeClient() {
                 Job {shortJobId(activeJob.id)} · {hostFromUrl(activeJob.url)}
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                {activeJob.products.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
+                {scrapeProducts.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
                 {scrapeModeLabel[activeJob.scrapeMode]} ·{" "}
                 {scrapeMethodLabel[activeJob.method]} ·{" "}
                 {detailEnrichmentLabel[activeJob.detailEnrichment]}
@@ -2399,7 +2404,7 @@ export function MaterialScrapeClient() {
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={activeJob.products.length === 0 || isImportActive}
+                disabled={scrapeProducts.length === 0 || isImportActive}
                 leftIcon={
                   allSelected ? (
                     <CheckSquare className="h-3.5 w-3.5" />
@@ -2518,7 +2523,7 @@ export function MaterialScrapeClient() {
                         )} / ${activeImportJob.total.toLocaleString("vi-VN")}`
                       : `${selectedCount.toLocaleString(
                           "vi-VN",
-                        )} đã chọn / ${activeJob.products.length.toLocaleString(
+                        )} đã chọn / ${scrapeProducts.length.toLocaleString(
                           "vi-VN",
                         )} có thể nhập`}
                   </p>
@@ -2606,7 +2611,7 @@ export function MaterialScrapeClient() {
             </div>
           </div>
 
-          {activeJob.products.length > 0 ? (
+          {scrapeProducts.length > 0 ? (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
               <table className="min-w-[1680px] divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
@@ -2626,7 +2631,7 @@ export function MaterialScrapeClient() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {activeJob.products.map((item, index) => {
+                  {scrapeProducts.map((item, index) => {
                     const key = productKey(item);
                     const selected = selectedSourceUrls.has(key);
                     const missingLabels = productMissingLabels(item);

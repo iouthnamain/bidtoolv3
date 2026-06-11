@@ -8,11 +8,140 @@ import {
 import {
   enrichProductWithPageText,
   extractProductsFromPageSnapshot,
+  isShopPromoBadgeText,
   mergeScrapedProductData,
+  stripShopPromoBadgePrefix,
 } from "./shop-material-scraper";
 import { normalizeShopScrapeUrl } from "./shop-scrape-jobs";
 
+const CODIENHAIAU_CATEGORY_URL =
+  "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/";
+
+const CODIENHAIAU_EXPECTED_PRODUCTS = [
+  {
+    name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+    text: "Thịnh thành Đồng hồ đo đa năng Selec VAF36A 96x96mm 700.000 ₫",
+    cardName: "Thịnh thành",
+  },
+  {
+    name: "Đồng hồ đo tần số Selec MF16 96x48mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-mf16/",
+    text: "Đồng hồ đo tần số Selec MF16 96x48mm 277.000 ₫",
+    cardName: "Đồng hồ đo tần số Selec MF16 96x48mm",
+  },
+  {
+    name: "Đồng hồ đo tần số Selec MF316 96x96mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-mf316/",
+    text: "Đồng hồ đo tần số Selec MF316 96x96mm 284.000 ₫",
+    cardName: "Đồng hồ đo tần số Selec MF316 96x96mm",
+  },
+  {
+    name: "Đồng hồ đo tần số Selec MF216 72x72mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-mf216/",
+    text: "Đồng hồ đo tần số Selec MF216 72x72mm 284.000 ₫",
+    cardName: "Đồng hồ đo tần số Selec MF216 72x72mm",
+  },
+  {
+    name: "Đồng hồ đo đa năng Selec VAF39A 96x96mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf39a-96x96mm/",
+    text: "Thịnh thành Đồng hồ đo đa năng Selec VAF39A 96x96mm 974.000 ₫",
+    cardName: "Thịnh thành",
+  },
+  {
+    name: "Đồng hồ đo tần số Taiwan Meters 72x72mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-taiwan-meters-72x72mm/",
+    text: "Đồng hồ đo tần số Taiwan Meters 72x72mm 489.000 ₫",
+    cardName: "Đồng hồ đo tần số Taiwan Meters 72x72mm",
+  },
+  {
+    name: "Đồng hồ đo tần số Taiwan Meters 96x96mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-taiwan-meters-96x96mm/",
+    text: "Đồng hồ đo tần số Taiwan Meters 96x96mm 627.000 ₫",
+    cardName: "Đồng hồ đo tần số Taiwan Meters 96x96mm",
+  },
+  {
+    name: "Đồng hồ đo tần số Selec MA316 96x96mm",
+    href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-ma316/",
+    text: "Đồng hồ đo tần số Selec MA316 96x96mm 271.000 ₫",
+    cardName: "Đồng hồ đo tần số Selec MA316 96x96mm",
+  },
+] as const;
+
 describe("extractProductsFromPageSnapshot", () => {
+  it("extracts all 8 codienhaiau category products and ignores sidebar duplicates", () => {
+    const mainCards = CODIENHAIAU_EXPECTED_PRODUCTS.map((product) => ({
+      name: product.cardName,
+      href: product.href,
+      imageUrl: null,
+      category: null,
+      text: product.text,
+    }));
+    const sidebarCards = CODIENHAIAU_EXPECTED_PRODUCTS.map((product) => ({
+      name: product.name,
+      href: product.href,
+      imageUrl: null,
+      category: null,
+      text: `${product.text} sidebar`,
+    }));
+
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: CODIENHAIAU_CATEGORY_URL,
+        title: "Đồng hồ đo tần số",
+        jsonLdTexts: [],
+        cards: [...mainCards, ...sidebarCards],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(8);
+    expect(products.map((product) => product.name).sort()).toEqual(
+      CODIENHAIAU_EXPECTED_PRODUCTS.map((product) => product.name).sort(),
+    );
+    for (const product of products) {
+      expect(product.sourceUrl).toMatch(/\/product\//);
+      expect(product.name).not.toMatch(/^Thịnh thành$/);
+    }
+  });
+
+  it("extracts codienhaiau promo badge titles when badge is on its own line", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: CODIENHAIAU_CATEGORY_URL,
+        title: "Đồng hồ đo tần số",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Thịnh thành",
+            href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+            imageUrl: null,
+            category: null,
+            text: "Thịnh thành\nĐồng hồ đo đa năng Selec VAF36A 96x96mm\n700.000 ₫",
+          },
+          {
+            name: "Thịnh thành",
+            href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf39a-96x96mm/",
+            imageUrl: null,
+            category: null,
+            text: "Thịnh thành\nĐồng hồ đo đa năng Selec VAF39A 96x96mm\n974.000 ₫",
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(2);
+    expect(products.map((product) => product.name).sort()).toEqual(
+      [
+        "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+        "Đồng hồ đo đa năng Selec VAF39A 96x96mm",
+      ].sort(),
+    );
+  });
+
   it("extracts full product data from JSON-LD", () => {
     const products = extractProductsFromPageSnapshot({
       pageUrl: "https://shop.example.com/category",
@@ -204,6 +333,154 @@ describe("extractProductsFromPageSnapshot", () => {
       originCountry: "Nhật Bản",
       category: "Dụng cụ điện",
       specText: "Máy khoan pin 18V, 2 pin, sạc nhanh.",
+    });
+  });
+
+  it("ignores promo badge labels as product names", () => {
+    expect(isShopPromoBadgeText("Thịnh thành")).toBe(true);
+    expect(isShopPromoBadgeText("Thịnh hành")).toBe(true);
+    expect(isShopPromoBadgeText("Bán chạy")).toBe(true);
+    expect(isShopPromoBadgeText("Flash sale")).toBe(true);
+    expect(isShopPromoBadgeText("Đồng hồ đo tần số Selec MF16")).toBe(false);
+    expect(
+      stripShopPromoBadgePrefix(
+        "Thịnh thành Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+      ),
+    ).toBe("Đồng hồ đo đa năng Selec VAF36A 96x96mm");
+    expect(
+      stripShopPromoBadgePrefix("Bán chạy Hot Máy khoan Bosch GSB 13RE"),
+    ).toBe("Máy khoan Bosch GSB 13RE");
+  });
+
+  it("drops cards without a distinct product URL", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+      title: "Đồng hồ đo tần số",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+          href: null,
+          imageUrl: null,
+          category: null,
+          text: "Đồng hồ đo đa năng Selec VAF36A 96x96mm 700.000 ₫",
+        },
+        {
+          name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+          href: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+          imageUrl: null,
+          category: null,
+          text: "Đồng hồ đo đa năng Selec VAF36A 96x96mm 700.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(0);
+  });
+
+  it("drops cards whose name is only a promo badge", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+      title: "Đồng hồ đo tần số",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Thịnh thành",
+          href: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+          imageUrl: null,
+          category: null,
+          text: "Thịnh thành 700.000 ₫",
+        },
+        {
+          name: "Bán chạy",
+          href: "https://codienhaiau.com/product/example/",
+          imageUrl: null,
+          category: null,
+          text: "Bán chạy 120.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(0);
+  });
+
+  it("keeps products when card name is promo-only but card text has the real title", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+      title: "Đồng hồ đo tần số",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Thịnh thành",
+          href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+          imageUrl: null,
+          category: null,
+          text: "Thịnh thành Đồng hồ đo đa năng Selec VAF36A 96x96mm 700.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+      price: 700000,
+      sourceUrl:
+        "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+    });
+  });
+
+  it("strips trailing price from codienhaiau card names", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+      title: "Đồng hồ đo tần số",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Đồng hồ đo tần số Selec MF16 96x48mm 277.000 ₫",
+          href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-mf16/",
+          imageUrl: null,
+          category: null,
+          text: "Đồng hồ đo tần số Selec MF16 96x48mm 277.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]?.name).toBe("Đồng hồ đo tần số Selec MF16 96x48mm");
+  });
+
+  it("strips leading promo badges from codienhaiau-style product cards", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/",
+      title: "Đồng hồ đo tần số",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Thịnh thành Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+          href: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+          imageUrl: null,
+          category: null,
+          text: "Thịnh thành Đồng hồ đo đa năng Selec VAF36A 96x96mm 700.000 ₫",
+        },
+        {
+          name: "Đồng hồ đo tần số Selec MF16 96x48mm",
+          href: "https://codienhaiau.com/product/dong-ho-do-tan-so-selec-mf16/",
+          imageUrl: null,
+          category: null,
+          text: "Đồng hồ đo tần số Selec MF16 96x48mm 277.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(2);
+    expect(products[0]).toMatchObject({
+      name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
+      price: 700000,
+      sourceUrl: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
     });
   });
 

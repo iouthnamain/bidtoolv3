@@ -8,6 +8,10 @@ import { shopScrapeJobs } from "~/server/db/schema";
 import { abortShopScrapeJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import {
+  sanitizeScrapedProductList,
+  sanitizeScrapedProductName,
+} from "~/lib/materials/shop-promo-badges";
+import {
   type ScrapedShopProduct,
   type ShopDetailEnrichmentMode,
   type ShopScrapeMethod,
@@ -211,8 +215,9 @@ function trimmedOrNull(value: string | null | undefined) {
 function normalizeScrapedProductInput(
   product: ScrapedShopProduct,
 ): ScrapedShopProduct {
+  const name = sanitizeScrapedProductName(product.name) ?? product.name.trim();
   return {
-    name: product.name.trim(),
+    name,
     unit: trimmedOrNull(product.unit),
     category: trimmedOrNull(product.category),
     specText: product.specText.trim(),
@@ -234,12 +239,13 @@ function normalizeScrapedProductInput(
 }
 
 async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProduct[]) {
+  const sanitizedProducts = sanitizeScrapedProductList(products);
   const now = new Date().toISOString();
   const [updated] = await db
     .update(shopScrapeJobs)
     .set({
-      products,
-      productCount: products.length,
+      products: sanitizedProducts,
+      productCount: sanitizedProducts.length,
       updatedAt: now,
     })
     .where(eq(shopScrapeJobs.id, jobId))
@@ -462,7 +468,7 @@ function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
     pagesVisited: Array.isArray(row.pagesVisited) ? row.pagesVisited : [],
     failedPages: Array.isArray(row.failedPages) ? row.failedPages : [],
     products,
-    productCount: row.productCount || products.length,
+    productCount: products.length,
     queueLength: row.queueLength,
     durationMs: row.durationMs,
     stopReason: asStopReason(row.stopReason),
@@ -479,7 +485,10 @@ function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
 }
 
 function asScrapedProducts(value: unknown): ScrapedShopProduct[] {
-  return Array.isArray(value) ? (value as ScrapedShopProduct[]) : [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return sanitizeScrapedProductList(value as ScrapedShopProduct[]);
 }
 
 function asScrapeMethod(value: string): ShopScrapeMethod {

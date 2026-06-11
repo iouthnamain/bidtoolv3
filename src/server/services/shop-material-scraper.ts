@@ -6,7 +6,20 @@ import type { Browser, Page } from "playwright";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
+import {
+  isShopPromoBadgeText,
+  resolveProductNameFromCandidates,
+  sanitizeScrapedProductList,
+  sanitizeScrapedProductName,
+  SHOP_PROMO_BADGE_LABELS,
+} from "~/lib/materials/shop-promo-badges";
 import { isServerlessRuntime } from "~/server/runtime";
+
+export {
+  isShopPromoBadgeText,
+  SHOP_PROMO_BADGE_LABELS,
+  stripShopPromoBadgePrefix,
+} from "~/lib/materials/shop-promo-badges";
 
 export type ScrapedShopProduct = {
   name: string;
@@ -110,6 +123,10 @@ const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
 const PUBLIC_HOST_CACHE = new Map<string, Promise<void>>();
 let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
 
+type ShopScrapePageConfig = {
+  promoBadgeLabels: readonly string[];
+};
+
 export async function scrapeShopMaterialsFromUrl({
   url,
   maxPages = DEFAULT_MAX_PAGES,
@@ -170,7 +187,9 @@ export async function scrapeShopMaterialsFromUrl({
         let waiters: Array<() => void> = [];
         const productList = () => {
           const values = Array.from(products.values());
-          return maxProducts == null ? values : values.slice(0, maxProducts);
+          const capped =
+            maxProducts == null ? values : values.slice(0, maxProducts);
+          return sanitizeScrapedProductList(capped);
         };
         const currentUrls = () =>
           Array.from(currentUrlsByWorker.values()).slice(0, workerCount);
@@ -434,9 +453,64 @@ async function scrapePageSnapshot({
     })
     .catch(() => undefined);
   await page.waitForTimeout(250).catch(() => undefined);
+  await page
+    .waitForSelector(
+      ".woocommerce-loop-product__title, .catepage .motsanpham, ul.products li.product",
+      {
+        timeout: Math.max(
+          500,
+          Math.min(5_000, scrapeDeadline - Date.now()),
+        ),
+      },
+    )
+    .catch(() => undefined);
+  await page
+    .waitForFunction(
+      () => {
+        const cards = Array.from(
+          document.querySelectorAll(
+            ".catepage .motsanpham, ul.products li.product, li.product.type-product",
+          ),
+        ).filter(
+          (node) =>
+            !node.classList.contains("product_list_widget") &&
+            !node.closest(
+              "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i]",
+            ),
+        );
+        if (cards.length === 0) {
+          return false;
+        }
+        const pricePattern =
+          /(?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?/i;
+        return cards.every((card) => {
+          const title = card
+            .querySelector(".woocommerce-loop-product__title, h2, h3")
+            ?.textContent?.replace(/\s+/g, " ")
+            .trim();
+          const priceText = card.querySelector(
+            ".price, .woocommerce-Price-amount, [class*='price' i]",
+          )?.textContent;
+          return (
+            Boolean(title && title.length > 3) &&
+            Boolean(priceText && pricePattern.test(priceText))
+          );
+        });
+      },
+      undefined,
+      {
+        timeout: Math.max(
+          500,
+          Math.min(8_000, scrapeDeadline - Date.now()),
+        ),
+      },
+    )
+    .catch(() => undefined);
 
   await assertSafeScrapeUrl(page.url(), expectedHostname);
-  return page.evaluate(collectShopPageSnapshot);
+  return page.evaluate(collectShopPageSnapshot, {
+    promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
+  });
 }
 
 function throwIfAborted(signal: AbortSignal | undefined) {
@@ -500,7 +574,10 @@ export function extractProductsFromPageSnapshot(
     }
   }
 
-  return Array.from(byIdentity.values());
+  return sanitizeScrapedProductList(
+    Array.from(byIdentity.values()),
+    snapshot.pageUrl,
+  );
 }
 
 type DetailEnrichmentInput = {
@@ -559,7 +636,9 @@ async function enrichProductsFromDetailPages({
       await page.waitForTimeout(150).catch(() => undefined);
       await assertSafeScrapeUrl(page.url(), expectedHostname);
 
-      const snapshot = await page.evaluate(collectShopPageSnapshot);
+      const snapshot = await page.evaluate(collectShopPageSnapshot, {
+        promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
+      });
       const detailProducts = extractProductsFromPageSnapshot(snapshot, method);
       const detailProduct =
         findBestDetailProduct(product, detailProducts) ??
@@ -637,8 +716,11 @@ export function mergeScrapedProductData(
       ? incoming.specText
       : base.specText;
 
+  const mergedName = chooseScrapedProductName(base.name, incoming.name);
+
   return {
     ...base,
+    name: mergedName,
     unit: base.unit ?? incoming.unit,
     category: base.category ?? incoming.category,
     specText: betterSpecText,
@@ -898,7 +980,56 @@ function isPrivateIpv4(address: string) {
   );
 }
 
-function collectShopPageSnapshot(): ShopPageSnapshot {
+export function collectShopPageSnapshot(
+  config: ShopScrapePageConfig = { promoBadgeLabels: [] },
+): ShopPageSnapshot {
+  const promoBadgeLabels = config.promoBadgeLabels ?? [];
+  const sortedPromoLabels = [...promoBadgeLabels].sort(
+    (a, b) => b.length - a.length,
+  );
+  const normalizedPromoLabels = new Set(
+    promoBadgeLabels.map((label) =>
+      label
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim(),
+    ),
+  );
+  const isPromoBadgeText = (value: string | null | undefined) => {
+    const trimmed = value?.replace(/\s+/g, " ").trim();
+    if (!trimmed) {
+      return false;
+    }
+    const normalized = trimmed
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    return normalizedPromoLabels.has(normalized);
+  };
+  const stripPromoBadgePrefix = (value: string) => {
+    let result = value.replace(/\s+/g, " ").trim();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const label of sortedPromoLabels) {
+        const pattern = new RegExp(
+          `^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`,
+          "i",
+        );
+        if (pattern.test(result)) {
+          result = result.replace(pattern, "").trim();
+          changed = true;
+          break;
+        }
+      }
+    }
+    return result;
+  };
+
   const abs = (value: string | null | undefined) => {
     if (!value) return null;
     try {
@@ -922,8 +1053,12 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
   // Promo stickers (e.g. WooCommerce "sale"/"trending" labels) often sit
   // before the real product title and must never be used as name/link.
   const badgeClassPattern =
-    /(label|badge|ribbon|sticker|onsale|sale[-_]?flash|countdown)/i;
+    /(label|badge|ribbon|sticker|onsale|sale[-_]?flash|countdown|\bawl\b|advanced-woo)/i;
   const isPromoBadgeElement = (element: Element | null | undefined) => {
+    const directText = text(element);
+    if (directText && isPromoBadgeText(directText)) {
+      return true;
+    }
     let current: Element | null = element ?? null;
     for (let depth = 0; current && depth < 6; depth += 1) {
       const className =
@@ -943,7 +1078,14 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
   const findTitleElement = (root: Element) => {
     for (const selector of titleSelectors) {
       const candidate = Array.from(root.querySelectorAll(selector)).find(
-        (element) => !isPromoBadgeElement(element) && text(element),
+        (element) => {
+          const value = text(element);
+          return (
+            !isPromoBadgeElement(element) &&
+            Boolean(value) &&
+            !isPromoBadgeText(value)
+          );
+        },
       );
       if (candidate) {
         return candidate;
@@ -965,6 +1107,161 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
     }
     return urls;
   };
+  const isWidgetProductNode = (node: Element) =>
+    node.classList.contains("product_list_widget") ||
+    Boolean(
+      node.closest(
+        "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i]",
+      ),
+    );
+  const stripTrailingPrice = (value: string) =>
+    value
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\s*giá\s*:\s*/gi, " ")
+      .replace(
+        /\s+(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?)(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?.*$|\s+\d{4,}\s*(?:vnd|vnđ|₫|đ|dong|đồng)\b.*$/i,
+        "",
+      )
+      .replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
+      .trim();
+  const resolveCardName = (
+    candidates: Array<string | null | undefined>,
+    cardText: string,
+  ) => {
+    const sanitizeCandidate = (candidate: string | null | undefined) => {
+      if (!candidate?.trim()) {
+        return null;
+      }
+      const values = [candidate.replace(/\s+/g, " ").trim()];
+      for (const line of candidate.split(/\r?\n+/)) {
+        values.push(line.trim());
+      }
+      for (const value of values) {
+        const stripped = stripTrailingPrice(stripPromoBadgePrefix(value));
+        if (stripped && !isPromoBadgeText(stripped)) {
+          return stripped;
+        }
+      }
+      return null;
+    };
+    for (const candidate of candidates) {
+      const name = sanitizeCandidate(candidate);
+      if (name) {
+        return name;
+      }
+    }
+    return sanitizeCandidate(stripTrailingPrice(cardText.replace(/\s+/g, " ").trim()));
+  };
+  const cardNameScore = (card: { name: string | null }) => {
+    const rawName = card.name?.replace(/\s+/g, " ").trim() ?? "";
+    if (!rawName || isPromoBadgeText(rawName)) {
+      return 0;
+    }
+    const stripped = stripPromoBadgePrefix(rawName);
+    if (!stripped || isPromoBadgeText(stripped)) {
+      return 0;
+    }
+    return stripped.length;
+  };
+  const cardHasPrice = (card: { text: string }, root: Element) => {
+    if (pricePattern.test(card.text)) {
+      return true;
+    }
+    const priceElement = root.querySelector(
+      ".price, .woocommerce-Price-amount, [class*='price' i]",
+    );
+    const priceValue = text(priceElement);
+    return Boolean(priceValue && pricePattern.test(priceValue));
+  };
+  const buildCardFromNode = (node: Element) => {
+    const anchors = Array.from(
+      node.querySelectorAll<HTMLAnchorElement>("a[href]"),
+    );
+    if (node.matches("a[href]")) {
+      anchors.unshift(node as HTMLAnchorElement);
+    }
+    const anchor =
+      anchors.find(
+        (item) =>
+          /\/product\/|\/san-pham\/|\/p\/|\/item\//i.test(
+            item.getAttribute("href") ?? "",
+          ) && !isPromoBadgeElement(item),
+      ) ??
+      anchors.find(
+        (item) =>
+          !isPromoBadgeElement(item) && item.getAttribute("title")?.trim(),
+      ) ??
+      anchors.find(
+        (item) =>
+          !isPromoBadgeElement(item) &&
+          text(item) &&
+          (text(item)?.length ?? 0) > 5,
+      ) ??
+      anchors[0];
+    const cardRoot =
+      node.closest("article, li, [class*='product' i]") ??
+      node.parentElement ??
+      node;
+    const titleElement =
+      node.querySelector(".woocommerce-loop-product__title") ??
+      findTitleElement(node);
+    const image =
+      node.querySelector<HTMLImageElement>("img[src], img[data-src]") ??
+      cardRoot.querySelector<HTMLImageElement>("img[src], img[data-src]");
+    const categoryElement = node.querySelector(
+      "[class*='category'], [class*='breadcrumb']",
+    );
+    const priceElement = node.querySelector(
+      ".price, .woocommerce-Price-amount, [class*='price' i]",
+    );
+    const anchorTitle = anchor?.getAttribute("title")?.trim();
+    const anchorText = text(anchor);
+    const titleText = text(titleElement);
+    const nodeText = text(node) ?? "";
+    const priceText = text(priceElement);
+    const cardText =
+      priceText && !pricePattern.test(nodeText)
+        ? `${nodeText} ${priceText}`.trim()
+        : nodeText;
+    const imageSrc =
+      image?.getAttribute("src") ?? image?.getAttribute("data-src");
+
+    return {
+      text: cardText,
+      name: resolveCardName([titleText, anchorTitle], cardText),
+      href: abs(anchor?.getAttribute("href")),
+      imageUrl: abs(imageSrc),
+      category: text(categoryElement),
+      pdfUrls: collectPdfUrls(cardRoot, 5),
+    };
+  };
+  const wooNodes = Array.from(
+    document.querySelectorAll(
+      ".catepage .motsanpham, ul.products li.product, li.product.type-product",
+    ),
+  ).filter((node) => !isWidgetProductNode(node));
+  const cardsByHref = new Map<
+    string,
+    {
+      text: string;
+      name: string | null;
+      href: string | null;
+      imageUrl: string | null;
+      category: string | null;
+      pdfUrls: string[];
+    }
+  >();
+  for (const node of wooNodes) {
+    const card = buildCardFromNode(node);
+    if (!card.href || !card.name || !cardHasPrice(card, node)) {
+      continue;
+    }
+    const existing = cardsByHref.get(card.href);
+    if (!existing || cardNameScore(card) > cardNameScore(existing)) {
+      cardsByHref.set(card.href, card);
+    }
+  }
   const likelyNodeSet = new Set<Element>();
   const productAnchors = Array.from(
     document.querySelectorAll<HTMLAnchorElement>("a[href]"),
@@ -1010,57 +1307,22 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
   });
 
   fallbackNodes.slice(0, 120).forEach((node) => likelyNodeSet.add(node));
-  const likelyNodes = Array.from(likelyNodeSet).slice(0, 160);
+  const likelyNodes = Array.from(likelyNodeSet)
+    .filter((node) => !isWidgetProductNode(node))
+    .slice(0, 160);
 
-  const cards = likelyNodes.map((node) => {
-    const anchors = Array.from(
-      node.querySelectorAll<HTMLAnchorElement>("a[href]"),
-    );
-    // The card node itself can be the product link (querySelectorAll only
-    // matches descendants), so include it or the product URL is lost.
-    if (node.matches("a[href]")) {
-      anchors.unshift(node as HTMLAnchorElement);
+  for (const node of likelyNodes) {
+    const card = buildCardFromNode(node);
+    if (!card.href || !card.name || !cardHasPrice(card, node)) {
+      continue;
     }
-    const anchor =
-      anchors.find(
-        (item) =>
-          !isPromoBadgeElement(item) && item.getAttribute("title")?.trim(),
-      ) ??
-      anchors.find(
-        (item) =>
-          !isPromoBadgeElement(item) &&
-          text(item) &&
-          (text(item)?.length ?? 0) > 5,
-      ) ??
-      anchors[0];
-    const cardRoot =
-      node.closest("article, li, [class*='product' i]") ??
-      node.parentElement ??
-      node;
-    const image =
-      node.querySelector<HTMLImageElement>("img[src], img[data-src]") ??
-      cardRoot.querySelector<HTMLImageElement>("img[src], img[data-src]");
-    const titleElement = findTitleElement(node);
-    const categoryElement = node.querySelector(
-      "[class*='category'], [class*='breadcrumb']",
-    );
-    const anchorTitle = anchor?.getAttribute("title")?.trim();
-    const anchorText = text(anchor);
-    const imageSrc =
-      image?.getAttribute("src") ?? image?.getAttribute("data-src");
+    const existing = cardsByHref.get(card.href);
+    if (!existing || cardNameScore(card) > cardNameScore(existing)) {
+      cardsByHref.set(card.href, card);
+    }
+  }
 
-    return {
-      text: text(node) ?? "",
-      name:
-        anchorTitle && anchorTitle.length > 0
-          ? anchorTitle
-          : (text(titleElement) ?? anchorText),
-      href: abs(anchor?.getAttribute("href")),
-      imageUrl: abs(imageSrc),
-      category: text(categoryElement),
-      pdfUrls: collectPdfUrls(cardRoot, 5),
-    };
-  });
+  const cards = Array.from(cardsByHref.values());
 
   const paginationAnchors = new Set<HTMLAnchorElement>();
   for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
@@ -1193,7 +1455,13 @@ function productFromCardSnapshot(
   card: ProductCardSnapshot,
   pageUrl: string,
 ): ScrapedShopProduct | null {
-  const name = cleanName(card.name);
+  if (!card.href?.trim()) {
+    return null;
+  }
+  if (normalizeKey(card.href) === normalizeKey(pageUrl)) {
+    return null;
+  }
+  const name = resolveProductNameFromCandidates([card.name], card.text);
   if (!name) {
     return null;
   }
@@ -1213,7 +1481,7 @@ function productFromCardSnapshot(
     price: priceResult.price,
     priceText: priceResult.priceText,
     currency: detectCurrency(priceResult.priceText) ?? "VND",
-    sourceUrl: card.href ?? pageUrl,
+    sourceUrl: card.href,
     imageUrl: card.imageUrl,
     sku: labels.sku ?? detectSku(card.text),
     model: labels.model,
@@ -1300,14 +1568,22 @@ function absoluteUrl(value: string | null | undefined, baseUrl: string) {
 }
 
 function cleanName(value: string | null | undefined) {
-  const cleaned = value
-    ?.replace(/\s+/g, " ")
-    .replace(/\b(add to cart|mua ngay|chi tiết|xem thêm)\b/gi, " ")
-    .trim();
-  if (!cleaned || cleaned.length < 2) {
-    return null;
+  return sanitizeScrapedProductName(value);
+}
+
+function chooseScrapedProductName(baseName: string, incomingName: string) {
+  const base = sanitizeScrapedProductName(baseName);
+  const incoming = sanitizeScrapedProductName(incomingName);
+  if (!incoming) {
+    return base ?? baseName;
   }
-  return cleaned.slice(0, 220);
+  if (!base || isShopPromoBadgeText(baseName)) {
+    return incoming;
+  }
+  if (isShopPromoBadgeText(incomingName)) {
+    return base;
+  }
+  return incoming.length > base.length ? incoming : base;
 }
 
 function cleanDescription(text: string, name: string) {

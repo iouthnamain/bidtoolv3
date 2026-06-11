@@ -7,6 +7,7 @@ import { env } from "~/env";
 import { db } from "~/server/db";
 import { shopImportJobs, shopScrapeJobs } from "~/server/db/schema";
 import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
+import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import {
   scrapeShopMaterialsFromUrl,
   type ScrapedShopProduct,
@@ -394,8 +395,9 @@ function createScrapeProgressWriter(jobId: string) {
             currentUrls: progress.currentUrls,
             pagesVisited: progress.pagesVisited,
             failedPages: progress.failedPages,
-            products: progress.products ?? [],
-            productCount: progress.productCount,
+            products: sanitizeScrapedProductList(progress.products ?? []),
+            productCount: sanitizeScrapedProductList(progress.products ?? [])
+              .length,
             queueLength: progress.queueLength,
             durationMs: progress.elapsedMs,
             stopReason: progress.stopReason,
