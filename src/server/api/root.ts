@@ -2,6 +2,7 @@ import { catalogDocumentRouter } from "~/server/api/routers/catalog-document";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
+import { versionRouter } from "~/server/api/routers/version";
 import { watchlistRouter } from "~/server/api/routers/watchlist";
 import { workflowRouter } from "~/server/api/routers/workflow";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
@@ -16,6 +17,7 @@ export const appRouter = createTRPCRouter({
   material: materialRouter,
   notification: notificationRouter,
   search: searchRouter,
+  version: versionRouter,
   watchlist: watchlistRouter,
   workflow: workflowRouter,
 });

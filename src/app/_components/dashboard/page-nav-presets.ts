@@ -269,9 +269,9 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
     icon: "server",
   },
   {
-    href: "#desktop-config",
-    label: "Cấu hình hiện tại",
-    description: "Nguồn cấu hình, server và trạng thái editable.",
+    href: "#about-version",
+    label: "Phiên bản",
+    description: "Phiên bản hiện tại, bản mới nhất và lệnh cập nhật.",
     icon: "settings",
   },
 ];

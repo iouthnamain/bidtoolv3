@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { MonitorCog, Settings, SlidersHorizontal } from "lucide-react";
+import { MonitorCog, Settings, SlidersHorizontal, Info } from "lucide-react";
 
+import { AboutVersionSection } from "~/app/_components/dashboard/about-version-section";
 import { DesktopSettingsSection } from "~/app/_components/dashboard/desktop-settings-page-client";
 import { PageSectionNav } from "~/app/_components/dashboard/page-section-nav";
 import { settingsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
@@ -19,6 +20,12 @@ const settingsCards = [
     title: "Server URL",
     body: "Trỏ desktop app tới server on-prem hoặc quay về server local đi kèm.",
     icon: SlidersHorizontal,
+  },
+  {
+    href: "#about-version",
+    title: "Phiên bản",
+    body: "Phiên bản hiện tại, bản mới nhất và lệnh cập nhật on-prem.",
+    icon: Info,
   },
 ];
 
@@ -76,6 +83,7 @@ export function SettingsPageClient() {
       </section>
 
       <DesktopSettingsSection />
+      <AboutVersionSection />
     </div>
   );
 }

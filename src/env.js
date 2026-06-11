@@ -13,6 +13,17 @@ export const env = createEnv({
     BIDWINNER_BASE_URL: z.string().url().default("https://bidwinner.info"),
     BIDWINNER_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
     ENABLE_DEMO_SEED: z.enum(["true", "false"]).optional().default("false"),
+    BIDTOOL_APP_VERSION: z.string().optional(),
+    BIDTOOL_BUILD_METADATA: z.string().optional(),
+    BIDTOOL_DEPLOYMENT_SURFACE: z
+      .enum(["web", "onprem", "desktop-bundled"])
+      .optional(),
+    BIDTOOL_MANIFEST_URL: z.string().url().optional(),
+    BIDTOOL_MANIFEST_PATH: z.string().optional(),
+    BIDTOOL_PINS_URL: z.string().url().optional(),
+    BIDTOOL_PINS_BRANCH: z.string().optional(),
+    BIDTOOL_GITHUB_REPO: z.string().optional(),
+    BIDTOOL_PACKAGE_VERSION: z.string().default("0.1.0"),
   },
 
   /**
@@ -35,6 +46,15 @@ export const env = createEnv({
     BIDWINNER_BASE_URL: process.env.BIDWINNER_BASE_URL,
     BIDWINNER_TIMEOUT_MS: process.env.BIDWINNER_TIMEOUT_MS,
     ENABLE_DEMO_SEED: process.env.ENABLE_DEMO_SEED,
+    BIDTOOL_APP_VERSION: process.env.BIDTOOL_APP_VERSION,
+    BIDTOOL_BUILD_METADATA: process.env.BIDTOOL_BUILD_METADATA,
+    BIDTOOL_DEPLOYMENT_SURFACE: process.env.BIDTOOL_DEPLOYMENT_SURFACE,
+    BIDTOOL_MANIFEST_URL: process.env.BIDTOOL_MANIFEST_URL,
+    BIDTOOL_MANIFEST_PATH: process.env.BIDTOOL_MANIFEST_PATH,
+    BIDTOOL_PINS_URL: process.env.BIDTOOL_PINS_URL,
+    BIDTOOL_PINS_BRANCH: process.env.BIDTOOL_PINS_BRANCH,
+    BIDTOOL_GITHUB_REPO: process.env.BIDTOOL_GITHUB_REPO,
+    BIDTOOL_PACKAGE_VERSION: process.env.BIDTOOL_PACKAGE_VERSION,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

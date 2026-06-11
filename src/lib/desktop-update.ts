@@ -106,3 +106,42 @@ export function getDesktopUpdateActionError(
   }
   return message;
 }
+
+export function canCheckForDesktopUpdate(
+  state: DesktopUpdateState | null,
+): boolean {
+  if (!state?.enabled) {
+    return false;
+  }
+
+  return !(
+    state.status === "checking" ||
+    state.status === "downloading" ||
+    state.status === "downloaded"
+  );
+}
+
+export function getDesktopUpdateInstallConfirmationMessage(
+  version: string | null,
+): string {
+  return `Cài đặt bản cập nhật${version ? ` ${version}` : ""} và khởi động lại BidTool? Các tác vụ đang chạy có thể bị gián đoạn.`;
+}
+
+export function getAdminUpdateNoticeKey(
+  current: string,
+  latest: string | null,
+): string | null {
+  if (!latest) {
+    return null;
+  }
+
+  return `${current}:${latest}`;
+}
+
+export function shouldShowAdminUpdateBanner(input: {
+  surface: string;
+  updateAvailable: boolean;
+  latest: string | null;
+}): boolean {
+  return input.surface === "onprem" && input.updateAvailable && !!input.latest;
+}

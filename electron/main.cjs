@@ -298,6 +298,23 @@ function registerDesktopUpdaterListeners() {
   });
 }
 
+function configureMockDesktopUpdaterFeed() {
+  const mockEnabled = ["1", "true", "yes"].includes(
+    String(process.env.BIDTOOL_DESKTOP_MOCK_UPDATES ?? "").toLowerCase(),
+  );
+  if (!mockEnabled) {
+    return;
+  }
+
+  const port = String(
+    process.env.BIDTOOL_DESKTOP_MOCK_UPDATE_PORT ?? "3000",
+  ).trim();
+  autoUpdater.setFeedURL({
+    provider: "generic",
+    url: `http://127.0.0.1:${port}/`,
+  });
+}
+
 function configureDesktopUpdater() {
   loadLocalEnv();
   const disabledReason = resolveDesktopUpdateDisabledReason();
@@ -317,6 +334,8 @@ function configureDesktopUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
+
+  configureMockDesktopUpdaterFeed();
 
   updaterConfigured = true;
   markDesktopUpdateIdle();

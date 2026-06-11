@@ -27,6 +27,7 @@ copy_path "scripts/onprem-install.sh"
 copy_path "scripts/onprem-lib.sh"
 copy_path "scripts/onprem-restore.sh"
 copy_path "scripts/onprem-update.sh"
+copy_path "releases"
 
 env_template="$STAGE_DIR/deploy/onprem/.env.customer.example"
 tmp_file="$(mktemp)"
