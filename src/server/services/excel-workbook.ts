@@ -19,6 +19,7 @@ export const columnKeys = [
   "vendorHint",
   "originHint",
   "sourceUrl",
+  "catalogPdfUrls",
   "notes",
 ] as const;
 
@@ -71,6 +72,7 @@ export type ImportedWorkbookRow = {
   inspectionQtyTerm2: number | null;
   unitPrice: number | null;
   sourceUrl: string | null;
+  catalogPdfUrls: string | null;
   searchKeywords: string[];
 };
 
@@ -158,6 +160,16 @@ const aliases: Record<ColumnKey, string[]> = {
   ],
   originHint: ["origin", "xuat xu", "nuoc san xuat"],
   sourceUrl: ["link", "url", "source", "nguon", "link sp"],
+  catalogPdfUrls: [
+    "catalog pdf",
+    "catalog pdf urls",
+    "catalog_pdf_urls",
+    "pdf",
+    "pdf url",
+    "tai lieu",
+    "tai lieu pdf",
+    "catalog",
+  ],
   notes: [
     "note",
     "notes",
@@ -563,6 +575,7 @@ export function rowsFromMapping(
         inspectionQtyTerm2: parseOptionalNumber(get("inspectionQtyTerm2")),
         unitPrice,
         sourceUrl: get("sourceUrl") || null,
+        catalogPdfUrls: get("catalogPdfUrls") || null,
         searchKeywords: [materialName, specText, unit]
           .join(" ")
           .split(/[,;/\n]/)

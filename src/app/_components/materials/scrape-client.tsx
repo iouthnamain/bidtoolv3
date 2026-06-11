@@ -229,6 +229,9 @@ function productInfoSummary(product: ScrapedProduct) {
     product.model ? `Model ${product.model}` : null,
     product.category ? `Nhóm ${product.category}` : null,
     product.availability,
+    product.catalogPdfUrls.length > 0
+      ? `${product.catalogPdfUrls.length} PDF`
+      : null,
   ]
     .filter((label): label is string => Boolean(label))
     .join(" • ");
@@ -1440,17 +1443,22 @@ export function MaterialScrapeClient() {
                           </span>
                         </td>
                         <td className="max-w-56 px-3 py-2">
-                          {missingLabels.length === 0 ? (
-                            <Badge tone="success">Đủ thông tin</Badge>
-                          ) : (
-                            <div className="flex flex-wrap gap-1">
-                              {missingLabels.map((label) => (
+                          <div className="flex flex-wrap gap-1">
+                            {missingLabels.length === 0 ? (
+                              <Badge tone="success">Đủ thông tin</Badge>
+                            ) : (
+                              missingLabels.map((label) => (
                                 <Badge key={label} tone="warning">
                                   {label}
                                 </Badge>
-                              ))}
-                            </div>
-                          )}
+                              ))
+                            )}
+                            {item.catalogPdfUrls.length > 0 ? (
+                              <Badge tone="info">
+                                {item.catalogPdfUrls.length} catalog PDF
+                              </Badge>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="max-w-xs px-3 py-2 text-xs text-slate-600">
                           <a

@@ -4,7 +4,10 @@ export function materialImageUrlFromScrape(
   imageUrl: string | null | undefined,
 ): string | null {
   const trimmed = imageUrl?.trim();
-  return trimmed || null;
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed;
 }
 
 export function resolveMaterialImageUrl(material: {
@@ -17,5 +20,9 @@ export function resolveMaterialImageUrl(material: {
   }
 
   const metadata = normalizeMaterialMetadata(material.metadataJson);
-  return metadata.shopScrape?.imageUrl?.trim() || null;
+  const fromMetadata = metadata.shopScrape?.imageUrl?.trim();
+  if (!fromMetadata) {
+    return null;
+  }
+  return fromMetadata;
 }

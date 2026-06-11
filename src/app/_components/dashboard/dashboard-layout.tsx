@@ -110,6 +110,7 @@ const navSections: NavSection[] = [
         icon: "excel",
       },
       { href: "/materials", label: "Sản phẩm / vật tư", icon: "materials" },
+      { href: "/catalog-pdfs", label: "Catalog PDFs", icon: "documents" },
       {
         href: "/saved-items",
         label: "Bộ lọc & Watchlist",

@@ -1,3 +1,4 @@
+import { catalogDocumentRouter } from "~/server/api/routers/catalog-document";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
@@ -11,6 +12,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  catalogDocument: catalogDocumentRouter,
   material: materialRouter,
   notification: notificationRouter,
   search: searchRouter,
