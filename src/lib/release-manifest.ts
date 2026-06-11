@@ -107,6 +107,38 @@ export function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+export type SemverBump = "patch" | "minor" | "major";
+
+export function bumpSemverCore(version: string, bump: SemverBump): string {
+  const [major, minor, patch] = parseSemverCore(version);
+  switch (bump) {
+    case "major":
+      return `${major + 1}.0.0`;
+    case "minor":
+      return `${major}.${minor + 1}.0`;
+    case "patch":
+      return `${major}.${minor}.${patch + 1}`;
+  }
+}
+
+export function normalizeReleaseVersion(version: string): string {
+  return version.trim().replace(/^v/i, "");
+}
+
+export function formatReleaseTag(version: string): string {
+  const normalized = normalizeReleaseVersion(version);
+  parseSemverCore(normalized);
+  return `v${normalized}`;
+}
+
+export function pickLatestSemver(versions: readonly string[]): string | null {
+  const unique = [...new Set(versions.map((version) => normalizeReleaseVersion(version)))];
+  if (unique.length === 0) {
+    return null;
+  }
+  return unique.sort(compareSemver).at(-1) ?? null;
+}
+
 export function isUpdateAvailable(current: string, latest: string): boolean {
   return compareSemver(current, latest) < 0;
 }

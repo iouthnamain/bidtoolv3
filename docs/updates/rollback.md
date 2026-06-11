@@ -8,7 +8,7 @@ Run [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) man
 
 The workflow:
 
-1. Loads the pinned web deployment and promotes it on Vercel
+1. Loads the pinned web deployment and promotes it on Vercel by stored `dpl_...` deployment ID
 2. Retags the pinned on-prem digest as `:latest` on GHCR
 3. Prints a summary
 
@@ -22,6 +22,16 @@ The workflow:
 
 If rollback is unsafe because migrations already ran:
 
-1. Identify the broken behavior
-2. Ship `v0.2.1` with a forward-compatible fix
-3. Leave `releases/pins.json` current pointer on the hotfix version
+1. Fix the issue on `main`
+2. Ship a forward patch release:
+
+   ```bash
+   bun run release patch --yes
+   ```
+
+See [Release CLI](./release-cli.md).
+
+## Related docs
+
+- [Operating guide](./operating-guide.md)
+- [CI/CD review](./ci-cd.md)

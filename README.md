@@ -144,23 +144,40 @@ existing Docker workflow.
 ### GitHub Releases
 
 Desktop releases, on-prem bundles, and the on-prem Docker image are built by
-GitHub Actions.
+GitHub Actions. Full update-system docs live in [`docs/updates/README.md`](docs/updates/README.md).
 
-To publish a release from the command line:
+- [Operating guide](docs/updates/operating-guide.md) — day-to-day releases
+- [Release CLI](docs/updates/release-cli.md) — incremental tagging
+- [CI/CD review](docs/updates/ci-cd.md) — workflows and secrets
+
+To publish a release:
+
+```bash
+bun run release status
+bun run release patch
+```
+
+Or manually:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `Release` workflow builds Windows and Linux desktop artifacts, publishes the
-on-prem Docker image to GitHub Container Registry, creates the on-prem bundle,
-and uploads release assets to GitHub Releases. You can also run the workflow
-manually and provide a release tag.
+The `Release` workflow (`/.github/workflows/release.yml`) builds and publishes:
 
-The Windows installer is currently unsigned, so Windows SmartScreen can show a warning until a code-signing certificate is added.
+- Vercel production (`vercel build` + `vercel deploy --prebuilt`)
+- On-prem Docker image on GHCR
+- On-prem bundle tarball
+- Windows and Linux desktop artifacts
+- GitHub Release `manifest.json`
+- Committed artifact pins in `releases/pins.json`
 
-Packaged desktop builds use the release tag as the Electron app version, check GitHub Releases in the background, and show an in-app desktop update notice when a newer version is available. The notice downloads the installer update first, then switches the button to restart and install.
+You can also run the workflow manually and provide a release tag.
+
+Packaged desktop builds use semver + build metadata, check GitHub Releases in the
+background, and show a sidebar update pill plus Settings → About controls.
+On-prem instances show a dismissible admin banner with a copy-paste update command.
 
 ## Local PostgreSQL
 
@@ -173,7 +190,10 @@ If your `.env` was created before these defaults existed, update those values ma
 
 ## Vercel Production
 
-The GitHub `main` branch deploys to Vercel at `https://bidtoolv3.vercel.app`.
+Production web deploys are promoted by the release workflow when you push a `v*`
+tag. Do not rely on automatic production deploys from `main`.
+
+The app is served at `https://bidtoolv3.vercel.app`.
 Vercel Web Analytics is enabled in the app through `@vercel/analytics`.
 
 Production server routes require a real PostgreSQL connection string:
@@ -257,12 +277,8 @@ tRPC write functions that touch the database will fail.
 - `bun run db:migrate` - apply Drizzle migrations.
 - `bun run db:seed` - seed demo data only when `ENABLE_DEMO_SEED=true`.
 - `bun run db:studio` - open Drizzle Studio.
-
-
-i can see there a miss that when scrape it dit not find the NCC and Xuat su and all related to the product, meterials
-
-"Đơn giá catalog" is a wrong name, change all related to "Đơn giá" or simply price
-
-so missing an important field in product, catalog, where saved pdf of the product catalog
-
-i wanna add field in material: img that scrape from source but not save just preview using the source 
+- `bun run release` / `bun run release:status` - show current and next release versions.
+- `bun run release patch` / `bun run release:minor` / `bun run release:major` - tag and push a release (interactive).
+- `bun run release:patch` / `bun run release:minor` / `bun run release:major` - tag and push non-interactively.
+- `bun run release:manifest` - generate `manifest.json` locally.
+- `bun run release:pins` - update `releases/pins.json` locally.

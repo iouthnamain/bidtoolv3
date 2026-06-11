@@ -58,7 +58,7 @@ jobs:
             echo "Pinned web deployment is unavailable. Skipping Vercel rollback." >&2
             exit 0
           fi
-          bunx vercel promote "$WEB_BUILD_ID" production --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          bunx vercel promote "$WEB_BUILD_ID" --token="$VERCEL_TOKEN"
 
       - name: Retag on-prem image as latest
         env:
@@ -67,9 +67,13 @@ jobs:
         run: |
           set -euo pipefail
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          source_ref="$ONPREM_DIGEST"
+          if [ -z "$source_ref" ] || [ "$source_ref" = "null" ]; then
+            source_ref="$ONPREM_IMAGE"
+          fi
           docker buildx imagetools create \
             --tag "${REGISTRY}/${IMAGE_NAME}:latest" \
-            "${ONPREM_DIGEST:-$ONPREM_IMAGE}"
+            "$source_ref"
 
       - name: Summary
         run: |

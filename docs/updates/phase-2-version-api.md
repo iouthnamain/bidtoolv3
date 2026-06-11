@@ -31,3 +31,8 @@ Manifest responses are cached in memory for 10 minutes.
 - [`src/server/services/version-info.ts`](../../src/server/services/version-info.ts)
 - [`src/server/api/routers/version.ts`](../../src/server/api/routers/version.ts)
 - [`src/lib/release-manifest.ts`](../../src/lib/release-manifest.ts)
+
+## Related docs
+
+- [Operating guide](./operating-guide.md)
+- [Update flows](./flows.md)
