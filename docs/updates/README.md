@@ -2,11 +2,13 @@
 
 BidTool ships through one unified release unit across web, on-prem Docker, and Electron desktop.
 
+**Start here:** [Operating guide](./operating-guide.md) for day-to-day releases.
+
 ## Surfaces
 
 | Surface | Update mechanism | Version source |
 | --- | --- | --- |
-| Web (Vercel) | Release workflow promotes a prebuilt deployment from tag `v*` | `BIDTOOL_APP_VERSION` + `BIDTOOL_BUILD_METADATA` |
+| Web (Vercel) | Release workflow promotes production on tag `v*` | `BIDTOOL_APP_VERSION` + `BIDTOOL_BUILD_METADATA` |
 | On-prem (Docker) | Hybrid: app shows status; ops run `BIDTOOL_IMAGE_TAG=x.y.z bun run onprem:update` | Docker env + manifest |
 | Desktop (Electron) | `electron-updater` via GitHub Releases or local mock server | Electron app version + updater feed |
 
@@ -22,21 +24,29 @@ Each release uses one semver with build metadata:
 ## Source of truth
 
 1. GitHub Release asset `manifest.json` — canonical release metadata
-2. [`releases/pins.json`](../releases/pins.json) — committed artifact pins for rollback
+2. [`releases/pins.json`](../../releases/pins.json) — committed artifact pins for rollback
 3. Runtime [`/api/version`](../../src/app/api/version/route.ts) and `version.getStatus` tRPC — per-instance status
 
-## Flows
+## Quick commands
 
-See **[Update flows](./flows.md)** for step-by-step diagrams covering:
-
-- Unified release (tag → artifacts → manifest → pins)
-- Runtime version checks (`/api/version`)
-- Web, on-prem, and desktop apply paths
-- Rollback and forward-only migration limits
+```bash
+bun run release status          # what version am I on? what's next?
+bun run release patch           # tag + push next patch release
+BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update   # on-prem server update
+curl http://localhost:3000/api/version        # runtime version check
+```
 
 ## Docs map
 
-- **[Update flows](./flows.md)**
+### Day-to-day
+
+- **[Operating guide](./operating-guide.md)** — setup, release checklist, on-prem/desktop/rollback
+- **[Release CLI](./release-cli.md)** — incremental tagging without remembering version numbers
+- **[Update flows](./flows.md)** — diagrams for each path
+- **[CI/CD review](./ci-cd.md)** — GitHub Actions workflows and secrets
+
+### Reference
+
 - [Phase 1: Release orchestrator](./phase-1-release-orchestrator.md)
 - [Phase 2: Version API](./phase-2-version-api.md)
 - [Phase 3: Desktop UX](./phase-3-desktop-ux.md)

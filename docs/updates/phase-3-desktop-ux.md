@@ -40,3 +40,8 @@ Build mock artifacts into `release-mock/` and point the mock server at that dire
 
 - `BIDTOOL_DESKTOP_MOCK_UPDATES=1`
 - `BIDTOOL_DESKTOP_MOCK_UPDATE_PORT=3000`
+
+## Related docs
+
+- [Local development](./local-dev.md)
+- [Release CLI](./release-cli.md) — ship desktop feed updates via tagged releases

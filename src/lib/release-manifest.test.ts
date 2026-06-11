@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildOnPremUpdateCommand,
+  bumpSemverCore,
   compareSemver,
+  formatReleaseTag,
   getSchemaVersionFromJournal,
   isUpdateAvailable,
   parseReleaseManifest,
   parseReleasePins,
+  pickLatestSemver,
 } from "./release-manifest";
 
 describe("release manifest", () => {
@@ -58,6 +61,14 @@ describe("release manifest", () => {
         entries: [{ idx: 0 }, { idx: 14 }],
       }),
     ).toBe(14);
+  });
+
+  it("bumps semver cores incrementally", () => {
+    expect(bumpSemverCore("0.1.0", "patch")).toBe("0.1.1");
+    expect(bumpSemverCore("0.1.9", "minor")).toBe("0.2.0");
+    expect(bumpSemverCore("1.4.2", "major")).toBe("2.0.0");
+    expect(formatReleaseTag("0.2.0")).toBe("v0.2.0");
+    expect(pickLatestSemver(["0.1.0", "0.2.0", "0.1.5"])).toBe("0.2.0");
   });
 
   it("updates and reads release pins", () => {

@@ -10,7 +10,7 @@ Committed artifact pins used by:
 - runtime version checks via raw GitHub URL
 - release audit trail
 
-Do not edit `pins.json` by hand during normal development. The release workflow updates it after each tagged release.
+Do not edit `pins.json` by hand during normal development. The release workflow updates it after each tagged release. Use [`bun run release status`](../../docs/updates/release-cli.md) to see the current released version.
 
 ## Local staging
 

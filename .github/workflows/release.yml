@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -71,46 +71,11 @@ jobs:
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-  build-web:
-    name: Build Web Artifact
-    runs-on: ubuntu-latest
-    needs:
-      - quality
-      - resolve-version
-    env:
-      DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
-      SKIP_ENV_VALIDATION: "1"
-      BIDTOOL_APP_VERSION: ${{ needs.resolve-version.outputs.version }}
-      BIDTOOL_BUILD_METADATA: ${{ needs.resolve-version.outputs.version }}+web.${{ needs.resolve-version.outputs.short_sha }}
-      BIDTOOL_DEPLOYMENT_SURFACE: web
-      BIDTOOL_PACKAGE_VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build web app
-        run: bun run build
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bidtoolv3-web
-          path: .next
-          if-no-files-found: error
-
   deploy-vercel:
     name: Promote Vercel Production
     runs-on: ubuntu-latest
     needs:
-      - build-web
+      - quality
       - resolve-version
     outputs:
       deployment_url: ${{ steps.deploy.outputs.deployment_url }}
@@ -123,15 +88,11 @@ jobs:
       BIDTOOL_BUILD_METADATA: ${{ needs.resolve-version.outputs.version }}+web.${{ needs.resolve-version.outputs.short_sha }}
       BIDTOOL_DEPLOYMENT_SURFACE: web
       BIDTOOL_PACKAGE_VERSION: ${{ needs.resolve-version.outputs.version }}
+      DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
+      SKIP_ENV_VALIDATION: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download web artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bidtoolv3-web
-          path: .next
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -154,9 +115,19 @@ jobs:
 
           bunx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           bunx vercel build --prod --token="$VERCEL_TOKEN"
-          deployment_url="$(bunx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          deployment_json="$(bunx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" --json)"
+          deployment_url="$(printf '%s' "$deployment_json" | jq -r 'if type == "array" then .[0].url else .url end')"
+          deployment_id="$(printf '%s' "$deployment_json" | jq -r 'if type == "array" then .[0].id else .id end')"
+          if [ -z "$deployment_url" ] || [ "$deployment_url" = "null" ]; then
+            echo "Unable to resolve Vercel deployment URL." >&2
+            exit 1
+          fi
+          if [ -z "$deployment_id" ] || [ "$deployment_id" = "null" ]; then
+            echo "Unable to resolve Vercel deployment ID." >&2
+            exit 1
+          fi
           echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "deployment_id=$(basename "$deployment_url")" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
 
   docker:
     name: Publish On-Prem Image
@@ -307,6 +278,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
@@ -334,39 +306,52 @@ jobs:
           ONPREM_IMAGE: ${{ needs.docker.outputs.image }}
           ONPREM_DIGEST: ${{ needs.docker.outputs.digest }}
           GH_REPO: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p dist-release
-          win_url="https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$(find release-assets -name '*.exe' | head -n1)")"
-          linux_url="https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$(find release-assets -name '*.AppImage' | head -n1)")"
-          cat > dist-release/manifest-input.json <<EOF
-          {
-            "version": "${VERSION}",
-            "commitSha": "${GITHUB_SHA}",
-            "changelog": "BidTool v3 ${RELEASE_TAG}",
-            "web": {
-              "buildId": "${WEB_DEPLOYMENT_ID}",
-              "deploymentUrl": "${WEB_DEPLOYMENT_URL}",
-              "buildMetadata": "${VERSION}+web.${SHORT_SHA}"
-            },
-            "onprem": {
-              "image": "${ONPREM_IMAGE}",
-              "digest": "${ONPREM_DIGEST}",
-              "buildMetadata": "${VERSION}+onprem.${SHORT_SHA}"
-            },
-            "desktop": {
-              "win": {
-                "url": "${win_url}",
-                "version": "${VERSION}+desktop.win.${SHORT_SHA}"
+          win_asset="$(find release-assets -name '*.exe' | head -n1 || true)"
+          linux_asset="$(find release-assets -name '*.AppImage' | head -n1 || true)"
+          if [ -z "$win_asset" ] || [ -z "$linux_asset" ]; then
+            echo "Missing desktop release assets." >&2
+            exit 1
+          fi
+          jq -n \
+            --arg version "$VERSION" \
+            --arg changelog "BidTool v3 ${RELEASE_TAG}" \
+            --arg buildId "$WEB_DEPLOYMENT_ID" \
+            --arg deploymentUrl "$WEB_DEPLOYMENT_URL" \
+            --arg webMetadata "${VERSION}+web.${SHORT_SHA}" \
+            --arg image "$ONPREM_IMAGE" \
+            --arg digest "$ONPREM_DIGEST" \
+            --arg onpremMetadata "${VERSION}+onprem.${SHORT_SHA}" \
+            --arg winUrl "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$win_asset")" \
+            --arg winVersion "${VERSION}+desktop.win.${SHORT_SHA}" \
+            --arg linuxUrl "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$linux_asset")" \
+            --arg linuxVersion "${VERSION}+desktop.linux.${SHORT_SHA}" \
+            '{
+              version: $version,
+              changelog: $changelog,
+              web: {
+                buildId: $buildId,
+                deploymentUrl: $deploymentUrl,
+                buildMetadata: $webMetadata
               },
-              "linux": {
-                "url": "${linux_url}",
-                "version": "${VERSION}+desktop.linux.${SHORT_SHA}"
+              onprem: {
+                image: $image,
+                digest: $digest,
+                buildMetadata: $onpremMetadata
+              },
+              desktop: {
+                win: {
+                  url: $winUrl,
+                  version: $winVersion
+                },
+                linux: {
+                  url: $linuxUrl,
+                  version: $linuxVersion
+                }
               }
-            }
-          }
-          EOF
+            }' > dist-release/manifest-input.json
 
       - name: Generate manifest
         run: bun run ./scripts/generate-release-manifest.ts --input dist-release/manifest-input.json --output dist-release/manifest.json
@@ -396,7 +381,6 @@ jobs:
       - name: Update release pins
         env:
           RELEASE_TAG: ${{ needs.resolve-version.outputs.release_tag }}
-          VERSION: ${{ needs.resolve-version.outputs.version }}
           GH_REPO: ${{ github.repository }}
         run: |
           bun run ./scripts/update-release-pins.ts \
@@ -404,15 +388,22 @@ jobs:
             --manifest-url "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/manifest.json" \
             --pins releases/pins.json
 
-      - name: Commit release pins
+      - name: Commit release pins to main
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
           set -euo pipefail
           if git diff --quiet releases/pins.json; then
             echo "No pins changes to commit."
             exit 0
           fi
+          cp releases/pins.json /tmp/pins.json
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          cp /tmp/pins.json releases/pins.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add releases/pins.json
-          git commit -m "chore(release): update pins for v${{ needs.resolve-version.outputs.version }} [skip ci]"
-          git push
+          git commit -m "chore(release): update pins for v${VERSION} [skip ci]"
+          git push origin main

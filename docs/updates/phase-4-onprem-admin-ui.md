@@ -28,3 +28,8 @@ Both are visible to all authenticated users.
 ## Air-gapped installs
 
 The on-prem bundle includes [`releases/`](../../releases/) so customers can point `BIDTOOL_MANIFEST_PATH` or `BIDTOOL_MANIFEST_URL` at a local copy of `manifest.json`.
+
+## Related docs
+
+- [Operating guide](./operating-guide.md)
+- [Update flows](./flows.md) — on-prem hybrid sequence diagram

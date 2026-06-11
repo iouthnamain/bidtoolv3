@@ -8,17 +8,18 @@ One Git tag (`v0.2.0`) is the release unit. CI builds every artifact, writes one
 
 ```mermaid
 flowchart TD
-  dev[Developer pushes tag v0.2.0] --> ci[GitHub Actions release.yml]
+  dev[Developer on main] --> cli[bun run release patch]
+  cli --> tag[Push tag v0.2.0]
+  tag --> ci[GitHub Actions release.yml]
   ci --> quality[Quality gates]
   quality --> parallel[Parallel builds]
-  parallel --> web[Build web artifact]
+  parallel --> vercel[vercel build + deploy prebuilt]
   parallel --> docker[Push GHCR image]
   parallel --> bundle[Build on-prem tarball]
   parallel --> deskWin[Build Windows desktop]
   parallel --> deskLinux[Build Linux desktop]
-  web --> vercel[Promote Vercel production]
-  docker --> digest[Capture image digest]
   vercel --> manifest[Generate manifest.json]
+  docker --> digest[Capture image digest]
   digest --> manifest
   bundle --> manifest
   deskWin --> manifest
@@ -240,9 +241,7 @@ flowchart TB
 
 ## Related docs
 
-- [Phase 1: Release orchestrator](./phase-1-release-orchestrator.md)
-- [Phase 2: Version API](./phase-2-version-api.md)
-- [Phase 3: Desktop UX](./phase-3-desktop-ux.md)
-- [Phase 4: On-prem admin UI](./phase-4-onprem-admin-ui.md)
+- [Operating guide](./operating-guide.md)
+- [Release CLI](./release-cli.md)
+- [CI/CD review](./ci-cd.md)
 - [Rollback](./rollback.md)
-- [Local development](./local-dev.md)
