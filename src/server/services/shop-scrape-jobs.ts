@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   scrapeShopMaterialsFromUrl,
+  type ShopDetailEnrichmentMode,
   type ScrapedShopProduct,
   type ShopScrapeMethod,
   type ShopScrapeProgress,
@@ -23,6 +24,7 @@ export type ShopScrapeJobSnapshot = {
   maxPages: number | null;
   maxProducts: number | null;
   method: ShopScrapeMethod;
+  detailEnrichment: ShopDetailEnrichmentMode;
   currentUrl: string | null;
   pagesVisited: string[];
   failedPages: Array<{ url: string; message: string }>;
@@ -55,6 +57,7 @@ export function startShopScrapeJob(input: {
   maxPages: number | null;
   maxProducts: number | null;
   method: ShopScrapeMethod;
+  detailEnrichment: ShopDetailEnrichmentMode;
 }) {
   cleanupExpiredJobs();
 
@@ -68,6 +71,7 @@ export function startShopScrapeJob(input: {
     maxPages: input.maxPages,
     maxProducts: input.maxProducts,
     method: input.method,
+    detailEnrichment: input.detailEnrichment,
     currentUrl: null,
     pagesVisited: [],
     failedPages: [],
@@ -110,6 +114,7 @@ export function createExpiredShopScrapeJobSnapshot(
     maxPages: null,
     maxProducts: null,
     method: "auto",
+    detailEnrichment: "none",
     currentUrl: null,
     pagesVisited: [],
     failedPages: [],
@@ -158,6 +163,7 @@ function runShopScrapeJob(job: ShopScrapeJob) {
     maxPages: job.maxPages,
     maxProducts: job.maxProducts,
     method: job.method,
+    detailEnrichment: job.detailEnrichment,
     signal: abortController.signal,
     onProgress: (progress) => updateJobProgress(job, progress),
   })
@@ -224,6 +230,7 @@ function toSnapshot(job: ShopScrapeJob): ShopScrapeJobSnapshot {
     maxPages: job.maxPages,
     maxProducts: job.maxProducts,
     method: job.method,
+    detailEnrichment: job.detailEnrichment,
     currentUrl: job.currentUrl,
     pagesVisited: [...job.pagesVisited],
     failedPages: [...job.failedPages],

@@ -257,3 +257,12 @@ tRPC write functions that touch the database will fail.
 - `bun run db:migrate` - apply Drizzle migrations.
 - `bun run db:seed` - seed demo data only when `ENABLE_DEMO_SEED=true`.
 - `bun run db:studio` - open Drizzle Studio.
+
+
+i can see there a miss that when scrape it dit not find the NCC and Xuat su and all related to the product, meterials
+
+"Đơn giá catalog" is a wrong name, change all related to "Đơn giá" or simply price
+
+so missing an important field in product, catalog, where saved pdf of the product catalog
+
+i wanna add field in material: img that scrape from source but not save just preview using the source 

@@ -5,7 +5,11 @@ import {
   extractPriceFromText,
   normalizeMaterialMetadata,
 } from "~/lib/material-price-sources";
-import { extractProductsFromPageSnapshot } from "./shop-material-scraper";
+import {
+  enrichProductWithPageText,
+  extractProductsFromPageSnapshot,
+  mergeScrapedProductData,
+} from "./shop-material-scraper";
 
 describe("extractProductsFromPageSnapshot", () => {
   it("extracts full product data from JSON-LD", () => {
@@ -79,7 +83,75 @@ describe("extractProductsFromPageSnapshot", () => {
     });
   });
 
-  it("does not infer a meter unit from Vietnamese product names", () => {
+  it("extracts Vietnamese NCC, origin, SKU, model and category labels from DOM cards", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "CB chống giật Schneider iC60",
+          href: "https://shop.example.com/cb-chong-giat",
+          imageUrl: null,
+          category: null,
+          text: "CB chống giật Schneider iC60 Giá: 450.000 đ NCC: Schneider Xuất xứ: Pháp Mã hàng: A9R11225 Model: iC60 Nhóm: Điện dân dụng Còn hàng",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]).toMatchObject({
+      manufacturer: "Schneider",
+      originCountry: "Pháp",
+      sku: "A9R11225",
+      model: "iC60",
+      category: "Điện dân dụng",
+      availability: "in_stock",
+    });
+  });
+
+  it("prefers richer duplicate product data over sparse card data", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [
+        JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: "Máy khoan pin 18V",
+          description: "Máy khoan pin 18V, 2 pin, sạc nhanh.",
+          brand: { name: "Makita" },
+          category: "Dụng cụ điện",
+          countryOfOrigin: "Nhật Bản",
+          offers: {
+            price: "2100000",
+            priceCurrency: "VND",
+            url: "/may-khoan-pin-18v",
+          },
+        }),
+      ],
+      cards: [
+        {
+          name: "Máy khoan pin 18V",
+          href: "https://shop.example.com/may-khoan-pin-18v",
+          imageUrl: null,
+          category: null,
+          text: "Máy khoan pin 18V 2.100.000 đ",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      manufacturer: "Makita",
+      originCountry: "Nhật Bản",
+      category: "Dụng cụ điện",
+      specText: "Máy khoan pin 18V, 2 pin, sạc nhanh.",
+    });
+  });
+
+  it("detects material-specific units without inferring meter from model names", () => {
     const products = extractProductsFromPageSnapshot({
       pageUrl: "https://codienhaiau.com/",
       title: "Cơ Điện Hải Âu",
@@ -100,7 +172,7 @@ describe("extractProductsFromPageSnapshot", () => {
     expect(products[0]).toMatchObject({
       name: "Mô đun ngõ vào LS XBE-AC08A",
       price: 1544000,
-      unit: null,
+      unit: "mô đun",
       imageUrl:
         "https://codienhaiau.com/wp-content/uploads/2026/06/mo-dun-ngo-vao-ls-xbe-ac08a.jpg",
     });
@@ -211,6 +283,62 @@ describe("extractProductsFromPageSnapshot", () => {
         (product) => product.name,
       ),
     ).toEqual(["Sản phẩm schema", "Sản phẩm card"]);
+  });
+});
+
+describe("scraped product enrichment", () => {
+  const sparseProduct = {
+    name: "Bộ nguồn Omron S8VK",
+    unit: null,
+    category: null,
+    specText: "",
+    manufacturer: null,
+    originCountry: null,
+    price: 980000,
+    priceText: "980.000 đ",
+    currency: "VND",
+    sourceUrl: "https://shop.example.com/bo-nguon-omron-s8vk",
+    imageUrl: null,
+    sku: null,
+    model: null,
+    availability: null,
+    shopCategory: null,
+  };
+
+  it("fills missing fields from product detail page text", () => {
+    expect(
+      enrichProductWithPageText(
+        sparseProduct,
+        "Bộ nguồn Omron S8VK Giá: 980.000 đ Thương hiệu: Omron Xuất xứ: Nhật Bản Mã hàng: S8VK-C06024 Model: S8VK Thông số kỹ thuật nguồn 24VDC 2.5A Còn hàng",
+      ),
+    ).toMatchObject({
+      manufacturer: "Omron",
+      originCountry: "Nhật Bản",
+      sku: "S8VK-C06024",
+      model: "S8VK",
+      availability: "in_stock",
+      specText: expect.stringContaining("Thông số kỹ thuật"),
+    });
+  });
+
+  it("merges enriched data without dropping listing price and source", () => {
+    expect(
+      mergeScrapedProductData(sparseProduct, {
+        ...sparseProduct,
+        price: null,
+        priceText: null,
+        manufacturer: "Omron",
+        originCountry: "Nhật Bản",
+        specText: "Nguồn 24VDC 2.5A",
+      }),
+    ).toMatchObject({
+      price: 980000,
+      priceText: "980.000 đ",
+      sourceUrl: "https://shop.example.com/bo-nguon-omron-s8vk",
+      manufacturer: "Omron",
+      originCountry: "Nhật Bản",
+      specText: "Nguồn 24VDC 2.5A",
+    });
   });
 });
 

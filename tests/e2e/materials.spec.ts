@@ -6,6 +6,13 @@ function materialCatalogRows(page: Page) {
   return page.getByRole("table", { name: "Danh mục vật tư" }).locator("tbody");
 }
 
+async function expandMaterialCatalogFilters(page: Page) {
+  const toggle = page.getByRole("button", { name: "Bộ lọc & sắp xếp" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+}
+
 async function deleteVisibleMaterials(page: Page) {
   const checkboxes = materialCatalogRows(page).getByLabel(/^Chọn /);
   const count = await checkboxes.count();
@@ -13,7 +20,9 @@ async function deleteVisibleMaterials(page: Page) {
     return;
   }
 
-  await page.getByLabel("Chọn tất cả vật tư đang hiển thị").check();
+  for (let index = 0; index < count; index += 1) {
+    await checkboxes.nth(index).check({ force: true });
+  }
 
   await page.getByRole("button", { name: "Xóa vật tư đã chọn" }).click();
   await page.locator("dialog").getByRole("button", { name: "Xóa" }).click();
@@ -117,8 +126,8 @@ test("material summary shows import-preview-style important fields", async ({
   await expect(
     summary.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
   ).toBeVisible();
-  await expect(summary.getByText("Items / Vật tư / Sản phẩm")).toBeVisible();
-  await expect(summary.getByText("Thiếu giá")).toBeVisible();
+  await expect(summary.getByText("Tổng vật tư")).toBeVisible();
+  await expect(summary.getByRole("button", { name: /Thiếu giá/ })).toBeVisible();
   await expect(summary.locator(":scope > #material-catalog")).toBeVisible();
   await expect(summary.getByText("Snapshot catalog")).toHaveCount(0);
   await expect(summary.getByRole("table")).toHaveCount(1);
@@ -126,15 +135,12 @@ test("material summary shows import-preview-style important fields", async ({
     name: "Danh mục vật tư",
   });
 
-  for (const header of [
-    "Tên vật tư",
-    "ĐVT",
-    "Thông số",
-    "Chi tiết",
-    "NCC",
-    "Xuất xứ",
-    "Giá",
-  ]) {
+  for (const header of ["Tên vật tư", "ĐVT", "NCC", "Xuất xứ", "Đơn giá"]) {
+    await expect(
+      catalogTable.getByRole("button", { name: `Sắp xếp theo ${header}` }),
+    ).toBeVisible();
+  }
+  for (const header of ["Thông số", "Chi tiết"]) {
     await expect(
       catalogTable.getByRole("columnheader", { name: header, exact: true }),
     ).toBeVisible();
@@ -239,6 +245,11 @@ test("material mobile controls keep touch targets usable", async ({ page }) => {
     40,
   );
   await expectMinTouchTarget(
+    page.getByLabel("Bổ sung dữ liệu từ trang chi tiết sản phẩm"),
+    40,
+  );
+  await expect(page.getByText("NCC / xuất xứ có thể thiếu")).toBeVisible();
+  await expectMinTouchTarget(
     page.getByLabel("Số sản phẩm tối đa cần scrape"),
     40,
   );
@@ -334,6 +345,104 @@ test("material catalog paginates server-backed table rows", async ({
     );
     await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("25");
     await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+  } finally {
+    await page.goto(`/materials?q=${prefix}`);
+    await page.waitForLoadState("networkidle");
+    await deleteVisibleMaterials(page);
+  }
+});
+
+test("material catalog table supports header sort and quick filters", async ({
+  page,
+}) => {
+  const prefix = `E2E-TABLE-${Date.now()}`;
+  const csv = [
+    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct",
+    `,${prefix} Alpha,Cái,E2E,Spec A,Alpha NCC,VN,10000,VND,,1,0`,
+    `,${prefix} Beta,Mét,E2E,Spec B,Beta NCC,JP,20000,VND,,1,0`,
+  ].join("\n");
+
+  await page.goto("/materials/import");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Nội dung CSV sản phẩm hoặc vật tư").fill(csv);
+  await page.getByRole("button", { name: "Nhập CSV" }).click();
+  await expect(page.getByText("Đã nhập 2 dòng")).toBeVisible();
+
+  try {
+    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.waitForLoadState("networkidle");
+
+    const catalog = page.locator("#material-catalog");
+    const table = catalog.getByRole("table", { name: "Danh mục vật tư" });
+
+    await table.getByRole("button", { name: "Sắp xếp theo Tên vật tư" }).click();
+    await expect(page).toHaveURL(/sort=name/);
+    await expect(page).toHaveURL(/order=asc/);
+
+    await table.getByRole("button", { name: "Sắp xếp theo Tên vật tư" }).click();
+    await expect(page).toHaveURL(/sort=name/);
+    await expect(page).not.toHaveURL(/order=asc/);
+
+    await table.getByRole("button", { name: "Lọc theo Mét" }).click();
+    await expect(page).toHaveURL(/unit=M/);
+    await expect(
+      catalog.locator("tbody").getByLabel(/^Chọn /),
+    ).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Cột hiển thị" }).click();
+    await page.getByLabel("Mã vật tư").check();
+    await expect(
+      table.getByRole("columnheader", { name: "Mã", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await page.goto(`/materials?q=${prefix}`);
+    await page.waitForLoadState("networkidle");
+    await deleteVisibleMaterials(page);
+  }
+});
+
+test("material detail duplicate creates an editable copy", async ({ page }) => {
+  const prefix = `E2E-DUP-UI-${Date.now()}`;
+
+  await page.goto("/materials/new");
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Tên vật tư").fill(prefix);
+  await page.getByLabel("ĐVT").fill("Cái");
+  await Promise.all([
+    page.waitForURL(/\/materials\/\d+$/),
+    page.getByRole("button", { name: "Lưu và mở chi tiết" }).click(),
+  ]);
+
+  try {
+    await page.getByRole("button", { name: "Nhân bản" }).click();
+    await page.waitForURL(/\/materials\/\d+$/);
+    await expect(page.getByRole("heading", { name: `${prefix} (bản sao)` })).toBeVisible();
+
+    await page.goto(`/materials?q=${encodeURIComponent(prefix)}`);
+    await page.waitForLoadState("networkidle");
+    await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(2);
+  } finally {
+    await deleteVisibleMaterials(page);
+  }
+});
+
+test("material catalog bulk update changes selected rows", async ({ page }) => {
+  const prefix = `E2E-BULK-${Date.now()}`;
+  await importMaterialRowsViaCsv(page, prefix, 2);
+
+  try {
+    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.waitForLoadState("networkidle");
+
+    const catalog = page.locator("#material-catalog");
+    await catalog.getByLabel("Chọn tất cả vật tư đang hiển thị").check();
+    await page.getByRole("button", { name: "Sửa hàng loạt" }).click();
+    await page.getByLabel("Nhóm mới cho vật tư đã chọn").fill("E2E Bulk Group");
+    await page.getByRole("button", { name: /Áp dụng cho 2 vật tư/ }).click();
+
+    await expect(
+      catalog.locator("tbody tr").filter({ hasText: "E2E Bulk Group" }),
+    ).toHaveCount(2);
   } finally {
     await page.goto(`/materials?q=${prefix}`);
     await page.waitForLoadState("networkidle");
@@ -453,10 +562,12 @@ test("CSV import skips duplicate material name and unit", async ({ page }) => {
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
+  await expandMaterialCatalogFilters(page);
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
   await expect(
     materialCatalogRows(page).getByLabel(`Chọn ${prefix}`),
   ).toHaveCount(1);
+  await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(1);
 
   await deleteVisibleMaterials(page);
   await expect(materialCatalogRows(page).getByText(prefix)).toHaveCount(0);
@@ -489,6 +600,7 @@ test("manual material save shows a friendly duplicate code error", async ({
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
+  await expandMaterialCatalogFilters(page);
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(code);
   await expect(
     materialCatalogRows(page).getByLabel(`Chọn ${firstName}`),
@@ -496,6 +608,7 @@ test("manual material save shows a friendly duplicate code error", async ({
   await expect(
     materialCatalogRows(page).getByLabel(`Chọn ${secondName}`),
   ).toHaveCount(0);
+  await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(1);
 
   await deleteVisibleMaterials(page);
   await expect(materialCatalogRows(page).getByText(code)).toHaveCount(0);
@@ -511,14 +624,17 @@ test("manual material save shows a friendly duplicate code error", async ({
     page.getByRole("button", { name: "Lưu và mở chi tiết" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: reusedName })).toBeVisible();
-  await expect(page.getByText(/Khấu hao|Sử dụng lại/)).toHaveCount(0);
+  await expect(page.getByLabel("Khấu hao mặc định")).toBeVisible();
+  await expect(page.getByLabel("% sử dụng lại mặc định")).toBeVisible();
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
+  await expandMaterialCatalogFilters(page);
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(code);
   await expect(
     materialCatalogRows(page).getByLabel(`Chọn ${reusedName}`),
   ).toHaveCount(1);
+  await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(1);
   await deleteVisibleMaterials(page);
   await expect(materialCatalogRows(page).getByText(code)).toHaveCount(0);
 });
@@ -542,6 +658,7 @@ test("bulk deletes selected materials without requiring a reload", async ({
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
+  await expandMaterialCatalogFilters(page);
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
   await expect(materialCatalogRows(page).getByLabel(/^Chọn /)).toHaveCount(
     names.length,
@@ -566,6 +683,7 @@ test("bulk deletes selected materials without requiring a reload", async ({
 
   await page.reload();
   await page.waitForLoadState("networkidle");
+  await expandMaterialCatalogFilters(page);
   await page.getByLabel("Tìm sản phẩm hoặc vật tư").fill(prefix);
 
   for (const name of names) {

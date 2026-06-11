@@ -97,25 +97,25 @@ export default async function Home() {
           <nav className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <Link
               href="/dashboard"
-              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center rounded-md px-3 py-2 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 sm:py-1.5"
             >
               Dashboard
             </Link>
             <Link
               href="/help"
-              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center rounded-md px-3 py-2 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 sm:py-1.5"
             >
               Trợ giúp
             </Link>
             <Link
               href="/documents"
-              className="rounded-md px-3 py-1.5 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center rounded-md px-3 py-2 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 sm:py-1.5"
             >
               Documents
             </Link>
             <Link
               href="/search"
-              className="rounded-md bg-sky-700 px-3 py-1.5 text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center rounded-md bg-sky-700 px-3 py-2 text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 sm:py-1.5"
             >
               Bắt đầu tìm kiếm
             </Link>
@@ -139,13 +139,13 @@ export default async function Home() {
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
                   href="/dashboard"
-                  className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-bold text-slate-950 transition-colors hover:bg-cyan-50 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
+                  className="inline-flex min-h-10 items-center rounded-md bg-white px-4 py-2 text-sm font-bold text-slate-950 transition-colors hover:bg-cyan-50 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
                 >
                   Mở trung tâm điều hành
                 </Link>
                 <Link
                   href="/help"
-                  className="inline-flex items-center rounded-md border border-white/40 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
+                  className="inline-flex min-h-10 items-center rounded-md border border-white/40 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-cyan-950 focus-visible:outline-none"
                 >
                   Xem hướng dẫn
                 </Link>
@@ -217,7 +217,7 @@ export default async function Home() {
               </div>
               <Link
                 href="/notifications"
-                className="text-xs font-bold text-sky-700 hover:underline"
+                className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-50 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8"
               >
                 Xem tất cả
               </Link>
@@ -275,7 +275,7 @@ export default async function Home() {
               </div>
               <Link
                 href="/workflows"
-                className="text-xs font-bold text-sky-700 hover:underline"
+                className="inline-flex min-h-10 items-center rounded-md px-2 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-50 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8"
               >
                 Quản lý
               </Link>

@@ -90,15 +90,29 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
           Xem danh mục
         </Link>
       </div>
-      {result.errors[0] ? (
-        <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
-          {result.errors[0]}
-        </p>
+      {result.errors.length > 0 ? (
+        <details className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-semibold">
+            {result.errors.length.toLocaleString("vi-VN")} lỗi chi tiết
+          </summary>
+          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+            {result.errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
-      {result.warnings?.[0] ? (
-        <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
-          {result.warnings[0]}
-        </p>
+      {(result.warnings?.length ?? 0) > 0 ? (
+        <details className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-semibold">
+            {(result.warnings?.length ?? 0).toLocaleString("vi-VN")} cảnh báo
+          </summary>
+          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+            {result.warnings?.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
     </div>
   );
@@ -194,7 +208,7 @@ function XlsxPreviewPanel({
                   <th className="px-3 py-2">Chi tiết</th>
                   <th className="px-3 py-2">NCC</th>
                   <th className="px-3 py-2">Xuất xứ</th>
-                  <th className="px-3 py-2">Giá</th>
+                  <th className="px-3 py-2">Đơn giá</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -436,13 +450,21 @@ export function MaterialImportClient() {
 
           <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
             <label
-              htmlFor="material-import-xlsx"
-              className={`flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors sm:min-h-44 sm:gap-3 sm:py-6 ${
+              className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 sm:min-h-44 sm:gap-3 sm:py-6 ${
                 xlsxFile
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900"
                   : "border-sky-300 bg-gradient-to-br from-sky-50 to-white text-sky-900 hover:bg-sky-100"
               }`}
             >
+              <input
+                id="material-import-xlsx"
+                type="file"
+                accept=".xlsx"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                onChange={(event) =>
+                  void handleExcelFile(event.target.files?.[0] ?? null)
+                }
+              />
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
                 {xlsxFile ? (
                   <CheckCircle2
@@ -458,15 +480,6 @@ export function MaterialImportClient() {
                 {xlsxFile ? xlsxFile.name : ".xlsx"}
               </span>
             </label>
-            <input
-              id="material-import-xlsx"
-              type="file"
-              accept=".xlsx"
-              className="sr-only"
-              onChange={(event) =>
-                void handleExcelFile(event.target.files?.[0] ?? null)
-              }
-            />
             <div className="grid gap-3">
               {xlsxPreview ? (
                 <label className="grid gap-1">

@@ -416,7 +416,7 @@ export const searchRouter = createTRPCRouter({
           sortOrder: input.sortOrder,
         });
       } catch (error) {
-        console.error("BidWinner public search failed", {
+        console.warn("BidWinner public search failed", {
           input: {
             mode: input.mode,
             criteria,

@@ -175,7 +175,7 @@ export function WorkflowDetailPageClient({
           <div>
             <Link
               href="/workflows"
-              className="text-xs font-semibold text-slate-700 hover:underline"
+              className="inline-flex min-h-10 items-center rounded-md text-xs font-semibold text-slate-700 transition-colors duration-150 hover:text-slate-950 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Quay lại danh sách workflow
             </Link>

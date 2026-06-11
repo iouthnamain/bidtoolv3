@@ -28,6 +28,7 @@ type ScrapeJob = RouterOutputs["material"]["getShopScrapeJob"];
 type ScrapedProduct = ScrapeJob["products"][number];
 type ScrapeMode = ScrapeJob["scrapeMode"];
 type ScrapeMethod = ScrapeJob["method"];
+type DetailEnrichmentMode = ScrapeJob["detailEnrichment"];
 type ImportJob = RouterOutputs["material"]["getShopImportJob"];
 type ImportShopItem = ImportJob["items"][number];
 type PendingScrapeJob = {
@@ -36,6 +37,7 @@ type PendingScrapeJob = {
   maxPages: number | null;
   maxProducts: number | null;
   method: ScrapeMethod;
+  detailEnrichment: DetailEnrichmentMode;
   startedAt: number;
 };
 
@@ -65,6 +67,17 @@ const scrapeMethodHelp: Record<ScrapeMethod, string> = {
   auto: "Dùng dữ liệu có cấu trúc trước, bổ sung bằng thẻ sản phẩm.",
   json_ld: "Chỉ đọc schema Product/ItemList trong JSON-LD.",
   dom_cards: "Chỉ đọc các card sản phẩm hiển thị trên trang.",
+};
+
+const detailEnrichmentLabel: Record<DetailEnrichmentMode, string> = {
+  none: "Không đọc chi tiết",
+  missing_fields: "Bổ sung thiếu",
+};
+
+const detailEnrichmentHelp: Record<DetailEnrichmentMode, string> = {
+  none: "Nhanh hơn, chỉ lấy dữ liệu trên trang danh mục.",
+  missing_fields:
+    "Chậm hơn nhưng mở trang sản phẩm để tìm NCC, xuất xứ, thông số và nhóm còn thiếu.",
 };
 
 const actionTone: Record<
@@ -200,6 +213,27 @@ function productKey(product: ScrapedProduct) {
   return product.sourceUrl;
 }
 
+function productMissingLabels(product: ScrapedProduct) {
+  return [
+    product.manufacturer ? null : "Thiếu NCC",
+    product.originCountry ? null : "Thiếu xuất xứ",
+    product.category ? null : "Thiếu nhóm",
+    product.specText.trim() ? null : "Thiếu thông số",
+    product.unit ? null : "ĐVT unknown",
+  ].filter((label): label is string => Boolean(label));
+}
+
+function productInfoSummary(product: ScrapedProduct) {
+  return [
+    product.sku ? `SKU ${product.sku}` : null,
+    product.model ? `Model ${product.model}` : null,
+    product.category ? `Nhóm ${product.category}` : null,
+    product.availability,
+  ]
+    .filter((label): label is string => Boolean(label))
+    .join(" • ");
+}
+
 function progressPercent(value: number, total: number | null | undefined) {
   if (total == null) {
     return null;
@@ -254,6 +288,8 @@ export function MaterialScrapeClient() {
   const [shopUrl, setShopUrl] = useState("");
   const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
   const [scrapeMethod, setScrapeMethod] = useState<ScrapeMethod>("auto");
+  const [detailEnrichment, setDetailEnrichment] =
+    useState<DetailEnrichmentMode>("none");
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -548,6 +584,7 @@ export function MaterialScrapeClient() {
       maxPages: scrapeMode === "all" ? null : maxPages,
       maxProducts: scrapeMode === "all" ? null : maxProducts,
       method: scrapeMethod,
+      detailEnrichment,
       startedAt: Date.now(),
     });
     setClockMs(Date.now());
@@ -562,6 +599,7 @@ export function MaterialScrapeClient() {
       maxPages: scrapeMode === "all" ? null : maxPages,
       maxProducts: scrapeMode === "all" ? null : maxProducts,
       method: scrapeMethod,
+      detailEnrichment,
     });
   };
 
@@ -705,7 +743,7 @@ export function MaterialScrapeClient() {
             </span>
           </label>
 
-          <div className="grid gap-3 lg:grid-cols-[12rem_minmax(12rem,1fr)_8rem_11rem] lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[12rem_minmax(12rem,1fr)_minmax(12rem,1fr)_8rem_11rem] lg:items-end">
             <fieldset className="grid gap-1.5">
               <legend className="text-xs font-bold text-slate-700">
                 Phạm vi
@@ -748,6 +786,31 @@ export function MaterialScrapeClient() {
               </select>
               <span className="text-xs text-slate-500">
                 {scrapeMethodHelp[scrapeMethod]}
+              </span>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-xs font-bold text-slate-700">
+                Bổ sung thông tin
+              </span>
+              <select
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                value={detailEnrichment}
+                disabled={isStartingScrape || isActive}
+                onChange={(event) =>
+                  setDetailEnrichment(
+                    event.target.value as DetailEnrichmentMode,
+                  )
+                }
+                aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
+              >
+                {(["none", "missing_fields"] as const).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {detailEnrichmentLabel[mode]}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-500">
+                {detailEnrichmentHelp[detailEnrichment]}
               </span>
             </label>
             <label className="grid gap-1.5">
@@ -840,6 +903,9 @@ export function MaterialScrapeClient() {
             <Badge tone="neutral">Theo pagination cùng domain</Badge>
             <Badge tone="neutral">Chặn ảnh / font / media</Badge>
             <Badge tone="neutral">Nhập sau khi duyệt</Badge>
+            {detailEnrichment === "none" ? (
+              <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
+            ) : null}
           </div>
         </form>
       </section>
@@ -923,7 +989,7 @@ export function MaterialScrapeClient() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-3">
+          <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-4">
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Phạm vi: </span>
               {scrapeModeLabel[pendingScrapeJob.scrapeMode]}
@@ -931,6 +997,12 @@ export function MaterialScrapeClient() {
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Cách đọc: </span>
               {scrapeMethodLabel[pendingScrapeJob.method]}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <span className="font-semibold text-slate-800">
+                Bổ sung:{" "}
+              </span>
+              {detailEnrichmentLabel[pendingScrapeJob.detailEnrichment]}
             </div>
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">URL: </span>
@@ -967,6 +1039,15 @@ export function MaterialScrapeClient() {
               </Badge>
               <Badge tone="neutral">
                 {scrapeMethodLabel[activeJob.method]}
+              </Badge>
+              <Badge
+                tone={
+                  activeJob.detailEnrichment === "missing_fields"
+                    ? "info"
+                    : "warning"
+                }
+              >
+                {detailEnrichmentLabel[activeJob.detailEnrichment]}
               </Badge>
               <Badge tone="neutral">
                 <Clock3 className="h-3 w-3" aria-hidden />
@@ -1053,6 +1134,14 @@ export function MaterialScrapeClient() {
                 <span className="font-semibold">{activeJobStopReason}: </span>
               ) : null}
               {activeJobMessage}
+            </div>
+          ) : null}
+
+          {activeJob.detailEnrichment === "none" ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+              Job này chỉ đọc trang danh mục. Nếu NCC, xuất xứ hoặc thông số bị
+              thiếu, chạy lại với chế độ “Bổ sung thiếu” để đọc trang chi tiết
+              sản phẩm.
             </div>
           ) : null}
 
@@ -1279,13 +1368,18 @@ export function MaterialScrapeClient() {
 
           {activeJob.products.length > 0 ? (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
+              <table className="min-w-[1500px] divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
                     <th className="w-10 px-3 py-2"> </th>
                     <th className="px-3 py-2">Sản phẩm</th>
-                    <th className="px-3 py-2">Giá</th>
+                    <th className="px-3 py-2">Đơn giá</th>
                     <th className="px-3 py-2">Đơn vị</th>
+                    <th className="px-3 py-2">Nhóm</th>
+                    <th className="px-3 py-2">NCC</th>
+                    <th className="px-3 py-2">Xuất xứ</th>
+                    <th className="px-3 py-2">Thông số</th>
+                    <th className="px-3 py-2">Độ đầy đủ</th>
                     <th className="px-3 py-2">Nguồn</th>
                   </tr>
                 </thead>
@@ -1293,6 +1387,8 @@ export function MaterialScrapeClient() {
                   {activeJob.products.map((item, index) => {
                     const key = productKey(item);
                     const selected = selectedSourceUrls.has(key);
+                    const missingLabels = productMissingLabels(item);
+                    const infoSummary = productInfoSummary(item);
 
                     return (
                       <tr
@@ -1314,12 +1410,7 @@ export function MaterialScrapeClient() {
                         <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
                           <span className="line-clamp-2">{item.name}</span>
                           <span className="mt-1 block text-xs font-medium text-slate-500">
-                            {[
-                              item.sku ? `SKU ${item.sku}` : null,
-                              item.category,
-                            ]
-                              .filter(Boolean)
-                              .join(" • ") || "Không có SKU / nhóm"}
+                            {infoSummary || "Không có SKU / model / trạng thái"}
                           </span>
                         </td>
                         <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
@@ -1327,6 +1418,39 @@ export function MaterialScrapeClient() {
                         </td>
                         <td className="px-3 py-2 text-slate-600">
                           {item.unit ?? "unknown"}
+                        </td>
+                        <td className="max-w-44 px-3 py-2 text-slate-600">
+                          <span className="line-clamp-2">
+                            {item.category ?? item.shopCategory ?? "-"}
+                          </span>
+                        </td>
+                        <td className="max-w-44 px-3 py-2 text-slate-600">
+                          <span className="line-clamp-2">
+                            {item.manufacturer ?? "-"}
+                          </span>
+                        </td>
+                        <td className="max-w-36 px-3 py-2 text-slate-600">
+                          <span className="line-clamp-2">
+                            {item.originCountry ?? "-"}
+                          </span>
+                        </td>
+                        <td className="max-w-md px-3 py-2 text-slate-600">
+                          <span className="line-clamp-3">
+                            {item.specText || "-"}
+                          </span>
+                        </td>
+                        <td className="max-w-56 px-3 py-2">
+                          {missingLabels.length === 0 ? (
+                            <Badge tone="success">Đủ thông tin</Badge>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {missingLabels.map((label) => (
+                                <Badge key={label} tone="warning">
+                                  {label}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="max-w-xs px-3 py-2 text-xs text-slate-600">
                           <a

@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { httpBatchStreamLink, loggerLink } from "@trpc/client";
+import { httpBatchStreamLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { type inferRouterInputs, type inferRouterOutputs } from "@trpc/server";
 import { useState } from "react";
@@ -44,10 +44,6 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const [trpcClient] = useState(() =>
     api.createClient({
       links: [
-        loggerLink({
-          enabled: (op) =>
-            op.direction === "down" && isTRPCErrorResult(op.result),
-        }),
         httpBatchStreamLink({
           transformer: SuperJSON,
           url: getBaseUrl() + "/api/trpc",
@@ -67,20 +63,6 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
         {props.children}
       </api.Provider>
     </QueryClientProvider>
-  );
-}
-
-function isTRPCErrorResult(result: unknown) {
-  if (result instanceof Error) return true;
-  if (!result || typeof result !== "object" || !("result" in result)) {
-    return false;
-  }
-
-  const envelopeResult = result.result;
-  return (
-    !!envelopeResult &&
-    typeof envelopeResult === "object" &&
-    "error" in envelopeResult
   );
 }
 

@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   BadgeDollarSign,
   CheckCircle2,
+  ChevronDown,
   Clock,
+  Copy,
   ExternalLink,
   Factory,
   FileText,
@@ -25,6 +27,15 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
+import {
+  formatDateTime,
+  formatMoney,
+  parseIntegerOrDefault,
+  parseNumberOrDefault,
+  parseOptionalNumber,
+} from "~/lib/materials/format";
+import { resolveMaterialImageUrl } from "~/lib/materials/image";
 import {
   normalizeMaterialMetadata,
   type MaterialPriceSource,
@@ -45,6 +56,8 @@ type MaterialFormState = {
   defaultUnitPrice: string;
   currency: string;
   sourceUrl: string;
+  defaultDepreciation: string;
+  defaultReusePct: string;
 };
 
 type PriceSourceFormState = {
@@ -82,33 +95,13 @@ function formFromMaterial(material: Material): MaterialFormState {
         : String(material.defaultUnitPrice),
     currency: material.currency || "VND",
     sourceUrl: material.sourceUrl ?? "",
+    defaultDepreciation: String(material.defaultDepreciation ?? 1),
+    defaultReusePct: String(material.defaultReusePct ?? 0),
   };
 }
 
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return null;
-  }
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString("vi-VN");
-}
-
-function formatMoney(value: number | null | undefined, currency = "VND") {
-  if (value == null) {
-    return "Chưa có";
-  }
-  return `${value.toLocaleString("vi-VN")} ${currency}`;
+function formsEqual(a: MaterialFormState, b: MaterialFormState) {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function sourceModeLabel(mode: MaterialPriceSourceMode) {
@@ -163,6 +156,42 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function MaterialImagePreview({ material }: { material: Material }) {
+  const imageUrl = resolveMaterialImageUrl(material);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [imageUrl]);
+
+  const showPlaceholder = !imageUrl || failed;
+
+  return (
+    <div className="flex w-40 shrink-0 flex-col gap-1">
+      <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+        Ảnh sản phẩm
+      </span>
+      {showPlaceholder ? (
+        <div className="flex h-48 w-full items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-center">
+          <div className="flex flex-col items-center gap-2 px-3 text-slate-500">
+            <Package className="h-8 w-8" aria-hidden />
+            <span className="text-xs font-medium">Chưa có ảnh</span>
+          </div>
+        </div>
+      ) : (
+        <img
+          src={imageUrl}
+          alt=""
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          className="h-48 w-full max-w-xs rounded-md border border-slate-200 object-contain"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
   );
 }
 
@@ -382,7 +411,10 @@ function PriceSourceCard({
 export function MaterialDetailClient({ id }: { id: number }) {
   const router = useRouter();
   const utils = api.useUtils();
+  const toast = useToast();
   const [form, setForm] = useState<MaterialFormState | null>(null);
+  const [savedFormSnapshot, setSavedFormSnapshot] =
+    useState<MaterialFormState | null>(null);
   const [priceSourceForm, setPriceSourceForm] =
     useState<PriceSourceFormState>(emptyPriceSourceForm);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -391,19 +423,40 @@ export function MaterialDetailClient({ id }: { id: number }) {
     useState<Material | null>(null);
   const [deleteSourceTarget, setDeleteSourceTarget] =
     useState<MaterialPriceSource | null>(null);
+  const [isPricesSectionOpen, setIsPricesSectionOpen] = useState(false);
 
   const materialQuery = api.material.getById.useQuery({ id }, { retry: false });
 
   useEffect(() => {
     if (materialQuery.data) {
-      setForm(formFromMaterial(materialQuery.data));
+      const nextForm = formFromMaterial(materialQuery.data);
+      setForm(nextForm);
+      setSavedFormSnapshot(nextForm);
     }
   }, [materialQuery.data]);
+
+  const isDirty =
+    form != null &&
+    savedFormSnapshot != null &&
+    !formsEqual(form, savedFormSnapshot);
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   const updateMaterial = api.material.updateMaterial.useMutation({
     onSuccess: async (material) => {
       setActionError(null);
       setSuccessMessage("Đã lưu thay đổi vật tư.");
+      toast.success("Đã lưu thay đổi vật tư.");
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
@@ -427,9 +480,26 @@ export function MaterialDetailClient({ id }: { id: number }) {
     },
   });
 
+  const duplicateMaterial = api.material.duplicateMaterial.useMutation({
+    onSuccess: async (material) => {
+      toast.success(`Đã nhân bản thành "${material.name}".`);
+      await Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
+      router.push(`/materials/${material.id}`);
+    },
+    onError: (error) => {
+      setActionError(error.message || "Không thể nhân bản vật tư.");
+    },
+  });
+
   const refreshMaterialQueries = async (material?: Material | null) => {
     if (material) {
-      setForm(formFromMaterial(material));
+      const nextForm = formFromMaterial(material);
+      setForm(nextForm);
+      setSavedFormSnapshot(nextForm);
       utils.material.getById.setData({ id }, material);
     }
     await Promise.all([
@@ -493,7 +563,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const applyPriceSourcePrice = api.material.applyPriceSourcePrice.useMutation({
     onSuccess: async (material) => {
       setActionError(null);
-      setSuccessMessage("Đã áp dụng giá vào đơn giá mặc định.");
+      setSuccessMessage("Đã áp dụng giá vào đơn giá.");
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
@@ -552,7 +622,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
       material
         ? [
             {
-              label: "Giá",
+              label: "Đơn giá",
               done: material.defaultUnitPrice != null,
             },
             {
@@ -596,29 +666,97 @@ export function MaterialDetailClient({ id }: { id: number }) {
     ? updatePriceSource.variables?.sourceId
     : null;
 
-  const save = (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    if (!form || !canSave) {
+  const save = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      if (!form || !canSave) {
+        return;
+      }
+      setSuccessMessage(null);
+      setActionError(null);
+      updateMaterial.mutate({
+        id,
+        patch: {
+          code: form.code || "",
+          name: form.name.trim(),
+          unit: form.unit.trim(),
+          category: form.category || "",
+          specText: form.specText,
+          manufacturer: form.manufacturer || "",
+          originCountry: form.originCountry || "",
+          defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
+          currency: form.currency || "VND",
+          sourceUrl: form.sourceUrl || "",
+          defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
+          defaultReusePct: Math.min(
+            100,
+            Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
+          ),
+        },
+      });
+    },
+    [canSave, form, id, updateMaterial],
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
+        return;
+      }
+      event.preventDefault();
+      save();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [save]);
+
+  const convertLegacySourceUrl = () => {
+    const legacyUrl = form?.sourceUrl.trim();
+    if (!legacyUrl) {
       return;
     }
-    setSuccessMessage(null);
-    setActionError(null);
-    updateMaterial.mutate({
-      id,
-      patch: {
-        code: form.code || "",
-        name: form.name.trim(),
-        unit: form.unit.trim(),
-        category: form.category || "",
-        specText: form.specText,
-        manufacturer: form.manufacturer || "",
-        originCountry: form.originCountry || "",
-        defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
-        currency: form.currency || "VND",
-        sourceUrl: form.sourceUrl || "",
-      },
+    const alreadyLinked = priceSources.some(
+      (source) => source.url.trim() === legacyUrl,
+    );
+    if (alreadyLinked) {
+      toast.warning("URL này đã có trong nguồn giá.");
+      return;
+    }
+    setPriceSourceForm({
+      ...emptyPriceSourceForm,
+      label: "URL nguồn vật tư",
+      url: legacyUrl,
+      mode: "linked",
+      isPrimary: priceSources.length === 0,
     });
+    setIsPricesSectionOpen(true);
+    document
+      .getElementById("material-prices")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    toast.success("Đã điền URL vào form nguồn giá — bấm Thêm để lưu.");
   };
+
+  const scrollToSection = (sectionId: string) => {
+    if (sectionId === "material-prices") {
+      setIsPricesSectionOpen(true);
+    }
+    document
+      .getElementById(sectionId)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  useEffect(() => {
+    const expandPricesFromHash = () => {
+      if (window.location.hash === "#material-prices") {
+        setIsPricesSectionOpen(true);
+      }
+    };
+
+    expandPricesFromHash();
+    window.addEventListener("hashchange", expandPricesFromHash);
+    return () => window.removeEventListener("hashchange", expandPricesFromHash);
+  }, []);
 
   const addSource = (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -719,7 +857,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
       <ConfirmDialog
         open={deleteSourceTarget !== null}
         title={`Xóa nguồn "${deleteSourceTarget?.label ?? ""}"?`}
-        description="Nguồn giá này sẽ bị gỡ khỏi vật tư. Đơn giá catalog hiện tại không tự thay đổi."
+        description="Nguồn giá này sẽ bị gỡ khỏi vật tư. Đơn giá hiện tại không tự thay đổi."
         confirmLabel="Xóa nguồn"
         variant="danger"
         isLoading={deleteSourceTarget?.id === deletingSourceId}
@@ -741,7 +879,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
       >
         <div className="border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 gap-4">
+              <MaterialImagePreview material={material} />
+              <div className="min-w-0 flex-1">
               <Link
                 href="/materials"
                 className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
@@ -776,6 +916,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   <Badge tone="neutral">{material.category}</Badge>
                 ) : null}
               </div>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -790,6 +931,14 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   Mở nguồn
                 </a>
               ) : null}
+              <Button
+                variant="secondary"
+                leftIcon={<Copy className="h-4 w-4" />}
+                isLoading={duplicateMaterial.isPending}
+                onClick={() => duplicateMaterial.mutate({ id })}
+              >
+                Nhân bản
+              </Button>
               <Button
                 variant="primary"
                 leftIcon={<Save className="h-4 w-4" />}
@@ -825,12 +974,16 @@ export function MaterialDetailClient({ id }: { id: number }) {
         <div className="p-5">
           <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <SummaryTile
-              label="Đơn giá catalog"
-              value={formatMoney(material.defaultUnitPrice, material.currency)}
+              label="Đơn giá"
+              value={formatMoney(
+                material.defaultUnitPrice,
+                material.currency,
+                "Chưa có",
+              )}
               helper={
                 primarySourcePrice
                   ? `Nguồn chính: ${primarySourcePrice}`
-                  : "Giá dùng mặc định khi map vật tư"
+                  : "Đơn giá dùng khi map vật tư"
               }
               icon={<BadgeDollarSign className="h-4 w-4" />}
               tone={material.defaultUnitPrice == null ? "amber" : "emerald"}
@@ -904,19 +1057,27 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 </Badge>
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {readinessItems.map((item) => (
-                  <span
-                    key={item.label}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
-                      item.done
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 bg-slate-50 text-slate-500"
-                    }`}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                    {item.label}
-                  </span>
-                ))}
+                {readinessItems.map((item) => {
+                  const targetSection =
+                    item.label === "Đơn giá" || item.label === "Nguồn"
+                      ? "material-prices"
+                      : "material-edit";
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+                        item.done
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-slate-50 text-slate-500"
+                      }`}
+                      onClick={() => scrollToSection(targetSection)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
             </article>
           </div>
@@ -925,19 +1086,50 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
       <section
         id="material-prices"
-        className="grid scroll-mt-6 gap-4 xl:grid-cols-[0.85fr_1.15fr]"
+        className="panel scroll-mt-6 overflow-hidden"
       >
-        <article className="panel p-5">
-          <div className="border-b border-slate-200 pb-3">
+        <button
+          type="button"
+          className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          onClick={() => setIsPricesSectionOpen((open) => !open)}
+          aria-expanded={isPricesSectionOpen}
+          aria-controls="material-prices-content"
+        >
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-sky-700" aria-hidden />
+              <LinkIcon className="h-4 w-4 text-emerald-700" aria-hidden />
               <h3 className="text-sm font-bold text-slate-950">
                 Link sản phẩm và giá
               </h3>
             </div>
             <p className="mt-1 text-xs text-slate-500">
               Lưu link tham khảo, giá cố định, hoặc lấy giá mới từ trang sản
-              phẩm rồi áp dụng vào đơn giá mặc định.
+              phẩm rồi áp dụng vào đơn giá.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 pt-0.5">
+            <Badge tone="info" count={priceSources.length}>
+              Nguồn
+            </Badge>
+            <ChevronDown
+              className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
+                isPricesSectionOpen ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            />
+          </div>
+        </button>
+
+        {isPricesSectionOpen ? (
+          <div
+            id="material-prices-content"
+            className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[0.85fr_1.15fr]"
+          >
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h4 className="text-sm font-bold text-slate-950">Thêm nguồn giá</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Điền link sản phẩm hoặc giá cố định để lưu vào catalog.
             </p>
           </div>
 
@@ -992,39 +1184,47 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </div>
 
             <Field label="URL sản phẩm">
-              <input
-                name="priceSourceUrl"
-                type="url"
-                autoComplete="url"
-                className={inputClass}
-                placeholder="https://example.com/bao-gia…"
-                value={priceSourceForm.url}
-                onChange={(event) =>
-                  setPriceSourceForm({
-                    ...priceSourceForm,
-                    url: event.target.value,
-                  })
-                }
-              />
+              {priceSourceForm.mode === "linked" ? (
+                <input
+                  name="priceSourceUrl"
+                  type="url"
+                  autoComplete="url"
+                  className={inputClass}
+                  placeholder="https://example.com/bao-gia…"
+                  value={priceSourceForm.url}
+                  onChange={(event) =>
+                    setPriceSourceForm({
+                      ...priceSourceForm,
+                      url: event.target.value,
+                    })
+                  }
+                />
+              ) : (
+                <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  Không cần URL khi dùng giá cố định.
+                </p>
+              )}
             </Field>
 
-            <Field label="Giá cố định">
-              <input
-                name="priceSourceFixedPrice"
-                className={inputClass}
-                type="number"
-                min={0}
-                inputMode="decimal"
-                placeholder="Để trống nếu chỉ theo link"
-                value={priceSourceForm.fixedPrice}
-                onChange={(event) =>
-                  setPriceSourceForm({
-                    ...priceSourceForm,
-                    fixedPrice: event.target.value,
-                  })
-                }
-              />
-            </Field>
+            {priceSourceForm.mode === "fixed" ? (
+              <Field label="Giá cố định">
+                <input
+                  name="priceSourceFixedPrice"
+                  className={inputClass}
+                  type="number"
+                  min={0}
+                  inputMode="decimal"
+                  placeholder="Nhập giá cố định"
+                  value={priceSourceForm.fixedPrice}
+                  onChange={(event) =>
+                    setPriceSourceForm({
+                      ...priceSourceForm,
+                      fixedPrice: event.target.value,
+                    })
+                  }
+                />
+              </Field>
+            ) : null}
 
             <Field label="Ghi chú">
               <textarea
@@ -1069,27 +1269,22 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </form>
         </article>
 
-        <article className="panel p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-950">
-                Nguồn giá đã lưu
-              </h3>
-              <p className="mt-1 text-xs text-slate-500">
-                Giá link được dò từ nội dung trang; giá cố định có thể áp dụng
-                ngay cho vật tư.
-              </p>
-            </div>
-            <Badge tone="info" count={priceSources.length}>
-              Nguồn
-            </Badge>
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h4 className="text-sm font-bold text-slate-950">
+              Nguồn giá đã lưu
+            </h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Giá link được dò từ nội dung trang; giá cố định có thể áp dụng
+              ngay cho vật tư.
+            </p>
           </div>
 
           {priceSources.length === 0 ? (
             <EmptyState
               className="mt-3"
               title="Chưa có link sản phẩm hoặc nguồn giá."
-              description="Thêm link nhà cung cấp hoặc giá cố định để cập nhật đơn giá catalog khi cần."
+              description="Thêm link nhà cung cấp hoặc giá cố định để cập nhật đơn giá khi cần."
             />
           ) : (
             <ul className="mt-3 space-y-2">
@@ -1134,6 +1329,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </ul>
           )}
         </article>
+          </div>
+        ) : null}
       </section>
 
       <section
@@ -1217,7 +1414,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 }
               />
             </Field>
-            <Field label="Đơn giá mặc định">
+            <Field label="Đơn giá">
               <input
                 name="defaultUnitPrice"
                 className={inputClass}
@@ -1241,7 +1438,35 @@ export function MaterialDetailClient({ id }: { id: number }) {
                 }
               />
             </Field>
-            <Field label="URL nguồn" className="md:col-span-2">
+            <Field label="Khấu hao mặc định">
+              <input
+                name="defaultDepreciation"
+                className={inputClass}
+                type="number"
+                min={0}
+                step={0.1}
+                inputMode="decimal"
+                value={form.defaultDepreciation}
+                onChange={(event) =>
+                  setForm({ ...form, defaultDepreciation: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="% sử dụng lại mặc định">
+              <input
+                name="defaultReusePct"
+                className={inputClass}
+                type="number"
+                min={0}
+                max={100}
+                inputMode="numeric"
+                value={form.defaultReusePct}
+                onChange={(event) =>
+                  setForm({ ...form, defaultReusePct: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="URL nguồn (legacy)" className="md:col-span-2">
               <input
                 name="sourceUrl"
                 type="url"
@@ -1252,6 +1477,21 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, sourceUrl: event.target.value })
                 }
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Trường cũ, chỉ lưu link tham khảo. Nên dùng mục Nguồn giá để
+                quản lý link, cập nhật và áp dụng giá.
+              </p>
+              {form.sourceUrl.trim() ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2"
+                  onClick={convertLegacySourceUrl}
+                >
+                  Chuyển sang nguồn giá
+                </Button>
+              ) : null}
             </Field>
             <Field label="Thông số kỹ thuật" className="md:col-span-2">
               <textarea
@@ -1316,6 +1556,37 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </article>
         </aside>
       </section>
+
+      {isDirty ? (
+        <div className="sticky bottom-4 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-sky-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          <p className="text-sm font-semibold text-slate-800">
+            Có thay đổi chưa lưu
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (savedFormSnapshot) {
+                  setForm(savedFormSnapshot);
+                }
+              }}
+            >
+              Hoàn tác
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Save className="h-4 w-4" />}
+              isLoading={updateMaterial.isPending}
+              disabled={!canSave}
+              onClick={() => save()}
+            >
+              Lưu thay đổi
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

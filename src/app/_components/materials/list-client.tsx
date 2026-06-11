@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import type { ChangeEventHandler } from "react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import type {
+  ChangeEventHandler,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from "react";
+import { useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -12,13 +16,21 @@ import {
   type PaginationState,
   type Row,
   type RowSelectionState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ArrowUpRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Columns3,
+  Copy,
+  Download,
   Factory,
   FileSpreadsheet,
   Filter,
@@ -30,12 +42,19 @@ import {
   Search,
   SlidersHorizontal,
   SquareCheckBig,
+  SquarePen,
   Trash2,
   WalletCards,
 } from "lucide-react";
 
-import { Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { Button, ConfirmDialog, EmptyState, SearchableSelect } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
+import {
+  formatCoverage,
+  formatDate,
+  formatMoney,
+  parseOptionalNumber,
+} from "~/lib/materials/format";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
 import { api, type RouterInputs, type RouterOutputs } from "~/trpc/react";
 
@@ -45,6 +64,7 @@ type MaterialListItem = RouterOutputs["material"]["searchMaterials"][number];
 type MaterialSortBy = NonNullable<MaterialSearchInput["sortBy"]>;
 type SortOrder = NonNullable<MaterialSearchInput["sortOrder"]>;
 type PriceStatus = NonNullable<MaterialSearchInput["priceStatus"]>;
+type SourceStatus = NonNullable<MaterialSearchInput["sourceStatus"]>;
 
 type EnrichedMaterialListItem = MaterialListItem & {
   details: string;
@@ -57,6 +77,19 @@ const DEFAULT_MATERIAL_PAGE_SIZE = 50;
 const MATERIAL_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
 const MATERIAL_SEARCH_STALE_MS = 10_000;
 const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
+const MATERIAL_COLUMN_VISIBILITY_KEY = "bidtool:material-catalog-columns:v1";
+
+const defaultColumnVisibility: VisibilityState = {
+  code: false,
+  updatedAt: false,
+};
+
+const materialColumnOptions: Array<{ id: string; label: string }> = [
+  { id: "code", label: "Mã vật tư" },
+  { id: "specText", label: "Thông số" },
+  { id: "details", label: "Chi tiết" },
+  { id: "updatedAt", label: "Cập nhật" },
+];
 
 const emptySummary = {
   total: 0,
@@ -85,6 +118,12 @@ const priceStatusOptions: Array<{ value: PriceStatus; label: string }> = [
   { value: "missing", label: "Chưa có giá" },
 ];
 
+const sourceStatusOptions: Array<{ value: SourceStatus; label: string }> = [
+  { value: "all", label: "Tất cả nguồn" },
+  { value: "with", label: "Có nguồn giá" },
+  { value: "without", label: "Chưa có nguồn" },
+];
+
 const materialControlClass =
   "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
 
@@ -108,6 +147,10 @@ function isPriceStatus(value: string): value is PriceStatus {
   return priceStatusOptions.some((option) => option.value === value);
 }
 
+function isSourceStatus(value: string): value is SourceStatus {
+  return sourceStatusOptions.some((option) => option.value === value);
+}
+
 function parsePageSize(value: string) {
   const pageSize = Number(value);
   return MATERIAL_PAGE_SIZE_OPTIONS.includes(
@@ -122,6 +165,25 @@ function parsePageIndex(value: string) {
   return Number.isInteger(page) && page > 0 ? page - 1 : 0;
 }
 
+function loadColumnVisibility(): VisibilityState {
+  if (typeof window === "undefined") {
+    return defaultColumnVisibility;
+  }
+
+  try {
+    const raw = localStorage.getItem(MATERIAL_COLUMN_VISIBILITY_KEY);
+    if (!raw) {
+      return defaultColumnVisibility;
+    }
+    return {
+      ...defaultColumnVisibility,
+      ...(JSON.parse(raw) as VisibilityState),
+    };
+  } catch {
+    return defaultColumnVisibility;
+  }
+}
+
 function updateUrlParam(
   params: URLSearchParams,
   name: string,
@@ -134,24 +196,6 @@ function updateUrlParam(
     return;
   }
   params.set(name, stringValue);
-}
-
-function formatMoney(value: number | null | undefined, currency = "VND") {
-  if (value == null) {
-    return "-";
-  }
-  return `${value.toLocaleString("vi-VN")} ${currency}`;
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleDateString("vi-VN");
 }
 
 function getSourceCount(metadataJson: unknown, sourceUrl?: string | null) {
@@ -183,13 +227,6 @@ function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
   };
 }
 
-function formatCoverage(value: number, total: number) {
-  if (total <= 0) {
-    return "0%";
-  }
-  return `${Math.round((value / total) * 100).toLocaleString("vi-VN")}%`;
-}
-
 function materialTableHeaderClass(columnId: string) {
   if (columnId === "select") {
     return "px-3 py-2 text-center";
@@ -204,6 +241,7 @@ function materialTableCellClass(columnId: string) {
   const classes: Record<string, string> = {
     select: "px-3 py-2 text-center",
     name: "max-w-72 px-3 py-2 font-semibold text-slate-900",
+    code: "max-w-36 px-3 py-2 font-mono text-xs text-slate-700",
     unit: "px-3 py-2 text-slate-700",
     specText: "max-w-96 px-3 py-2 text-slate-600",
     details: "max-w-80 px-3 py-2 text-slate-600",
@@ -215,6 +253,72 @@ function materialTableCellClass(columnId: string) {
   };
 
   return classes[columnId] ?? "px-3 py-2";
+}
+
+function MaterialSortableHeader({
+  label,
+  columnId,
+  sortBy,
+  sortOrder,
+  onSort,
+}: {
+  label: string;
+  columnId: MaterialSortBy;
+  sortBy: MaterialSortBy;
+  sortOrder: SortOrder;
+  onSort: (columnId: MaterialSortBy) => void;
+}) {
+  const isActive = sortBy === columnId;
+  const SortIcon = isActive
+    ? sortOrder === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-left transition hover:bg-slate-200/70 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+        isActive ? "text-slate-900" : "text-slate-600"
+      }`}
+      aria-label={`Sắp xếp theo ${label}`}
+      aria-pressed={isActive}
+      onClick={() => onSort(columnId)}
+    >
+      <span>{label}</span>
+      <SortIcon
+        className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-sky-700" : "text-slate-400"}`}
+        aria-hidden
+      />
+    </button>
+  );
+}
+
+function QuickFilterCell({
+  value,
+  onFilter,
+  children,
+}: {
+  value: string | null | undefined;
+  onFilter: (value: string) => void;
+  children?: ReactNode;
+}) {
+  const normalizedValue = value?.trim();
+  if (!normalizedValue) {
+    return <span>-</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="line-clamp-2 text-left hover:text-sky-700 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+      title={`Lọc theo "${normalizedValue}"`}
+      aria-label={`Lọc theo ${normalizedValue}`}
+      onClick={() => onFilter(normalizedValue)}
+    >
+      {children ?? normalizedValue}
+    </button>
+  );
 }
 
 function SelectionCheckbox({
@@ -295,7 +399,7 @@ function MaterialMobileCard({
 
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Giá</dt>
+          <dt className="font-semibold text-slate-500">Đơn giá</dt>
           <dd className="mt-0.5 font-bold text-slate-950 tabular-nums">
             {formatMoney(material.defaultUnitPrice, material.currency)}
           </dd>
@@ -351,9 +455,11 @@ function MaterialMobileCard({
 }
 
 export function MaterialsListClient() {
+  const router = useRouter();
   const initialSearchParams = useSearchParams();
   const [hasMounted, setHasMounted] = useState(false);
   const didInitializeViewControlsRef = useRef(false);
+  const columnPickerRef = useRef<HTMLDivElement>(null);
   const [keyword, setKeyword] = useState(() =>
     readSearchParam(initialSearchParams, "q"),
   );
@@ -377,22 +483,40 @@ export function MaterialsListClient() {
     const value = readSearchParam(initialSearchParams, "price");
     return isPriceStatus(value) ? value : "all";
   });
+  const [sourceStatus, setSourceStatus] = useState<SourceStatus>(() => {
+    const value = readSearchParam(initialSearchParams, "sources");
+    return isSourceStatus(value) ? value : "all";
+  });
   const [sortBy, setSortBy] = useState<MaterialSortBy>(() => {
     const value = readSearchParam(initialSearchParams, "sort");
-    return isMaterialSortBy(value) ? value : "name";
+    return isMaterialSortBy(value) ? value : "updatedAt";
   });
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
     const value = readSearchParam(initialSearchParams, "order");
-    return isSortOrder(value) ? value : "asc";
+    return isSortOrder(value) ? value : "desc";
   });
   const [pagination, setPagination] = useState<PaginationState>(() => ({
     pageIndex: parsePageIndex(readSearchParam(initialSearchParams, "page")),
     pageSize: parsePageSize(readSearchParam(initialSearchParams, "pageSize")),
   }));
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+    defaultColumnVisibility,
+  );
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [pageJumpValue, setPageJumpValue] = useState("1");
   const utils = api.useUtils();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkManufacturer, setBulkManufacturer] = useState("");
+  const [bulkOrigin, setBulkOrigin] = useState("");
+  const [bulkPrice, setBulkPrice] = useState("");
+  const [bulkPriceMode, setBulkPriceMode] = useState<"skip" | "set" | "clear">(
+    "skip",
+  );
   const materialSummaryInput = useMemo(
     (): MaterialSummaryInput => ({
       keyword: deferredKeyword.trim() || undefined,
@@ -402,6 +526,7 @@ export function MaterialsListClient() {
       manufacturer: manufacturerFilter || undefined,
       originCountry: originFilter || undefined,
       priceStatus,
+      sourceStatus,
     }),
     [
       deferredKeyword,
@@ -411,6 +536,7 @@ export function MaterialsListClient() {
       manufacturerFilter,
       originFilter,
       priceStatus,
+      sourceStatus,
     ],
   );
   const materialSearchInput = useMemo(
@@ -452,6 +578,18 @@ export function MaterialsListClient() {
       staleTime: MATERIAL_SEARCH_STALE_MS,
     },
   );
+  const exportCsvInput = useMemo(
+    () => ({
+      ...materialSummaryInput,
+      sortBy,
+      sortOrder,
+    }),
+    [materialSummaryInput, sortBy, sortOrder],
+  );
+  const exportCsvQuery = api.material.exportMaterialsCsv.useQuery(
+    exportCsvInput,
+    { enabled: false },
+  );
   const {
     data: materialsData,
     isFetching,
@@ -472,7 +610,34 @@ export function MaterialsListClient() {
 
   useEffect(() => {
     setHasMounted(true);
+    setColumnVisibility(loadColumnVisibility());
   }, []);
+
+  useEffect(() => {
+    if (!hasMounted || typeof window === "undefined") {
+      return;
+    }
+
+    localStorage.setItem(
+      MATERIAL_COLUMN_VISIBILITY_KEY,
+      JSON.stringify(columnVisibility),
+    );
+  }, [columnVisibility, hasMounted]);
+
+  useEffect(() => {
+    if (!showColumnPicker) {
+      return;
+    }
+
+    const handlePointerDown = (event: globalThis.MouseEvent) => {
+      if (!columnPickerRef.current?.contains(event.target as Node)) {
+        setShowColumnPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showColumnPicker]);
 
   useEffect(() => {
     if (!hasMounted || typeof window === "undefined") {
@@ -487,8 +652,9 @@ export function MaterialsListClient() {
     updateUrlParam(params, "manufacturer", manufacturerFilter);
     updateUrlParam(params, "origin", originFilter);
     updateUrlParam(params, "price", priceStatus, "all");
-    updateUrlParam(params, "sort", sortBy, "name");
-    updateUrlParam(params, "order", sortOrder, "asc");
+    updateUrlParam(params, "sources", sourceStatus, "all");
+    updateUrlParam(params, "sort", sortBy, "updatedAt");
+    updateUrlParam(params, "order", sortOrder, "desc");
     updateUrlParam(params, "page", pagination.pageIndex + 1, 1);
     updateUrlParam(
       params,
@@ -513,6 +679,7 @@ export function MaterialsListClient() {
     pagination.pageIndex,
     pagination.pageSize,
     priceStatus,
+    sourceStatus,
     sortBy,
     sortOrder,
     unitFilter,
@@ -544,6 +711,11 @@ export function MaterialsListClient() {
     Math.ceil(summary.total / pagination.pageSize),
   );
   const currentPage = pagination.pageIndex + 1;
+
+  useEffect(() => {
+    setPageJumpValue(String(currentPage));
+  }, [currentPage]);
+
   const pageStart =
     summary.total === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1;
   const pageEnd = Math.min(
@@ -566,11 +738,12 @@ export function MaterialsListClient() {
     manufacturerFilter,
     originFilter,
     priceStatus !== "all" ? priceStatus : "",
+    sourceStatus !== "all" ? sourceStatus : "",
   ].filter(Boolean).length;
   const hasActiveViewControls =
     activeFilterCount > 0 ||
-    sortBy !== "name" ||
-    sortOrder !== "asc" ||
+    sortBy !== "updatedAt" ||
+    sortOrder !== "desc" ||
     pagination.pageIndex > 0 ||
     pagination.pageSize !== DEFAULT_MATERIAL_PAGE_SIZE;
   const selectedIds = useMemo(
@@ -589,6 +762,40 @@ export function MaterialsListClient() {
       ...current,
       pageIndex: Math.min(Math.max(pageIndex, 0), totalPages - 1),
     }));
+  };
+
+  const submitPageJump = () => {
+    const page = Number.parseInt(pageJumpValue, 10);
+    if (!Number.isInteger(page)) {
+      setPageJumpValue(String(currentPage));
+      return;
+    }
+    goToPage(page - 1);
+  };
+
+  const toggleColumnSort = useCallback((column: MaterialSortBy) => {
+    if (sortBy === column) {
+      setSortOrder((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortBy(column);
+    setSortOrder(column === "name" || column === "unit" ? "asc" : "desc");
+  }, [sortBy]);
+
+  const openMaterialDetail = (materialId: number) => {
+    router.push(`/materials/${materialId}`);
+  };
+
+  const handleMaterialRowClick = (
+    event: ReactMouseEvent<HTMLTableRowElement>,
+    materialId: number,
+  ) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("a, button, input, label, [role='button']")) {
+      return;
+    }
+    openMaterialDetail(materialId);
   };
 
   useEffect(() => {
@@ -653,8 +860,9 @@ export function MaterialsListClient() {
     setManufacturerFilter("");
     setOriginFilter("");
     setPriceStatus("all");
-    setSortBy("name");
-    setSortOrder("asc");
+    setSourceStatus("all");
+    setSortBy("updatedAt");
+    setSortOrder("desc");
     setPagination({
       pageIndex: 0,
       pageSize: DEFAULT_MATERIAL_PAGE_SIZE,
@@ -668,6 +876,41 @@ export function MaterialsListClient() {
 
   const refetchFilterOptions = () => {
     void filterOptionsQuery.refetch();
+  };
+
+  const scrollToCatalog = () => {
+    document
+      .getElementById("material-catalog")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const downloadCatalogCsv = async () => {
+    const result = await exportCsvQuery.refetch();
+    const payload = result.data;
+    if (!payload) {
+      toast.error(
+        result.error?.message ?? "Không thể xuất danh mục vật tư.",
+      );
+      return;
+    }
+    const blob = new Blob([`\uFEFF${payload.csv}`], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `vat-tu-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    if (payload.truncated) {
+      toast.warning(
+        `Đã xuất ${payload.count.toLocaleString("vi-VN")} dòng (giới hạn tối đa).`,
+      );
+      return;
+    }
+    toast.success(
+      `Đã xuất ${payload.count.toLocaleString("vi-VN")} vật tư ra CSV.`,
+    );
   };
 
   const moveToPreviousPageIfCurrentPageEmptied = (deletedCount: number) => {
@@ -722,6 +965,50 @@ export function MaterialsListClient() {
     },
   });
 
+  const duplicateMaterial = api.material.duplicateMaterial.useMutation({
+    onSuccess: (material) => {
+      toast.success(`Đã nhân bản thành "${material.name}".`);
+      void Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
+      router.push(`/materials/${material.id}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể nhân bản vật tư.");
+    },
+  });
+
+  const bulkUpdateMaterials = api.material.bulkUpdateMaterials.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Đã cập nhật ${result.count} vật tư.`);
+      setBulkEditOpen(false);
+      setBulkCategory("");
+      setBulkManufacturer("");
+      setBulkOrigin("");
+      setBulkPrice("");
+      setBulkPriceMode("skip");
+      clearSelection();
+      void Promise.all([
+        utils.material.searchMaterials.invalidate(),
+        utils.material.getMaterialSummary.invalidate(),
+        utils.material.getMaterialFilterOptions.invalidate(),
+      ]);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể cập nhật hàng loạt.");
+    },
+  });
+
+  const duplicatingMaterialId = duplicateMaterial.isPending
+    ? duplicateMaterial.variables?.id
+    : null;
+
+  const duplicateMaterialRow = useCallback((materialId: number) => {
+    duplicateMaterial.mutate({ id: materialId });
+  }, [duplicateMaterial]);
+
   const [singleDeleteTarget, setSingleDeleteTarget] = useState<{
     id: number;
     name: string;
@@ -731,6 +1018,7 @@ export function MaterialsListClient() {
     () => [
       {
         id: "select",
+        enableHiding: false,
         header: ({ table }) => (
           <SelectionCheckbox
             checked={table.getIsAllPageRowsSelected()}
@@ -751,7 +1039,15 @@ export function MaterialsListClient() {
       },
       {
         accessorKey: "name",
-        header: "Tên vật tư",
+        header: () => (
+          <MaterialSortableHeader
+            label="Tên vật tư"
+            columnId="name"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
         cell: ({ row }) => (
           <Link
             href={`/materials/${row.original.id}`}
@@ -762,9 +1058,33 @@ export function MaterialsListClient() {
         ),
       },
       {
+        accessorKey: "code",
+        header: "Mã",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-slate-700">
+            {row.original.code ?? "-"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "unit",
-        header: "ĐVT",
-        cell: ({ getValue }) => getValue<string>(),
+        header: () => (
+          <MaterialSortableHeader
+            label="ĐVT"
+            columnId="unit"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
+        cell: ({ row }) => (
+          <QuickFilterCell
+            value={row.original.unit}
+            onFilter={setUnitFilter}
+          >
+            {row.original.unit}
+          </QuickFilterCell>
+        ),
       },
       {
         accessorKey: "specText",
@@ -782,25 +1102,51 @@ export function MaterialsListClient() {
       },
       {
         accessorKey: "manufacturer",
-        header: "NCC",
+        header: () => (
+          <MaterialSortableHeader
+            label="NCC"
+            columnId="manufacturer"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
         cell: ({ row }) => (
-          <span className="line-clamp-2">
-            {row.original.manufacturer ?? "-"}
-          </span>
+          <QuickFilterCell
+            value={row.original.manufacturer}
+            onFilter={setManufacturerFilter}
+          />
         ),
       },
       {
         accessorKey: "originCountry",
-        header: "Xuất xứ",
+        header: () => (
+          <MaterialSortableHeader
+            label="Xuất xứ"
+            columnId="originCountry"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
         cell: ({ row }) => (
-          <span className="line-clamp-2">
-            {row.original.originCountry ?? "-"}
-          </span>
+          <QuickFilterCell
+            value={row.original.originCountry}
+            onFilter={setOriginFilter}
+          />
         ),
       },
       {
         accessorKey: "defaultUnitPrice",
-        header: "Giá",
+        header: () => (
+          <MaterialSortableHeader
+            label="Đơn giá"
+            columnId="defaultUnitPrice"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
         cell: ({ row }) => (
           <span className="font-semibold text-slate-900 tabular-nums">
             {formatMoney(row.original.defaultUnitPrice, row.original.currency)}
@@ -809,7 +1155,15 @@ export function MaterialsListClient() {
       },
       {
         accessorKey: "updatedAt",
-        header: "Cập nhật",
+        header: () => (
+          <MaterialSortableHeader
+            label="Cập nhật"
+            columnId="updatedAt"
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={toggleColumnSort}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-xs text-slate-500">
             {formatDate(row.original.updatedAt)}
@@ -818,6 +1172,7 @@ export function MaterialsListClient() {
       },
       {
         id: "actions",
+        enableHiding: false,
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1.5">
@@ -828,6 +1183,17 @@ export function MaterialsListClient() {
             >
               <ArrowUpRight className="h-4 w-4" aria-hidden />
             </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 px-0 text-slate-600 hover:bg-slate-100 hover:text-sky-800"
+              disabled={duplicateMaterial.isPending}
+              isLoading={duplicatingMaterialId === row.original.id}
+              onClick={() => duplicateMaterialRow(row.original.id)}
+              aria-label={`Nhân bản ${row.original.name}`}
+            >
+              <Copy className="h-4 w-4" aria-hidden />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -847,7 +1213,16 @@ export function MaterialsListClient() {
         ),
       },
     ],
-    [deleteMaterial.isPending, visibleMaterials.length],
+    [
+      deleteMaterial.isPending,
+      duplicateMaterial.isPending,
+      duplicateMaterialRow,
+      duplicatingMaterialId,
+      sortBy,
+      sortOrder,
+      toggleColumnSort,
+      visibleMaterials.length,
+    ],
   );
 
   const materialTable = useReactTable({
@@ -856,21 +1231,65 @@ export function MaterialsListClient() {
     state: {
       pagination,
       rowSelection,
+      columnVisibility,
     },
     getRowId: (row) => String(row.id),
     enableRowSelection: true,
+    enableHiding: true,
     manualPagination: true,
     pageCount: totalPages,
     onPaginationChange: setPagination,
     onRowSelectionChange: setRowSelection,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
   });
+  const visibleColumnCount = materialTable.getVisibleLeafColumns().length;
   const visibleRows = materialTable.getRowModel().rows;
   const openSingleDeleteDialog = (material: EnrichedMaterialListItem) => {
     setSingleDeleteTarget({
       id: material.id,
       name: material.name,
     });
+  };
+
+  const submitBulkUpdate = () => {
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    const patch: {
+      category?: string;
+      manufacturer?: string;
+      originCountry?: string;
+      defaultUnitPrice?: number | null;
+    } = {};
+
+    if (bulkCategory.trim()) {
+      patch.category = bulkCategory.trim();
+    }
+    if (bulkManufacturer.trim()) {
+      patch.manufacturer = bulkManufacturer.trim();
+    }
+    if (bulkOrigin.trim()) {
+      patch.originCountry = bulkOrigin.trim();
+    }
+    if (bulkPriceMode === "set") {
+      const price = parseOptionalNumber(bulkPrice);
+      if (price == null) {
+        toast.error("Nhập đơn giá hợp lệ hoặc chọn không đổi giá.");
+        return;
+      }
+      patch.defaultUnitPrice = price;
+    } else if (bulkPriceMode === "clear") {
+      patch.defaultUnitPrice = null;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      toast.warning("Chọn ít nhất một trường để cập nhật.");
+      return;
+    }
+
+    bulkUpdateMaterials.mutate({ ids: selectedIds, patch });
   };
 
   return (
@@ -910,7 +1329,7 @@ export function MaterialsListClient() {
               Quản lý sản phẩm / vật tư
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Danh mục catalog, giá mặc định và link nguồn dùng cho nhập liệu và
+              Danh mục catalog, đơn giá và link nguồn dùng cho nhập liệu và
               chuẩn hóa vật tư.
             </p>
           </div>
@@ -929,6 +1348,17 @@ export function MaterialsListClient() {
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
             </Link>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="min-h-11 sm:min-h-10"
+              leftIcon={<Download className="h-3.5 w-3.5" />}
+              isLoading={exportCsvQuery.isFetching}
+              disabled={summary.total === 0}
+              onClick={() => void downloadCatalogCsv()}
+            >
+              Xuất CSV
+            </Button>
             <Link
               href="/materials/scrape"
               className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
@@ -940,34 +1370,34 @@ export function MaterialsListClient() {
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            onClick={scrollToCatalog}
+          >
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-slate-500">
-                Items / Vật tư / Sản phẩm
-              </p>
+              <p className="text-xs font-semibold text-slate-500">Tổng vật tư</p>
               <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
-            <p
-              className="mt-1 text-2xl font-bold text-slate-950"
-              aria-label="Tổng vật tư theo bộ lọc"
-            >
+            <p className="mt-1 text-2xl font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
               {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
             <p className="mt-1 text-[11px] font-medium text-slate-500">
-              Tổng dòng catalog trong DB theo bộ lọc
+              Bấm để xem danh mục
             </p>
-          </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-3 shadow-sm">
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
+            onClick={() => setPriceStatus("priced")}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-emerald-700">
-                Có giá catalog
+                Có giá
               </p>
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
-            <p
-              className="mt-1 text-2xl font-bold text-emerald-900"
-              aria-label="Vật tư có giá theo bộ lọc"
-            >
+            <p className="mt-1 text-2xl font-bold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
@@ -975,35 +1405,37 @@ export function MaterialsListClient() {
             <p className="mt-1 text-[11px] font-medium text-emerald-700">
               {showSummaryLoading
                 ? "-"
-                : `${formatCoverage(summary.priced, summary.total)} đã có giá`}
+                : `${formatCoverage(summary.priced, summary.total)} — lọc có giá`}
             </p>
-          </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3 shadow-sm">
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
+            onClick={() => setPriceStatus("missing")}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
               <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
             </div>
-            <p
-              className="mt-1 text-2xl font-bold text-amber-900"
-              aria-label="Vật tư thiếu giá theo bộ lọc"
-            >
+            <p className="mt-1 text-2xl font-bold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
             </p>
             <p className="mt-1 text-[11px] font-medium text-amber-700">
-              Cần bổ sung trước khi báo giá
+              Bấm để lọc thiếu giá
             </p>
-          </div>
-          <div className="rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-3 shadow-sm">
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
+            onClick={() => setSourceStatus("with")}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
-            <p
-              className="mt-1 text-2xl font-bold text-sky-950"
-              aria-label="Vật tư có nguồn giá theo bộ lọc"
-            >
+            <p className="mt-1 text-2xl font-bold text-sky-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
@@ -1011,10 +1443,14 @@ export function MaterialsListClient() {
             <p className="mt-1 text-[11px] font-medium text-sky-700">
               {showSummaryLoading
                 ? "-"
-                : `${formatCoverage(summary.withSources, summary.total)} có link / nguồn`}
+                : `${formatCoverage(summary.withSources, summary.total)} — lọc có nguồn`}
             </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            onClick={scrollToCatalog}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-slate-500">Có NCC</p>
               <Factory className="h-4 w-4 text-slate-400" aria-hidden />
@@ -1029,8 +1465,12 @@ export function MaterialsListClient() {
                 ? "-"
                 : `${summary.uniqueManufacturers.toLocaleString("vi-VN")} NCC khác nhau`}
             </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            onClick={scrollToCatalog}
+          >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-slate-500">Có xuất xứ</p>
               <MapPin className="h-4 w-4 text-slate-400" aria-hidden />
@@ -1045,7 +1485,7 @@ export function MaterialsListClient() {
                 ? "-"
                 : `${summary.uniqueOrigins.toLocaleString("vi-VN")} xuất xứ khác nhau`}
             </p>
-          </div>
+          </button>
         </div>
 
         <div
@@ -1082,10 +1522,16 @@ export function MaterialsListClient() {
                   Không cập nhật được
                 </button>
               ) : null}
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                onClick={() => setIsFiltersOpen((open) => !open)}
+                aria-expanded={isFiltersOpen}
+                aria-controls="material-catalog-filters-content"
+              >
                 <Filter className="h-3.5 w-3.5" aria-hidden />
                 {activeFilterCount.toLocaleString("vi-VN")} bộ lọc
-              </span>
+              </button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -1095,10 +1541,96 @@ export function MaterialsListClient() {
               >
                 Đặt lại
               </Button>
+              <div ref={columnPickerRef} className="relative">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Columns3 className="h-3.5 w-3.5" />}
+                  aria-expanded={showColumnPicker}
+                  aria-controls="material-column-picker"
+                  onClick={() => setShowColumnPicker((current) => !current)}
+                >
+                  Cột hiển thị
+                </Button>
+                {showColumnPicker ? (
+                  <div
+                    id="material-column-picker"
+                    className="absolute top-full right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+                  >
+                    <p className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                      Cột tùy chọn
+                    </p>
+                    <div className="mt-2 grid gap-2">
+                      {materialColumnOptions.map((column) => {
+                        const tableColumn = materialTable.getColumn(column.id);
+                        if (!tableColumn?.getCanHide()) {
+                          return null;
+                        }
+
+                        return (
+                          <label
+                            key={column.id}
+                            className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={tableColumn.getIsVisible()}
+                              onChange={tableColumn.getToggleVisibilityHandler()}
+                              className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                            />
+                            {column.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                      Bấm tiêu đề cột để sắp xếp. Bấm ĐVT/NCC/Xuất xứ để lọc
+                      nhanh.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          <div className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div
+            id="material-catalog-filters"
+            className="mt-3 overflow-hidden rounded-lg border border-slate-200"
+          >
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              onClick={() => setIsFiltersOpen((open) => !open)}
+              aria-expanded={isFiltersOpen}
+              aria-controls="material-catalog-filters-content"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <SlidersHorizontal
+                  className="h-4 w-4 shrink-0 text-slate-500"
+                  aria-hidden
+                />
+                <span className="text-sm font-bold text-slate-950">
+                  Bộ lọc & sắp xếp
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                  {activeFilterCount.toLocaleString("vi-VN")} đang áp dụng
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
+                    isFiltersOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden
+                />
+              </span>
+            </button>
+
+            {isFiltersOpen ? (
+              <div
+                id="material-catalog-filters-content"
+                className="grid gap-3 border-t border-slate-200 bg-slate-50 p-3"
+              >
             <div className="grid gap-2 lg:grid-cols-[minmax(16rem,1.1fr)_minmax(14rem,0.9fr)_repeat(2,minmax(9rem,0.55fr))]">
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
@@ -1121,21 +1653,16 @@ export function MaterialsListClient() {
 
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
-                  Tên vật tư có sẵn
+                  Tên chính xác
                 </span>
-                <select
-                  className={materialControlClass}
-                  aria-label="Lọc theo tên vật tư"
+                <SearchableSelect
                   value={nameFilter}
-                  onChange={(event) => setNameFilter(event.target.value)}
-                >
-                  <option value="">Tất cả tên vật tư</option>
-                  {filterOptions?.names.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setNameFilter}
+                  options={filterOptions?.names ?? []}
+                  emptyOptionLabel="Tất cả tên vật tư"
+                  ariaLabel="Lọc theo tên vật tư"
+                  truncated={filterOptions?.truncated.names}
+                />
               </label>
 
               <label className="grid gap-1">
@@ -1176,88 +1703,66 @@ export function MaterialsListClient() {
               </label>
             </div>
 
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   ĐVT
                 </span>
-                <select
-                  className={materialControlClass}
-                  aria-label="Lọc theo ĐVT"
+                <SearchableSelect
                   value={unitFilter}
-                  onChange={(event) => setUnitFilter(event.target.value)}
-                >
-                  <option value="">Tất cả ĐVT</option>
-                  {filterOptions?.units.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setUnitFilter}
+                  options={filterOptions?.units ?? []}
+                  emptyOptionLabel="Tất cả ĐVT"
+                  ariaLabel="Lọc theo ĐVT"
+                  truncated={filterOptions?.truncated.units}
+                />
               </label>
 
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   Nhóm
                 </span>
-                <select
-                  className={materialControlClass}
-                  aria-label="Lọc theo nhóm"
+                <SearchableSelect
                   value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.target.value)}
-                >
-                  <option value="">Tất cả nhóm</option>
-                  {filterOptions?.categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setCategoryFilter}
+                  options={filterOptions?.categories ?? []}
+                  emptyOptionLabel="Tất cả nhóm"
+                  ariaLabel="Lọc theo nhóm"
+                  truncated={filterOptions?.truncated.categories}
+                />
               </label>
 
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   NCC
                 </span>
-                <select
-                  className={materialControlClass}
-                  aria-label="Lọc theo NCC"
+                <SearchableSelect
                   value={manufacturerFilter}
-                  onChange={(event) =>
-                    setManufacturerFilter(event.target.value)
-                  }
-                >
-                  <option value="">Tất cả NCC</option>
-                  {filterOptions?.manufacturers.map((manufacturer) => (
-                    <option key={manufacturer} value={manufacturer}>
-                      {manufacturer}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setManufacturerFilter}
+                  options={filterOptions?.manufacturers ?? []}
+                  emptyOptionLabel="Tất cả NCC"
+                  ariaLabel="Lọc theo NCC"
+                  truncated={filterOptions?.truncated.manufacturers}
+                />
               </label>
 
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
                   Xuất xứ
                 </span>
-                <select
-                  className={materialControlClass}
-                  aria-label="Lọc theo xuất xứ"
+                <SearchableSelect
                   value={originFilter}
-                  onChange={(event) => setOriginFilter(event.target.value)}
-                >
-                  <option value="">Tất cả xuất xứ</option>
-                  {filterOptions?.origins.map((origin) => (
-                    <option key={origin} value={origin}>
-                      {origin}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setOriginFilter}
+                  options={filterOptions?.origins ?? []}
+                  emptyOptionLabel="Tất cả xuất xứ"
+                  ariaLabel="Lọc theo xuất xứ"
+                  truncated={filterOptions?.truncated.origins}
+                />
               </label>
 
               <label className="grid gap-1">
                 <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
-                  Giá
+                  Đơn giá
                 </span>
                 <select
                   className={materialControlClass}
@@ -1268,6 +1773,26 @@ export function MaterialsListClient() {
                   }
                 >
                   {priceStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Nguồn giá
+                </span>
+                <select
+                  className={materialControlClass}
+                  aria-label="Lọc theo nguồn giá"
+                  value={sourceStatus}
+                  onChange={(event) =>
+                    setSourceStatus(event.target.value as SourceStatus)
+                  }
+                >
+                  {sourceStatusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -1288,30 +1813,14 @@ export function MaterialsListClient() {
                 </button>
               ) : (
                 <span>
-                  Tên vật tư lấy từ catalog hiện có; mặc định sắp xếp theo tên
-                  A-Z.
+                  Mặc định sắp xếp theo mới cập nhật. Bấm tiêu đề cột để đổi thứ
+                  tự. Dropdown có thể giới hạn 200 giá trị — dùng ô tìm kiếm
+                  chính nếu không thấy.
                 </span>
               )}
             </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {[
-              "Tên: Tên vật tư",
-              "ĐVT: Đơn vị",
-              "Thông số: Thông số kỹ thuật",
-              "Chi tiết: Mã / nhóm / nguồn",
-              "NCC: Nhà sản xuất",
-              "Xuất xứ: Quốc gia",
-              "Đơn giá: Giá catalog",
-            ].map((label) => (
-              <span
-                key={label}
-                className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
-              >
-                {label}
-              </span>
-            ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1350,6 +1859,15 @@ export function MaterialsListClient() {
                 </button>
               ) : null}
               <Button
+                variant="secondary"
+                size="sm"
+                disabled={!someSelected}
+                leftIcon={<SquarePen className="h-3.5 w-3.5" />}
+                onClick={() => setBulkEditOpen((current) => !current)}
+              >
+                Sửa hàng loạt
+              </Button>
+              <Button
                 variant="danger"
                 size="sm"
                 disabled={!someSelected}
@@ -1360,6 +1878,125 @@ export function MaterialsListClient() {
               </Button>
             </div>
           </div>
+
+          {bulkEditOpen && someSelected ? (
+            <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">
+                  Sửa {selectedCount.toLocaleString("vi-VN")} vật tư đã chọn
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                  onClick={() => setBulkEditOpen(false)}
+                >
+                  Đóng
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Chỉ các trường có giá trị mới được cập nhật. Để trống nếu không
+                muốn thay đổi nhóm/NCC/xuất xứ.
+              </p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                <label className="grid gap-1">
+                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Nhóm mới
+                  </span>
+                  <input
+                    className={materialControlClass}
+                    aria-label="Nhóm mới cho vật tư đã chọn"
+                    placeholder="Giữ nguyên nếu để trống"
+                    value={bulkCategory}
+                    onChange={(event) => setBulkCategory(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    NCC mới
+                  </span>
+                  <input
+                    className={materialControlClass}
+                    aria-label="NCC mới cho vật tư đã chọn"
+                    placeholder="Giữ nguyên nếu để trống"
+                    value={bulkManufacturer}
+                    onChange={(event) =>
+                      setBulkManufacturer(event.target.value)
+                    }
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Xuất xứ mới
+                  </span>
+                  <input
+                    className={materialControlClass}
+                    aria-label="Xuất xứ mới cho vật tư đã chọn"
+                    placeholder="Giữ nguyên nếu để trống"
+                    value={bulkOrigin}
+                    onChange={(event) => setBulkOrigin(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Đơn giá
+                  </span>
+                  <select
+                    className={materialControlClass}
+                    aria-label="Cách cập nhật đơn giá hàng loạt"
+                    value={bulkPriceMode}
+                    onChange={(event) =>
+                      setBulkPriceMode(
+                        event.target.value as "skip" | "set" | "clear",
+                      )
+                    }
+                  >
+                    <option value="skip">Giữ nguyên giá</option>
+                    <option value="set">Đặt giá mới</option>
+                    <option value="clear">Xóa giá</option>
+                  </select>
+                </label>
+              </div>
+              {bulkPriceMode === "set" ? (
+                <label className="mt-2 grid max-w-xs gap-1">
+                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Giá mới
+                  </span>
+                  <input
+                    className={materialControlClass}
+                    type="number"
+                    min={0}
+                    inputMode="decimal"
+                    aria-label="Giá mới cho vật tư đã chọn"
+                    value={bulkPrice}
+                    onChange={(event) => setBulkPrice(event.target.value)}
+                  />
+                </label>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  isLoading={bulkUpdateMaterials.isPending}
+                  onClick={submitBulkUpdate}
+                >
+                  Áp dụng cho {selectedCount.toLocaleString("vi-VN")} vật tư
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setBulkCategory("");
+                    setBulkManufacturer("");
+                    setBulkOrigin("");
+                    setBulkPrice("");
+                    setBulkPriceMode("skip");
+                  }}
+                >
+                  Xóa form
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div
             className="mt-3 grid gap-2 md:hidden"
@@ -1434,7 +2071,7 @@ export function MaterialsListClient() {
               aria-label="Danh mục vật tư"
               className="w-full min-w-[1280px] divide-y divide-slate-200 text-sm"
             >
-              <thead className="bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
+              <thead className="sticky top-0 z-10 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
                 {materialTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -1457,7 +2094,7 @@ export function MaterialsListClient() {
                 {showInitialLoading ? (
                   <tr>
                     <td
-                      colSpan={materialColumns.length}
+                      colSpan={visibleColumnCount}
                       className="px-3 py-10 text-center text-sm font-medium text-slate-500"
                     >
                       Đang tải danh mục vật tư...
@@ -1468,11 +2105,14 @@ export function MaterialsListClient() {
                   ? visibleRows.map((row) => (
                       <tr
                         key={row.id}
-                        className={`transition-colors ${
+                        className={`cursor-pointer transition-colors ${
                           row.getIsSelected()
                             ? "bg-sky-50/60"
                             : "hover:bg-slate-50/80"
                         }`}
+                        onClick={(event) =>
+                          handleMaterialRowClick(event, row.original.id)
+                        }
                       >
                         {row.getVisibleCells().map((cell) => (
                           <td
@@ -1492,7 +2132,7 @@ export function MaterialsListClient() {
                 catalogError &&
                 visibleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={materialColumns.length} className="px-3 py-8">
+                    <td colSpan={visibleColumnCount} className="px-3 py-8">
                       <EmptyState
                         title="Không tải được danh mục vật tư."
                         description={catalogError}
@@ -1509,7 +2149,7 @@ export function MaterialsListClient() {
                 !catalogError &&
                 visibleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={materialColumns.length} className="px-3 py-8">
+                    <td colSpan={visibleColumnCount} className="px-3 py-8">
                       <EmptyState
                         title="Chưa có sản phẩm / vật tư."
                         description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
@@ -1584,6 +2224,24 @@ export function MaterialsListClient() {
                 Trang {currentPage.toLocaleString("vi-VN")} /{" "}
                 {totalPages.toLocaleString("vi-VN")}
               </span>
+              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                <span className="sr-only">Nhảy tới trang</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={pageJumpValue}
+                  aria-label="Nhảy tới trang"
+                  className="h-10 w-14 rounded-md border border-slate-300 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+                  onChange={(event) => setPageJumpValue(event.target.value)}
+                  onBlur={submitPageJump}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      submitPageJump();
+                    }
+                  }}
+                />
+              </label>
               <button
                 type="button"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"

@@ -404,6 +404,7 @@ export const materials = pgTable(
     defaultUnitPrice: bigint("default_unit_price", { mode: "number" }),
     currency: text("currency").notNull().default("VND"),
     sourceUrl: text("source_url"),
+    imageUrl: text("image_url"),
     defaultDepreciation: numeric("default_depreciation", {
       precision: 10,
       scale: 2,

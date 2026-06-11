@@ -267,7 +267,7 @@ function NavLink({
             onClick={onToggleExpand}
             aria-label={expanded ? "Thu gọn mục con" : "Mở rộng mục con"}
             aria-expanded={expanded}
-            className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none ${
+            className={`mr-1 flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:h-7 sm:w-7 ${
               isActive
                 ? "text-sky-700 hover:bg-sky-100"
                 : "text-slate-500 hover:bg-slate-200"
@@ -285,7 +285,7 @@ function NavLink({
               <Link
                 href={sub.href}
                 onClick={onNavigate}
-                className="block rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+                className="flex min-h-10 touch-manipulation items-center rounded-md px-2 py-2 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:min-h-0 sm:py-1.5"
               >
                 {sub.label}
               </Link>
@@ -640,7 +640,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh flex-col text-slate-900 sm:flex-row">
       <a
         href="#main-content"
-        className="sr-only z-[60] rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="pointer-events-none fixed top-3 left-3 z-[60] inline-flex min-h-10 -translate-y-20 items-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white opacity-0 transition-[opacity,transform] duration-150 focus:pointer-events-auto focus:translate-y-0 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
       >
         Bỏ qua điều hướng
       </a>

@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { ArrowLeft, PackagePlus, Save } from "lucide-react";
+import { ArrowLeft, PackagePlus, Plus, Save } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
+import {
+  parseIntegerOrDefault,
+  parseNumberOrDefault,
+  parseOptionalNumber,
+} from "~/lib/materials/format";
 import { api } from "~/trpc/react";
 
 type MaterialCreateFormState = {
@@ -45,24 +51,6 @@ const inputClass =
 const textareaClass =
   "min-h-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
 
-function parseOptionalNumber(value: string) {
-  if (!value.trim()) {
-    return null;
-  }
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function parseNumberOrDefault(value: string, fallback: number) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function parseIntegerOrDefault(value: string, fallback: number) {
-  const number = Number.parseInt(value, 10);
-  return Number.isFinite(number) ? number : fallback;
-}
-
 function Field({
   label,
   children,
@@ -82,11 +70,76 @@ function Field({
   );
 }
 
+function SuggestedInput({
+  label,
+  name,
+  value,
+  onChange,
+  options,
+  placeholder,
+  autoComplete,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+  autoComplete?: string;
+}) {
+  const listId = `${name}-suggestions`;
+
+  return (
+    <Field label={label}>
+      <input
+        name={name}
+        autoComplete={autoComplete}
+        className={inputClass}
+        list={listId}
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </Field>
+  );
+}
+
+function buildCreatePayload(form: MaterialCreateFormState) {
+  return {
+    code: form.code || undefined,
+    name: form.name.trim(),
+    unit: form.unit.trim(),
+    category: form.category || undefined,
+    specText: form.specText,
+    manufacturer: form.manufacturer || undefined,
+    originCountry: form.originCountry || undefined,
+    defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
+    currency: form.currency || "VND",
+    sourceUrl: form.sourceUrl || undefined,
+    defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
+    defaultReusePct: Math.min(
+      100,
+      Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
+    ),
+  };
+}
+
 export function MaterialCreateClient() {
   const router = useRouter();
   const utils = api.useUtils();
+  const toast = useToast();
   const [form, setForm] = useState(emptyForm);
   const [actionError, setActionError] = useState<string | null>(null);
+  const continueAddingRef = useRef(false);
+  const filterOptionsQuery = api.material.getMaterialFilterOptions.useQuery(
+    undefined,
+    { staleTime: 5 * 60_000 },
+  );
 
   const createMaterial = api.material.createMaterial.useMutation({
     onSuccess: async (material) => {
@@ -100,6 +153,15 @@ export function MaterialCreateClient() {
         utils.material.getMaterialSummary.invalidate(),
         utils.material.getMaterialFilterOptions.invalidate(),
       ]);
+
+      if (continueAddingRef.current) {
+        continueAddingRef.current = false;
+        setForm(emptyForm);
+        setActionError(null);
+        toast.success(`Đã thêm "${material.name}". Tiếp tục nhập vật tư mới.`);
+        return;
+      }
+
       router.push(`/materials/${material.id}`);
     },
     onError: (error) => {
@@ -112,33 +174,24 @@ export function MaterialCreateClient() {
     form.unit.trim().length > 0 &&
     !createMaterial.isPending;
 
-  const submit = (event?: FormEvent<HTMLFormElement>) => {
+  const submit = (
+    event?: FormEvent<HTMLFormElement>,
+    options?: { continueAdding?: boolean },
+  ) => {
     event?.preventDefault();
     if (!canCreate) {
       return;
     }
     setActionError(null);
-    createMaterial.mutate({
-      code: form.code || undefined,
-      name: form.name.trim(),
-      unit: form.unit.trim(),
-      category: form.category || undefined,
-      specText: form.specText,
-      manufacturer: form.manufacturer || undefined,
-      originCountry: form.originCountry || undefined,
-      defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
-      currency: form.currency || "VND",
-      sourceUrl: form.sourceUrl || undefined,
-      defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
-      defaultReusePct: Math.min(
-        100,
-        Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
-      ),
-    });
+    continueAddingRef.current = options?.continueAdding === true;
+    createMaterial.mutate(buildCreatePayload(form));
   };
 
   return (
-    <form className="space-y-4" onSubmit={submit}>
+    <form
+      className="space-y-4"
+      onSubmit={(event) => submit(event)}
+    >
       <section className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -161,15 +214,27 @@ export function MaterialCreateClient() {
             </p>
           </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            leftIcon={<Save className="h-4 w-4" />}
-            disabled={!canCreate}
-            isLoading={createMaterial.isPending}
-          >
-            Lưu và mở chi tiết
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              leftIcon={<Plus className="h-4 w-4" />}
+              disabled={!canCreate}
+              isLoading={createMaterial.isPending}
+              onClick={() => submit(undefined, { continueAdding: true })}
+            >
+              Lưu và thêm tiếp
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              leftIcon={<Save className="h-4 w-4" />}
+              disabled={!canCreate}
+              isLoading={createMaterial.isPending}
+            >
+              Lưu và mở chi tiết
+            </Button>
+          </div>
         </div>
 
         {actionError ? (
@@ -216,51 +281,43 @@ export function MaterialCreateClient() {
               }
             />
           </Field>
-          <Field label="ĐVT">
-            <input
-              name="unit"
-              autoComplete="off"
-              className={inputClass}
-              value={form.unit}
-              onChange={(event) =>
-                setForm({ ...form, unit: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Nhóm">
-            <input
-              name="category"
-              autoComplete="off"
-              className={inputClass}
-              value={form.category}
-              onChange={(event) =>
-                setForm({ ...form, category: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Nhà sản xuất / NCC">
-            <input
-              name="manufacturer"
-              autoComplete="organization"
-              className={inputClass}
-              value={form.manufacturer}
-              onChange={(event) =>
-                setForm({ ...form, manufacturer: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Xuất xứ">
-            <input
-              name="originCountry"
-              autoComplete="country-name"
-              className={inputClass}
-              value={form.originCountry}
-              onChange={(event) =>
-                setForm({ ...form, originCountry: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Đơn giá mặc định">
+          <SuggestedInput
+            label="ĐVT"
+            name="unit"
+            value={form.unit}
+            onChange={(unit) => setForm({ ...form, unit })}
+            options={filterOptionsQuery.data?.units ?? []}
+            placeholder="Cái, Mét, Bộ…"
+          />
+          <SuggestedInput
+            label="Nhóm"
+            name="category"
+            value={form.category}
+            onChange={(category) => setForm({ ...form, category })}
+            options={filterOptionsQuery.data?.categories ?? []}
+            placeholder="Nhóm vật tư…"
+          />
+          <SuggestedInput
+            label="Nhà sản xuất / NCC"
+            name="manufacturer"
+            value={form.manufacturer}
+            onChange={(manufacturer) => setForm({ ...form, manufacturer })}
+            options={filterOptionsQuery.data?.manufacturers ?? []}
+            placeholder="Nhà cung cấp…"
+            autoComplete="organization"
+          />
+          <SuggestedInput
+            label="Xuất xứ"
+            name="originCountry"
+            value={form.originCountry}
+            onChange={(originCountry) =>
+              setForm({ ...form, originCountry })
+            }
+            options={filterOptionsQuery.data?.origins ?? []}
+            placeholder="VN, CN, JP…"
+            autoComplete="country-name"
+          />
+          <Field label="Đơn giá">
             <input
               name="defaultUnitPrice"
               autoComplete="off"

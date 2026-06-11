@@ -26,6 +26,7 @@ import {
   type ColumnMapping,
 } from "~/server/services/excel-workbook";
 import type { db as appDb } from "~/server/db";
+import { materialImageUrlFromScrape } from "~/lib/materials/image";
 import {
   buildMaterialMetadata,
   fetchPriceFromUrl,
@@ -35,6 +36,7 @@ import {
 } from "~/server/services/material-price-sources";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
+  SHOP_DETAIL_ENRICHMENT_MODES,
   SHOP_SCRAPE_METHODS,
   type ScrapedShopProduct,
 } from "~/server/services/shop-material-scraper";
@@ -69,7 +71,9 @@ const materialSortByInput = z
   .default("updatedAt");
 const sortOrderInput = z.enum(["asc", "desc"]).default("desc");
 const priceStatusInput = z.enum(["all", "priced", "missing"]).default("all");
+const sourceStatusInput = z.enum(["all", "with", "without"]).default("all");
 const MATERIAL_FILTER_OPTION_LIMIT = 200;
+const MATERIAL_EXPORT_LIMIT = 10_000;
 
 const materialInput = z.object({
   code: z.string().trim().optional(),
@@ -94,6 +98,7 @@ const materialSearchFiltersInput = z.object({
   manufacturer: z.string().trim().optional(),
   originCountry: z.string().trim().optional(),
   priceStatus: priceStatusInput,
+  sourceStatus: sourceStatusInput,
 });
 
 const shopScrapeInput = z
@@ -103,6 +108,7 @@ const shopScrapeInput = z
     maxPages: z.number().int().min(1).max(100).nullable().optional(),
     maxProducts: z.number().int().min(1).max(2000).nullable().optional(),
     method: z.enum(SHOP_SCRAPE_METHODS).default("auto"),
+    detailEnrichment: z.enum(SHOP_DETAIL_ENRICHMENT_MODES).default("none"),
   })
   .transform((input) => ({
     ...input,
@@ -455,6 +461,30 @@ function materialFilterConditions(
     input.priceStatus === "missing"
       ? isNull(materials.defaultUnitPrice)
       : undefined,
+    input.sourceStatus === "with"
+      ? or(
+          sql`nullif(btrim(${materials.sourceUrl}), '') is not null`,
+          sql`jsonb_array_length(
+            case
+              when jsonb_typeof(${materials.metadataJson}->'priceSources') = 'array'
+                then ${materials.metadataJson}->'priceSources'
+              else '[]'::jsonb
+            end
+          ) > 0`,
+        )
+      : undefined,
+    input.sourceStatus === "without"
+      ? and(
+          sql`nullif(btrim(${materials.sourceUrl}), '') is null`,
+          sql`jsonb_array_length(
+            case
+              when jsonb_typeof(${materials.metadataJson}->'priceSources') = 'array'
+                then ${materials.metadataJson}->'priceSources'
+              else '[]'::jsonb
+            end
+          ) = 0`,
+        )
+      : undefined,
   ];
 }
 
@@ -471,12 +501,48 @@ async function selectMaterialTextOptions(db: AppDb, column: AnyPgColumn) {
     )
     .groupBy(trimmedColumn)
     .orderBy(asc(trimmedColumn))
-    .limit(MATERIAL_FILTER_OPTION_LIMIT);
+    .limit(MATERIAL_FILTER_OPTION_LIMIT + 1);
 
-  return rows
+  const values = rows
     .map((row) => row.value.trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, "vi"));
+
+  return {
+    values: values.slice(0, MATERIAL_FILTER_OPTION_LIMIT),
+    truncated: values.length > MATERIAL_FILTER_OPTION_LIMIT,
+  };
+}
+
+function materialExportCsvRow(material: {
+  code: string | null;
+  name: string;
+  unit: string;
+  category: string | null;
+  specText: string;
+  manufacturer: string | null;
+  originCountry: string | null;
+  defaultUnitPrice: number | null;
+  currency: string;
+  sourceUrl: string | null;
+  defaultDepreciation: number;
+  defaultReusePct: number;
+}) {
+  return {
+    code: material.code ?? "",
+    name: material.name,
+    unit: material.unit,
+    category: material.category ?? "",
+    spec_text: material.specText,
+    manufacturer: material.manufacturer ?? "",
+    origin_country: material.originCountry ?? "",
+    default_unit_price:
+      material.defaultUnitPrice == null ? "" : String(material.defaultUnitPrice),
+    currency: material.currency,
+    source_url: material.sourceUrl ?? "",
+    default_depreciation: String(material.defaultDepreciation),
+    default_reuse_pct: String(material.defaultReusePct),
+  };
 }
 
 function scrapedShopMetadata(
@@ -585,6 +651,68 @@ function throwIfImportAborted(signal: AbortSignal | undefined) {
   }
 }
 
+const scrapedFieldLabels = {
+  category: "nhóm",
+  specText: "thông số",
+  manufacturer: "NCC",
+  originCountry: "xuất xứ",
+  defaultUnitPrice: "giá",
+  sourceUrl: "nguồn",
+  imageUrl: "ảnh",
+} as const;
+
+function availableScrapedFieldLabels(product: ScrapedShopProduct) {
+  return [
+    product.category ? scrapedFieldLabels.category : null,
+    product.specText.trim() ? scrapedFieldLabels.specText : null,
+    product.manufacturer ? scrapedFieldLabels.manufacturer : null,
+    product.originCountry ? scrapedFieldLabels.originCountry : null,
+    product.price != null ? scrapedFieldLabels.defaultUnitPrice : null,
+    product.sourceUrl ? scrapedFieldLabels.sourceUrl : null,
+    product.imageUrl ? scrapedFieldLabels.imageUrl : null,
+  ].filter(Boolean);
+}
+
+function filledExistingMaterialFieldLabels(
+  existing: MaterialRow,
+  product: ScrapedShopProduct,
+) {
+  return [
+    !existing.category?.trim() && product.category
+      ? scrapedFieldLabels.category
+      : null,
+    !existing.specText.trim() && product.specText.trim()
+      ? scrapedFieldLabels.specText
+      : null,
+    !existing.manufacturer?.trim() && product.manufacturer
+      ? scrapedFieldLabels.manufacturer
+      : null,
+    !existing.originCountry?.trim() && product.originCountry
+      ? scrapedFieldLabels.originCountry
+      : null,
+    existing.defaultUnitPrice == null && product.price != null
+      ? scrapedFieldLabels.defaultUnitPrice
+      : null,
+    !existing.sourceUrl?.trim() && product.sourceUrl
+      ? scrapedFieldLabels.sourceUrl
+      : null,
+  ].filter(Boolean);
+}
+
+function importMessageForCreated(product: ScrapedShopProduct) {
+  const fields = availableScrapedFieldLabels(product);
+  return fields.length > 0
+    ? `Đã nhập: ${fields.join(", ")}.`
+    : "Đã tạo vật tư, còn thiếu thông tin catalog.";
+}
+
+function importMessageForUpdated(existing: MaterialRow, product: ScrapedShopProduct) {
+  const fields = filledExistingMaterialFieldLabels(existing, product);
+  return fields.length > 0
+    ? `Bổ sung trường trống: ${fields.join(", ")}.`
+    : "Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.";
+}
+
 async function importScrapedProducts(
   db: AppDb,
   products: ScrapedShopProduct[],
@@ -691,6 +819,7 @@ async function importScrapedProducts(
             sourceUrl: existing.sourceUrl?.trim()
               ? existing.sourceUrl
               : product.sourceUrl,
+            imageUrl: materialImageUrlFromScrape(product.imageUrl),
             metadataJson,
             updatedAt: now,
           })
@@ -707,6 +836,7 @@ async function importScrapedProducts(
           sourceUrl: product.sourceUrl,
           action: "updated",
           materialId: updatedRow.id,
+          message: importMessageForUpdated(existing, product),
         });
         processed += 1;
         reportProgress(name, product.sourceUrl);
@@ -730,6 +860,7 @@ async function importScrapedProducts(
         .insert(materials)
         .values({
           ...materialValues(createInput, now),
+          imageUrl: materialImageUrlFromScrape(product.imageUrl),
           metadataJson: metadataForScrapedProduct(null, product, now),
         })
         .returning();
@@ -742,6 +873,7 @@ async function importScrapedProducts(
         sourceUrl: product.sourceUrl,
         action: "created",
         materialId: createdRow.id,
+        message: importMessageForCreated(product),
       });
       processed += 1;
       reportProgress(name, product.sourceUrl);
@@ -771,6 +903,68 @@ type MaterialImportRow = {
 function importNameUnitKey(name: string, unit: string) {
   return `${name.trim().toLowerCase()}|${unit.trim().toLowerCase()}`;
 }
+
+async function materialNameUnitExists(
+  db: AppDb,
+  name: string,
+  unit: string,
+) {
+  const [existing] = await db
+    .select({ id: materials.id })
+    .from(materials)
+    .where(
+      and(
+        eq(materials.name, name.trim()),
+        eq(materials.unit, unit.trim()),
+        isNull(materials.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(existing);
+}
+
+async function buildDuplicateMaterialName(
+  db: AppDb,
+  sourceName: string,
+  unit: string,
+) {
+  const trimmedName = sourceName.trim();
+  let candidate = `${trimmedName} (bản sao)`;
+  let suffix = 2;
+
+  while (await materialNameUnitExists(db, candidate, unit)) {
+    candidate = `${trimmedName} (bản sao ${suffix})`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
+function cloneMaterialPriceSources(sources: MaterialPriceSource[]) {
+  return sources.map((source) => ({
+    ...source,
+    id: randomUUID(),
+  }));
+}
+
+const materialBulkPatchInput = z
+  .object({
+    category: z.string().trim().optional(),
+    manufacturer: z.string().trim().optional(),
+    originCountry: z.string().trim().optional(),
+    defaultUnitPrice: z.number().nonnegative().nullable().optional(),
+    currency: z.string().trim().min(1).optional(),
+  })
+  .refine(
+    (patch) =>
+      patch.category !== undefined ||
+      patch.manufacturer !== undefined ||
+      patch.originCountry !== undefined ||
+      patch.defaultUnitPrice !== undefined ||
+      patch.currency !== undefined,
+    { message: "Cần ít nhất một trường cập nhật." },
+  );
 
 async function importMaterialRows(db: AppDb, rows: MaterialImportRow[]) {
   if (rows.length === 0) {
@@ -1351,13 +1545,61 @@ export const materialRouter = createTRPCRouter({
       ]);
 
     return {
-      names,
-      units,
-      categories,
-      manufacturers,
-      origins,
+      names: names.values,
+      units: units.values,
+      categories: categories.values,
+      manufacturers: manufacturers.values,
+      origins: origins.values,
+      truncated: {
+        names: names.truncated,
+        units: units.truncated,
+        categories: categories.truncated,
+        manufacturers: manufacturers.truncated,
+        origins: origins.truncated,
+      },
     };
   }),
+
+  exportMaterialsCsv: publicProcedure
+    .input(
+      materialSearchFiltersInput.extend({
+        sortBy: materialSortByInput,
+        sortOrder: sortOrderInput,
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const order =
+        input.sortOrder === "asc"
+          ? asc(materials[input.sortBy])
+          : desc(materials[input.sortBy]);
+
+      const rows = await ctx.db
+        .select({
+          code: materials.code,
+          name: materials.name,
+          unit: materials.unit,
+          category: materials.category,
+          specText: materials.specText,
+          manufacturer: materials.manufacturer,
+          originCountry: materials.originCountry,
+          defaultUnitPrice: materials.defaultUnitPrice,
+          currency: materials.currency,
+          sourceUrl: materials.sourceUrl,
+          defaultDepreciation: materials.defaultDepreciation,
+          defaultReusePct: materials.defaultReusePct,
+        })
+        .from(materials)
+        .where(and(...materialFilterConditions(input)))
+        .orderBy(order, desc(materials.updatedAt), asc(materials.id))
+        .limit(MATERIAL_EXPORT_LIMIT);
+
+      const csv = Papa.unparse(rows.map(materialExportCsvRow));
+      return {
+        csv,
+        count: rows.length,
+        truncated: rows.length >= MATERIAL_EXPORT_LIMIT,
+      };
+    }),
 
   createMaterial: publicProcedure
     .input(materialInput)
@@ -1464,6 +1706,89 @@ export const materialRouter = createTRPCRouter({
       }
 
       return { success: true };
+    }),
+
+  duplicateMaterial: publicProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const source = await getActiveMaterialById(ctx.db, input.id);
+      const metadata = normalizeMaterialMetadata(source.metadataJson);
+      const now = new Date().toISOString();
+      const duplicateName = await buildDuplicateMaterialName(
+        ctx.db,
+        source.name,
+        source.unit,
+      );
+      const priceSources = cloneMaterialPriceSources(metadata.priceSources);
+
+      const [created] = await ctx.db
+        .insert(materials)
+        .values({
+          code: null,
+          name: duplicateName,
+          unit: source.unit,
+          category: source.category,
+          specText: source.specText,
+          manufacturer: source.manufacturer,
+          originCountry: source.originCountry,
+          defaultUnitPrice: source.defaultUnitPrice,
+          currency: source.currency,
+          sourceUrl: source.sourceUrl,
+          defaultDepreciation: source.defaultDepreciation,
+          defaultReusePct: source.defaultReusePct,
+          metadataJson: buildMaterialMetadata({ priceSources }),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+
+      return requireUpdatedMaterial(created);
+    }),
+
+  bulkUpdateMaterials: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.number().int().positive()).min(1).max(100),
+        patch: materialBulkPatchInput,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString();
+      const patch = input.patch;
+      const setValues: {
+        updatedAt: string;
+        category?: string | null;
+        manufacturer?: string | null;
+        originCountry?: string | null;
+        defaultUnitPrice?: number | null;
+        currency?: string;
+      } = { updatedAt: now };
+
+      if (patch.category !== undefined) {
+        setValues.category = patch.category || null;
+      }
+      if (patch.manufacturer !== undefined) {
+        setValues.manufacturer = patch.manufacturer || null;
+      }
+      if (patch.originCountry !== undefined) {
+        setValues.originCountry = patch.originCountry || null;
+      }
+      if (patch.defaultUnitPrice !== undefined) {
+        setValues.defaultUnitPrice = patch.defaultUnitPrice;
+      }
+      if (patch.currency !== undefined) {
+        setValues.currency = patch.currency;
+      }
+
+      const updated = await ctx.db
+        .update(materials)
+        .set(setValues)
+        .where(
+          and(inArray(materials.id, input.ids), isNull(materials.deletedAt)),
+        )
+        .returning({ id: materials.id });
+
+      return { count: updated.length };
     }),
 
   importMaterialsCsv: publicProcedure

@@ -366,9 +366,9 @@ const pageDirectory: PageDirectoryItem[] = [
     body: "Xử lý cảnh báo in-app được tạo từ workflow và đánh dấu đã đọc.",
   },
   {
-    href: "/import-mapping",
+    href: "/materials/import",
     title: "Import & Mapping",
-    body: "Không gian mới cho luồng nhập và ánh xạ dữ liệu vật tư.",
+    body: "Upload Excel hoặc dán CSV, xem preview và nhập hàng loạt catalog vật tư.",
   },
   {
     href: "/materials",
@@ -563,7 +563,7 @@ const sections: Section[] = [
     eyebrow: "Catalog",
     title: "Sản phẩm / vật tư",
     intro:
-      "Danh mục vật tư là catalog nội bộ dùng để chuẩn hóa tên, đơn vị, giá tham khảo và nguồn sản phẩm.",
+      "Danh mục vật tư là catalog nội bộ dùng để chuẩn hóa tên, đơn vị, đơn giá và nguồn sản phẩm.",
     steps: [
       "Mở `/materials` để kiểm tra danh sách vật tư đã có.",
       "Tạo vật tư thủ công khi cần một item chuẩn trước khi nhập hàng loạt.",

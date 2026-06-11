@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { isIP } from "node:net";
 
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
 
@@ -34,6 +34,9 @@ export type ShopScrapeResult = {
 
 export const SHOP_SCRAPE_METHODS = ["auto", "json_ld", "dom_cards"] as const;
 export type ShopScrapeMethod = (typeof SHOP_SCRAPE_METHODS)[number];
+export const SHOP_DETAIL_ENRICHMENT_MODES = ["none", "missing_fields"] as const;
+export type ShopDetailEnrichmentMode =
+  (typeof SHOP_DETAIL_ENRICHMENT_MODES)[number];
 export type ShopScrapeStopReason =
   | "queue_empty"
   | "page_limit"
@@ -60,6 +63,7 @@ type ShopScrapeOptions = {
   maxPages?: number | null;
   maxProducts?: number | null;
   method?: ShopScrapeMethod;
+  detailEnrichment?: ShopDetailEnrichmentMode;
   signal?: AbortSignal;
   onProgress?: (progress: ShopScrapeProgress) => void;
 };
@@ -75,6 +79,7 @@ type ProductCardSnapshot = {
 type ShopPageSnapshot = {
   pageUrl: string;
   title: string;
+  pageText?: string | null;
   jsonLdTexts: string[];
   cards: ProductCardSnapshot[];
   nextLinks: string[];
@@ -102,6 +107,7 @@ export async function scrapeShopMaterialsFromUrl({
   maxPages = DEFAULT_MAX_PAGES,
   maxProducts = DEFAULT_MAX_PRODUCTS,
   method = "auto",
+  detailEnrichment = "none",
   signal,
   onProgress,
 }: ShopScrapeOptions): Promise<ShopScrapeResult> {
@@ -237,12 +243,32 @@ export async function scrapeShopMaterialsFromUrl({
               snapshot,
               method,
             );
-            for (const product of pageProducts) {
+            const enrichedPageProducts =
+              detailEnrichment === "missing_fields"
+                ? await enrichProductsFromDetailPages({
+                    page,
+                    products: pageProducts,
+                    currentPageUrl: pageUrl,
+                    expectedHostname,
+                    method,
+                    scrapeDeadline,
+                    signal,
+                    reportProgress: (currentUrl) =>
+                      reportProgress("reading", currentUrl),
+                    onFailedPage: (url, message) =>
+                      failedPages.push({ url, message }),
+                  })
+                : pageProducts;
+            for (const product of enrichedPageProducts) {
               if (maxProducts != null && products.size >= maxProducts) {
                 stopReason = "product_limit";
                 break;
               }
-              products.set(productIdentity(product), product);
+              const identity = productIdentity(product);
+              products.set(
+                identity,
+                mergeScrapedProductData(products.get(identity), product),
+              );
             }
 
             if (maxProducts == null || products.size < maxProducts) {
@@ -368,6 +394,150 @@ export function extractProductsFromPageSnapshot(
   }
 
   return Array.from(byIdentity.values());
+}
+
+type DetailEnrichmentInput = {
+  page: Page;
+  products: ScrapedShopProduct[];
+  currentPageUrl: string;
+  expectedHostname: string;
+  method: ShopScrapeMethod;
+  scrapeDeadline: number;
+  signal?: AbortSignal;
+  reportProgress: (currentUrl: string) => void;
+  onFailedPage: (url: string, message: string) => void;
+};
+
+async function enrichProductsFromDetailPages({
+  page,
+  products,
+  currentPageUrl,
+  expectedHostname,
+  method,
+  scrapeDeadline,
+  signal,
+  reportProgress,
+  onFailedPage,
+}: DetailEnrichmentInput) {
+  const enrichedProducts: ScrapedShopProduct[] = [];
+
+  for (const product of products) {
+    throwIfAborted(signal);
+    if (!shouldEnrichFromDetailPage(product, currentPageUrl)) {
+      enrichedProducts.push(product);
+      continue;
+    }
+
+    try {
+      const detailUrl = await assertSafeScrapeUrl(
+        product.sourceUrl,
+        expectedHostname,
+      );
+      reportProgress(detailUrl.href);
+      await page.goto(detailUrl.href, {
+        waitUntil: "domcontentloaded",
+        timeout: Math.max(
+          1_000,
+          Math.min(PAGE_GOTO_TIMEOUT_MS, scrapeDeadline - Date.now()),
+        ),
+      });
+      await page
+        .waitForLoadState("networkidle", {
+          timeout: Math.max(
+            500,
+            Math.min(PAGE_NETWORK_IDLE_TIMEOUT_MS, scrapeDeadline - Date.now()),
+          ),
+        })
+        .catch(() => undefined);
+      await page.waitForTimeout(150).catch(() => undefined);
+      await assertSafeScrapeUrl(page.url(), expectedHostname);
+
+      const snapshot = await page.evaluate(collectShopPageSnapshot);
+      const detailProducts = extractProductsFromPageSnapshot(snapshot, method);
+      const detailProduct =
+        findBestDetailProduct(product, detailProducts) ??
+        enrichProductWithPageText(product, snapshot.pageText ?? "");
+      enrichedProducts.push(mergeScrapedProductData(product, detailProduct));
+    } catch (error) {
+      onFailedPage(
+        product.sourceUrl,
+        error instanceof Error
+          ? error.message
+          : "Không thể đọc trang chi tiết sản phẩm.",
+      );
+      enrichedProducts.push(product);
+    }
+  }
+
+  return enrichedProducts;
+}
+
+function shouldEnrichFromDetailPage(
+  product: ScrapedShopProduct,
+  currentPageUrl: string,
+) {
+  if (!product.sourceUrl || product.sourceUrl === currentPageUrl) {
+    return false;
+  }
+  return Boolean(
+    !product.manufacturer ||
+      !product.originCountry ||
+      !product.category ||
+      !product.unit ||
+      !product.specText.trim(),
+  );
+}
+
+function findBestDetailProduct(
+  product: ScrapedShopProduct,
+  detailProducts: ScrapedShopProduct[],
+) {
+  if (detailProducts.length === 0) {
+    return null;
+  }
+
+  return (
+    detailProducts.find(
+      (item) => normalizeKey(item.sourceUrl) === normalizeKey(product.sourceUrl),
+    ) ??
+    detailProducts.find(
+      (item) => normalizeKey(item.name) === normalizeKey(product.name),
+    ) ??
+    detailProducts.sort((a, b) => scoreProduct(b) - scoreProduct(a))[0] ??
+    null
+  );
+}
+
+export function mergeScrapedProductData(
+  base: ScrapedShopProduct | undefined,
+  incoming: ScrapedShopProduct,
+): ScrapedShopProduct {
+  if (!base) {
+    return incoming;
+  }
+
+  const betterSpecText =
+    incoming.specText.trim().length > base.specText.trim().length
+      ? incoming.specText
+      : base.specText;
+
+  return {
+    ...base,
+    unit: base.unit ?? incoming.unit,
+    category: base.category ?? incoming.category,
+    specText: betterSpecText,
+    manufacturer: base.manufacturer ?? incoming.manufacturer,
+    originCountry: base.originCountry ?? incoming.originCountry,
+    price: base.price ?? incoming.price,
+    priceText: base.priceText ?? incoming.priceText,
+    currency: base.currency || incoming.currency,
+    sourceUrl: base.sourceUrl || incoming.sourceUrl,
+    imageUrl: base.imageUrl ?? incoming.imageUrl,
+    sku: base.sku ?? incoming.sku,
+    model: base.model ?? incoming.model,
+    availability: base.availability ?? incoming.availability,
+    shopCategory: base.shopCategory ?? incoming.shopCategory,
+  };
 }
 
 async function getSharedBrowser() {
@@ -691,6 +861,7 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
   return {
     pageUrl: window.location.href,
     title: document.title,
+    pageText: document.body?.textContent?.replace(/\s+/g, " ").trim() ?? "",
     jsonLdTexts: Array.from(
       document.querySelectorAll<HTMLScriptElement>(
         "script[type='application/ld+json']",
@@ -806,23 +977,24 @@ function productFromCardSnapshot(
   if (!priceResult.price && !priceResult.priceText) {
     return null;
   }
+  const labels = extractProductLabels(card.text);
 
   return {
     name,
     unit: detectUnit(`${name} ${card.text}`),
-    category: card.category,
+    category: card.category ?? labels.category,
     specText: cleanDescription(card.text, name),
-    manufacturer: null,
-    originCountry: null,
+    manufacturer: labels.manufacturer,
+    originCountry: labels.originCountry,
     price: priceResult.price,
     priceText: priceResult.priceText,
     currency: detectCurrency(priceResult.priceText) ?? "VND",
     sourceUrl: card.href ?? pageUrl,
     imageUrl: card.imageUrl,
-    sku: detectSku(card.text),
-    model: null,
-    availability: detectAvailability(card.text),
-    shopCategory: card.category,
+    sku: labels.sku ?? detectSku(card.text),
+    model: labels.model,
+    availability: labels.availability ?? detectAvailability(card.text),
+    shopCategory: card.category ?? labels.category,
   };
 }
 
@@ -837,8 +1009,13 @@ function scoreProduct(product: ScrapedShopProduct) {
     product.name,
     product.price,
     product.specText,
+    product.manufacturer,
+    product.originCountry,
+    product.category,
+    product.unit,
     product.imageUrl,
     product.sku,
+    product.model,
     product.availability,
   ].filter(Boolean).length;
 }
@@ -912,9 +1089,119 @@ function cleanDescription(text: string, name: string) {
   return text.replace(name, " ").replace(/\s+/g, " ").trim().slice(0, 1000);
 }
 
+const labeledValueDefinitions = {
+  manufacturer: [
+    "ncc",
+    "nhà cung cấp",
+    "nha cung cap",
+    "nhà sản xuất",
+    "nha san xuat",
+    "hãng",
+    "hang",
+    "thương hiệu",
+    "thuong hieu",
+    "brand",
+    "manufacturer",
+  ],
+  originCountry: [
+    "xuất xứ",
+    "xuat xu",
+    "nước sản xuất",
+    "nuoc san xuat",
+    "origin",
+    "country of origin",
+  ],
+  category: ["nhóm", "nhom", "danh mục", "danh muc", "category"],
+  sku: [
+    "sku",
+    "mã sp",
+    "ma sp",
+    "mã sản phẩm",
+    "ma san pham",
+    "mã hàng",
+    "ma hang",
+  ],
+  model: ["model", "mã model", "ma model", "mpn"],
+  availability: ["tình trạng", "tinh trang", "trạng thái", "trang thai"],
+  specText: ["thông số kỹ thuật", "thong so ky thuat", "thông số", "thong so", "specs"],
+} as const;
+
+const allLabeledValueNames = Object.values(labeledValueDefinitions)
+  .flat()
+  .map(escapeRegExp)
+  .join("|");
+
+function extractProductLabels(text: string) {
+  return {
+    manufacturer: extractLabeledValue(
+      text,
+      labeledValueDefinitions.manufacturer,
+    ),
+    originCountry: extractLabeledValue(
+      text,
+      labeledValueDefinitions.originCountry,
+    ),
+    category: extractLabeledValue(text, labeledValueDefinitions.category),
+    sku: extractLabeledValue(text, labeledValueDefinitions.sku),
+    model: extractLabeledValue(text, labeledValueDefinitions.model),
+    availability:
+      extractLabeledValue(text, labeledValueDefinitions.availability) ??
+      detectAvailability(text),
+  };
+}
+
+function extractLabeledValue(
+  text: string,
+  labels: readonly string[],
+): string | null {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const labelPattern = labels.map(escapeRegExp).join("|");
+  const matcher = new RegExp(
+    `(?:^|[\\s|•;,])(?:${labelPattern})\\s*[:：\\-]?\\s*(.{1,120}?)(?=\\s+(?:${allLabeledValueNames}|giá|price|bảo hành|bao hanh)\\s*[:：\\-]|[|•;,]|$)`,
+    "i",
+  );
+  const match = matcher.exec(normalized);
+  return cleanLabeledValue(match?.[1]);
+}
+
+function cleanLabeledValue(value: string | undefined) {
+  const cleaned = value
+    ?.replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
+    .replace(/\b(thông số kỹ thuật|thong so ky thuat|thông số|thong so|specs)\b.*$/i, "")
+    .replace(/\b\d{1,3}(?:[.,]\d{3})+\s*(?:vnd|vnđ|₫|đ|dong|đồng)?\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || cleaned.length < 2) {
+    return null;
+  }
+  return cleaned.slice(0, 160);
+}
+
+export function enrichProductWithPageText(
+  product: ScrapedShopProduct,
+  pageText: string,
+): ScrapedShopProduct {
+  const labels = extractProductLabels(pageText);
+  return {
+    ...product,
+    unit: product.unit ?? detectUnit(`${product.name} ${pageText}`),
+    category: product.category ?? labels.category,
+    specText:
+      product.specText.trim().length > 0
+        ? product.specText
+        : cleanDescription(pageText, product.name),
+    manufacturer: product.manufacturer ?? labels.manufacturer,
+    originCountry: product.originCountry ?? labels.originCountry,
+    sku: product.sku ?? labels.sku,
+    model: product.model ?? labels.model,
+    availability: product.availability ?? labels.availability,
+    shopCategory: product.shopCategory ?? labels.category,
+  };
+}
+
 function detectUnit(text: string) {
   const priceUnitMatch =
-    /(?:₫|đ|vnd|vnđ|dong|đồng)\s*\/\s*(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set)/i.exec(
+    /(?:₫|đ|vnd|vnđ|dong|đồng)\s*\/\s*(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp)/i.exec(
       text,
     );
   if (priceUnitMatch?.[1]) {
@@ -922,7 +1209,7 @@ function detectUnit(text: string) {
   }
 
   const match =
-    /\b(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set)\b/i.exec(
+    /\b(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp)\b/i.exec(
       text,
     );
   return match?.[1]?.toLowerCase() ?? null;
@@ -956,4 +1243,8 @@ function normalizeKey(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -24,7 +24,7 @@ export async function generateMetadata({
   return createPageMetadata({
     title: `Chi tiết vật tư #${id}`,
     description:
-      "Xem và chỉnh sửa thông tin catalog vật tư, đơn vị tính, thông số, nguồn cung và giá tham khảo.",
+      "Xem và chỉnh sửa thông tin catalog vật tư, đơn vị tính, thông số, nguồn cung và đơn giá.",
     path: `/materials/${id}`,
     keywords: ["chi tiết vật tư", "catalog vật tư", "thông tin vật tư"],
   });

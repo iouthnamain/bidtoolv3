@@ -70,12 +70,90 @@ export type PageSectionNavIcon =
   | "workflow"
   | "wrench";
 
+export type PageSectionNavTone =
+  | "sky"
+  | "emerald"
+  | "amber"
+  | "violet"
+  | "rose"
+  | "slate";
+
 export type PageSectionNavItem = {
   href: string;
   label: string;
   description: string;
   icon: PageSectionNavIcon;
   match?: "exact" | "prefix";
+  tone?: PageSectionNavTone;
+};
+
+const defaultToneStyles = {
+  linkActive: "border-sky-300 bg-sky-50 text-sky-950",
+  linkInactive:
+    "border-slate-200 bg-white text-slate-900 hover:border-sky-300 hover:bg-sky-50/70",
+  iconActive: "bg-sky-100 text-sky-700",
+  iconInactive: "bg-slate-100 text-slate-600",
+  description: "text-slate-600",
+};
+
+const toneStyles: Record<
+  PageSectionNavTone,
+  {
+    linkActive: string;
+    linkInactive: string;
+    iconActive: string;
+    iconInactive: string;
+    description: string;
+  }
+> = {
+  sky: {
+    linkActive: "border-sky-400 bg-sky-100 text-sky-950 shadow-sm",
+    linkInactive:
+      "border-sky-200 bg-sky-50/80 text-sky-950 hover:border-sky-300 hover:bg-sky-50",
+    iconActive: "bg-sky-200 text-sky-800",
+    iconInactive: "bg-sky-100 text-sky-700",
+    description: "text-sky-700",
+  },
+  emerald: {
+    linkActive: "border-emerald-400 bg-emerald-100 text-emerald-950 shadow-sm",
+    linkInactive:
+      "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300 hover:bg-emerald-50",
+    iconActive: "bg-emerald-200 text-emerald-800",
+    iconInactive: "bg-emerald-100 text-emerald-700",
+    description: "text-emerald-700",
+  },
+  amber: {
+    linkActive: "border-amber-400 bg-amber-100 text-amber-950 shadow-sm",
+    linkInactive:
+      "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300 hover:bg-amber-50",
+    iconActive: "bg-amber-200 text-amber-800",
+    iconInactive: "bg-amber-100 text-amber-700",
+    description: "text-amber-700",
+  },
+  violet: {
+    linkActive: "border-violet-400 bg-violet-100 text-violet-950 shadow-sm",
+    linkInactive:
+      "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300 hover:bg-violet-50",
+    iconActive: "bg-violet-200 text-violet-800",
+    iconInactive: "bg-violet-100 text-violet-700",
+    description: "text-violet-700",
+  },
+  rose: {
+    linkActive: "border-rose-400 bg-rose-100 text-rose-950 shadow-sm",
+    linkInactive:
+      "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300 hover:bg-rose-50",
+    iconActive: "bg-rose-200 text-rose-800",
+    iconInactive: "bg-rose-100 text-rose-700",
+    description: "text-rose-700",
+  },
+  slate: {
+    linkActive: "border-slate-400 bg-slate-100 text-slate-950 shadow-sm",
+    linkInactive:
+      "border-slate-200 bg-slate-50/80 text-slate-950 hover:border-slate-300 hover:bg-slate-50",
+    iconActive: "bg-slate-200 text-slate-800",
+    iconInactive: "bg-slate-100 text-slate-700",
+    description: "text-slate-600",
+  },
 };
 
 const iconMap: Record<PageSectionNavIcon, LucideIcon> = {
@@ -160,6 +238,9 @@ export function PageSectionNav({
         {items.map((item) => {
           const Icon = iconMap[item.icon];
           const active = isItemActive(pathname, item);
+          const tone = item.tone
+            ? toneStyles[item.tone]
+            : defaultToneStyles;
 
           return (
             <Link
@@ -167,16 +248,12 @@ export function PageSectionNav({
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`group flex min-h-11 min-w-[9.25rem] shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-0 sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:py-3 ${
-                active
-                  ? "border-sky-300 bg-sky-50 text-sky-950"
-                  : "border-slate-200 bg-white text-slate-900 hover:border-sky-300 hover:bg-sky-50/70"
+                active ? tone.linkActive : tone.linkInactive
               }`}
             >
               <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md sm:mt-0.5 ${
-                  active
-                    ? "bg-sky-100 text-sky-700"
-                    : "bg-slate-100 text-slate-600 group-hover:bg-sky-100 group-hover:text-sky-700"
+                  active ? tone.iconActive : tone.iconInactive
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -185,7 +262,9 @@ export function PageSectionNav({
                 <span className="block truncate text-xs font-bold sm:text-sm">
                   {item.label}
                 </span>
-                <span className="mt-0.5 hidden text-xs leading-5 text-slate-600 sm:line-clamp-2 sm:block">
+                <span
+                  className={`mt-0.5 hidden text-xs leading-5 sm:line-clamp-2 sm:block ${tone.description}`}
+                >
                   {item.description}
                 </span>
               </span>

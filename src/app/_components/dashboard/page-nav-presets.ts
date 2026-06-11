@@ -112,38 +112,44 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/materials#material-summary",
     label: "Tổng quan",
-    description: "Số vật tư, giá tham khảo, nguồn và category.",
+    description: "Số vật tư, đơn giá, nguồn và category.",
     icon: "bar-chart",
+    tone: "sky",
   },
   {
     href: "/materials#material-catalog",
     label: "Danh mục",
     description: "Tìm, chọn, mở chi tiết và xóa vật tư.",
     icon: "boxes",
+    tone: "slate",
   },
   {
     href: "/materials/new",
     label: "Thêm thủ công",
     description: "Tạo một vật tư chuẩn cho catalog.",
     icon: "plus",
+    tone: "emerald",
   },
   {
     href: "/materials/scrape",
     label: "Scrape shop",
     description: "Preview URL shop rồi nhập sản phẩm vào catalog.",
     icon: "search",
+    tone: "violet",
   },
   {
-    href: "/import-mapping",
+    href: "/materials/import",
     label: "Import & Mapping",
-    description: "Không gian mới cho luồng nhập và map dữ liệu.",
+    description: "Upload Excel hoặc dán CSV để nhập và map catalog.",
     icon: "sheet",
+    tone: "amber",
   },
   {
     href: "/materials/import",
     label: "Nhập hàng loạt",
     description: "Upload Excel hoặc dán CSV.",
     icon: "upload",
+    tone: "rose",
   },
 ];
 
@@ -153,24 +159,28 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
     label: "Danh mục",
     description: "Quay lại danh sách vật tư.",
     icon: "boxes",
+    tone: "slate",
   },
   {
     href: "#material-overview",
     label: "Tổng quan",
     description: "Mã, giá, nguồn và trạng thái dữ liệu.",
     icon: "eye",
+    tone: "sky",
   },
   {
     href: "#material-prices",
     label: "Nguồn giá",
     description: "Nhà cung cấp, URL, giá và ghi chú.",
     icon: "link",
+    tone: "emerald",
   },
   {
     href: "#material-edit",
     label: "Chỉnh sửa",
     description: "Thông tin catalog, nguồn giá và metadata.",
     icon: "pencil",
+    tone: "amber",
   },
 ];
 
