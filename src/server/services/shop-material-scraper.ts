@@ -565,7 +565,22 @@ async function getSharedBrowser() {
   return SHARED_BROWSER_PROMISE;
 }
 
+const SERVERLESS_CHROMIUM_PACK_URL =
+  "https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.x64.tar";
+
+function isServerlessRuntime() {
+  return (
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.AWS_EXECUTION_ENV)
+  );
+}
+
 async function launchBrowser(): Promise<Browser> {
+  if (isServerlessRuntime()) {
+    return launchServerlessBrowser();
+  }
+
   const { chromium } = await import("playwright");
   const executablePath = findSystemBrowserExecutable();
   const launchOptions = {
@@ -586,12 +601,41 @@ async function launchBrowser(): Promise<Browser> {
   try {
     return registerBrowser(await chromium.launch(launchOptions));
   } catch (error) {
-    throw new Error(
-      error instanceof Error
-        ? `Không khởi động được browser scrape. Cài Chrome/Chromium hoặc chạy "bunx playwright install chromium". ${error.message}`
-        : "Không khởi động được browser scrape.",
-    );
+    throw browserLaunchError(error);
   }
+}
+
+async function launchServerlessBrowser(): Promise<Browser> {
+  const [{ chromium: playwrightChromium }, sparticuzChromium] =
+    await Promise.all([
+      import("playwright-core"),
+      import("@sparticuz/chromium-min"),
+    ]);
+  const chromium = sparticuzChromium.default;
+  const chromiumPackUrl =
+    process.env.CHROMIUM_REMOTE_EXEC_PATH?.trim() ??
+    SERVERLESS_CHROMIUM_PACK_URL;
+
+  try {
+    const executablePath = await chromium.executablePath(chromiumPackUrl);
+    return registerBrowser(
+      await playwrightChromium.launch({
+        args: [...chromium.args, "--disable-dev-shm-usage", "--no-sandbox"],
+        executablePath,
+        headless: true,
+      }),
+    );
+  } catch (error) {
+    throw browserLaunchError(error);
+  }
+}
+
+function browserLaunchError(error: unknown) {
+  return new Error(
+    error instanceof Error
+      ? `Không khởi động được browser scrape. Cài Chrome/Chromium hoặc chạy "bunx playwright install chromium". ${error.message}`
+      : "Không khởi động được browser scrape.",
+  );
 }
 
 function registerBrowser(browser: Browser) {

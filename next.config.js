@@ -5,6 +5,7 @@ const config = {
   ...(distDir ? { distDir } : {}),
   allowedDevOrigins: ["127.0.0.1"],
   output: "standalone",
+  serverExternalPackages: ["@sparticuz/chromium-min", "playwright-core"],
 };
 
 export default config;
