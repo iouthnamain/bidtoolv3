@@ -19,6 +19,8 @@ next-env.d.ts
 /build
 /dist-electron
 /dist-onprem
+/dist-release
+/release-mock
 /.electron-build
 /backups
 

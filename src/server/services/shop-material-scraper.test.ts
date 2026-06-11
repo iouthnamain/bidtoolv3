@@ -83,6 +83,61 @@ describe("extractProductsFromPageSnapshot", () => {
     });
   });
 
+  it("carries detected catalog PDF links from card snapshots", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Máy bơm nước Panasonic GP-129JXK",
+          href: "https://shop.example.com/may-bom-panasonic",
+          imageUrl: null,
+          category: null,
+          text: "Máy bơm nước Panasonic GP-129JXK Giá: 1.550.000 đ",
+          pdfUrls: [
+            "https://shop.example.com/files/gp-129jxk-catalog.pdf",
+            "https://shop.example.com/files/GP-129JXK-CATALOG.pdf#page=1",
+          ],
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]?.catalogPdfUrls).toEqual([
+      "https://shop.example.com/files/gp-129jxk-catalog.pdf",
+      "https://shop.example.com/files/GP-129JXK-CATALOG.pdf#page=1",
+    ]);
+  });
+
+  it("dedupes catalog PDF links that normalize to the same URL", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Máy bơm nước Panasonic GP-129JXK",
+          href: "https://shop.example.com/may-bom-panasonic",
+          imageUrl: null,
+          category: null,
+          text: "Máy bơm nước Panasonic GP-129JXK Giá: 1.550.000 đ",
+          pdfUrls: [
+            "https://shop.example.com/files/catalog.pdf",
+            "https://shop.example.com/files/catalog.pdf#download",
+            "HTTPS://SHOP.EXAMPLE.COM/files/catalog.pdf",
+          ],
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]?.catalogPdfUrls).toEqual([
+      "https://shop.example.com/files/catalog.pdf",
+    ]);
+  });
+
   it("extracts Vietnamese NCC, origin, SKU, model and category labels from DOM cards", () => {
     const products = extractProductsFromPageSnapshot({
       pageUrl: "https://shop.example.com/tools",
@@ -303,6 +358,7 @@ describe("scraped product enrichment", () => {
     model: null,
     availability: null,
     shopCategory: null,
+    catalogPdfUrls: [],
   };
 
   it("fills missing fields from product detail page text", () => {
@@ -317,7 +373,7 @@ describe("scraped product enrichment", () => {
       sku: "S8VK-C06024",
       model: "S8VK",
       availability: "in_stock",
-      specText: expect.stringContaining("Thông số kỹ thuật"),
+      specText: expect.stringContaining("Thông số kỹ thuật") as string,
     });
   });
 
@@ -339,6 +395,27 @@ describe("scraped product enrichment", () => {
       originCountry: "Nhật Bản",
       specText: "Nguồn 24VDC 2.5A",
     });
+  });
+
+  it("unions catalog PDF links when merging listing and detail data", () => {
+    expect(
+      mergeScrapedProductData(
+        {
+          ...sparseProduct,
+          catalogPdfUrls: ["https://shop.example.com/files/a.pdf"],
+        },
+        {
+          ...sparseProduct,
+          catalogPdfUrls: [
+            "https://shop.example.com/files/a.pdf#page=2",
+            "https://shop.example.com/files/b.pdf",
+          ],
+        },
+      ).catalogPdfUrls,
+    ).toEqual([
+      "https://shop.example.com/files/a.pdf",
+      "https://shop.example.com/files/b.pdf",
+    ]);
   });
 });
 

@@ -18,7 +18,11 @@ import Papa from "papaparse";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import { materials } from "~/server/db/schema";
+import {
+  materialCatalogDocumentLinks,
+  materialCatalogDocuments,
+  materials,
+} from "~/server/db/schema";
 import {
   parseWorkbookBase64,
   parseOptionalNumber,
@@ -26,7 +30,12 @@ import {
   type ColumnMapping,
 } from "~/server/services/excel-workbook";
 import type { db as appDb } from "~/server/db";
+import {
+  formatCatalogPdfUrlsCell,
+  parseCatalogPdfUrlsCell,
+} from "~/lib/materials/catalog-pdf";
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
+import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
   fetchPriceFromUrl,
@@ -222,6 +231,7 @@ function parseMaterialsCsv(csv: string) {
       sourceUrl: emptyToUndefined(row.source_url),
       defaultDepreciation: numberOrDefault(row.default_depreciation, 1),
       defaultReusePct: Math.trunc(numberOrDefault(row.default_reuse_pct, 0)),
+      catalogPdfUrls: parseCatalogPdfUrlsCell(row.catalog_pdf_urls),
     })),
     errors: result.errors.map((error) => {
       const rowLabel =
@@ -514,20 +524,23 @@ async function selectMaterialTextOptions(db: AppDb, column: AnyPgColumn) {
   };
 }
 
-function materialExportCsvRow(material: {
-  code: string | null;
-  name: string;
-  unit: string;
-  category: string | null;
-  specText: string;
-  manufacturer: string | null;
-  originCountry: string | null;
-  defaultUnitPrice: number | null;
-  currency: string;
-  sourceUrl: string | null;
-  defaultDepreciation: number;
-  defaultReusePct: number;
-}) {
+function materialExportCsvRow(
+  material: {
+    code: string | null;
+    name: string;
+    unit: string;
+    category: string | null;
+    specText: string;
+    manufacturer: string | null;
+    originCountry: string | null;
+    defaultUnitPrice: number | null;
+    currency: string;
+    sourceUrl: string | null;
+    defaultDepreciation: number;
+    defaultReusePct: number;
+  },
+  catalogPdfUrls: string[] = [],
+) {
   return {
     code: material.code ?? "",
     name: material.name,
@@ -542,6 +555,7 @@ function materialExportCsvRow(material: {
     source_url: material.sourceUrl ?? "",
     default_depreciation: String(material.defaultDepreciation),
     default_reuse_pct: String(material.defaultReusePct),
+    catalog_pdf_urls: formatCatalogPdfUrlsCell(catalogPdfUrls),
   };
 }
 
@@ -659,6 +673,7 @@ const scrapedFieldLabels = {
   defaultUnitPrice: "giá",
   sourceUrl: "nguồn",
   imageUrl: "ảnh",
+  catalogPdfUrls: "catalog PDF",
 } as const;
 
 function availableScrapedFieldLabels(product: ScrapedShopProduct) {
@@ -670,6 +685,9 @@ function availableScrapedFieldLabels(product: ScrapedShopProduct) {
     product.price != null ? scrapedFieldLabels.defaultUnitPrice : null,
     product.sourceUrl ? scrapedFieldLabels.sourceUrl : null,
     product.imageUrl ? scrapedFieldLabels.imageUrl : null,
+    product.catalogPdfUrls.length > 0
+      ? scrapedFieldLabels.catalogPdfUrls
+      : null,
   ].filter(Boolean);
 }
 
@@ -697,6 +715,31 @@ function filledExistingMaterialFieldLabels(
       ? scrapedFieldLabels.sourceUrl
       : null,
   ].filter(Boolean);
+}
+
+async function linkScrapedCatalogPdfs(
+  db: AppDb,
+  materialId: number,
+  product: ScrapedShopProduct,
+) {
+  if (product.catalogPdfUrls.length === 0) {
+    return;
+  }
+  try {
+    await attachCatalogPdfUrlsToMaterial(
+      db,
+      product.catalogPdfUrls,
+      materialId,
+      {
+        sourceType: "detected",
+        linkSource: "scrape",
+        fallbackTitle: product.name,
+        supplier: product.manufacturer,
+      },
+    );
+  } catch {
+    // Catalog PDF linking must not fail the product import.
+  }
 }
 
 function importMessageForCreated(product: ScrapedShopProduct) {
@@ -830,6 +873,7 @@ async function importScrapedProducts(
 
         const updatedRow = requireUpdatedMaterial(row);
         indexMaterialRow(indexes, updatedRow);
+        await linkScrapedCatalogPdfs(db, updatedRow.id, product);
         updated += 1;
         items.push({
           name,
@@ -867,6 +911,7 @@ async function importScrapedProducts(
 
       const createdRow = requireUpdatedMaterial(row);
       indexMaterialRow(indexes, createdRow);
+      await linkScrapedCatalogPdfs(db, createdRow.id, product);
       created += 1;
       items.push({
         name,
@@ -898,6 +943,7 @@ async function importScrapedProducts(
 type MaterialImportRow = {
   rowNumber: number;
   input: MaterialInput;
+  catalogPdfUrls?: string[];
 };
 
 function importNameUnitKey(name: string, unit: string) {
@@ -987,7 +1033,7 @@ async function importMaterialRows(db: AppDb, rows: MaterialImportRow[]) {
   const existingNameUnits = new Set(
     existingRows.map((row) => importNameUnitKey(row.name, row.unit)),
   );
-  const values: Array<ReturnType<typeof materialValues>> = [];
+  const pending: MaterialImportRow[] = [];
   let skipped = 0;
   const now = new Date().toISOString();
 
@@ -1003,14 +1049,35 @@ async function importMaterialRows(db: AppDb, rows: MaterialImportRow[]) {
       existingCodes.add(code);
     }
     existingNameUnits.add(nameUnit);
-    values.push(materialValues(row.input, now));
+    pending.push(row);
   }
 
-  for (let start = 0; start < values.length; start += 500) {
-    await db.insert(materials).values(values.slice(start, start + 500));
+  for (let start = 0; start < pending.length; start += 500) {
+    const batch = pending.slice(start, start + 500);
+    const insertedRows = await db
+      .insert(materials)
+      .values(batch.map((row) => materialValues(row.input, now)))
+      .returning({ id: materials.id });
+
+    for (const [index, insertedRow] of insertedRows.entries()) {
+      const batchRow = batch[index];
+      const pdfUrls = batchRow?.catalogPdfUrls ?? [];
+      if (!batchRow || pdfUrls.length === 0) {
+        continue;
+      }
+      try {
+        await attachCatalogPdfUrlsToMaterial(db, pdfUrls, insertedRow.id, {
+          sourceType: "manual_url",
+          linkSource: "import",
+          fallbackTitle: batchRow.input.name,
+        });
+      } catch {
+        // Catalog PDF linking must not fail the row import.
+      }
+    }
   }
 
-  return { inserted: values.length, skipped };
+  return { inserted: pending.length, skipped };
 }
 
 function selectWorkbookSheet(
@@ -1575,6 +1642,7 @@ export const materialRouter = createTRPCRouter({
 
       const rows = await ctx.db
         .select({
+          id: materials.id,
           code: materials.code,
           name: materials.name,
           unit: materials.unit,
@@ -1593,7 +1661,45 @@ export const materialRouter = createTRPCRouter({
         .orderBy(order, desc(materials.updatedAt), asc(materials.id))
         .limit(MATERIAL_EXPORT_LIMIT);
 
-      const csv = Papa.unparse(rows.map(materialExportCsvRow));
+      const pdfUrlsByMaterialId = new Map<number, string[]>();
+      const materialIds = rows.map((row) => row.id);
+      if (materialIds.length > 0) {
+        const linkRows = await ctx.db
+          .select({
+            materialId: materialCatalogDocumentLinks.materialId,
+            sourceUrl: materialCatalogDocuments.sourceUrl,
+          })
+          .from(materialCatalogDocumentLinks)
+          .innerJoin(
+            materialCatalogDocuments,
+            eq(
+              materialCatalogDocumentLinks.documentId,
+              materialCatalogDocuments.id,
+            ),
+          )
+          .where(
+            and(
+              inArray(materialCatalogDocumentLinks.materialId, materialIds),
+              isNull(materialCatalogDocuments.deletedAt),
+              isNotNull(materialCatalogDocuments.sourceUrl),
+            ),
+          );
+        for (const linkRow of linkRows) {
+          const url = linkRow.sourceUrl?.trim();
+          if (!url) {
+            continue;
+          }
+          const list = pdfUrlsByMaterialId.get(linkRow.materialId) ?? [];
+          list.push(url);
+          pdfUrlsByMaterialId.set(linkRow.materialId, list);
+        }
+      }
+
+      const csv = Papa.unparse(
+        rows.map((row) =>
+          materialExportCsvRow(row, pdfUrlsByMaterialId.get(row.id) ?? []),
+        ),
+      );
       return {
         csv,
         count: rows.length,
@@ -1809,6 +1915,7 @@ export const materialRouter = createTRPCRouter({
         validRows.push({
           rowNumber: index + 2,
           input: parsed.data,
+          catalogPdfUrls: row.catalogPdfUrls,
         });
       }
 
@@ -1930,6 +2037,7 @@ export const materialRouter = createTRPCRouter({
         validRows.push({
           rowNumber: row.originalRowIndex || index + 2,
           input: parsed.data,
+          catalogPdfUrls: parseCatalogPdfUrlsCell(row.catalogPdfUrls),
         });
       }
 

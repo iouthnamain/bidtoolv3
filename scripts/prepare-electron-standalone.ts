@@ -137,6 +137,16 @@ async function copyRuntimeDependencies() {
 }
 
 function resolveDesktopVersion(packageVersion: string | undefined) {
+  const buildMetadata = process.env.BIDTOOL_BUILD_METADATA?.trim();
+  if (buildMetadata) {
+    if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(buildMetadata)) {
+      throw new Error(
+        `Invalid desktop build metadata '${buildMetadata}'. Use a semver value like 0.1.0+desktop.win.abc1234.`,
+      );
+    }
+    return buildMetadata.replace(/^v/, "");
+  }
+
   const envVersion = process.env.BIDTOOL_DESKTOP_VERSION?.trim();
   const rawVersion =
     envVersion && envVersion.length > 0

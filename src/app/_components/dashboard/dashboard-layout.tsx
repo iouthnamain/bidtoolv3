@@ -9,36 +9,26 @@ import {
   Boxes,
   ChevronRight,
   CircleHelp,
-  Download,
   FileSpreadsheet,
   FileText,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  RotateCw,
   Search,
   Settings,
   Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { AdminUpdateBanner } from "~/app/_components/dashboard/admin-update-banner";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
-import { useToast } from "~/app/_components/ui/toast";
-import {
-  getDesktopUpdateActionError,
-  getDesktopUpdateNoticeKey,
-  isDesktopUpdateButtonDisabled,
-  resolveDesktopUpdateButtonAction,
-  shouldShowDesktopUpdateNotice,
-  type DesktopUpdateState,
-} from "~/lib/desktop-update";
+import { SidebarUpdatePill } from "~/app/_components/dashboard/sidebar-update-pill";
 import { STORAGE_KEYS } from "~/lib/storage-keys";
 import { api } from "~/trpc/react";
 
 const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
-const DESKTOP_UPDATE_DISMISSED_KEY = STORAGE_KEYS.desktopUpdateDismissed;
 const UNREAD_COUNT_POLL_MS = 30_000;
 
 type IconName =
@@ -110,6 +100,7 @@ const navSections: NavSection[] = [
         icon: "excel",
       },
       { href: "/materials", label: "Sản phẩm / vật tư", icon: "materials" },
+      { href: "/catalog-pdfs", label: "Catalog PDFs", icon: "documents" },
       {
         href: "/saved-items",
         label: "Bộ lọc & Watchlist",
@@ -398,201 +389,6 @@ function BrandHeader({ collapsed }: { collapsed: boolean }) {
   return <Logo collapsed={collapsed} />;
 }
 
-function useDesktopUpdateState() {
-  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(
-    null,
-  );
-
-  useEffect(() => {
-    const bridge = window.bidtoolDesktop;
-    if (!bridge?.isDesktop) {
-      return;
-    }
-
-    let mounted = true;
-    void bridge
-      .getUpdateState()
-      .then((state) => {
-        if (mounted) {
-          setUpdateState(state);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setUpdateState(null);
-        }
-      });
-
-    const unsubscribe = bridge.onUpdateState((state) => {
-      if (mounted) {
-        setUpdateState(state);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  return [updateState, setUpdateState] as const;
-}
-
-function DesktopUpdateNotice() {
-  const { error, success } = useToast();
-  const [updateState, setUpdateState] = useDesktopUpdateState();
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
-  const noticeKey = getDesktopUpdateNoticeKey(updateState);
-
-  useEffect(() => {
-    setDismissedKey(readLocalStorageValue(DESKTOP_UPDATE_DISMISSED_KEY));
-  }, []);
-
-  if (
-    !shouldShowDesktopUpdateNotice(updateState) ||
-    !noticeKey ||
-    dismissedKey === noticeKey
-  ) {
-    return null;
-  }
-
-  const bridge = window.bidtoolDesktop;
-  const action = resolveDesktopUpdateButtonAction(updateState);
-  const disabled = isDesktopUpdateButtonDisabled(updateState);
-  const version =
-    updateState?.downloadedVersion ?? updateState?.availableVersion ?? null;
-  const percent =
-    typeof updateState?.downloadPercent === "number"
-      ? Math.floor(updateState.downloadPercent)
-      : null;
-  const isDownloadRetry = updateState?.errorContext === "download";
-
-  const dismiss = () => {
-    writeLocalStorageValue(DESKTOP_UPDATE_DISMISSED_KEY, noticeKey);
-    setDismissedKey(noticeKey);
-  };
-
-  const handleAction = () => {
-    if (!bridge || !updateState || disabled || action === "none") {
-      return;
-    }
-
-    if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          setUpdateState(result.state);
-          const actionError = getDesktopUpdateActionError(result);
-          if (actionError) {
-            error(actionError);
-          } else if (result.completed) {
-            success("Đã tải bản cập nhật. Khởi động lại để cài đặt.");
-          }
-        })
-        .catch((updateError: unknown) => {
-          error(
-            updateError instanceof Error
-              ? updateError.message
-              : "Không thể bắt đầu tải bản cập nhật.",
-          );
-        });
-      return;
-    }
-
-    if (action === "install") {
-      const confirmed = window.confirm(
-        `Cài đặt bản cập nhật${version ? ` ${version}` : ""} và khởi động lại BidTool?`,
-      );
-      if (!confirmed) {
-        return;
-      }
-
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          setUpdateState(result.state);
-          const actionError = getDesktopUpdateActionError(result);
-          if (actionError) {
-            error(actionError);
-          }
-        })
-        .catch((updateError: unknown) => {
-          error(
-            updateError instanceof Error
-              ? updateError.message
-              : "Không thể cài đặt bản cập nhật.",
-          );
-        });
-    }
-  };
-
-  const message =
-    action === "install"
-      ? `Bản cập nhật${version ? ` ${version}` : ""} đã tải xong.`
-      : updateState?.status === "downloading"
-        ? `Đang tải bản cập nhật${percent !== null ? ` (${percent}%)` : ""}.`
-        : isDownloadRetry
-          ? `Tải bản cập nhật${version ? ` ${version}` : ""} thất bại.`
-          : `Có bản cập nhật desktop${version ? ` ${version}` : ""}.`;
-  const buttonLabel =
-    action === "install"
-      ? "Khởi động lại"
-      : updateState?.status === "downloading"
-        ? `Đang tải${percent !== null ? ` ${percent}%` : ""}`
-        : isDownloadRetry
-          ? "Thử tải lại"
-          : "Tải cập nhật";
-
-  return (
-    <div className="border-b border-sky-200 bg-sky-50 px-4 py-2.5 text-sky-950">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700"
-            aria-hidden
-          >
-            {action === "install" ? (
-              <RotateCw className="h-4 w-4" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-          </span>
-          <p className="min-w-0 text-xs font-semibold sm:text-sm">{message}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handleAction}
-            disabled={disabled || action === "none"}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-sky-800 px-2.5 text-xs font-bold text-white transition-colors hover:bg-sky-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {action === "install" ? (
-              <RotateCw className="h-3.5 w-3.5" />
-            ) : (
-              <Download
-                className={`h-3.5 w-3.5 ${
-                  updateState?.status === "downloading" ? "animate-pulse" : ""
-                }`}
-              />
-            )}
-            {buttonLabel}
-          </button>
-          {action === "download" ? (
-            <button
-              type="button"
-              onClick={dismiss}
-              aria-label="Ẩn thông báo cập nhật desktop"
-              className="flex h-8 w-8 items-center justify-center rounded-md text-sky-800 transition-colors hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -668,13 +464,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <SidebarNav collapsed={sidebarCollapsed} />
         </div>
 
-        {!sidebarCollapsed ? (
-          <div className="shrink-0 border-t border-slate-200/70 px-3 py-2">
-            <span className="text-[11px] text-slate-400">
+        <div className="shrink-0 space-y-2 border-t border-slate-200/70 px-2 py-2">
+          <SidebarUpdatePill collapsed={sidebarCollapsed} />
+          {!sidebarCollapsed ? (
+            <span className="block px-1 text-[11px] text-slate-400">
               Ctrl/Cmd + B để thu gọn
             </span>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </aside>
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -691,7 +488,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <MobileBanner />
-        <DesktopUpdateNotice />
+        <AdminUpdateBanner />
         <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}

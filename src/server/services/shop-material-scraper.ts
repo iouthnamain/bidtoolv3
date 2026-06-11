@@ -5,6 +5,7 @@ import { isIP } from "node:net";
 import type { Browser, Page } from "playwright";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
+import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
 
 export type ScrapedShopProduct = {
   name: string;
@@ -22,6 +23,7 @@ export type ScrapedShopProduct = {
   model: string | null;
   availability: string | null;
   shopCategory: string | null;
+  catalogPdfUrls: string[];
 };
 
 export type ShopScrapeResult = {
@@ -74,6 +76,7 @@ type ProductCardSnapshot = {
   href: string | null;
   imageUrl: string | null;
   category: string | null;
+  pdfUrls?: string[];
 };
 
 type ShopPageSnapshot = {
@@ -83,6 +86,7 @@ type ShopPageSnapshot = {
   jsonLdTexts: string[];
   cards: ProductCardSnapshot[];
   nextLinks: string[];
+  pagePdfUrls?: string[];
 };
 
 type BrowserWithProcess = Browser & {
@@ -457,7 +461,15 @@ async function enrichProductsFromDetailPages({
       const detailProduct =
         findBestDetailProduct(product, detailProducts) ??
         enrichProductWithPageText(product, snapshot.pageText ?? "");
-      enrichedProducts.push(mergeScrapedProductData(product, detailProduct));
+      // PDFs anywhere on a product detail page belong to this product.
+      const detailWithPdfs: ScrapedShopProduct = {
+        ...detailProduct,
+        catalogPdfUrls: mergeCatalogPdfUrls(
+          detailProduct.catalogPdfUrls,
+          snapshot.pagePdfUrls,
+        ),
+      };
+      enrichedProducts.push(mergeScrapedProductData(product, detailWithPdfs));
     } catch (error) {
       onFailedPage(
         product.sourceUrl,
@@ -537,6 +549,10 @@ export function mergeScrapedProductData(
     model: base.model ?? incoming.model,
     availability: base.availability ?? incoming.availability,
     shopCategory: base.shopCategory ?? incoming.shopCategory,
+    catalogPdfUrls: mergeCatalogPdfUrls(
+      base.catalogPdfUrls,
+      incoming.catalogPdfUrls,
+    ),
   };
 }
 
@@ -755,6 +771,28 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
     element?.textContent?.replace(/\s+/g, " ").trim() ?? null;
   const pricePattern =
     /(?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?/i;
+  const isPdfHref = (href: string | null) => {
+    if (!href) return false;
+    try {
+      return /\.pdf$/i.test(new URL(href).pathname);
+    } catch {
+      return false;
+    }
+  };
+  const collectPdfUrls = (root: ParentNode, limit: number) => {
+    const urls: string[] = [];
+    const seen = new Set<string>();
+    for (const anchor of Array.from(
+      root.querySelectorAll<HTMLAnchorElement>("a[href]"),
+    )) {
+      const href = abs(anchor.getAttribute("href"));
+      if (!href || !isPdfHref(href) || seen.has(href)) continue;
+      seen.add(href);
+      urls.push(href);
+      if (urls.length >= limit) break;
+    }
+    return urls;
+  };
   const likelyNodeSet = new Set<Element>();
   const productAnchors = Array.from(
     document.querySelectorAll<HTMLAnchorElement>("a[href]"),
@@ -837,6 +875,7 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
       href: abs(anchor?.getAttribute("href")),
       imageUrl: abs(imageSrc),
       category: text(categoryElement),
+      pdfUrls: collectPdfUrls(cardRoot, 5),
     };
   });
 
@@ -871,6 +910,7 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
       .filter(Boolean),
     cards,
     nextLinks,
+    pagePdfUrls: collectPdfUrls(document, 20),
   };
 }
 
@@ -958,6 +998,7 @@ function productsFromJsonLd(
       model: stringValue(node.model) ?? stringValue(node.mpn),
       availability: stringValue(offers?.availability),
       shopCategory: stringValue(node.category),
+      catalogPdfUrls: [],
     });
   };
 
@@ -995,6 +1036,7 @@ function productFromCardSnapshot(
     model: labels.model,
     availability: labels.availability ?? detectAvailability(card.text),
     shopCategory: card.category ?? labels.category,
+    catalogPdfUrls: mergeCatalogPdfUrls(card.pdfUrls),
   };
 }
 

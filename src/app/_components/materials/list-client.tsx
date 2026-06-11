@@ -33,6 +33,7 @@ import {
   Download,
   Factory,
   FileSpreadsheet,
+  FileText,
   Filter,
   Link as LinkIcon,
   MapPin,
@@ -510,6 +511,8 @@ export function MaterialsListClient() {
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [attachPdfOpen, setAttachPdfOpen] = useState(false);
+  const [attachPdfKeyword, setAttachPdfKeyword] = useState("");
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkManufacturer, setBulkManufacturer] = useState("");
   const [bulkOrigin, setBulkOrigin] = useState("");
@@ -944,6 +947,25 @@ export function MaterialsListClient() {
       toast.error(error.message || "Không thể xóa vật tư.");
       setSingleDeleteTarget(null);
     },
+  });
+
+  const attachPdfDocuments = api.catalogDocument.list.useQuery(
+    { keyword: attachPdfKeyword.trim() || undefined, limit: 10 },
+    { enabled: attachPdfOpen },
+  );
+
+  const attachPdfToMaterials = api.catalogDocument.attachToMaterials.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        `Đã gắn tài liệu vào ${result.linked.toLocaleString("vi-VN")} vật tư.`,
+      );
+      setAttachPdfOpen(false);
+      setAttachPdfKeyword("");
+      clearSelection();
+      void utils.catalogDocument.list.invalidate();
+      void utils.catalogDocument.listByMaterial.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
   });
 
   const deleteMany = api.material.deleteMany.useMutation({
@@ -1868,6 +1890,15 @@ export function MaterialsListClient() {
                 Sửa hàng loạt
               </Button>
               <Button
+                variant="secondary"
+                size="sm"
+                disabled={!someSelected}
+                leftIcon={<FileText className="h-3.5 w-3.5" />}
+                onClick={() => setAttachPdfOpen((current) => !current)}
+              >
+                Gắn catalog PDF
+              </Button>
+              <Button
                 variant="danger"
                 size="sm"
                 disabled={!someSelected}
@@ -1995,6 +2026,76 @@ export function MaterialsListClient() {
                   Xóa form
                 </Button>
               </div>
+            </div>
+          ) : null}
+
+          {attachPdfOpen && someSelected ? (
+            <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">
+                  Gắn catalog PDF cho {selectedCount.toLocaleString("vi-VN")}{" "}
+                  vật tư đã chọn
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                  onClick={() => setAttachPdfOpen(false)}
+                >
+                  Đóng
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                Chọn tài liệu có sẵn trong thư viện. Tạo tài liệu mới tại trang{" "}
+                <Link
+                  href="/catalog-pdfs"
+                  className="font-semibold text-violet-700 hover:text-violet-900"
+                >
+                  Catalog PDFs
+                </Link>
+                .
+              </p>
+              <input
+                type="search"
+                className={`${materialControlClass} mt-2 w-full max-w-md`}
+                placeholder="Tìm tài liệu theo tên, NCC hoặc URL..."
+                aria-label="Tìm tài liệu catalog PDF"
+                value={attachPdfKeyword}
+                onChange={(event) => setAttachPdfKeyword(event.target.value)}
+              />
+              <ul className="mt-2 grid gap-1.5 md:grid-cols-2">
+                {attachPdfDocuments.isLoading ? (
+                  <li className="px-2 py-1 text-xs text-slate-500">
+                    Đang tải tài liệu...
+                  </li>
+                ) : (attachPdfDocuments.data ?? []).length === 0 ? (
+                  <li className="px-2 py-1 text-xs text-slate-500">
+                    Không có tài liệu trong thư viện.
+                  </li>
+                ) : (
+                  (attachPdfDocuments.data ?? []).map((document) => (
+                    <li key={document.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-violet-300 hover:bg-violet-50"
+                        onClick={() =>
+                          attachPdfToMaterials.mutate({
+                            documentId: document.id,
+                            materialIds: selectedIds,
+                          })
+                        }
+                        disabled={attachPdfToMaterials.isPending}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {document.title}
+                        </span>
+                        <span className="shrink-0 text-xs text-slate-500">
+                          {document.linkedMaterialCount} vật tư
+                        </span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
             </div>
           ) : null}
 

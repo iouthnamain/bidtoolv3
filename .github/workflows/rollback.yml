@@ -1,0 +1,82 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: "Pinned version to restore, for example 0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  rollback:
+    name: Rollback Artifact Pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Load target pin
+        id: pin
+        env:
+          TARGET_VERSION: ${{ github.event.inputs.target_version }}
+        run: |
+          set -euo pipefail
+          version="${TARGET_VERSION#v}"
+          pin="$(jq -c --arg version "$version" '.releases[$version] // empty' releases/pins.json)"
+          if [ -z "$pin" ] || [ "$pin" = "null" ]; then
+            echo "No pin found for version '$version'." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "web_deployment_url=$(jq -r '.web.deploymentUrl' <<<"$pin")" >> "$GITHUB_OUTPUT"
+          echo "web_build_id=$(jq -r '.web.buildId' <<<"$pin")" >> "$GITHUB_OUTPUT"
+          echo "onprem_image=$(jq -r '.onprem.image' <<<"$pin")" >> "$GITHUB_OUTPUT"
+          echo "onprem_digest=$(jq -r '.onprem.digest' <<<"$pin")" >> "$GITHUB_OUTPUT"
+
+      - name: Promote pinned Vercel deployment
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          WEB_BUILD_ID: ${{ steps.pin.outputs.web_build_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "Vercel secrets are not configured. Skipping web rollback." >&2
+            exit 0
+          fi
+          if [ "$WEB_BUILD_ID" = "skipped" ] || [ -z "$WEB_BUILD_ID" ]; then
+            echo "Pinned web deployment is unavailable. Skipping Vercel rollback." >&2
+            exit 0
+          fi
+          bunx vercel promote "$WEB_BUILD_ID" production --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+
+      - name: Retag on-prem image as latest
+        env:
+          ONPREM_IMAGE: ${{ steps.pin.outputs.onprem_image }}
+          ONPREM_DIGEST: ${{ steps.pin.outputs.onprem_digest }}
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker buildx imagetools create \
+            --tag "${REGISTRY}/${IMAGE_NAME}:latest" \
+            "${ONPREM_DIGEST:-$ONPREM_IMAGE}"
+
+      - name: Summary
+        run: |
+          cat <<EOF
+          Rolled back artifact pins to v${{ steps.pin.outputs.version }}.
+          Web deployment: ${{ steps.pin.outputs.web_deployment_url }}
+          On-prem image: ${{ steps.pin.outputs.onprem_image }}
+          Desktop clients remain on their installed version until users update manually.
+          Database migrations are forward-only; prefer a hotfix release if schema drift breaks the old app.
+          EOF

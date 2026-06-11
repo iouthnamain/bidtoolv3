@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canCheckForDesktopUpdate,
+  getAdminUpdateNoticeKey,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
+  shouldShowAdminUpdateBanner,
   shouldShowDesktopUpdateNotice,
   type DesktopUpdateState,
 } from "./desktop-update";
@@ -81,5 +84,34 @@ describe("desktop update button logic", () => {
         status: "disabled",
       }),
     ).toBe(false);
+  });
+
+  it("allows manual update checks when idle", () => {
+    expect(canCheckForDesktopUpdate(baseState)).toBe(true);
+    expect(
+      canCheckForDesktopUpdate({
+        ...baseState,
+        status: "downloaded",
+        downloadedVersion: "0.2.0",
+      }),
+    ).toBe(false);
+  });
+
+  it("shows on-prem admin banner when server is behind", () => {
+    expect(
+      shouldShowAdminUpdateBanner({
+        surface: "onprem",
+        updateAvailable: true,
+        latest: "0.2.0",
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowAdminUpdateBanner({
+        surface: "web",
+        updateAvailable: true,
+        latest: "0.2.0",
+      }),
+    ).toBe(false);
+    expect(getAdminUpdateNoticeKey("0.1.0", "0.2.0")).toBe("0.1.0:0.2.0");
   });
 });

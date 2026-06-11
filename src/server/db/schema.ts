@@ -84,6 +84,16 @@ export const productMatchStatusEnum = pgEnum("product_match_status", [
   "manual",
 ]);
 
+export const catalogDocumentSourceTypeEnum = pgEnum(
+  "catalog_document_source_type",
+  ["uploaded", "detected", "manual_url"],
+);
+
+export const catalogDocumentLinkSourceEnum = pgEnum(
+  "catalog_document_link_source",
+  ["manual", "scrape", "import"],
+);
+
 export const tenderPackages = pgTable(
   "tender_packages",
   {
@@ -431,6 +441,76 @@ export const materials = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     materialsNameIdx: index("materials_name_idx").on(table.name),
     materialsCategoryIdx: index("materials_category_idx").on(table.category),
+  }),
+);
+
+export const materialCatalogDocuments = pgTable(
+  "material_catalog_documents",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    supplier: text("supplier"),
+    sourceUrl: text("source_url"),
+    normalizedSourceUrl: text("normalized_source_url").notNull().default(""),
+    localFilePath: text("local_file_path"),
+    fileName: text("file_name"),
+    fileSize: bigint("file_size", { mode: "number" }),
+    mimeType: text("mime_type"),
+    checksum: text("checksum"),
+    sourceType: catalogDocumentSourceTypeEnum("source_type")
+      .notNull()
+      .default("manual_url"),
+    notes: text("notes").notNull().default(""),
+    tagsJson: jsonb("tags_json").$type<string[]>().notNull().default([]),
+    deletedAt: timestamp("deleted_at", { mode: "string", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    catalogDocumentsSourceUrlUnique: uniqueIndex(
+      "material_catalog_documents_source_url_unique",
+    )
+      .on(table.normalizedSourceUrl)
+      .where(
+        sql`${table.deletedAt} IS NULL AND ${table.normalizedSourceUrl} <> ''`,
+      ),
+    catalogDocumentsTitleIdx: index("material_catalog_documents_title_idx").on(
+      table.title,
+    ),
+  }),
+);
+
+export const materialCatalogDocumentLinks = pgTable(
+  "material_catalog_document_links",
+  {
+    id: serial("id").primaryKey(),
+    documentId: integer("document_id")
+      .notNull()
+      .references(() => materialCatalogDocuments.id, { onDelete: "cascade" }),
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => materials.id, { onDelete: "cascade" }),
+    linkSource: catalogDocumentLinkSourceEnum("link_source")
+      .notNull()
+      .default("manual"),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    catalogDocumentLinksUnique: uniqueIndex(
+      "material_catalog_document_links_unique",
+    ).on(table.documentId, table.materialId),
+    catalogDocumentLinksMaterialIdx: index(
+      "material_catalog_document_links_material_idx",
+    ).on(table.materialId),
   }),
 );
 

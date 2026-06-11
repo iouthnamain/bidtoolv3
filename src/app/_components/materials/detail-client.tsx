@@ -26,6 +26,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { MaterialCatalogPdfSection } from "~/app/_components/materials/catalog-pdf-section";
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
@@ -1332,6 +1333,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         ) : null}
       </section>
+
+      <MaterialCatalogPdfSection materialId={id} />
 
       <section
         id="material-edit"

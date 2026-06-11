@@ -151,6 +151,13 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     icon: "upload",
     tone: "rose",
   },
+  {
+    href: "/catalog-pdfs",
+    label: "Catalog PDFs",
+    description: "Thư viện tài liệu catalog gắn với vật tư.",
+    icon: "file",
+    tone: "violet",
+  },
 ];
 
 export const materialDetailSectionNavItems: PageSectionNavItem[] = [
@@ -176,11 +183,42 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
     tone: "emerald",
   },
   {
+    href: "#material-documents",
+    label: "Catalog PDFs",
+    description: "Tài liệu catalog gắn với vật tư.",
+    icon: "file",
+    tone: "violet",
+  },
+  {
     href: "#material-edit",
     label: "Chỉnh sửa",
     description: "Thông tin catalog, nguồn giá và metadata.",
     icon: "pencil",
     tone: "amber",
+  },
+];
+
+export const catalogPdfSectionNavItems: PageSectionNavItem[] = [
+  {
+    href: "/catalog-pdfs#catalog-pdf-create",
+    label: "Thêm tài liệu",
+    description: "Tạo từ URL PDF hoặc upload tệp.",
+    icon: "plus",
+    tone: "emerald",
+  },
+  {
+    href: "/catalog-pdfs#catalog-pdf-list",
+    label: "Thư viện",
+    description: "Tìm, sửa, tải bản cục bộ và gắn vật tư.",
+    icon: "file",
+    tone: "sky",
+  },
+  {
+    href: "/materials",
+    label: "Danh mục vật tư",
+    description: "Quay lại danh sách vật tư.",
+    icon: "boxes",
+    tone: "slate",
   },
 ];
 
@@ -231,9 +269,9 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
     icon: "server",
   },
   {
-    href: "#desktop-config",
-    label: "Cấu hình hiện tại",
-    description: "Nguồn cấu hình, server và trạng thái editable.",
+    href: "#about-version",
+    label: "Phiên bản",
+    description: "Phiên bản hiện tại, bản mới nhất và lệnh cập nhật.",
     icon: "settings",
   },
 ];
