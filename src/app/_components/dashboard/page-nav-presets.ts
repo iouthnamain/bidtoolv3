@@ -252,27 +252,21 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
 export const settingsSectionNavItems: PageSectionNavItem[] = [
   {
     href: "#settings-overview",
-    label: "Tổng quan",
-    description: "Các nhóm cấu hình hiện có trong BidTool.",
-    icon: "settings",
+    label: "Tóm tắt",
+    description: "Phiên bản, môi trường và trạng thái cập nhật.",
+    icon: "activity",
   },
   {
     href: "#desktop-client",
-    label: "Desktop client",
-    description: "Cấu hình cách Electron kết nối server.",
+    label: "Desktop",
+    description: "Cấu hình server URL cho Electron.",
     icon: "monitor",
   },
   {
-    href: "#desktop-server",
-    label: "Server URL",
-    description: "Trỏ Electron tới server on-prem hoặc local.",
-    icon: "server",
-  },
-  {
     href: "#about-version",
-    label: "Phiên bản",
-    description: "Phiên bản hiện tại, bản mới nhất và lệnh cập nhật.",
-    icon: "settings",
+    label: "Cập nhật",
+    description: "Áp dụng bản mới và xem ghi chú phát hành.",
+    icon: "download",
   },
 ];
 

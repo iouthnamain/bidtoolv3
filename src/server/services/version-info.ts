@@ -12,6 +12,7 @@ import {
   type ReleasePins,
 } from "~/lib/release-manifest";
 import { env } from "~/env";
+import { canApplyInAppOnPremUpdates } from "~/server/services/onprem-update";
 
 export type VersionStatus = {
   current: string;
@@ -22,6 +23,7 @@ export type VersionStatus = {
   updateAvailable: boolean;
   changelog: string | null;
   updateCommand: string | null;
+  canApplyInApp: boolean;
   schemaVersion: number | null;
   manifestUrl: string | null;
   checkedAt: string;
@@ -204,6 +206,7 @@ export async function getVersionStatus(): Promise<VersionStatus> {
     updateAvailable: latest ? isUpdateAvailable(current, latest) : false,
     changelog: manifest?.changelog ?? null,
     updateCommand: resolveUpdateCommand(surface, latest),
+    canApplyInApp: surface === "onprem" && canApplyInAppOnPremUpdates(),
     schemaVersion: manifest?.schemaVersion ?? null,
     manifestUrl,
     checkedAt: new Date().toISOString(),

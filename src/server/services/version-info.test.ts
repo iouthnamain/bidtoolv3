@@ -95,6 +95,7 @@ describe("version info service", () => {
     expect(status.updateCommand).toBe(
       "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
     );
+    expect(status.canApplyInApp).toBe(false);
     expect(status.changelog).toBe("New release");
   });
 });

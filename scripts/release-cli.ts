@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -153,23 +154,48 @@ function parseArgs(argv: string[]) {
   return { command, options };
 }
 
-async function runGit(args: string[]) {
-  const proc = Bun.spawn(["git", ...args], {
-    cwd: rootDir,
-    env: process.env,
-    stderr: "pipe",
-    stdout: "pipe",
+async function runGit(args: string[]): Promise<string> {
+  const { code, stderr, stdout } = await new Promise<{
+    code: number;
+    stderr: string;
+    stdout: string;
+  }>((resolve, reject) => {
+    const child = spawn("git", args, {
+      cwd: rootDir,
+      env: process.env,
+      shell: false,
+      stdio: "pipe",
+    });
+
+    let childStdout = "";
+    let childStderr = "";
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      childStdout += chunk;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      childStderr += chunk;
+    });
+
+    child.once("error", reject);
+    child.once("close", (exitCode) => {
+      resolve({
+        code: exitCode ?? 1,
+        stderr: childStderr,
+        stdout: childStdout,
+      });
+    });
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(" ")} failed: ${stderr.trim() || stdout.trim()}`,
-    );
+
+  if (code !== 0) {
+    const message =
+      [stderr, stdout].map((value) => value.trim()).find(Boolean) ??
+      `exit code ${code}`;
+    throw new Error(`git ${args.join(" ")} failed: ${message}`);
   }
+
   return stdout;
 }
 

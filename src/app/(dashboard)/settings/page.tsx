@@ -5,7 +5,7 @@ import { SettingsPageClient } from "~/app/_components/dashboard/settings-page-cl
 export const metadata = createPageMetadata({
   title: "Cài đặt",
   description:
-    "Cấu hình ứng dụng, desktop client và môi trường vận hành BidTool v3.",
+    "Theo dõi phiên bản, cấu hình desktop client và áp dụng cập nhật BidTool v3.",
   path: "/settings",
   noIndex: true,
 });
@@ -14,7 +14,7 @@ export default function SettingsPage() {
   return (
     <DashboardShell
       title="Cài đặt"
-      description="Cấu hình ứng dụng và môi trường chạy"
+      description="Phiên bản, desktop client và cập nhật hệ thống"
     >
       <SettingsPageClient />
     </DashboardShell>
