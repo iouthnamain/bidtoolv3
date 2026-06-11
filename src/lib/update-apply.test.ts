@@ -4,7 +4,6 @@ import type { DesktopUpdateState } from "~/lib/desktop-update";
 import {
   getApplyUpdateButtonLabel,
   resolveApplyUpdateAction,
-  shouldShowApplyUpdateButton,
 } from "~/lib/update-apply";
 
 const idleDesktopState: DesktopUpdateState = {
@@ -69,7 +68,7 @@ describe("update apply helpers", () => {
 
   it("shows refresh action for web surfaces", () => {
     expect(
-      shouldShowApplyUpdateButton({
+      resolveApplyUpdateAction({
         version: {
           surface: "web",
           updateAvailable: false,
@@ -79,7 +78,22 @@ describe("update apply helpers", () => {
         desktopState: null,
         isDesktop: false,
       }),
-    ).toBe(true);
-    expect(getApplyUpdateButtonLabel("refresh")).toBe("Kiểm tra lại");
+    ).toBe("refresh");
+    expect(getApplyUpdateButtonLabel("refresh")).toBe("Kiểm tra cập nhật");
+  });
+
+  it("shows check-update when on-prem is already up to date", () => {
+    expect(
+      resolveApplyUpdateAction({
+        version: {
+          surface: "onprem",
+          updateAvailable: false,
+          latest: null,
+          canApplyInApp: true,
+        },
+        desktopState: null,
+        isDesktop: false,
+      }),
+    ).toBe("check-update");
   });
 });

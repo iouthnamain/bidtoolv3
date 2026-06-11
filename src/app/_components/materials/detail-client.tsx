@@ -17,6 +17,7 @@ import {
   Globe2,
   Link as LinkIcon,
   Package,
+  Pencil,
   Plus,
   RefreshCw,
   Ruler,
@@ -425,6 +426,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
   const [deleteSourceTarget, setDeleteSourceTarget] =
     useState<MaterialPriceSource | null>(null);
   const [isPricesSectionOpen, setIsPricesSectionOpen] = useState(false);
+  const [isEditSectionOpen, setIsEditSectionOpen] = useState(false);
 
   const materialQuery = api.material.getById.useQuery({ id }, { retry: false });
 
@@ -742,21 +744,28 @@ export function MaterialDetailClient({ id }: { id: number }) {
     if (sectionId === "material-prices") {
       setIsPricesSectionOpen(true);
     }
+    if (sectionId === "material-edit") {
+      setIsEditSectionOpen(true);
+    }
     document
       .getElementById(sectionId)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   useEffect(() => {
-    const expandPricesFromHash = () => {
-      if (window.location.hash === "#material-prices") {
+    const expandSectionFromHash = () => {
+      const hash = window.location.hash;
+      if (hash === "#material-prices") {
         setIsPricesSectionOpen(true);
+      }
+      if (hash === "#material-edit") {
+        setIsEditSectionOpen(true);
       }
     };
 
-    expandPricesFromHash();
-    window.addEventListener("hashchange", expandPricesFromHash);
-    return () => window.removeEventListener("hashchange", expandPricesFromHash);
+    expandSectionFromHash();
+    window.addEventListener("hashchange", expandSectionFromHash);
+    return () => window.removeEventListener("hashchange", expandSectionFromHash);
   }, []);
 
   const addSource = (event?: FormEvent<HTMLFormElement>) => {
@@ -1338,15 +1347,45 @@ export function MaterialDetailClient({ id }: { id: number }) {
 
       <section
         id="material-edit"
-        className="grid scroll-mt-6 gap-4 xl:grid-cols-[1.25fr_0.75fr]"
+        className="panel scroll-mt-6 overflow-hidden"
       >
-        <article className="panel p-5">
-          <div className="border-b border-slate-200 pb-3">
-            <h3 className="text-sm font-bold text-slate-950">
-              Thông tin vật tư
-            </h3>
+        <button
+          type="button"
+          className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          onClick={() => setIsEditSectionOpen((open) => !open)}
+          aria-expanded={isEditSectionOpen}
+          aria-controls="material-edit-content"
+        >
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-amber-700" aria-hidden />
+              <h3 className="text-sm font-bold text-slate-950">
+                Thông tin vật tư
+              </h3>
+            </div>
             <p className="mt-1 text-xs text-slate-500">
-              Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật tư.
+              Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật
+              tư.
+            </p>
+          </div>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${
+              isEditSectionOpen ? "rotate-180" : ""
+            }`}
+            aria-hidden
+          />
+        </button>
+
+        {isEditSectionOpen ? (
+          <div
+            id="material-edit-content"
+            className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[1.25fr_0.75fr]"
+          >
+        <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Cập nhật mã, tên, đơn giá, thông số và metadata catalog.
             </p>
           </div>
 
@@ -1511,7 +1550,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
         </article>
 
         <aside className="space-y-4">
-          <article className="panel p-5">
+          <article className="rounded-lg border border-slate-200 bg-white p-5">
             <h3 className="text-sm font-bold text-slate-950">
               Thiết lập vật tư
             </h3>
@@ -1544,7 +1583,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </dl>
           </article>
 
-          <article className="panel p-5">
+          <article className="rounded-lg border border-slate-200 bg-white p-5">
             <h3 className="text-sm font-bold text-slate-950">Metadata</h3>
             <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
@@ -1558,6 +1597,8 @@ export function MaterialDetailClient({ id }: { id: number }) {
             </dl>
           </article>
         </aside>
+          </div>
+        ) : null}
       </section>
 
       {isDirty ? (

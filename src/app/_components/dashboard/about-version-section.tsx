@@ -13,6 +13,7 @@ import {
 
 import { SettingsSectionHeader } from "~/app/_components/dashboard/settings-section-header";
 import { Button } from "~/app/_components/ui";
+import { ConfirmDialog } from "~/app/_components/ui/confirm-dialog";
 import { SkeletonKpi } from "~/app/_components/ui/skeleton";
 import { useToast } from "~/app/_components/ui/toast";
 import {
@@ -29,7 +30,6 @@ import {
 import {
   getApplyUpdateButtonLabel,
   getOnPremApplyConfirmationMessage,
-  getOnPremCopyCommandConfirmationMessage,
   resolveApplyUpdateAction,
   shouldShowApplyUpdateButton,
 } from "~/lib/update-apply";
@@ -61,16 +61,24 @@ function getUpdateStatusBadge(updateAvailable: boolean) {
     : { label: "Đã cập nhật", tone: "success" as const };
 }
 
+type PendingConfirmAction = "run-onprem" | "desktop-install";
+
 export function AboutVersionSection() {
-  const { error, success } = useToast();
+  const { error, success, info } = useToast();
   const queryClient = useQueryClient();
   const [isDesktop, setIsDesktop] = useState(false);
+  const [pendingConfirm, setPendingConfirm] =
+    useState<PendingConfirmAction | null>(null);
   const utils = api.useUtils();
-  const { data: versionStatus, isLoading: versionLoading, refetch } =
-    api.version.getStatus.useQuery(undefined, {
-      staleTime: 60_000,
-      refetchInterval: 5 * 60_000,
-    });
+  const {
+    data: versionStatus,
+    isLoading: versionLoading,
+    isFetching: versionFetching,
+    refetch,
+  } = api.version.getStatus.useQuery(undefined, {
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
   const { data: desktopUpdateState } = useDesktopUpdateState();
   const applyOnPremUpdate = api.version.applyOnPremUpdate.useMutation({
     onSuccess: async (result) => {
@@ -99,20 +107,54 @@ export function AboutVersionSection() {
 
   const copyUpdateCommand = async () => {
     if (!versionStatus?.updateCommand) {
+      error("Không có lệnh cập nhật để sao chép.");
       return;
     }
 
     try {
       await navigator.clipboard.writeText(versionStatus.updateCommand);
-      success("Đã sao chép lệnh cập nhật.");
+      success("Đã sao chép lệnh cập nhật vào clipboard.");
     } catch {
-      success(versionStatus.updateCommand);
+      info(versionStatus.updateCommand);
     }
+  };
+
+  const reportVersionCheck = (
+    status: NonNullable<typeof versionStatus> | undefined,
+  ) => {
+    if (!status) {
+      error("Không tải được thông tin phiên bản.");
+      return;
+    }
+
+    if (status.updateAvailable && status.latest) {
+      success(`Có bản mới ${status.latest}. Bạn đang chạy ${status.current}.`);
+      return;
+    }
+
+    if (status.latest) {
+      success(`Đã kiểm tra — đang chạy ${status.current}, mới nhất ${status.latest}.`);
+      return;
+    }
+
+    info(
+      `Đã kiểm tra — đang chạy ${status.current}. Chưa tải được manifest phát hành mới nhất.`,
+    );
+  };
+
+  const handleVersionRefresh = async () => {
+    const result = await refetch();
+    reportVersionCheck(result.data);
   };
 
   const handleDesktopCheck = async () => {
     const bridge = window.bidtoolDesktop;
-    if (!bridge || !canCheckForDesktopUpdate(desktopUpdateState ?? null)) {
+    if (!bridge) {
+      error("Chỉ khả dụng trên desktop app.");
+      return;
+    }
+    if (!canCheckForDesktopUpdate(desktopUpdateState ?? null)) {
+      info("Desktop đang kiểm tra hoặc tải cập nhật.");
       return;
     }
 
@@ -145,18 +187,42 @@ export function AboutVersionSection() {
     }
 
     if (desktopAction === "install") {
-      const confirmed = window.confirm(
-        getDesktopUpdateInstallConfirmationMessage(desktopVersion),
-      );
-      if (!confirmed) {
+      setPendingConfirm("desktop-install");
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingConfirm) {
+      return;
+    }
+
+    if (pendingConfirm === "run-onprem") {
+      try {
+        await applyOnPremUpdate.mutateAsync({
+          version: versionStatus?.latest ?? undefined,
+        });
+      } finally {
+        setPendingConfirm(null);
+      }
+      return;
+    }
+
+    if (pendingConfirm === "desktop-install") {
+      const bridge = window.bidtoolDesktop;
+      if (!bridge) {
+        setPendingConfirm(null);
         return;
       }
 
-      const result = await bridge.installUpdate();
-      setDesktopUpdateStateQueryData(queryClient, result.state);
-      const actionError = getDesktopUpdateActionError(result);
-      if (actionError) {
-        error(actionError);
+      try {
+        const result = await bridge.installUpdate();
+        setDesktopUpdateStateQueryData(queryClient, result.state);
+        const actionError = getDesktopUpdateActionError(result);
+        if (actionError) {
+          error(actionError);
+        }
+      } finally {
+        setPendingConfirm(null);
       }
     }
   };
@@ -187,6 +253,7 @@ export function AboutVersionSection() {
     });
 
   const applyDisabled =
+    versionFetching ||
     applyOnPremUpdate.isPending ||
     (applyAction === "desktop-check" ||
     applyAction === "desktop-download" ||
@@ -214,32 +281,24 @@ export function AboutVersionSection() {
       return;
     }
 
+    if (applyAction === "check-update") {
+      await handleVersionRefresh();
+      return;
+    }
+
     if (applyAction === "refresh") {
-      await refetch();
+      await handleVersionRefresh();
       window.location.reload();
       return;
     }
 
     if (applyAction === "copy-onprem-command") {
-      if (!window.confirm(getOnPremCopyCommandConfirmationMessage())) {
-        return;
-      }
       await copyUpdateCommand();
       return;
     }
 
     if (applyAction === "run-onprem") {
-      if (
-        !window.confirm(
-          getOnPremApplyConfirmationMessage(versionStatus.latest),
-        )
-      ) {
-        return;
-      }
-
-      await applyOnPremUpdate.mutateAsync({
-        version: versionStatus.latest ?? undefined,
-      });
+      setPendingConfirm("run-onprem");
     }
   };
 
@@ -249,8 +308,10 @@ export function AboutVersionSection() {
         return "Chạy cập nhật on-prem trực tiếp. Stack Docker sẽ pull image mới và khởi động lại.";
       case "copy-onprem-command":
         return "Sao chép lệnh và chạy trên máy chủ hosting Docker stack.";
+      case "check-update":
+        return "Kiểm tra manifest phát hành mới nhất và so sánh với phiên bản đang chạy.";
       case "refresh":
-        return "Tải lại để nhận bản web mới nhất từ pipeline phát hành.";
+        return "Kiểm tra bản mới, sau đó tải lại trang để nhận bản web từ pipeline phát hành.";
       case "desktop-download":
         return "Tải bản cập nhật desktop từ GitHub Releases.";
       case "desktop-install":
@@ -282,7 +343,8 @@ export function AboutVersionSection() {
             size="sm"
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
             disabled={versionLoading}
-            onClick={() => void refetch()}
+            isLoading={versionFetching}
+            onClick={() => void handleVersionRefresh()}
           >
             Làm mới
           </Button>
@@ -389,7 +451,10 @@ export function AboutVersionSection() {
                       <ArrowUpCircle className="h-3.5 w-3.5" />
                     )
                   }
-                  isLoading={applyOnPremUpdate.isPending}
+                  isLoading={
+                    versionFetching ||
+                    applyOnPremUpdate.isPending
+                  }
                   disabled={applyDisabled}
                   onClick={() => void handleApplyUpdate()}
                 >
@@ -420,6 +485,27 @@ export function AboutVersionSection() {
           </p>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        title={
+          pendingConfirm === "run-onprem"
+            ? "Áp dụng cập nhật on-prem?"
+            : "Cài đặt bản cập nhật desktop?"
+        }
+        description={
+          pendingConfirm === "run-onprem"
+            ? getOnPremApplyConfirmationMessage(versionStatus?.latest ?? null)
+            : getDesktopUpdateInstallConfirmationMessage(desktopVersion)
+        }
+        confirmLabel="Xác nhận"
+        variant={pendingConfirm === "run-onprem" ? "primary" : "primary"}
+        isLoading={
+          pendingConfirm === "run-onprem" && applyOnPremUpdate.isPending
+        }
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => void handleConfirmAction()}
+      />
     </section>
   );
 }

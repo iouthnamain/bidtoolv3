@@ -613,6 +613,11 @@ export function MaterialScrapeClient() {
     }
   };
 
+  const isScrapeAll = scrapeMode === "all";
+  const isAutoMethod = scrapeMethod === "auto";
+  const showLimitFields = !isScrapeAll;
+  const showDetailEnrichmentField = !isAutoMethod;
+
   const toggleProduct = (product: ScrapedProduct) => {
     const key = productKey(product);
     setSelectedSourceUrls((previous) => {
@@ -746,7 +751,7 @@ export function MaterialScrapeClient() {
             </span>
           </label>
 
-          <div className="grid gap-3 lg:grid-cols-[12rem_minmax(12rem,1fr)_minmax(12rem,1fr)_8rem_11rem] lg:items-end">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:items-end xl:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
             <fieldset className="grid gap-1.5">
               <legend className="text-xs font-bold text-slate-700">
                 Phạm vi
@@ -787,85 +792,93 @@ export function MaterialScrapeClient() {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-slate-500">
-                {scrapeMethodHelp[scrapeMethod]}
-              </span>
+              {!isAutoMethod ? (
+                <span className="text-xs text-slate-500">
+                  {scrapeMethodHelp[scrapeMethod]}
+                </span>
+              ) : null}
             </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-bold text-slate-700">
-                Bổ sung thông tin
-              </span>
-              <select
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
-                value={detailEnrichment}
-                disabled={isStartingScrape || isActive}
-                onChange={(event) =>
-                  setDetailEnrichment(
-                    event.target.value as DetailEnrichmentMode,
-                  )
-                }
-                aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
-              >
-                {(["none", "missing_fields"] as const).map((mode) => (
-                  <option key={mode} value={mode}>
-                    {detailEnrichmentLabel[mode]}
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-slate-500">
-                {detailEnrichmentHelp[detailEnrichment]}
-              </span>
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-bold text-slate-700">
-                Trang tối đa
-              </span>
-              <input
-                type="number"
-                name="maxPages"
-                min={1}
-                max={MAX_PAGE_LIMIT}
-                step={1}
-                inputMode="numeric"
-                autoComplete="off"
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
-                value={maxPages}
-                disabled={scrapeMode === "all" || isStartingScrape || isActive}
-                onChange={(event) =>
-                  setMaxPages(
-                    clampNumber(Number(event.target.value), 1, MAX_PAGE_LIMIT),
-                  )
-                }
-                aria-label="Số trang tối đa cần scrape"
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-bold text-slate-700">
-                Sản phẩm tối đa
-              </span>
-              <input
-                type="number"
-                name="maxProducts"
-                min={1}
-                max={MAX_PRODUCT_LIMIT}
-                step={1}
-                inputMode="numeric"
-                autoComplete="off"
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
-                value={maxProducts}
-                disabled={scrapeMode === "all" || isStartingScrape || isActive}
-                onChange={(event) =>
-                  setMaxProducts(
-                    clampNumber(
-                      Number(event.target.value),
-                      1,
-                      MAX_PRODUCT_LIMIT,
-                    ),
-                  )
-                }
-                aria-label="Số sản phẩm tối đa cần scrape"
-              />
-            </label>
+            {showDetailEnrichmentField ? (
+              <label className="grid gap-1.5">
+                <span className="text-xs font-bold text-slate-700">
+                  Bổ sung thông tin
+                </span>
+                <select
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                  value={detailEnrichment}
+                  disabled={isStartingScrape || isActive}
+                  onChange={(event) =>
+                    setDetailEnrichment(
+                      event.target.value as DetailEnrichmentMode,
+                    )
+                  }
+                  aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
+                >
+                  {(["none", "missing_fields"] as const).map((mode) => (
+                    <option key={mode} value={mode}>
+                      {detailEnrichmentLabel[mode]}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-slate-500">
+                  {detailEnrichmentHelp[detailEnrichment]}
+                </span>
+              </label>
+            ) : null}
+            {showLimitFields ? (
+              <label className="grid gap-1.5">
+                <span className="text-xs font-bold text-slate-700">
+                  Trang tối đa
+                </span>
+                <input
+                  type="number"
+                  name="maxPages"
+                  min={1}
+                  max={MAX_PAGE_LIMIT}
+                  step={1}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                  value={maxPages}
+                  disabled={isStartingScrape || isActive}
+                  onChange={(event) =>
+                    setMaxPages(
+                      clampNumber(Number(event.target.value), 1, MAX_PAGE_LIMIT),
+                    )
+                  }
+                  aria-label="Số trang tối đa cần scrape"
+                />
+              </label>
+            ) : null}
+            {showLimitFields ? (
+              <label className="grid gap-1.5">
+                <span className="text-xs font-bold text-slate-700">
+                  Sản phẩm tối đa
+                </span>
+                <input
+                  type="number"
+                  name="maxProducts"
+                  min={1}
+                  max={MAX_PRODUCT_LIMIT}
+                  step={1}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                  value={maxProducts}
+                  disabled={isStartingScrape || isActive}
+                  onChange={(event) =>
+                    setMaxProducts(
+                      clampNumber(
+                        Number(event.target.value),
+                        1,
+                        MAX_PRODUCT_LIMIT,
+                      ),
+                    )
+                  }
+                  aria-label="Số sản phẩm tối đa cần scrape"
+                />
+              </label>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -906,8 +919,14 @@ export function MaterialScrapeClient() {
             <Badge tone="neutral">Theo pagination cùng domain</Badge>
             <Badge tone="neutral">Chặn ảnh / font / media</Badge>
             <Badge tone="neutral">Nhập sau khi duyệt</Badge>
-            {detailEnrichment === "none" ? (
+            {showDetailEnrichmentField && detailEnrichment === "none" ? (
               <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
+            ) : null}
+            {isAutoMethod ? (
+              <Badge tone="info">Tự động: JSON-LD + DOM cards</Badge>
+            ) : null}
+            {isScrapeAll ? (
+              <Badge tone="info">Scrape hết — không giới hạn trang/sản phẩm</Badge>
             ) : null}
           </div>
         </form>

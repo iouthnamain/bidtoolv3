@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import {
+  ChevronDown,
   Download,
   ExternalLink,
   FileText,
@@ -78,6 +79,19 @@ export function MaterialCatalogPdfSection({
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [detachTarget, setDetachTarget] = useState<LinkedDocument | null>(null);
+  const [isSectionOpen, setIsSectionOpen] = useState(false);
+
+  useEffect(() => {
+    const expandFromHash = () => {
+      if (window.location.hash === "#material-documents") {
+        setIsSectionOpen(true);
+      }
+    };
+
+    expandFromHash();
+    window.addEventListener("hashchange", expandFromHash);
+    return () => window.removeEventListener("hashchange", expandFromHash);
+  }, []);
 
   const linkedQuery = api.catalogDocument.listByMaterial.useQuery({
     materialId,
@@ -200,23 +214,39 @@ export function MaterialCatalogPdfSection({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-slate-500" aria-hidden />
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          onClick={() => setIsSectionOpen((open) => !open)}
+          aria-expanded={isSectionOpen}
+          aria-controls="material-documents-content"
+        >
+          <FileText className="h-4 w-4 shrink-0 text-violet-700" aria-hidden />
           <h3 className="text-base font-bold text-slate-950">Catalog PDFs</h3>
           <Badge tone={linkedDocuments.length === 0 ? "warning" : "info"}>
             {linkedDocuments.length} tài liệu
           </Badge>
-        </div>
+          <ChevronDown
+            className={`ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${
+              isSectionOpen ? "rotate-180" : ""
+            }`}
+            aria-hidden
+          />
+        </button>
         <Link
           href="/catalog-pdfs"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
         >
           Mở thư viện catalog PDF
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
         </Link>
       </div>
 
-      <div className="grid gap-4 p-5 xl:grid-cols-[0.85fr_1.15fr]">
+      {isSectionOpen ? (
+        <div
+          id="material-documents-content"
+          className="grid gap-4 p-5 xl:grid-cols-[0.85fr_1.15fr]"
+        >
         <div className="space-y-4">
           <article className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
             <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
@@ -455,7 +485,8 @@ export function MaterialCatalogPdfSection({
             </ul>
           )}
         </article>
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -7,6 +7,7 @@ import {
 
 export type ApplyUpdateAction =
   | "none"
+  | "check-update"
   | "refresh"
   | "copy-onprem-command"
   | "run-onprem"
@@ -48,7 +49,7 @@ export function resolveApplyUpdateAction(input: {
     return "refresh";
   }
 
-  return "none";
+  return "check-update";
 }
 
 export function shouldShowApplyUpdateButton(input: {
@@ -71,7 +72,8 @@ export function getApplyUpdateButtonLabel(action: ApplyUpdateAction): string {
     case "copy-onprem-command":
       return "Áp dụng cập nhật";
     case "refresh":
-      return "Kiểm tra lại";
+    case "check-update":
+      return "Kiểm tra cập nhật";
     case "none":
       return "Áp dụng cập nhật";
   }

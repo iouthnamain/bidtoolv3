@@ -33,6 +33,7 @@
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
     "db:studio": "drizzle-kit studio",
+    "db:wipe": "bun run ./scripts/db-wipe.ts",
     "desktop:build": "bun run ./scripts/build-next.ts --dist .next-electron && bun run ./scripts/prepare-electron-standalone.ts --dist .next-electron && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --publish never",
     "desktop:dev": "bun run ./scripts/desktop-dev.ts",
     "desktop:pack": "bun run ./scripts/build-next.ts --dist .next-electron && bun run ./scripts/prepare-electron-standalone.ts --dist .next-electron && electron-builder --projectDir .electron-build/app --config ../../electron-builder.config.cjs --dir --publish never",

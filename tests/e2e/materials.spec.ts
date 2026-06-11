@@ -13,6 +13,13 @@ async function expandMaterialCatalogFilters(page: Page) {
   }
 }
 
+async function expandMaterialEditSection(page: Page) {
+  const toggle = page.getByRole("button", { name: "Thông tin vật tư" });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+}
+
 async function deleteVisibleMaterials(page: Page) {
   const checkboxes = materialCatalogRows(page).getByLabel(/^Chọn /);
   const count = await checkboxes.count();
@@ -624,6 +631,7 @@ test("manual material save shows a friendly duplicate code error", async ({
     page.getByRole("button", { name: "Lưu và mở chi tiết" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: reusedName })).toBeVisible();
+  await expandMaterialEditSection(page);
   await expect(page.getByLabel("Khấu hao mặc định")).toBeVisible();
   await expect(page.getByLabel("% sử dụng lại mặc định")).toBeVisible();
 
