@@ -705,6 +705,16 @@ export function MaterialScrapeClient() {
     });
   };
 
+  const stopScrapeJob = (jobId: string) => {
+    if (cancelShopScrapeJob.isPending) {
+      return;
+    }
+    setFocusedJobId(jobId);
+    setStartedJob(null);
+    setSelectedSourceUrls(new Set());
+    cancelShopScrapeJob.mutate({ jobId });
+  };
+
   const submitScrape = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (canStart) {
@@ -999,11 +1009,11 @@ export function MaterialScrapeClient() {
               leftIcon={<StopCircle className="h-4 w-4" />}
               onClick={() => {
                 if (activeJob) {
-                  cancelShopScrapeJob.mutate({ jobId: activeJob.id });
+                  stopScrapeJob(activeJob.id);
                 }
               }}
             >
-              Hủy job
+              Dừng job
             </Button>
             <Button
               type="button"
@@ -1121,7 +1131,29 @@ export function MaterialScrapeClient() {
                         {formatDateTime(job.expiresAt)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {!active ? (
+                        {active ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-60"
+                            disabled={cancelShopScrapeJob.isPending}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              stopScrapeJob(job.id);
+                            }}
+                            aria-label={`Dừng job ${hostFromUrl(job.url)}`}
+                            title="Dừng job"
+                          >
+                            {cancelShopScrapeJob.isPending &&
+                            cancelShopScrapeJob.variables?.jobId === job.id ? (
+                              <Loader2
+                                className="h-4 w-4 animate-spin"
+                                aria-hidden
+                              />
+                            ) : (
+                              <StopCircle className="h-4 w-4" aria-hidden />
+                            )}
+                          </button>
+                        ) : (
                           <button
                             type="button"
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
@@ -1134,8 +1166,6 @@ export function MaterialScrapeClient() {
                           >
                             <Trash2 className="h-4 w-4" aria-hidden />
                           </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">-</span>
                         )}
                       </td>
                     </tr>
