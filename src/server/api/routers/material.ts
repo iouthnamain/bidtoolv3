@@ -54,11 +54,15 @@ import {
 } from "~/server/services/shop-import-jobs";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import {
+  addShopScrapeJobProduct,
   cancelShopScrapeJob,
   deleteShopScrapeJob,
+  deleteShopScrapeJobProduct,
+  deleteShopScrapeJobProducts,
   getShopScrapeJob,
   listShopScrapeJobs,
   startShopScrapeJob,
+  updateShopScrapeJobProduct,
 } from "~/server/services/shop-scrape-jobs";
 
 type AppDb = typeof appDb;
@@ -124,6 +128,61 @@ const shopScrapeInput = z
 
 const shopScrapeJobInput = z.object({
   jobId: z.string().uuid(),
+});
+
+const scrapedShopProductInput = z
+  .object({
+    name: z.string().trim().min(1),
+    unit: z.string().trim().nullish(),
+    category: z.string().trim().nullish(),
+    specText: z.string().default(""),
+    manufacturer: z.string().trim().nullish(),
+    originCountry: z.string().trim().nullish(),
+    price: z.number().nullable().optional(),
+    priceText: z.string().trim().nullish(),
+    currency: z.string().trim().default("VND"),
+    sourceUrl: z.string().trim().min(1),
+    imageUrl: z.string().trim().nullish(),
+    sku: z.string().trim().nullish(),
+    model: z.string().trim().nullish(),
+    availability: z.string().trim().nullish(),
+    shopCategory: z.string().trim().nullish(),
+    catalogPdfUrls: z.array(z.string().trim().min(1)).default([]),
+  })
+  .transform((product) => ({
+    ...product,
+    unit: product.unit ?? null,
+    category: product.category ?? null,
+    manufacturer: product.manufacturer ?? null,
+    originCountry: product.originCountry ?? null,
+    priceText: product.priceText ?? null,
+    imageUrl: product.imageUrl ?? null,
+    sku: product.sku ?? null,
+    model: product.model ?? null,
+    availability: product.availability ?? null,
+    shopCategory: product.shopCategory ?? null,
+    price: product.price ?? null,
+  }));
+
+const updateShopScrapeJobProductInput = z.object({
+  jobId: z.string().uuid(),
+  sourceUrl: z.string().trim().min(1),
+  product: scrapedShopProductInput,
+});
+
+const deleteShopScrapeJobProductInput = z.object({
+  jobId: z.string().uuid(),
+  sourceUrl: z.string().trim().min(1),
+});
+
+const deleteShopScrapeJobProductsInput = z.object({
+  jobId: z.string().uuid(),
+  sourceUrls: z.array(z.string().trim().min(1)).min(1).max(25_000),
+});
+
+const addShopScrapeJobProductInput = z.object({
+  jobId: z.string().uuid(),
+  product: scrapedShopProductInput,
 });
 
 const listShopJobsBaseInput = z.object({
@@ -1007,6 +1066,30 @@ export const materialRouter = createTRPCRouter({
       }
       return job;
     }),
+
+  updateShopScrapeJobProduct: publicProcedure
+    .input(updateShopScrapeJobProductInput)
+    .mutation(({ input }) =>
+      withShopJobErrors(() => updateShopScrapeJobProduct(input)),
+    ),
+
+  deleteShopScrapeJobProduct: publicProcedure
+    .input(deleteShopScrapeJobProductInput)
+    .mutation(({ input }) =>
+      withShopJobErrors(() => deleteShopScrapeJobProduct(input)),
+    ),
+
+  deleteShopScrapeJobProducts: publicProcedure
+    .input(deleteShopScrapeJobProductsInput)
+    .mutation(({ input }) =>
+      withShopJobErrors(() => deleteShopScrapeJobProducts(input)),
+    ),
+
+  addShopScrapeJobProduct: publicProcedure
+    .input(addShopScrapeJobProductInput)
+    .mutation(({ input }) =>
+      withShopJobErrors(() => addShopScrapeJobProduct(input)),
+    ),
 
   startShopImportJob: publicProcedure
     .input(startShopImportJobInput)

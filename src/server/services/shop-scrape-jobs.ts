@@ -179,6 +179,216 @@ export async function cancelShopScrapeJob(jobId: string) {
   return getShopScrapeJob(jobId);
 }
 
+const EDITABLE_SCRAPE_JOB_STATUSES: ShopScrapeJobStatus[] = [
+  "completed",
+  "failed",
+  "cancelled",
+];
+
+function assertScrapeJobProductsEditable(job: ShopScrapeJobSnapshot) {
+  if (job.isExpired) {
+    throw new ShopJobServiceError("BAD_REQUEST", "Job scrape đã hết hạn.");
+  }
+  if (ACTIVE_JOB_STATUSES.includes(job.status)) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Chỉ chỉnh sửa sản phẩm sau khi job scrape dừng lại.",
+    );
+  }
+  if (!EDITABLE_SCRAPE_JOB_STATUSES.includes(job.status)) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Job scrape không thể chỉnh sửa sản phẩm.",
+    );
+  }
+}
+
+function trimmedOrNull(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed === "" ? null : trimmed;
+}
+
+function normalizeScrapedProductInput(
+  product: ScrapedShopProduct,
+): ScrapedShopProduct {
+  return {
+    name: product.name.trim(),
+    unit: trimmedOrNull(product.unit),
+    category: trimmedOrNull(product.category),
+    specText: product.specText.trim(),
+    manufacturer: trimmedOrNull(product.manufacturer),
+    originCountry: trimmedOrNull(product.originCountry),
+    price: product.price ?? null,
+    priceText: trimmedOrNull(product.priceText),
+    currency: trimmedOrNull(product.currency) ?? "VND",
+    sourceUrl: product.sourceUrl.trim(),
+    imageUrl: trimmedOrNull(product.imageUrl),
+    sku: trimmedOrNull(product.sku),
+    model: trimmedOrNull(product.model),
+    availability: trimmedOrNull(product.availability),
+    shopCategory: trimmedOrNull(product.shopCategory),
+    catalogPdfUrls: Array.isArray(product.catalogPdfUrls)
+      ? product.catalogPdfUrls.map((url) => url.trim()).filter(Boolean)
+      : [],
+  };
+}
+
+async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProduct[]) {
+  const now = new Date().toISOString();
+  const [updated] = await db
+    .update(shopScrapeJobs)
+    .set({
+      products,
+      productCount: products.length,
+      updatedAt: now,
+    })
+    .where(eq(shopScrapeJobs.id, jobId))
+    .returning();
+
+  return toScrapeJobSnapshot(requireRow(updated));
+}
+
+export async function updateShopScrapeJobProduct(input: {
+  jobId: string;
+  sourceUrl: string;
+  product: ScrapedShopProduct;
+}) {
+  const job = await getShopScrapeJob(input.jobId);
+  if (!job) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
+  assertScrapeJobProductsEditable(job);
+
+  const products = [...job.products];
+  const index = products.findIndex(
+    (product) => product.sourceUrl === input.sourceUrl,
+  );
+  if (index < 0) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy sản phẩm trong job scrape.",
+    );
+  }
+
+  const nextProduct = normalizeScrapedProductInput(input.product);
+  if (!nextProduct.name) {
+    throw new ShopJobServiceError("BAD_REQUEST", "Tên sản phẩm không được để trống.");
+  }
+  if (!nextProduct.sourceUrl) {
+    throw new ShopJobServiceError("BAD_REQUEST", "URL nguồn không được để trống.");
+  }
+  if (
+    nextProduct.sourceUrl !== input.sourceUrl &&
+    products.some((product) => product.sourceUrl === nextProduct.sourceUrl)
+  ) {
+    throw new ShopJobServiceError(
+      "CONFLICT",
+      "URL nguồn đã tồn tại trong job scrape.",
+    );
+  }
+
+  products[index] = nextProduct;
+  return persistScrapeJobProducts(input.jobId, products);
+}
+
+export async function deleteShopScrapeJobProduct(input: {
+  jobId: string;
+  sourceUrl: string;
+}) {
+  const job = await getShopScrapeJob(input.jobId);
+  if (!job) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
+  assertScrapeJobProductsEditable(job);
+
+  const products = job.products.filter(
+    (product) => product.sourceUrl !== input.sourceUrl,
+  );
+  if (products.length === job.products.length) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy sản phẩm trong job scrape.",
+    );
+  }
+
+  return persistScrapeJobProducts(input.jobId, products);
+}
+
+export async function deleteShopScrapeJobProducts(input: {
+  jobId: string;
+  sourceUrls: string[];
+}) {
+  const job = await getShopScrapeJob(input.jobId);
+  if (!job) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
+  assertScrapeJobProductsEditable(job);
+
+  const uniqueSourceUrls = [
+    ...new Set(input.sourceUrls.map((url) => url.trim()).filter(Boolean)),
+  ];
+  if (uniqueSourceUrls.length === 0) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Chọn ít nhất một sản phẩm để xóa.",
+    );
+  }
+
+  const urlsToDelete = new Set(uniqueSourceUrls);
+  const products = job.products.filter(
+    (product) => !urlsToDelete.has(product.sourceUrl),
+  );
+  const removedCount = job.products.length - products.length;
+  if (removedCount === 0) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy sản phẩm đã chọn trong job scrape.",
+    );
+  }
+
+  const snapshot = await persistScrapeJobProducts(input.jobId, products);
+  return { job: snapshot, removedCount };
+}
+
+export async function addShopScrapeJobProduct(input: {
+  jobId: string;
+  product: ScrapedShopProduct;
+}) {
+  const job = await getShopScrapeJob(input.jobId);
+  if (!job) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
+  assertScrapeJobProductsEditable(job);
+
+  const nextProduct = normalizeScrapedProductInput(input.product);
+  if (!nextProduct.name) {
+    throw new ShopJobServiceError("BAD_REQUEST", "Tên sản phẩm không được để trống.");
+  }
+  if (!nextProduct.sourceUrl) {
+    throw new ShopJobServiceError("BAD_REQUEST", "URL nguồn không được để trống.");
+  }
+  if (job.products.some((product) => product.sourceUrl === nextProduct.sourceUrl)) {
+    throw new ShopJobServiceError(
+      "CONFLICT",
+      "URL nguồn đã tồn tại trong job scrape.",
+    );
+  }
+
+  return persistScrapeJobProducts(input.jobId, [...job.products, nextProduct]);
+}
+
 export async function deleteShopScrapeJob(jobId: string) {
   const existing = await getShopScrapeJob(jobId);
   if (!existing) {

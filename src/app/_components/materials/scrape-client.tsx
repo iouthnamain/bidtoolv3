@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   ArrowUpRight,
@@ -9,19 +9,23 @@ import {
   CheckSquare,
   Clock3,
   ExternalLink,
+  Eye,
   FileSpreadsheet,
   Link as LinkIcon,
   Loader2,
+  Pencil,
   Plus,
   RotateCcw,
+  Save,
   Search,
   Square,
   StopCircle,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -232,6 +236,415 @@ function writeStoredJobId(storageKey: string, jobId: string | null) {
 
 function productKey(product: ScrapedProduct) {
   return product.sourceUrl;
+}
+
+function shortJobId(jobId: string) {
+  return jobId.slice(0, 8);
+}
+
+function productDisplayId(jobId: string, index: number) {
+  return `${shortJobId(jobId)}-${String(index + 1).padStart(3, "0")}`;
+}
+
+function emptyScrapedProduct(jobUrl: string): ScrapedProduct {
+  return {
+    name: "",
+    unit: null,
+    category: null,
+    specText: "",
+    manufacturer: null,
+    originCountry: null,
+    price: null,
+    priceText: null,
+    currency: "VND",
+    sourceUrl: jobUrl,
+    imageUrl: null,
+    sku: null,
+    model: null,
+    availability: null,
+    shopCategory: null,
+    catalogPdfUrls: [],
+  };
+}
+
+const scrapeFieldClass =
+  "min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+
+function ScrapeProductDetailDialog({
+  open,
+  job,
+  product,
+  productIndex,
+  originalSourceUrl,
+  canEdit,
+  isSaving,
+  isDeleting,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  open: boolean;
+  job: ScrapeJob;
+  product: ScrapedProduct | null;
+  productIndex: number | null;
+  originalSourceUrl: string | null;
+  canEdit: boolean;
+  isSaving: boolean;
+  isDeleting: boolean;
+  onChange: (product: ScrapedProduct) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (open && !dialog.open) {
+      dialog.showModal();
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  if (!product) {
+    return null;
+  }
+
+  const displayId =
+    productIndex == null
+      ? `Mới · ${shortJobId(job.id)}`
+      : productDisplayId(job.id, productIndex);
+  const missingLabels = productMissingLabels(product);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,920px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!isSaving && !isDeleting) {
+          onClose();
+        }
+      }}
+      onClick={(event) => {
+        if (event.target === dialogRef.current && !isSaving && !isDeleting) {
+          onClose();
+        }
+      }}
+    >
+      <div className="border-b border-slate-200 px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              Chi tiết sản phẩm scrape
+            </p>
+            <h3 className="mt-1 text-lg font-bold text-slate-950">
+              {product.name || "Sản phẩm mới"}
+            </h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge tone="info">{displayId}</Badge>
+              <Badge tone="neutral">Job {shortJobId(job.id)}</Badge>
+              <Badge tone="neutral">{hostFromUrl(job.url)}</Badge>
+              <Badge tone={statusTone[job.status]}>{statusLabel[job.status]}</Badge>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {scrapeModeLabel[job.scrapeMode]} · {scrapeMethodLabel[job.method]}{" "}
+              · {detailEnrichmentLabel[job.detailEnrichment]}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            onClick={onClose}
+            aria-label="Đóng chi tiết sản phẩm"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {!canEdit ? (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Job đang chạy hoặc chưa sẵn sàng chỉnh sửa. Bạn có thể xem chi tiết;
+            lưu/xóa sản phẩm sau khi scrape dừng lại.
+          </div>
+        ) : null}
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {missingLabels.length === 0 ? (
+            <Badge tone="success">Đủ thông tin cơ bản</Badge>
+          ) : (
+            missingLabels.map((label) => (
+              <Badge key={label} tone="warning">
+                {label}
+              </Badge>
+            ))
+          )}
+          {product.catalogPdfUrls.length > 0 ? (
+            <Badge tone="info">{product.catalogPdfUrls.length} catalog PDF</Badge>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs font-bold text-slate-700">Tên sản phẩm</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.name}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, name: event.target.value })
+              }
+            />
+          </label>
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs font-bold text-slate-700">URL nguồn</span>
+            <input
+              className={scrapeFieldClass}
+              type="url"
+              value={product.sourceUrl}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, sourceUrl: event.target.value })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Đơn giá</span>
+            <input
+              className={scrapeFieldClass}
+              type="number"
+              min={0}
+              value={product.price ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  price:
+                    event.target.value === ""
+                      ? null
+                      : Number.parseFloat(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Tiền tệ</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.currency}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, currency: event.target.value })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Đơn vị</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.unit ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  unit: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Nhóm</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.category ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  category: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">NCC</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.manufacturer ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  manufacturer: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Xuất xứ</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.originCountry ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  originCountry: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">SKU</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.sku ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, sku: event.target.value || null })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Model</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.model ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, model: event.target.value || null })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Nhóm shop</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.shopCategory ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  shopCategory: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-bold text-slate-700">Trạng thái</span>
+            <input
+              className={scrapeFieldClass}
+              value={product.availability ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  availability: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs font-bold text-slate-700">Ảnh</span>
+            <input
+              className={scrapeFieldClass}
+              type="url"
+              value={product.imageUrl ?? ""}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  imageUrl: event.target.value || null,
+                })
+              }
+            />
+          </label>
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs font-bold text-slate-700">Thông số</span>
+            <textarea
+              className={`${scrapeFieldClass} min-h-28`}
+              value={product.specText}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({ ...product, specText: event.target.value })
+              }
+            />
+          </label>
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs font-bold text-slate-700">
+              Catalog PDF (mỗi dòng một URL)
+            </span>
+            <textarea
+              className={`${scrapeFieldClass} min-h-24 font-mono text-xs`}
+              value={product.catalogPdfUrls.join("\n")}
+              disabled={!canEdit || isSaving}
+              onChange={(event) =>
+                onChange({
+                  ...product,
+                  catalogPdfUrls: event.target.value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-5 py-4">
+        <div className="flex flex-wrap gap-2">
+          {product.sourceUrl ? (
+            <a
+              href={product.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+            >
+              Mở trang nguồn
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </a>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canEdit && originalSourceUrl ? (
+            <Button
+              type="button"
+              variant="ghost"
+              leftIcon={<Trash2 className="h-4 w-4" />}
+              isLoading={isDeleting}
+              disabled={isSaving}
+              onClick={onDelete}
+            >
+              Xóa khỏi job
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" disabled={isSaving || isDeleting} onClick={onClose}>
+            Đóng
+          </Button>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="primary"
+              leftIcon={<Save className="h-4 w-4" />}
+              isLoading={isSaving}
+              disabled={isDeleting || !product.name.trim() || !product.sourceUrl.trim()}
+              onClick={onSave}
+            >
+              {originalSourceUrl ? "Lưu thay đổi" : "Thêm sản phẩm"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </dialog>
+  );
 }
 
 function productMissingLabels(product: ScrapedProduct) {
@@ -463,6 +876,15 @@ export function MaterialScrapeClient() {
   const [selectedSourceUrls, setSelectedSourceUrls] = useState<Set<string>>(
     () => new Set(),
   );
+  const [detailProductKey, setDetailProductKey] = useState<string | null>(null);
+  const [detailDraft, setDetailDraft] = useState<ScrapedProduct | null>(null);
+  const [detailOriginalSourceUrl, setDetailOriginalSourceUrl] = useState<
+    string | null
+  >(null);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [deleteProductTarget, setDeleteProductTarget] =
+    useState<ScrapedProduct | null>(null);
+  const [bulkDeleteSelectedOpen, setBulkDeleteSelectedOpen] = useState(false);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const utils = api.useUtils();
   const toast = useToast();
@@ -556,6 +978,18 @@ export function MaterialScrapeClient() {
   const canImportSelected =
     canImportJob(activeJob) && selectedCount > 0 && !isImportActive;
   const canImportAll = canImportJob(activeJob) && !isImportActive;
+  const canEditScrapeProducts =
+    !!activeJob &&
+    !activeJob.isExpired &&
+    !isJobActive(activeJob) &&
+    !isImportActive;
+  const canDeleteSelected = canEditScrapeProducts && selectedCount > 0;
+  const detailProductIndex =
+    activeJob && detailProductKey
+      ? activeJob.products.findIndex(
+          (product) => productKey(product) === detailProductKey,
+        )
+      : -1;
   const scrapeJobPollingError =
     jobQuery.isError && !isNotFoundTRPCError(jobQuery.error)
       ? (jobQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
@@ -698,6 +1132,91 @@ export function MaterialScrapeClient() {
     },
   });
 
+  const syncFocusedScrapeJob = (job: ScrapeJob) => {
+    utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
+    if (focusedJobId === job.id) {
+      setStartedJob(job);
+    }
+    void utils.material.listShopScrapeJobs.invalidate();
+  };
+
+  const updateShopScrapeJobProduct =
+    api.material.updateShopScrapeJobProduct.useMutation({
+      onSuccess: (job) => {
+        syncFocusedScrapeJob(job);
+        if (detailOriginalSourceUrl) {
+          setSelectedSourceUrls((previous) => {
+            if (!previous.has(detailOriginalSourceUrl)) {
+              return previous;
+            }
+            const next = new Set(previous);
+            next.delete(detailOriginalSourceUrl);
+            if (detailDraft) {
+              next.add(detailDraft.sourceUrl);
+            }
+            return next;
+          });
+        }
+        closeProductDetail();
+        toast.success("Đã lưu sản phẩm scrape.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể lưu sản phẩm scrape.");
+      },
+    });
+
+  const deleteShopScrapeJobProduct =
+    api.material.deleteShopScrapeJobProduct.useMutation({
+      onSuccess: (job) => {
+        syncFocusedScrapeJob(job);
+        if (deleteProductTarget) {
+          setSelectedSourceUrls((previous) => {
+            if (!previous.has(deleteProductTarget.sourceUrl)) {
+              return previous;
+            }
+            const next = new Set(previous);
+            next.delete(deleteProductTarget.sourceUrl);
+            return next;
+          });
+        }
+        setDeleteProductTarget(null);
+        closeProductDetail();
+        toast.success("Đã xóa sản phẩm khỏi job scrape.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể xóa sản phẩm scrape.");
+      },
+    });
+
+  const deleteShopScrapeJobProducts =
+    api.material.deleteShopScrapeJobProducts.useMutation({
+      onSuccess: ({ job, removedCount }) => {
+        syncFocusedScrapeJob(job);
+        setSelectedSourceUrls(new Set());
+        setBulkDeleteSelectedOpen(false);
+        closeProductDetail();
+        toast.success(
+          `Đã xóa ${removedCount.toLocaleString("vi-VN")} sản phẩm khỏi preview.`,
+        );
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể xóa các sản phẩm đã chọn.");
+      },
+    });
+
+  const addShopScrapeJobProduct = api.material.addShopScrapeJobProduct.useMutation(
+    {
+      onSuccess: (job) => {
+        syncFocusedScrapeJob(job);
+        closeProductDetail();
+        toast.success("Đã thêm sản phẩm vào job scrape.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể thêm sản phẩm scrape.");
+      },
+    },
+  );
+
   const deleteShopScrapeJob = api.material.deleteShopScrapeJob.useMutation({
     onSuccess: (job) => {
       if (focusedJobId === job.id) {
@@ -830,7 +1349,51 @@ export function MaterialScrapeClient() {
     });
   };
 
+  const closeProductDetail = () => {
+    setDetailProductKey(null);
+    setDetailDraft(null);
+    setDetailOriginalSourceUrl(null);
+    setIsCreatingProduct(false);
+  };
+
+  const openProductDetail = (product: ScrapedProduct) => {
+    setIsCreatingProduct(false);
+    setDetailProductKey(productKey(product));
+    setDetailOriginalSourceUrl(product.sourceUrl);
+    setDetailDraft({ ...product });
+  };
+
+  const openCreateProductDetail = () => {
+    if (!activeJob || !canEditScrapeProducts) {
+      return;
+    }
+    const draft = emptyScrapedProduct(activeJob.url);
+    setIsCreatingProduct(true);
+    setDetailProductKey("__new__");
+    setDetailOriginalSourceUrl(null);
+    setDetailDraft(draft);
+  };
+
+  const saveProductDetail = () => {
+    if (!activeJob || !detailDraft || !canEditScrapeProducts) {
+      return;
+    }
+    if (isCreatingProduct || !detailOriginalSourceUrl) {
+      addShopScrapeJobProduct.mutate({
+        jobId: activeJob.id,
+        product: detailDraft,
+      });
+      return;
+    }
+    updateShopScrapeJobProduct.mutate({
+      jobId: activeJob.id,
+      sourceUrl: detailOriginalSourceUrl,
+      product: detailDraft,
+    });
+  };
+
   const focusScrapeJob = (jobId: string) => {
+    closeProductDetail();
     setFocusedJobId(jobId);
     setStartedJob(null);
     setSelectedSourceUrls(new Set());
@@ -910,6 +1473,7 @@ export function MaterialScrapeClient() {
     if (isStartingScrape) {
       return;
     }
+    closeProductDetail();
     setFocusedJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
@@ -1728,19 +2292,109 @@ export function MaterialScrapeClient() {
       ) : null}
 
       {activeJob ? (
-        <section className="panel p-4 sm:p-5">
+        <section id="material-scrape-products" className="panel p-4 sm:p-5">
+          <ConfirmDialog
+            open={deleteProductTarget !== null}
+            title={`Xóa "${deleteProductTarget?.name ?? ""}" khỏi job scrape?`}
+            description="Sản phẩm sẽ bị gỡ khỏi danh sách preview và không được nhập vào catalog khi bạn chạy import."
+            confirmLabel="Xóa sản phẩm"
+            variant="danger"
+            isLoading={
+              deleteShopScrapeJobProduct.isPending ||
+              deleteShopScrapeJobProducts.isPending
+            }
+            onConfirm={() => {
+              if (!activeJob || !deleteProductTarget) {
+                return;
+              }
+              deleteShopScrapeJobProduct.mutate({
+                jobId: activeJob.id,
+                sourceUrl: deleteProductTarget.sourceUrl,
+              });
+            }}
+            onCancel={() => setDeleteProductTarget(null)}
+          />
+          <ConfirmDialog
+            open={bulkDeleteSelectedOpen}
+            title={`Xóa ${selectedCount.toLocaleString("vi-VN")} sản phẩm đã chọn?`}
+            description="Các sản phẩm đã chọn sẽ bị gỡ khỏi preview và không được nhập vào catalog."
+            confirmLabel="Xóa đã chọn"
+            variant="danger"
+            isLoading={deleteShopScrapeJobProducts.isPending}
+            onConfirm={() => {
+              if (!activeJob || selectedCount === 0) {
+                return;
+              }
+              deleteShopScrapeJobProducts.mutate({
+                jobId: activeJob.id,
+                sourceUrls: Array.from(selectedSourceUrls),
+              });
+            }}
+            onCancel={() => setBulkDeleteSelectedOpen(false)}
+          />
+          <ScrapeProductDetailDialog
+            open={detailDraft !== null}
+            job={activeJob}
+            product={detailDraft}
+            productIndex={isCreatingProduct ? null : detailProductIndex}
+            originalSourceUrl={detailOriginalSourceUrl}
+            canEdit={canEditScrapeProducts}
+            isSaving={
+              updateShopScrapeJobProduct.isPending ||
+              addShopScrapeJobProduct.isPending
+            }
+            isDeleting={deleteShopScrapeJobProduct.isPending}
+            onChange={setDetailDraft}
+            onClose={closeProductDetail}
+            onSave={saveProductDetail}
+            onDelete={() => {
+              if (detailDraft) {
+                setDeleteProductTarget(detailDraft);
+              }
+            }}
+          />
+
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="section-title">Sản phẩm scrape</p>
+              <p className="section-title">Duyệt sản phẩm scrape</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
-                Chọn sản phẩm để nhập catalog
+                Job {shortJobId(activeJob.id)} · {hostFromUrl(activeJob.url)}
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                {activeJob.products.length.toLocaleString("vi-VN")} sản phẩm đã
-                sẵn sàng trong job hiện tại.
+                {activeJob.products.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
+                {scrapeModeLabel[activeJob.scrapeMode]} ·{" "}
+                {scrapeMethodLabel[activeJob.method]} ·{" "}
+                {detailEnrichmentLabel[activeJob.detailEnrichment]}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge tone="neutral">ID {activeJob.id}</Badge>
+                <Badge tone={statusTone[activeJob.status]}>
+                  {statusLabel[activeJob.status]}
+                </Badge>
+                <Badge tone="info" count={activeJob.productCount}>
+                  Preview
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Bấm một dòng sản phẩm để xem chi tiết, chỉnh sửa hoặc xóa trước
+                khi nhập catalog. Mã SP theo job:{" "}
+                <span className="font-semibold text-slate-700">
+                  {shortJobId(activeJob.id)}-###
+                </span>
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {canEditScrapeProducts ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Plus className="h-3.5 w-3.5" />}
+                  onClick={openCreateProductDetail}
+                >
+                  Thêm sản phẩm
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="secondary"
@@ -1757,6 +2411,19 @@ export function MaterialScrapeClient() {
               >
                 {allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
               </Button>
+              {canEditScrapeProducts ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={!canDeleteSelected || deleteShopScrapeJobProducts.isPending}
+                  isLoading={deleteShopScrapeJobProducts.isPending}
+                  leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                  onClick={() => setBulkDeleteSelectedOpen(true)}
+                >
+                  Xóa đã chọn ({selectedCount.toLocaleString("vi-VN")})
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="secondary"
@@ -1941,10 +2608,11 @@ export function MaterialScrapeClient() {
 
           {activeJob.products.length > 0 ? (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-[1500px] divide-y divide-slate-200 text-sm">
+              <table className="min-w-[1680px] divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
                     <th className="w-10 px-3 py-2"> </th>
+                    <th className="px-3 py-2">Mã SP</th>
                     <th className="px-3 py-2">Sản phẩm</th>
                     <th className="px-3 py-2">Đơn giá</th>
                     <th className="px-3 py-2">Đơn vị</th>
@@ -1954,6 +2622,7 @@ export function MaterialScrapeClient() {
                     <th className="px-3 py-2">Thông số</th>
                     <th className="px-3 py-2">Độ đầy đủ</th>
                     <th className="px-3 py-2">Nguồn</th>
+                    <th className="px-3 py-2 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -1963,12 +2632,30 @@ export function MaterialScrapeClient() {
                     const missingLabels = productMissingLabels(item);
                     const infoSummary = productInfoSummary(item);
 
+                    const isDetailOpen = detailProductKey === key;
+
                     return (
                       <tr
                         key={`${key}-${index}`}
-                        className={
-                          selected ? "bg-sky-50/70" : "hover:bg-slate-50"
-                        }
+                        tabIndex={0}
+                        aria-selected={isDetailOpen}
+                        className={`cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none focus-visible:ring-inset ${
+                          isDetailOpen
+                            ? "bg-sky-100/80"
+                            : selected
+                              ? "bg-sky-50/70 hover:bg-sky-50"
+                              : "hover:bg-slate-50"
+                        }`}
+                        onClick={() => openProductDetail(item)}
+                        onKeyDown={(event) => {
+                          if (event.currentTarget !== event.target) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openProductDetail(item);
+                          }
+                        }}
                       >
                         <td className="px-3 py-2">
                           <input
@@ -1976,14 +2663,24 @@ export function MaterialScrapeClient() {
                             className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
                             checked={selected}
                             disabled={isImportActive}
+                            onClick={(event) => event.stopPropagation()}
                             onChange={() => toggleProduct(item)}
                             aria-label={`Chọn ${item.name}`}
                           />
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="font-mono text-xs font-bold text-slate-700">
+                            {productDisplayId(activeJob.id, index)}
+                          </span>
                         </td>
                         <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
                           <span className="line-clamp-2">{item.name}</span>
                           <span className="mt-1 block text-xs font-medium text-slate-500">
                             {infoSummary || "Không có SKU / model / trạng thái"}
+                          </span>
+                          <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700">
+                            <Eye className="h-3 w-3" aria-hidden />
+                            Xem chi tiết
                           </span>
                         </td>
                         <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
@@ -2036,6 +2733,7 @@ export function MaterialScrapeClient() {
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex max-w-full items-center gap-1 hover:text-sky-700 hover:underline"
+                            onClick={(event) => event.stopPropagation()}
                           >
                             <span className="truncate">{item.sourceUrl}</span>
                             <ExternalLink
@@ -2043,6 +2741,54 @@ export function MaterialScrapeClient() {
                               aria-hidden
                             />
                           </a>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openProductDetail(item);
+                              }}
+                              aria-label={`Xem chi tiết ${item.name}`}
+                              title="Xem chi tiết"
+                            >
+                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                              Chi tiết
+                            </button>
+                            {canEditScrapeProducts ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openProductDetail(item);
+                                  }}
+                                  aria-label={`Sửa ${item.name}`}
+                                  title="Sửa sản phẩm"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                                  Sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
+                                  disabled={deleteShopScrapeJobProduct.isPending}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setDeleteProductTarget(item);
+                                  }}
+                                  aria-label={`Xóa ${item.name} khỏi job`}
+                                  title="Xóa khỏi preview — không nhập DB"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                  Xóa
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );

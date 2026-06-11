@@ -919,6 +919,38 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
       return false;
     }
   };
+  // Promo stickers (e.g. WooCommerce "sale"/"trending" labels) often sit
+  // before the real product title and must never be used as name/link.
+  const badgeClassPattern =
+    /(label|badge|ribbon|sticker|onsale|sale[-_]?flash|countdown)/i;
+  const isPromoBadgeElement = (element: Element | null | undefined) => {
+    let current: Element | null = element ?? null;
+    for (let depth = 0; current && depth < 6; depth += 1) {
+      const className =
+        typeof current.className === "string" ? current.className : "";
+      if (badgeClassPattern.test(className)) {
+        return true;
+      }
+      current = current.parentElement;
+    }
+    return false;
+  };
+  const titleSelectors = [
+    "[class*='product-title' i], [class*='product_title' i], [class*='product-name' i], [class*='product_name' i], .woocommerce-loop-product__title",
+    "h1, h2, h3, h4",
+    "[class*='name' i], [class*='title' i]",
+  ];
+  const findTitleElement = (root: Element) => {
+    for (const selector of titleSelectors) {
+      const candidate = Array.from(root.querySelectorAll(selector)).find(
+        (element) => !isPromoBadgeElement(element) && text(element),
+      );
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  };
   const collectPdfUrls = (root: ParentNode, limit: number) => {
     const urls: string[] = [];
     const seen = new Set<string>();
@@ -984,9 +1016,22 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
     const anchors = Array.from(
       node.querySelectorAll<HTMLAnchorElement>("a[href]"),
     );
+    // The card node itself can be the product link (querySelectorAll only
+    // matches descendants), so include it or the product URL is lost.
+    if (node.matches("a[href]")) {
+      anchors.unshift(node as HTMLAnchorElement);
+    }
     const anchor =
-      anchors.find((item) => item.getAttribute("title")?.trim()) ??
-      anchors.find((item) => text(item) && (text(item)?.length ?? 0) > 5) ??
+      anchors.find(
+        (item) =>
+          !isPromoBadgeElement(item) && item.getAttribute("title")?.trim(),
+      ) ??
+      anchors.find(
+        (item) =>
+          !isPromoBadgeElement(item) &&
+          text(item) &&
+          (text(item)?.length ?? 0) > 5,
+      ) ??
       anchors[0];
     const cardRoot =
       node.closest("article, li, [class*='product' i]") ??
@@ -995,9 +1040,7 @@ function collectShopPageSnapshot(): ShopPageSnapshot {
     const image =
       node.querySelector<HTMLImageElement>("img[src], img[data-src]") ??
       cardRoot.querySelector<HTMLImageElement>("img[src], img[data-src]");
-    const titleElement = node.querySelector(
-      "h1, h2, h3, h4, [class*='name'], [class*='title'], [class*='product-name']",
-    );
+    const titleElement = findTitleElement(node);
     const categoryElement = node.querySelector(
       "[class*='category'], [class*='breadcrumb']",
     );
