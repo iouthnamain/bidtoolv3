@@ -11,6 +11,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -93,6 +94,14 @@ export const catalogDocumentLinkSourceEnum = pgEnum(
   "catalog_document_link_source",
   ["manual", "scrape", "import"],
 );
+
+export const shopJobStatusEnum = pgEnum("shop_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 export const tenderPackages = pgTable(
   "tender_packages",
@@ -715,6 +724,108 @@ export const webProductCandidates = pgTable(
     ),
     webProductCandidatesUrlIdx: index("web_product_candidates_url_idx").on(
       table.url,
+    ),
+  }),
+);
+
+export const shopScrapeJobs = pgTable(
+  "shop_scrape_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    url: text("url").notNull(),
+    normalizedUrl: text("normalized_url").notNull(),
+    status: shopJobStatusEnum("status").notNull().default("queued"),
+    scrapeMode: text("scrape_mode").notNull().default("limited"),
+    maxPages: integer("max_pages"),
+    maxProducts: integer("max_products"),
+    method: text("method").notNull().default("auto"),
+    detailEnrichment: text("detail_enrichment").notNull().default("none"),
+    currentUrls: jsonb("current_urls").$type<string[]>().notNull().default([]),
+    pagesVisited: jsonb("pages_visited")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    failedPages: jsonb("failed_pages")
+      .$type<Array<{ url: string; message: string }>>()
+      .notNull()
+      .default([]),
+    queueLength: integer("queue_length").notNull().default(0),
+    productCount: integer("product_count").notNull().default(0),
+    message: text("message"),
+    stopReason: text("stop_reason"),
+    error: text("error"),
+    products: jsonb("products").$type<unknown[]>().notNull().default([]),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    statusStartedAtIdx: index("shop_scrape_jobs_status_started_at_idx").on(
+      table.status,
+      table.startedAt,
+    ),
+    activeUrlUnique: uniqueIndex("shop_scrape_jobs_active_url_unique")
+      .on(table.normalizedUrl)
+      .where(sql`${table.status} in ('queued', 'running')`),
+  }),
+);
+
+export const shopImportJobs = pgTable(
+  "shop_import_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    scrapeJobId: uuid("scrape_job_id")
+      .notNull()
+      .references(() => shopScrapeJobs.id, { onDelete: "cascade" }),
+    status: shopJobStatusEnum("status").notNull().default("queued"),
+    processed: integer("processed").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    created: integer("created").notNull().default(0),
+    updated: integer("updated").notNull().default(0),
+    skipped: integer("skipped").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    productSourceUrls: jsonb("product_source_urls").$type<string[] | null>(),
+    items: jsonb("items").$type<unknown[]>().notNull().default([]),
+    currentProductName: text("current_product_name"),
+    currentSourceUrl: text("current_source_url"),
+    error: text("error"),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    scrapeJobIdx: index("shop_import_jobs_scrape_job_id_idx").on(
+      table.scrapeJobId,
+    ),
+    statusStartedAtIdx: index("shop_import_jobs_status_started_at_idx").on(
+      table.status,
+      table.startedAt,
     ),
   }),
 );

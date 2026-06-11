@@ -134,7 +134,9 @@ test("material summary shows import-preview-style important fields", async ({
     summary.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
   ).toBeVisible();
   await expect(summary.getByText("Tổng vật tư")).toBeVisible();
-  await expect(summary.getByRole("button", { name: /Thiếu giá/ })).toBeVisible();
+  await expect(
+    summary.getByRole("button", { name: /Thiếu giá/ }),
+  ).toBeVisible();
   await expect(summary.locator(":scope > #material-catalog")).toBeVisible();
   await expect(summary.getByText("Snapshot catalog")).toHaveCount(0);
   await expect(summary.getByRole("table")).toHaveCount(1);
@@ -382,19 +384,21 @@ test("material catalog table supports header sort and quick filters", async ({
     const catalog = page.locator("#material-catalog");
     const table = catalog.getByRole("table", { name: "Danh mục vật tư" });
 
-    await table.getByRole("button", { name: "Sắp xếp theo Tên vật tư" }).click();
+    await table
+      .getByRole("button", { name: "Sắp xếp theo Tên vật tư" })
+      .click();
     await expect(page).toHaveURL(/sort=name/);
     await expect(page).toHaveURL(/order=asc/);
 
-    await table.getByRole("button", { name: "Sắp xếp theo Tên vật tư" }).click();
+    await table
+      .getByRole("button", { name: "Sắp xếp theo Tên vật tư" })
+      .click();
     await expect(page).toHaveURL(/sort=name/);
     await expect(page).not.toHaveURL(/order=asc/);
 
     await table.getByRole("button", { name: "Lọc theo Mét" }).click();
     await expect(page).toHaveURL(/unit=M/);
-    await expect(
-      catalog.locator("tbody").getByLabel(/^Chọn /),
-    ).toHaveCount(1);
+    await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(1);
 
     await page.getByRole("button", { name: "Cột hiển thị" }).click();
     await page.getByLabel("Mã vật tư").check();
@@ -423,7 +427,9 @@ test("material detail duplicate creates an editable copy", async ({ page }) => {
   try {
     await page.getByRole("button", { name: "Nhân bản" }).click();
     await page.waitForURL(/\/materials\/\d+$/);
-    await expect(page.getByRole("heading", { name: `${prefix} (bản sao)` })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: `${prefix} (bản sao)` }),
+    ).toBeVisible();
 
     await page.goto(`/materials?q=${encodeURIComponent(prefix)}`);
     await page.waitForLoadState("networkidle");
@@ -525,15 +531,21 @@ test("shop scrape shows progress while the server starts the job", async ({
   await expect(page.getByText("Đang tạo job nền trên server")).toHaveCount(0);
 });
 
-test("shop scrape clears expired stored job ids", async ({ page }) => {
+test("shop scrape clears expired focused job ids and legacy job keys", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     window.localStorage.setItem(
-      "bidtool:shop-scrape-job:v1",
+      "bidtool:shop-scrape-focused-job:v2",
       "00000000-0000-4000-8000-000000000001",
     );
     window.localStorage.setItem(
-      "bidtool:shop-import-job:v1",
+      "bidtool:shop-scrape-job:v1",
       "00000000-0000-4000-8000-000000000002",
+    );
+    window.localStorage.setItem(
+      "bidtool:shop-import-job:v1",
+      "00000000-0000-4000-8000-000000000003",
     );
   });
 
@@ -545,11 +557,22 @@ test("shop scrape clears expired stored job ids", async ({ page }) => {
   await expect
     .poll(() =>
       page.evaluate(() => ({
-        scrapeJobId: window.localStorage.getItem("bidtool:shop-scrape-job:v1"),
-        importJobId: window.localStorage.getItem("bidtool:shop-import-job:v1"),
+        focusedJobId: window.localStorage.getItem(
+          "bidtool:shop-scrape-focused-job:v2",
+        ),
+        legacyScrapeJobId: window.localStorage.getItem(
+          "bidtool:shop-scrape-job:v1",
+        ),
+        legacyImportJobId: window.localStorage.getItem(
+          "bidtool:shop-import-job:v1",
+        ),
       })),
     )
-    .toEqual({ scrapeJobId: null, importJobId: null });
+    .toEqual({
+      focusedJobId: null,
+      legacyScrapeJobId: null,
+      legacyImportJobId: null,
+    });
 });
 
 test("CSV import skips duplicate material name and unit", async ({ page }) => {

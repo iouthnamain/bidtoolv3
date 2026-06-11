@@ -17,6 +17,7 @@ import {
   Search,
   Square,
   StopCircle,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -25,6 +26,8 @@ import { useToast } from "~/app/_components/ui/toast";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type ScrapeJob = RouterOutputs["material"]["getShopScrapeJob"];
+type ScrapeJobListItem =
+  RouterOutputs["material"]["listShopScrapeJobs"][number];
 type ScrapedProduct = ScrapeJob["products"][number];
 type ScrapeMode = ScrapeJob["scrapeMode"];
 type ScrapeMethod = ScrapeJob["method"];
@@ -41,10 +44,12 @@ type PendingScrapeJob = {
   startedAt: number;
 };
 
-const SHOP_SCRAPE_JOB_STORAGE_KEY = "bidtool:shop-scrape-job:v1";
-const SHOP_IMPORT_JOB_STORAGE_KEY = "bidtool:shop-import-job:v1";
+const SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY =
+  "bidtool:shop-scrape-focused-job:v2";
+const EMPTY_UUID = "00000000-0000-4000-8000-000000000000";
 const SCRAPE_POLL_MS = 1_500;
 const IMPORT_POLL_MS = 1_000;
+const JOB_LIST_POLL_MS = 3_000;
 const ACTIVE_CLOCK_MS = 1_000;
 const SHOP_JOB_CACHE_MS = 60 * 60_000;
 const DEFAULT_MAX_PAGES = 25;
@@ -178,6 +183,22 @@ function formatDuration(ms: number | null | undefined) {
   ).toLocaleString("vi-VN")}s`;
 }
 
+function formatDateTime(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString("vi-VN") : "-";
+}
+
+function elapsedMsForJob(job: ScrapeJobListItem, nowMs: number) {
+  if (job.durationMs != null) {
+    return job.durationMs;
+  }
+
+  const startedAtMs = new Date(job.startedAt).getTime();
+  const finishedAtMs = job.finishedAt
+    ? new Date(job.finishedAt).getTime()
+    : nowMs;
+  return Math.max(0, finishedAtMs - startedAtMs);
+}
+
 function clampNumber(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) {
     return min;
@@ -254,17 +275,22 @@ function progressWidth(percent: number | null, active: boolean) {
   return active ? "55%" : "100%";
 }
 
-function isJobActive(job: ScrapeJob | null | undefined) {
+function isJobActive(job: { status: ScrapeJob["status"] } | null | undefined) {
   return job?.status === "queued" || job?.status === "running";
 }
 
-function isImportJobActive(job: ImportJob | null | undefined) {
+function isImportJobActive(
+  job: { status: ImportJob["status"] } | null | undefined,
+) {
   return job?.status === "queued" || job?.status === "running";
 }
 
 function canImportJob(job: ScrapeJob | null | undefined) {
   return (
-    !!job && !job.isExpired && !isJobActive(job) && job.products.length > 0
+    !!job &&
+    !job.isExpired &&
+    job.status === "completed" &&
+    job.products.length > 0
   );
 }
 
@@ -295,7 +321,7 @@ export function MaterialScrapeClient() {
     useState<DetailEnrichmentMode>("none");
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [startedJob, setStartedJob] = useState<ScrapeJob | null>(null);
   const [pendingScrapeJob, setPendingScrapeJob] =
     useState<PendingScrapeJob | null>(null);
@@ -317,28 +343,34 @@ export function MaterialScrapeClient() {
   const toast = useToast();
 
   useEffect(() => {
-    const storedJobId = readStoredJobId(SHOP_SCRAPE_JOB_STORAGE_KEY);
+    const storedJobId = readStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY);
     if (storedJobId) {
-      setJobId(storedJobId);
+      setFocusedJobId(storedJobId);
     }
-    const storedImportJobId = readStoredJobId(SHOP_IMPORT_JOB_STORAGE_KEY);
-    if (storedImportJobId) {
-      setImportJobId(storedImportJobId);
-    }
+    writeStoredJobId("bidtool:shop-scrape-job:v1", null);
+    writeStoredJobId("bidtool:shop-import-job:v1", null);
   }, []);
 
   useEffect(() => {
-    writeStoredJobId(SHOP_SCRAPE_JOB_STORAGE_KEY, jobId);
-  }, [jobId]);
+    writeStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY, focusedJobId);
+  }, [focusedJobId]);
 
-  useEffect(() => {
-    writeStoredJobId(SHOP_IMPORT_JOB_STORAGE_KEY, importJobId);
-  }, [importJobId]);
+  const jobListQuery = api.material.listShopScrapeJobs.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const jobs = query.state.data ?? [];
+      return jobs.some(isJobActive) || pendingScrapeJob
+        ? JOB_LIST_POLL_MS
+        : false;
+    },
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+    gcTime: SHOP_JOB_CACHE_MS,
+  });
 
   const jobQuery = api.material.getShopScrapeJob.useQuery(
-    { jobId: jobId ?? "" },
+    { jobId: focusedJobId ?? EMPTY_UUID },
     {
-      enabled: jobId !== null,
+      enabled: focusedJobId !== null,
       refetchInterval: (query) => {
         const job = query.state.data;
         return isJobActive(job) ? SCRAPE_POLL_MS : false;
@@ -349,8 +381,22 @@ export function MaterialScrapeClient() {
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
+  const importJobsQuery = api.material.listShopImportJobs.useQuery(
+    { scrapeJobId: focusedJobId ?? EMPTY_UUID },
+    {
+      enabled: focusedJobId !== null,
+      refetchInterval: (query) => {
+        const jobs = query.state.data ?? [];
+        return jobs.some(isImportJobActive) ? JOB_LIST_POLL_MS : false;
+      },
+      refetchOnWindowFocus: false,
+      retry: false,
+      staleTime: 0,
+      gcTime: SHOP_JOB_CACHE_MS,
+    },
+  );
   const importJobQuery = api.material.getShopImportJob.useQuery(
-    { jobId: importJobId ?? "" },
+    { jobId: importJobId ?? EMPTY_UUID },
     {
       enabled: importJobId !== null,
       refetchInterval: (query) => {
@@ -363,16 +409,17 @@ export function MaterialScrapeClient() {
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
-  const activeJob = jobQuery.data ?? startedJob;
-  const activeImportJob = importJobQuery.data ?? startedImportJob;
+  const activeJob =
+    jobQuery.data ?? (startedJob?.id === focusedJobId ? startedJob : null);
+  const activeImportJob =
+    importJobQuery.data ??
+    (startedImportJob?.id === importJobId ? startedImportJob : null);
+  const jobRows = jobListQuery.data ?? [];
+  const hasActiveListJob = jobRows.some(isJobActive);
   const isActive = isJobActive(activeJob);
   const isImportActive = isImportJobActive(activeImportJob);
   const isStartingScrape = !!pendingScrapeJob;
-  const canStart =
-    shopUrl.trim().length > 0 &&
-    !isStartingScrape &&
-    !isActive &&
-    !isImportActive;
+  const canStart = shopUrl.trim().length > 0 && !isStartingScrape;
   const selectedCount = selectedSourceUrls.size;
   const allProductKeys = useMemo(
     () => new Set(activeJob?.products.map(productKey) ?? []),
@@ -395,7 +442,32 @@ export function MaterialScrapeClient() {
       : null;
 
   useEffect(() => {
-    if (!pendingScrapeJob && !isActive && !isImportActive) {
+    const latestImportJob = importJobsQuery.data?.[0] ?? null;
+    if (!latestImportJob) {
+      if (startedImportJob?.scrapeJobId !== focusedJobId) {
+        setImportJobId(null);
+        setStartedImportJob(null);
+      }
+      return;
+    }
+
+    if (latestImportJob.scrapeJobId === focusedJobId) {
+      const importJobIds = new Set(
+        (importJobsQuery.data ?? []).map((job) => job.id),
+      );
+      setImportJobId((current) =>
+        current && importJobIds.has(current) ? current : latestImportJob.id,
+      );
+    }
+  }, [focusedJobId, importJobsQuery.data, startedImportJob]);
+
+  useEffect(() => {
+    if (
+      !pendingScrapeJob &&
+      !isActive &&
+      !isImportActive &&
+      !hasActiveListJob
+    ) {
       return;
     }
 
@@ -404,7 +476,7 @@ export function MaterialScrapeClient() {
       ACTIVE_CLOCK_MS,
     );
     return () => window.clearInterval(timerId);
-  }, [pendingScrapeJob, isActive, isImportActive]);
+  }, [pendingScrapeJob, isActive, isImportActive, hasActiveListJob]);
 
   useEffect(() => {
     setSelectedSourceUrls((previous) => {
@@ -422,31 +494,35 @@ export function MaterialScrapeClient() {
   }, [allProductKeys]);
 
   useEffect(() => {
-    if (!jobId || !jobQuery.isError || !isNotFoundTRPCError(jobQuery.error)) {
+    if (
+      !focusedJobId ||
+      !jobQuery.isError ||
+      !isNotFoundTRPCError(jobQuery.error)
+    ) {
       return;
     }
 
-    setJobId(null);
+    setFocusedJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
     setFinalizedScrapeJobId(null);
     setSelectedSourceUrls(new Set());
     toast.warning("Job scrape đã hết hạn trên server, đã xóa trạng thái cũ.");
-  }, [jobId, jobQuery.error, jobQuery.isError, toast]);
+  }, [focusedJobId, jobQuery.error, jobQuery.isError, toast]);
 
   useEffect(() => {
     const job = jobQuery.data;
-    if (!jobId || !job?.isExpired) {
+    if (!focusedJobId || !job?.isExpired) {
       return;
     }
 
-    setJobId(null);
+    setFocusedJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
     setFinalizedScrapeJobId(null);
     setSelectedSourceUrls(new Set());
     toast.warning(job.error ?? "Job scrape đã hết hạn trên server.");
-  }, [jobId, jobQuery.data, toast]);
+  }, [focusedJobId, jobQuery.data, toast]);
 
   useEffect(() => {
     if (
@@ -468,7 +544,7 @@ export function MaterialScrapeClient() {
   const startShopScrapeJob = api.material.startShopScrapeJob.useMutation({
     onSuccess: (job) => {
       setStartedJob(job);
-      setJobId(job.id);
+      setFocusedJobId(job.id);
       setPendingScrapeJob(null);
       setStartedImportJob(null);
       setImportJobId(null);
@@ -476,6 +552,7 @@ export function MaterialScrapeClient() {
       setFinalizedImportJobId(null);
       setSelectedSourceUrls(new Set());
       utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
+      void utils.material.listShopScrapeJobs.invalidate();
       toast.success("Đã bắt đầu job scrape shop.");
     },
     onError: (error) => {
@@ -488,10 +565,28 @@ export function MaterialScrapeClient() {
     onSuccess: (job) => {
       setStartedJob(job);
       utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
+      void utils.material.listShopScrapeJobs.invalidate();
       toast.warning("Đã hủy job scrape shop.");
     },
     onError: (error) => {
       toast.error(error.message || "Không thể hủy job scrape shop.");
+    },
+  });
+
+  const deleteShopScrapeJob = api.material.deleteShopScrapeJob.useMutation({
+    onSuccess: (job) => {
+      if (focusedJobId === job.id) {
+        setFocusedJobId(null);
+        setStartedJob(null);
+        setImportJobId(null);
+        setStartedImportJob(null);
+        setSelectedSourceUrls(new Set());
+      }
+      void utils.material.listShopScrapeJobs.invalidate();
+      toast.success("Đã xóa job khỏi danh sách.");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể xóa job scrape shop.");
     },
   });
 
@@ -501,6 +596,7 @@ export function MaterialScrapeClient() {
       setImportJobId(job.id);
       setFinalizedImportJobId(null);
       utils.material.getShopImportJob.setData({ jobId: job.id }, job);
+      void utils.material.listShopImportJobs.invalidate();
       toast.success("Đã bắt đầu job nhập catalog.");
     },
     onError: (error) => {
@@ -512,6 +608,7 @@ export function MaterialScrapeClient() {
     onSuccess: (job) => {
       setStartedImportJob(job);
       utils.material.getShopImportJob.setData({ jobId: job.id }, job);
+      void utils.material.listShopImportJobs.invalidate();
       toast.warning("Đã hủy job nhập catalog.");
     },
     onError: (error) => {
@@ -547,6 +644,7 @@ export function MaterialScrapeClient() {
         )}/${job.total.toLocaleString("vi-VN")} sản phẩm.`,
       );
     }
+    void utils.material.listShopImportJobs.invalidate();
   }, [activeImportJob, finalizedImportJobId, toast, utils.material]);
 
   useEffect(() => {
@@ -571,16 +669,17 @@ export function MaterialScrapeClient() {
     } else if (job.status === "cancelled") {
       toast.warning(job.message ?? "Job scrape shop đã bị hủy.");
     }
-  }, [activeJob, finalizedScrapeJobId, toast]);
+    void utils.material.listShopScrapeJobs.invalidate();
+  }, [activeJob, finalizedScrapeJobId, toast, utils.material]);
 
   const startScrape = (url = shopUrl.trim()) => {
     const normalizedUrl = url.trim();
-    if (!normalizedUrl || isStartingScrape || isActive || isImportActive) {
+    if (!normalizedUrl || isStartingScrape) {
       return;
     }
     setShopUrl(normalizedUrl);
     setStartedJob(null);
-    setJobId(null);
+    setFocusedJobId(null);
     setPendingScrapeJob({
       url: normalizedUrl,
       scrapeMode,
@@ -616,7 +715,6 @@ export function MaterialScrapeClient() {
   const isScrapeAll = scrapeMode === "all";
   const isAutoMethod = scrapeMethod === "auto";
   const showLimitFields = !isScrapeAll;
-  const showDetailEnrichmentField = !isAutoMethod;
 
   const toggleProduct = (product: ScrapedProduct) => {
     const key = productKey(product);
@@ -641,7 +739,7 @@ export function MaterialScrapeClient() {
     if (!activeJob || !canImportAll) {
       return;
     }
-    startShopImportJob.mutate({ jobId: activeJob.id });
+    startShopImportJob.mutate({ scrapeJobId: activeJob.id });
   };
 
   const importSelected = () => {
@@ -649,16 +747,16 @@ export function MaterialScrapeClient() {
       return;
     }
     startShopImportJob.mutate({
-      jobId: activeJob.id,
-      sourceUrls: Array.from(selectedSourceUrls),
+      scrapeJobId: activeJob.id,
+      productSourceUrls: Array.from(selectedSourceUrls),
     });
   };
 
   const resetJob = () => {
-    if (isStartingScrape || isImportActive) {
+    if (isStartingScrape) {
       return;
     }
-    setJobId(null);
+    setFocusedJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
     setImportJobId(null);
@@ -744,7 +842,7 @@ export function MaterialScrapeClient() {
                 className="min-h-10 w-full rounded-lg border border-slate-300 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 placeholder="https://shop.example.com/category"
                 value={shopUrl}
-                disabled={isStartingScrape || isActive}
+                disabled={isStartingScrape}
                 onChange={(event) => setShopUrl(event.target.value)}
                 aria-label="URL shop để scrape sản phẩm"
               />
@@ -766,7 +864,7 @@ export function MaterialScrapeClient() {
                         ? "min-h-10 rounded-md bg-white px-2 text-xs font-bold text-sky-800 shadow-sm sm:min-h-8"
                         : "min-h-10 rounded-md px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 sm:min-h-8"
                     }
-                    disabled={isStartingScrape || isActive}
+                    disabled={isStartingScrape}
                     onClick={() => setScrapeMode(mode)}
                     aria-pressed={scrapeMode === mode}
                   >
@@ -780,7 +878,7 @@ export function MaterialScrapeClient() {
               <select
                 className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                 value={scrapeMethod}
-                disabled={isStartingScrape || isActive}
+                disabled={isStartingScrape}
                 onChange={(event) =>
                   setScrapeMethod(event.target.value as ScrapeMethod)
                 }
@@ -798,33 +896,31 @@ export function MaterialScrapeClient() {
                 </span>
               ) : null}
             </label>
-            {showDetailEnrichmentField ? (
-              <label className="grid gap-1.5">
-                <span className="text-xs font-bold text-slate-700">
-                  Bổ sung thông tin
-                </span>
-                <select
-                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
-                  value={detailEnrichment}
-                  disabled={isStartingScrape || isActive}
-                  onChange={(event) =>
-                    setDetailEnrichment(
-                      event.target.value as DetailEnrichmentMode,
-                    )
-                  }
-                  aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
-                >
-                  {(["none", "missing_fields"] as const).map((mode) => (
-                    <option key={mode} value={mode}>
-                      {detailEnrichmentLabel[mode]}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-slate-500">
-                  {detailEnrichmentHelp[detailEnrichment]}
-                </span>
-              </label>
-            ) : null}
+            <label className="grid gap-1.5">
+              <span className="text-xs font-bold text-slate-700">
+                Bổ sung thông tin
+              </span>
+              <select
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                value={detailEnrichment}
+                disabled={isStartingScrape}
+                onChange={(event) =>
+                  setDetailEnrichment(
+                    event.target.value as DetailEnrichmentMode,
+                  )
+                }
+                aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
+              >
+                {(["none", "missing_fields"] as const).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {detailEnrichmentLabel[mode]}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-slate-500">
+                {detailEnrichmentHelp[detailEnrichment]}
+              </span>
+            </label>
             {showLimitFields ? (
               <label className="grid gap-1.5">
                 <span className="text-xs font-bold text-slate-700">
@@ -840,10 +936,14 @@ export function MaterialScrapeClient() {
                   autoComplete="off"
                   className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                   value={maxPages}
-                  disabled={isStartingScrape || isActive}
+                  disabled={isStartingScrape}
                   onChange={(event) =>
                     setMaxPages(
-                      clampNumber(Number(event.target.value), 1, MAX_PAGE_LIMIT),
+                      clampNumber(
+                        Number(event.target.value),
+                        1,
+                        MAX_PAGE_LIMIT,
+                      ),
                     )
                   }
                   aria-label="Số trang tối đa cần scrape"
@@ -865,7 +965,7 @@ export function MaterialScrapeClient() {
                   autoComplete="off"
                   className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                   value={maxProducts}
-                  disabled={isStartingScrape || isActive}
+                  disabled={isStartingScrape}
                   onChange={(event) =>
                     setMaxProducts(
                       clampNumber(
@@ -908,9 +1008,7 @@ export function MaterialScrapeClient() {
             <Button
               type="button"
               variant="ghost"
-              disabled={
-                isStartingScrape || (isActive && !!activeJob) || isImportActive
-              }
+              disabled={isStartingScrape}
               leftIcon={<RotateCcw className="h-4 w-4" />}
               onClick={resetJob}
             >
@@ -919,17 +1017,140 @@ export function MaterialScrapeClient() {
             <Badge tone="neutral">Theo pagination cùng domain</Badge>
             <Badge tone="neutral">Chặn ảnh / font / media</Badge>
             <Badge tone="neutral">Nhập sau khi duyệt</Badge>
-            {showDetailEnrichmentField && detailEnrichment === "none" ? (
+            {detailEnrichment === "none" ? (
               <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
             ) : null}
             {isAutoMethod ? (
               <Badge tone="info">Tự động: JSON-LD + DOM cards</Badge>
             ) : null}
             {isScrapeAll ? (
-              <Badge tone="info">Scrape hết — không giới hạn trang/sản phẩm</Badge>
+              <Badge tone="info">
+                Scrape hết — không giới hạn trang/sản phẩm
+              </Badge>
             ) : null}
           </div>
         </form>
+      </section>
+
+      <section className="panel p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="section-title">Danh sách job</p>
+            <h2 className="mt-1 text-base font-bold text-slate-950">
+              Nhiều scrape chạy song song
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Chọn một job để xem sản phẩm và nhập catalog cho job đó.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            isLoading={jobListQuery.isFetching}
+            leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={() => void jobListQuery.refetch()}
+          >
+            Làm mới
+          </Button>
+        </div>
+
+        {jobRows.length > 0 ? (
+          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Shop</th>
+                  <th className="px-3 py-2">Trạng thái</th>
+                  <th className="px-3 py-2">Sản phẩm</th>
+                  <th className="px-3 py-2">Trang</th>
+                  <th className="px-3 py-2">Thời gian</th>
+                  <th className="px-3 py-2">Hết hạn</th>
+                  <th className="px-3 py-2 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {jobRows.map((job) => {
+                  const selected = focusedJobId === job.id;
+                  const active = isJobActive(job);
+
+                  return (
+                    <tr
+                      key={job.id}
+                      className={
+                        selected
+                          ? "cursor-pointer bg-sky-50/80"
+                          : "cursor-pointer hover:bg-slate-50"
+                      }
+                      onClick={() => {
+                        setFocusedJobId(job.id);
+                        setStartedJob(null);
+                        setSelectedSourceUrls(new Set());
+                      }}
+                    >
+                      <td className="max-w-xs px-3 py-2">
+                        <span className="block truncate font-semibold text-slate-950">
+                          {hostFromUrl(job.url)}
+                        </span>
+                        <span className="mt-1 block truncate text-xs text-slate-500">
+                          {job.url}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge tone={statusTone[job.status]}>
+                          {active ? (
+                            <Loader2
+                              className="h-3 w-3 animate-spin"
+                              aria-hidden
+                            />
+                          ) : null}
+                          {statusLabel[job.status]}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
+                        {job.productCount.toLocaleString("vi-VN")}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {job.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
+                        {formatLimit(job.maxPages)}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {formatDuration(elapsedMsForJob(job, clockMs))}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {formatDateTime(job.expiresAt)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {!active ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
+                            disabled={deleteShopScrapeJob.isPending}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteShopScrapeJob.mutate({ jobId: job.id });
+                            }}
+                            aria-label={`Xóa job ${hostFromUrl(job.url)}`}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            className="mt-4"
+            title="Chưa có job scrape."
+            description="Nhập URL shop để tạo job mới. Danh sách này được đọc lại từ Postgres."
+          />
+        )}
       </section>
 
       {scrapeJobPollingError ? (
@@ -1021,9 +1242,7 @@ export function MaterialScrapeClient() {
               {scrapeMethodLabel[pendingScrapeJob.method]}
             </div>
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-              <span className="font-semibold text-slate-800">
-                Bổ sung:{" "}
-              </span>
+              <span className="font-semibold text-slate-800">Bổ sung: </span>
               {detailEnrichmentLabel[pendingScrapeJob.detailEnrichment]}
             </div>
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
@@ -1122,7 +1341,11 @@ export function MaterialScrapeClient() {
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Đang đọc: </span>
-              <span className="break-all">{activeJob.currentUrl ?? "-"}</span>
+              <span className="break-all">
+                {activeJob.currentUrls.length > 0
+                  ? activeJob.currentUrls.join(", ")
+                  : "-"}
+              </span>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">
@@ -1213,7 +1436,7 @@ export function MaterialScrapeClient() {
                 disabled={!canImportSelected}
                 isLoading={
                   startShopImportJob.isPending &&
-                  startShopImportJob.variables?.sourceUrls !== undefined
+                  startShopImportJob.variables?.productSourceUrls !== undefined
                 }
                 leftIcon={<Upload className="h-3.5 w-3.5" />}
                 onClick={importSelected}
@@ -1227,7 +1450,7 @@ export function MaterialScrapeClient() {
                 disabled={!canImportAll}
                 isLoading={
                   startShopImportJob.isPending &&
-                  startShopImportJob.variables?.sourceUrls === undefined
+                  startShopImportJob.variables?.productSourceUrls === undefined
                 }
                 leftIcon={<Upload className="h-3.5 w-3.5" />}
                 onClick={importAll}

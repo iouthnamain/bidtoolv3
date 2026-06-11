@@ -6,6 +6,7 @@ import type { Browser, Page } from "playwright";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
+import { isServerlessRuntime } from "~/server/runtime";
 
 export type ScrapedShopProduct = {
   name: string;
@@ -47,6 +48,7 @@ export type ShopScrapeStopReason =
 export type ShopScrapeProgress = {
   status: "starting" | "reading" | "extracting" | "complete";
   currentUrl: string | null;
+  currentUrls: string[];
   pagesVisited: string[];
   failedPages: Array<{ url: string; message: string }>;
   productCount: number;
@@ -66,6 +68,7 @@ type ShopScrapeOptions = {
   maxProducts?: number | null;
   method?: ShopScrapeMethod;
   detailEnrichment?: ShopDetailEnrichmentMode;
+  concurrentPages?: number;
   signal?: AbortSignal;
   onProgress?: (progress: ShopScrapeProgress) => void;
 };
@@ -95,6 +98,7 @@ type BrowserWithProcess = Browser & {
 
 const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_PRODUCTS = 100;
+const DEFAULT_CONCURRENT_PAGES = 2;
 const DNS_TIMEOUT_MS = 5_000;
 const PAGE_GOTO_TIMEOUT_MS = 15_000;
 const PAGE_NETWORK_IDLE_TIMEOUT_MS = 2_000;
@@ -112,6 +116,7 @@ export async function scrapeShopMaterialsFromUrl({
   maxProducts = DEFAULT_MAX_PRODUCTS,
   method = "auto",
   detailEnrichment = "none",
+  concurrentPages = DEFAULT_CONCURRENT_PAGES,
   signal,
   onProgress,
 }: ShopScrapeOptions): Promise<ShopScrapeResult> {
@@ -153,23 +158,31 @@ export async function scrapeShopMaterialsFromUrl({
   try {
     return await withTimeout(
       (async () => {
-        const page = await context.newPage();
         const queue = [startUrl.href];
+        const queuedPages = new Set(queue);
         const seenPages = new Set<string>();
+        const currentUrlsByWorker = new Map<number, string>();
         const products = new Map<string, ScrapedShopProduct>();
         const failedPages: ShopScrapeResult["failedPages"] = [];
+        const workerCount = Math.max(1, Math.trunc(concurrentPages));
+        let activePageCount = 0;
+        let stopReason: ShopScrapeStopReason | null = null;
+        let waiters: Array<() => void> = [];
         const productList = () => {
           const values = Array.from(products.values());
           return maxProducts == null ? values : values.slice(0, maxProducts);
         };
+        const currentUrls = () =>
+          Array.from(currentUrlsByWorker.values()).slice(0, workerCount);
         const reportProgress = (
           status: ShopScrapeProgress["status"],
-          currentUrl: string | null,
           stopReason?: ShopScrapeStopReason,
         ) => {
+          const activeUrls = currentUrls();
           onProgress?.({
             status,
-            currentUrl,
+            currentUrl: activeUrls[0] ?? null,
+            currentUrls: activeUrls,
             pagesVisited: Array.from(seenPages),
             failedPages: [...failedPages],
             productCount: products.size,
@@ -185,6 +198,17 @@ export async function scrapeShopMaterialsFromUrl({
               : undefined,
           });
         };
+        const notifyWorkers = () => {
+          const pending = waiters;
+          waiters = [];
+          for (const wake of pending) {
+            wake();
+          }
+        };
+        const waitForQueueChange = () =>
+          new Promise<void>((resolve) => {
+            waiters.push(resolve);
+          });
         const scrapeTimeout = scrapeTimeoutMs(maxPages);
         const scrapeDeadline = startedAt + scrapeTimeout;
         const assertWithinScrapeDeadline = () => {
@@ -196,117 +220,164 @@ export async function scrapeShopMaterialsFromUrl({
             );
           }
         };
+        const takePageUrl = async (workerIndex: number) => {
+          while (true) {
+            throwIfAborted(signal);
+            assertWithinScrapeDeadline();
+            if (stopReason) {
+              return null;
+            }
+            if (maxPages != null && seenPages.size >= maxPages) {
+              stopReason = "page_limit";
+              notifyWorkers();
+              return null;
+            }
+            if (maxProducts != null && products.size >= maxProducts) {
+              stopReason = "product_limit";
+              notifyWorkers();
+              return null;
+            }
 
-        throwIfAborted(signal);
-        reportProgress("starting", startUrl.href);
-        let stopReason: ShopScrapeStopReason | null = null;
-        while (queue.length > 0) {
-          throwIfAborted(signal);
-          assertWithinScrapeDeadline();
-          if (maxPages != null && seenPages.size >= maxPages) {
-            stopReason = "page_limit";
-            break;
+            const pageUrl = queue.shift();
+            if (pageUrl) {
+              if (seenPages.has(pageUrl)) {
+                continue;
+              }
+              seenPages.add(pageUrl);
+              activePageCount += 1;
+              currentUrlsByWorker.set(workerIndex, pageUrl);
+              return pageUrl;
+            }
+
+            if (activePageCount === 0) {
+              return null;
+            }
+            await waitForQueueChange();
+          }
+        };
+        const releasePageUrl = (workerIndex: number) => {
+          activePageCount = Math.max(0, activePageCount - 1);
+          currentUrlsByWorker.delete(workerIndex);
+          notifyWorkers();
+        };
+        const enqueueNextUrls = async (hrefs: string[]) => {
+          if (maxProducts != null && products.size >= maxProducts) {
+            stopReason = "product_limit";
+            return;
+          }
+
+          for (const href of hrefs) {
+            if (maxPages != null && queue.length + seenPages.size >= maxPages) {
+              break;
+            }
+            try {
+              const nextUrl = await assertSafeScrapeUrl(
+                href,
+                startUrl.hostname,
+              );
+              if (
+                !seenPages.has(nextUrl.href) &&
+                !queuedPages.has(nextUrl.href)
+              ) {
+                queue.push(nextUrl.href);
+                queuedPages.add(nextUrl.href);
+              }
+            } catch {
+              // Ignore pagination links that leave the allowed shop scope.
+            }
+          }
+          notifyWorkers();
+        };
+        const mergeProducts = (pageProducts: ScrapedShopProduct[]) => {
+          for (const product of pageProducts) {
+            if (maxProducts != null && products.size >= maxProducts) {
+              stopReason = "product_limit";
+              break;
+            }
+            const identity = productIdentity(product);
+            products.set(
+              identity,
+              mergeScrapedProductData(products.get(identity), product),
+            );
           }
           if (maxProducts != null && products.size >= maxProducts) {
             stopReason = "product_limit";
-            break;
+            notifyWorkers();
           }
-
-          const pageUrl = queue.shift();
-          if (!pageUrl || seenPages.has(pageUrl)) {
-            continue;
-          }
-          seenPages.add(pageUrl);
-          reportProgress("reading", pageUrl);
-
+        };
+        const scrapeWorker = async (workerIndex: number) => {
+          const page = await context.newPage();
           try {
-            await page.goto(pageUrl, {
-              waitUntil: "domcontentloaded",
-              timeout: Math.max(
-                1_000,
-                Math.min(PAGE_GOTO_TIMEOUT_MS, scrapeDeadline - Date.now()),
-              ),
-            });
-            await page
-              .waitForLoadState("networkidle", {
-                timeout: Math.max(
-                  500,
-                  Math.min(
-                    PAGE_NETWORK_IDLE_TIMEOUT_MS,
-                    scrapeDeadline - Date.now(),
-                  ),
-                ),
-              })
-              .catch(() => undefined);
-            await page.waitForTimeout(250).catch(() => undefined);
-
-            await assertSafeScrapeUrl(page.url(), expectedHostname);
-            const snapshot = await page.evaluate(collectShopPageSnapshot);
-            reportProgress("extracting", pageUrl);
-            const pageProducts = extractProductsFromPageSnapshot(
-              snapshot,
-              method,
-            );
-            const enrichedPageProducts =
-              detailEnrichment === "missing_fields"
-                ? await enrichProductsFromDetailPages({
-                    page,
-                    products: pageProducts,
-                    currentPageUrl: pageUrl,
-                    expectedHostname,
-                    method,
-                    scrapeDeadline,
-                    signal,
-                    reportProgress: (currentUrl) =>
-                      reportProgress("reading", currentUrl),
-                    onFailedPage: (url, message) =>
-                      failedPages.push({ url, message }),
-                  })
-                : pageProducts;
-            for (const product of enrichedPageProducts) {
-              if (maxProducts != null && products.size >= maxProducts) {
-                stopReason = "product_limit";
-                break;
+            while (true) {
+              const pageUrl = await takePageUrl(workerIndex);
+              if (!pageUrl) {
+                return;
               }
-              const identity = productIdentity(product);
-              products.set(
-                identity,
-                mergeScrapedProductData(products.get(identity), product),
-              );
-            }
 
-            if (maxProducts == null || products.size < maxProducts) {
-              for (const href of snapshot.nextLinks) {
-                if (
-                  maxPages != null &&
-                  queue.length + seenPages.size >= maxPages
-                ) {
-                  break;
-                }
-                const nextUrl = await assertSafeScrapeUrl(
-                  href,
-                  startUrl.hostname,
+              reportProgress("reading");
+              try {
+                const snapshot = await scrapePageSnapshot({
+                  page,
+                  pageUrl,
+                  expectedHostname,
+                  scrapeDeadline,
+                });
+                reportProgress("extracting");
+                const pageProducts = extractProductsFromPageSnapshot(
+                  snapshot,
+                  method,
                 );
-                if (
-                  !seenPages.has(nextUrl.href) &&
-                  !queue.includes(nextUrl.href)
-                ) {
-                  queue.push(nextUrl.href);
+                const enrichedPageProducts =
+                  detailEnrichment === "missing_fields"
+                    ? await enrichProductsFromDetailPages({
+                        page,
+                        products: pageProducts,
+                        currentPageUrl: pageUrl,
+                        expectedHostname,
+                        method,
+                        scrapeDeadline,
+                        signal,
+                        reportProgress: (currentUrl) => {
+                          currentUrlsByWorker.set(workerIndex, currentUrl);
+                          reportProgress("reading");
+                        },
+                        onFailedPage: (url, message) =>
+                          failedPages.push({ url, message }),
+                      })
+                    : pageProducts;
+                currentUrlsByWorker.set(workerIndex, pageUrl);
+                mergeProducts(enrichedPageProducts);
+
+                if (!stopReason) {
+                  await enqueueNextUrls(snapshot.nextLinks);
                 }
+              } catch (error) {
+                failedPages.push({
+                  url: pageUrl,
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Không thể đọc trang shop.",
+                });
+              } finally {
+                releasePageUrl(workerIndex);
+                reportProgress("reading");
               }
             }
-            reportProgress("reading", pageUrl);
-          } catch (error) {
-            failedPages.push({
-              url: pageUrl,
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "Không thể đọc trang shop.",
-            });
-            reportProgress("reading", pageUrl);
+          } finally {
+            await page.close().catch(() => undefined);
           }
-        }
+        };
+
+        throwIfAborted(signal);
+        currentUrlsByWorker.set(0, startUrl.href);
+        reportProgress("starting");
+        currentUrlsByWorker.delete(0);
+        await Promise.all(
+          Array.from({ length: workerCount }, (_, index) =>
+            scrapeWorker(index),
+          ),
+        );
 
         throwIfAborted(signal);
         stopReason ??=
@@ -315,7 +386,7 @@ export async function scrapeShopMaterialsFromUrl({
             : maxProducts != null && products.size >= maxProducts
               ? "product_limit"
               : "queue_empty";
-        reportProgress("complete", null, stopReason);
+        reportProgress("complete", stopReason);
         return {
           products: productList(),
           pagesVisited: Array.from(seenPages),
@@ -334,6 +405,38 @@ export async function scrapeShopMaterialsFromUrl({
       "Đóng browser context quá thời gian.",
     ).catch(() => undefined);
   }
+}
+
+async function scrapePageSnapshot({
+  page,
+  pageUrl,
+  expectedHostname,
+  scrapeDeadline,
+}: {
+  page: Page;
+  pageUrl: string;
+  expectedHostname: string;
+  scrapeDeadline: number;
+}) {
+  await page.goto(pageUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: Math.max(
+      1_000,
+      Math.min(PAGE_GOTO_TIMEOUT_MS, scrapeDeadline - Date.now()),
+    ),
+  });
+  await page
+    .waitForLoadState("networkidle", {
+      timeout: Math.max(
+        500,
+        Math.min(PAGE_NETWORK_IDLE_TIMEOUT_MS, scrapeDeadline - Date.now()),
+      ),
+    })
+    .catch(() => undefined);
+  await page.waitForTimeout(250).catch(() => undefined);
+
+  await assertSafeScrapeUrl(page.url(), expectedHostname);
+  return page.evaluate(collectShopPageSnapshot);
 }
 
 function throwIfAborted(signal: AbortSignal | undefined) {
@@ -493,10 +596,10 @@ function shouldEnrichFromDetailPage(
   }
   return Boolean(
     !product.manufacturer ||
-      !product.originCountry ||
-      !product.category ||
-      !product.unit ||
-      !product.specText.trim(),
+    !product.originCountry ||
+    !product.category ||
+    !product.unit ||
+    !product.specText.trim(),
   );
 }
 
@@ -510,7 +613,8 @@ function findBestDetailProduct(
 
   return (
     detailProducts.find(
-      (item) => normalizeKey(item.sourceUrl) === normalizeKey(product.sourceUrl),
+      (item) =>
+        normalizeKey(item.sourceUrl) === normalizeKey(product.sourceUrl),
     ) ??
     detailProducts.find(
       (item) => normalizeKey(item.name) === normalizeKey(product.name),
@@ -567,14 +671,6 @@ async function getSharedBrowser() {
 
 const SERVERLESS_CHROMIUM_PACK_URL =
   "https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.x64.tar";
-
-function isServerlessRuntime() {
-  return (
-    process.env.VERCEL === "1" ||
-    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
-    Boolean(process.env.AWS_EXECUTION_ENV)
-  );
-}
 
 async function launchBrowser(): Promise<Browser> {
   if (isServerlessRuntime()) {
@@ -1209,7 +1305,13 @@ const labeledValueDefinitions = {
   ],
   model: ["model", "mã model", "ma model", "mpn"],
   availability: ["tình trạng", "tinh trang", "trạng thái", "trang thai"],
-  specText: ["thông số kỹ thuật", "thong so ky thuat", "thông số", "thong so", "specs"],
+  specText: [
+    "thông số kỹ thuật",
+    "thong so ky thuat",
+    "thông số",
+    "thong so",
+    "specs",
+  ],
 } as const;
 
 const allLabeledValueNames = Object.values(labeledValueDefinitions)
@@ -1253,7 +1355,10 @@ function extractLabeledValue(
 function cleanLabeledValue(value: string | undefined) {
   const cleaned = value
     ?.replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
-    .replace(/\b(thông số kỹ thuật|thong so ky thuat|thông số|thong so|specs)\b.*$/i, "")
+    .replace(
+      /\b(thông số kỹ thuật|thong so ky thuat|thông số|thong so|specs)\b.*$/i,
+      "",
+    )
     .replace(/\b\d{1,3}(?:[.,]\d{3})+\s*(?:vnd|vnđ|₫|đ|dong|đồng)?\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();

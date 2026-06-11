@@ -188,6 +188,18 @@ New `.env` files use a non-default Postgres host port to avoid common local conf
 
 If your `.env` was created before these defaults existed, update those values manually.
 
+## Scrape Queue Settings
+
+Shop scrape/import jobs are stored in Postgres and processed by the in-process
+Next.js scheduler. Defaults are conservative for local and desktop installs:
+
+```env
+SCRAPE_MAX_CONCURRENT_JOBS="2"
+SCRAPE_MAX_CONCURRENT_PAGES="2"
+IMPORT_MAX_CONCURRENT_JOBS="2"
+SCRAPE_JOB_TTL_DAYS="7"
+```
+
 ## Vercel Production
 
 Production web deploys are promoted by the release workflow when you push a `v*`

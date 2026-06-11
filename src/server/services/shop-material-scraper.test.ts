@@ -10,6 +10,7 @@ import {
   extractProductsFromPageSnapshot,
   mergeScrapedProductData,
 } from "./shop-material-scraper";
+import { normalizeShopScrapeUrl } from "./shop-scrape-jobs";
 
 describe("extractProductsFromPageSnapshot", () => {
   it("extracts full product data from JSON-LD", () => {
@@ -338,6 +339,22 @@ describe("extractProductsFromPageSnapshot", () => {
         (product) => product.name,
       ),
     ).toEqual(["Sản phẩm schema", "Sản phẩm card"]);
+  });
+});
+
+describe("normalizeShopScrapeUrl", () => {
+  it("normalizes equivalent shop URLs for active duplicate checks", () => {
+    expect(
+      normalizeShopScrapeUrl(
+        "HTTPS://User:Pass@Shop.Example.com/tools///?b=2&a=1#top",
+      ),
+    ).toBe("https://shop.example.com/tools?a=1&b=2");
+  });
+
+  it("rejects non-http URLs before queue insert", () => {
+    expect(() => normalizeShopScrapeUrl("file:///tmp/catalog.html")).toThrow(
+      "Chỉ hỗ trợ URL shop http hoặc https.",
+    );
   });
 });
 

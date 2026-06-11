@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+
+import { env } from "~/env";
+import { db } from "~/server/db";
+import { shopScrapeJobs } from "~/server/db/schema";
+import { abortShopScrapeJob } from "~/server/services/job-scheduler";
+import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import {
-  scrapeShopMaterialsFromUrl,
-  type ShopDetailEnrichmentMode,
   type ScrapedShopProduct,
+  type ShopDetailEnrichmentMode,
   type ShopScrapeMethod,
-  type ShopScrapeProgress,
   type ShopScrapeStopReason,
 } from "~/server/services/shop-material-scraper";
 
@@ -20,12 +25,14 @@ export type ShopScrapeJobSnapshot = {
   id: string;
   status: ShopScrapeJobStatus;
   url: string;
+  normalizedUrl: string;
   scrapeMode: "limited" | "all";
   maxPages: number | null;
   maxProducts: number | null;
   method: ShopScrapeMethod;
   detailEnrichment: ShopDetailEnrichmentMode;
   currentUrl: string | null;
+  currentUrls: string[];
   pagesVisited: string[];
   failedPages: Array<{ url: string; message: string }>;
   products: ScrapedShopProduct[];
@@ -39,19 +46,20 @@ export type ShopScrapeJobSnapshot = {
   lastProgressAt: string | null;
   startedAt: string;
   finishedAt: string | null;
+  expiresAt: string | null;
   error: string | null;
   isExpired: boolean;
 };
 
-type ShopScrapeJob = ShopScrapeJobSnapshot & {
-  abortController: AbortController | null;
-};
+export type ShopScrapeJobListItem = Omit<ShopScrapeJobSnapshot, "products">;
 
-const JOB_TTL_MS = 60 * 60_000;
-const MAX_JOB_CACHE_SIZE = 50;
-const jobs = new Map<string, ShopScrapeJob>();
+type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 
-export function startShopScrapeJob(input: {
+const ACTIVE_JOB_STATUSES: ShopScrapeJobStatus[] = ["queued", "running"];
+const DEFAULT_LIST_LIMIT = 25;
+const MAX_LIST_LIMIT = 100;
+
+export async function startShopScrapeJob(input: {
   url: string;
   scrapeMode: "limited" | "all";
   maxPages: number | null;
@@ -59,262 +67,263 @@ export function startShopScrapeJob(input: {
   method: ShopScrapeMethod;
   detailEnrichment: ShopDetailEnrichmentMode;
 }) {
-  cleanupExpiredJobs();
+  const normalizedUrl = normalizeShopScrapeUrl(input.url);
+  const [duplicate] = await db
+    .select({ id: shopScrapeJobs.id, status: shopScrapeJobs.status })
+    .from(shopScrapeJobs)
+    .where(
+      and(
+        eq(shopScrapeJobs.normalizedUrl, normalizedUrl),
+        inArray(shopScrapeJobs.status, ACTIVE_JOB_STATUSES),
+      ),
+    )
+    .limit(1);
+
+  if (duplicate) {
+    throw new ShopJobServiceError(
+      "CONFLICT",
+      "URL shop này đang có job scrape trong hàng chờ hoặc đang chạy.",
+    );
+  }
 
   const now = new Date().toISOString();
-  const abortController = new AbortController();
-  const job: ShopScrapeJob = {
-    id: randomUUID(),
-    status: "queued",
-    url: input.url,
-    scrapeMode: input.scrapeMode,
-    maxPages: input.maxPages,
-    maxProducts: input.maxProducts,
-    method: input.method,
-    detailEnrichment: input.detailEnrichment,
-    currentUrl: null,
-    pagesVisited: [],
-    failedPages: [],
-    products: [],
-    productCount: 0,
-    queueLength: 0,
-    durationMs: null,
-    stopReason: null,
-    message: "Đang xếp hàng chờ scrape.",
-    lastProgressAt: null,
-    startedAt: now,
-    finishedAt: null,
-    error: null,
-    isExpired: false,
-    abortController,
-  };
-  jobs.set(job.id, job);
+  try {
+    const [job] = await db
+      .insert(shopScrapeJobs)
+      .values({
+        id: randomUUID(),
+        url: input.url.trim(),
+        normalizedUrl,
+        status: "queued",
+        scrapeMode: input.scrapeMode,
+        maxPages: input.maxPages,
+        maxProducts: input.maxProducts,
+        method: input.method,
+        detailEnrichment: input.detailEnrichment,
+        message: "Đang xếp hàng chờ scrape.",
+        startedAt: now,
+        updatedAt: now,
+      })
+      .returning();
 
-  void runShopScrapeJob(job);
-
-  return toSnapshot(job);
+    return toScrapeJobSnapshot(requireRow(job));
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ShopJobServiceError(
+        "CONFLICT",
+        "URL shop này đang có job scrape trong hàng chờ hoặc đang chạy.",
+      );
+    }
+    throw error;
+  }
 }
 
-export function getShopScrapeJob(jobId: string) {
-  cleanupExpiredJobs();
-  const job = jobs.get(jobId);
-  return job ? toSnapshot(job) : null;
+export async function listShopScrapeJobs(
+  input: {
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
+  const limit = clampListLimit(input.limit);
+  const rows = await db
+    .select()
+    .from(shopScrapeJobs)
+    .orderBy(
+      sql`case when ${shopScrapeJobs.status} in ('queued', 'running') then 0 else 1 end`,
+      desc(shopScrapeJobs.startedAt),
+    )
+    .limit(limit)
+    .offset(Math.max(0, input.offset ?? 0));
+
+  return rows.map(toScrapeJobListItem);
 }
 
-export function createExpiredShopScrapeJobSnapshot(
-  jobId: string,
-): ShopScrapeJobSnapshot {
+export async function getShopScrapeJob(jobId: string) {
+  const [job] = await db
+    .select()
+    .from(shopScrapeJobs)
+    .where(eq(shopScrapeJobs.id, jobId))
+    .limit(1);
+
+  return job ? toScrapeJobSnapshot(job) : null;
+}
+
+export async function cancelShopScrapeJob(jobId: string) {
   const now = new Date().toISOString();
-  const message = "Job scrape đã hết hạn hoặc không còn trên server.";
-  return {
-    id: jobId,
-    status: "failed",
-    url: "",
-    scrapeMode: "limited",
-    maxPages: null,
-    maxProducts: null,
-    method: "auto",
-    detailEnrichment: "none",
-    currentUrl: null,
-    pagesVisited: [],
-    failedPages: [],
-    products: [],
-    productCount: 0,
-    queueLength: 0,
-    durationMs: null,
-    stopReason: "expired",
-    message,
-    lastProgressAt: now,
-    startedAt: now,
-    finishedAt: now,
-    error: message,
-    isExpired: true,
-  };
+  const [cancelled] = await db
+    .update(shopScrapeJobs)
+    .set({
+      status: "cancelled",
+      currentUrls: [],
+      finishedAt: now,
+      lastProgressAt: now,
+      expiresAt: expiresAt(now),
+      stopReason: "cancelled",
+      message: "Job scrape đã bị hủy.",
+      durationMs: sql<number>`greatest(0, floor(extract(epoch from (${now}::timestamptz - ${shopScrapeJobs.startedAt})) * 1000))::int`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(shopScrapeJobs.id, jobId),
+        inArray(shopScrapeJobs.status, ACTIVE_JOB_STATUSES),
+      ),
+    )
+    .returning();
+
+  if (cancelled) {
+    abortShopScrapeJob(jobId);
+    return toScrapeJobSnapshot(cancelled);
+  }
+
+  return getShopScrapeJob(jobId);
 }
 
-export function cancelShopScrapeJob(jobId: string) {
-  const job = jobs.get(jobId);
-  if (!job) {
+export async function deleteShopScrapeJob(jobId: string) {
+  const existing = await getShopScrapeJob(jobId);
+  if (!existing) {
     return null;
   }
-
-  if (job.status === "queued" || job.status === "running") {
-    job.status = "cancelled";
-    job.finishedAt = new Date().toISOString();
-    job.durationMs = elapsedMs(job);
-    job.stopReason = "cancelled";
-    job.message = "Job scrape đã bị hủy.";
-    job.abortController?.abort();
-    job.abortController = null;
+  if (ACTIVE_JOB_STATUSES.includes(existing.status)) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Hãy hủy job scrape trước khi xóa khỏi danh sách.",
+    );
   }
 
-  return toSnapshot(job);
+  const [deleted] = await db
+    .delete(shopScrapeJobs)
+    .where(eq(shopScrapeJobs.id, jobId))
+    .returning();
+
+  return deleted ? toScrapeJobSnapshot(deleted) : existing;
 }
 
-function runShopScrapeJob(job: ShopScrapeJob) {
-  const abortController = job.abortController;
-  if (!abortController) {
-    return Promise.resolve();
+export function normalizeShopScrapeUrl(input: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(input.trim());
+  } catch {
+    throw new ShopJobServiceError("BAD_REQUEST", "URL shop không hợp lệ.");
   }
 
-  job.status = "running";
-  return scrapeShopMaterialsFromUrl({
-    url: job.url,
-    maxPages: job.maxPages,
-    maxProducts: job.maxProducts,
-    method: job.method,
-    detailEnrichment: job.detailEnrichment,
-    signal: abortController.signal,
-    onProgress: (progress) => updateJobProgress(job, progress),
-  })
-    .then((result) => {
-      if (job.status === "cancelled") {
-        return;
-      }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Chỉ hỗ trợ URL shop http hoặc https.",
+    );
+  }
 
-      job.status = "completed";
-      job.products = result.products;
-      job.productCount = result.products.length;
-      job.pagesVisited = result.pagesVisited;
-      job.failedPages = result.failedPages;
-      job.durationMs = result.durationMs;
-      job.currentUrl = null;
-      job.queueLength = 0;
-      job.stopReason = result.stopReason;
-      job.message = shopScrapeStopReasonMessage(result.stopReason);
-      job.finishedAt = new Date().toISOString();
-      job.error = null;
-      job.abortController = null;
-    })
-    .catch((error: unknown) => {
-      if (job.status === "cancelled") {
-        return;
-      }
+  parsed.protocol = parsed.protocol.toLowerCase();
+  parsed.hostname = parsed.hostname.toLowerCase();
+  parsed.hash = "";
+  parsed.username = "";
+  parsed.password = "";
+  parsed.searchParams.sort();
+  parsed.pathname =
+    parsed.pathname.length > 1
+      ? parsed.pathname.replace(/\/+$/g, "") || "/"
+      : parsed.pathname;
 
-      job.status = "failed";
-      job.error = errorMessage(error);
-      job.stopReason = isScrapeTimeoutMessage(job.error) ? "timeout" : "error";
-      job.message = job.error;
-      job.durationMs = elapsedMs(job);
-      job.finishedAt = new Date().toISOString();
-      job.abortController = null;
-    });
+  return parsed.toString();
 }
 
-function updateJobProgress(job: ShopScrapeJob, progress: ShopScrapeProgress) {
-  if (job.status === "cancelled") {
-    return;
-  }
-
-  job.status = "running";
-  job.currentUrl = progress.currentUrl;
-  job.pagesVisited = progress.pagesVisited;
-  job.failedPages = progress.failedPages;
-  job.productCount = progress.productCount;
-  job.queueLength = progress.queueLength;
-  job.durationMs = progress.elapsedMs;
-  job.stopReason = progress.stopReason ?? job.stopReason;
-  job.message = progress.message ?? scrapeProgressMessage(progress);
-  job.lastProgressAt = new Date().toISOString();
-  if (progress.products) {
-    job.products = progress.products;
-  }
+function toScrapeJobListItem(row: ShopScrapeJobRow): ShopScrapeJobListItem {
+  const { products: _products, ...snapshot } = toScrapeJobSnapshot(row);
+  void _products;
+  return snapshot;
 }
 
-function toSnapshot(job: ShopScrapeJob): ShopScrapeJobSnapshot {
+function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
+  const products = asScrapedProducts(row.products);
+  const currentUrls = Array.isArray(row.currentUrls) ? row.currentUrls : [];
   return {
-    id: job.id,
-    status: job.status,
-    url: job.url,
-    scrapeMode: job.scrapeMode,
-    maxPages: job.maxPages,
-    maxProducts: job.maxProducts,
-    method: job.method,
-    detailEnrichment: job.detailEnrichment,
-    currentUrl: job.currentUrl,
-    pagesVisited: [...job.pagesVisited],
-    failedPages: [...job.failedPages],
-    products: [...job.products],
-    productCount: job.productCount,
-    queueLength: job.queueLength,
-    durationMs: job.durationMs,
-    stopReason: job.stopReason,
-    message: job.message,
-    lastProgressAt: job.lastProgressAt,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    error: job.error,
-    isExpired: job.isExpired,
+    id: row.id,
+    status: row.status,
+    url: row.url,
+    normalizedUrl: row.normalizedUrl,
+    scrapeMode: row.scrapeMode === "all" ? "all" : "limited",
+    maxPages: row.maxPages,
+    maxProducts: row.maxProducts,
+    method: asScrapeMethod(row.method),
+    detailEnrichment: asDetailEnrichment(row.detailEnrichment),
+    currentUrl: currentUrls[0] ?? null,
+    currentUrls,
+    pagesVisited: Array.isArray(row.pagesVisited) ? row.pagesVisited : [],
+    failedPages: Array.isArray(row.failedPages) ? row.failedPages : [],
+    products,
+    productCount: row.productCount || products.length,
+    queueLength: row.queueLength,
+    durationMs: row.durationMs,
+    stopReason: asStopReason(row.stopReason),
+    message: row.message,
+    lastProgressAt: row.lastProgressAt,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    expiresAt: row.expiresAt,
+    error: row.error,
+    isExpired: row.expiresAt
+      ? new Date(row.expiresAt).getTime() < Date.now()
+      : false,
   };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Không thể scrape shop URL.";
+function asScrapedProducts(value: unknown): ScrapedShopProduct[] {
+  return Array.isArray(value) ? (value as ScrapedShopProduct[]) : [];
 }
 
-function isScrapeTimeoutMessage(message: string) {
-  return message.toLowerCase().includes("quá thời gian");
+function asScrapeMethod(value: string): ShopScrapeMethod {
+  return value === "json_ld" || value === "dom_cards" ? value : "auto";
 }
 
-function scrapeProgressMessage(progress: ShopScrapeProgress) {
-  switch (progress.status) {
-    case "starting":
-      return "Đang khởi động browser scrape.";
-    case "reading":
-      return progress.currentUrl
-        ? `Đang đọc ${progress.currentUrl}`
-        : "Đang đọc queue shop.";
-    case "extracting":
-      return progress.currentUrl
-        ? `Đang trích xuất sản phẩm từ ${progress.currentUrl}`
-        : "Đang trích xuất sản phẩm.";
-    case "complete":
-      return progress.stopReason
-        ? shopScrapeStopReasonMessage(progress.stopReason)
-        : "Job scrape đã hoàn tất.";
+function asDetailEnrichment(value: string): ShopDetailEnrichmentMode {
+  return value === "missing_fields" ? "missing_fields" : "none";
+}
+
+function asStopReason(
+  value: string | null,
+): ShopScrapeJobSnapshot["stopReason"] {
+  if (
+    value === "queue_empty" ||
+    value === "page_limit" ||
+    value === "product_limit" ||
+    value === "timeout" ||
+    value === "cancelled" ||
+    value === "error" ||
+    value === "expired"
+  ) {
+    return value;
   }
+  return null;
 }
 
-function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
-  switch (stopReason) {
-    case "queue_empty":
-      return "Đã đọc hết pagination/queue trong cùng domain.";
-    case "page_limit":
-      return "Dừng vì đã đạt giới hạn trang đã chọn.";
-    case "product_limit":
-      return "Dừng vì đã đạt giới hạn sản phẩm đã chọn.";
+function expiresAt(finishedAtIso: string) {
+  return new Date(
+    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+  ).toISOString();
+}
+
+function clampListLimit(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_LIST_LIMIT;
   }
+  return Math.min(MAX_LIST_LIMIT, Math.max(1, Math.trunc(value ?? 0)));
 }
 
-function elapsedMs(job: ShopScrapeJob) {
-  return Date.now() - new Date(job.startedAt).getTime();
+function requireRow(row: ShopScrapeJobRow | undefined) {
+  if (!row) {
+    throw new Error("Không thể tạo job scrape shop.");
+  }
+  return row;
 }
 
-function cleanupExpiredJobs() {
-  const now = Date.now();
-  for (const [jobId, job] of jobs) {
-    const referenceTime = job.finishedAt ?? job.startedAt;
-    if (now - new Date(referenceTime).getTime() > JOB_TTL_MS) {
-      jobs.delete(jobId);
+function isUniqueViolation(error: unknown) {
+  let current: unknown = error;
+  while (current && typeof current === "object") {
+    if ("code" in current && current.code === "23505") {
+      return true;
     }
+    current = "cause" in current ? current.cause : null;
   }
-
-  if (jobs.size <= MAX_JOB_CACHE_SIZE) {
-    return;
-  }
-
-  const inactiveJobs = Array.from(jobs.entries())
-    .filter(([, job]) => job.status !== "queued" && job.status !== "running")
-    .sort(
-      ([, a], [, b]) =>
-        new Date(a.finishedAt ?? a.startedAt).getTime() -
-        new Date(b.finishedAt ?? b.startedAt).getTime(),
-    );
-
-  for (const [jobId] of inactiveJobs) {
-    if (jobs.size <= MAX_JOB_CACHE_SIZE) {
-      break;
-    }
-    jobs.delete(jobId);
-  }
+  return false;
 }

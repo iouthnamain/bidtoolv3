@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+
+import { env } from "~/env";
+import { db } from "~/server/db";
+import { shopImportJobs, shopScrapeJobs } from "~/server/db/schema";
+import { abortShopImportJob } from "~/server/services/job-scheduler";
+import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 
 export type ShopImportJobStatus =
@@ -36,199 +43,220 @@ export type ShopImportJobSnapshot = ShopImportJobProgress & {
   id: string;
   scrapeJobId: string;
   status: ShopImportJobStatus;
+  productSourceUrls: string[] | null;
   durationMs: number | null;
   startedAt: string;
   finishedAt: string | null;
+  lastProgressAt: string | null;
+  expiresAt: string | null;
   error: string | null;
 };
 
-type ShopImportRunner = (input: {
-  products: ScrapedShopProduct[];
-  signal: AbortSignal;
-  onProgress: (progress: ShopImportJobProgress) => void;
-}) => Promise<ShopImportJobResult>;
+export type ShopImportJobListItem = Omit<ShopImportJobSnapshot, "items">;
 
-type ShopImportJob = ShopImportJobSnapshot & {
-  abortController: AbortController;
-};
+type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 
-const JOB_TTL_MS = 60 * 60_000;
-const MAX_JOB_CACHE_SIZE = 50;
-const jobs = new Map<string, ShopImportJob>();
+const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
+const DEFAULT_LIST_LIMIT = 25;
+const MAX_LIST_LIMIT = 100;
 
-export function startShopImportJob(
-  input: {
-    scrapeJobId: string;
-    products: ScrapedShopProduct[];
-  },
-  runner: ShopImportRunner,
-) {
-  cleanupExpiredJobs();
+export async function startShopImportJob(input: {
+  scrapeJobId: string;
+  productSourceUrls?: string[];
+}) {
+  const [scrapeJob] = await db
+    .select({
+      id: shopScrapeJobs.id,
+      status: shopScrapeJobs.status,
+      products: shopScrapeJobs.products,
+    })
+    .from(shopScrapeJobs)
+    .where(eq(shopScrapeJobs.id, input.scrapeJobId))
+    .limit(1);
+
+  if (!scrapeJob) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
+  if (scrapeJob.status !== "completed") {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Chỉ có thể nhập catalog từ job scrape đã hoàn tất.",
+    );
+  }
+
+  const products = filterProductsBySourceUrls(
+    asScrapedProducts(scrapeJob.products),
+    input.productSourceUrls,
+  );
+  if (products.length === 0) {
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Không có sản phẩm scrape để nhập.",
+    );
+  }
 
   const now = new Date().toISOString();
-  const abortController = new AbortController();
-  const job: ShopImportJob = {
-    id: randomUUID(),
-    scrapeJobId: input.scrapeJobId,
-    status: "queued",
-    processed: 0,
-    total: input.products.length,
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    failed: 0,
-    items: [],
-    currentProductName: null,
-    currentSourceUrl: null,
-    durationMs: null,
-    startedAt: now,
-    finishedAt: null,
-    error: null,
-    abortController,
+  const [job] = await db
+    .insert(shopImportJobs)
+    .values({
+      id: randomUUID(),
+      scrapeJobId: scrapeJob.id,
+      status: "queued",
+      productSourceUrls: normalizeProductSourceUrls(input.productSourceUrls),
+      total: products.length,
+      startedAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  return toImportJobSnapshot(requireRow(job));
+}
+
+export async function listShopImportJobs(
+  input: {
+    scrapeJobId?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
+  const limit = clampListLimit(input.limit);
+  const rows = await db
+    .select()
+    .from(shopImportJobs)
+    .where(
+      input.scrapeJobId
+        ? eq(shopImportJobs.scrapeJobId, input.scrapeJobId)
+        : undefined,
+    )
+    .orderBy(
+      sql`case when ${shopImportJobs.status} in ('queued', 'running') then 0 else 1 end`,
+      desc(shopImportJobs.startedAt),
+    )
+    .limit(limit)
+    .offset(Math.max(0, input.offset ?? 0));
+
+  return rows.map(toImportJobListItem);
+}
+
+export async function getShopImportJob(jobId: string) {
+  const [job] = await db
+    .select()
+    .from(shopImportJobs)
+    .where(eq(shopImportJobs.id, jobId))
+    .limit(1);
+
+  return job ? toImportJobSnapshot(job) : null;
+}
+
+export async function cancelShopImportJob(jobId: string) {
+  const now = new Date().toISOString();
+  const [cancelled] = await db
+    .update(shopImportJobs)
+    .set({
+      status: "cancelled",
+      currentProductName: null,
+      currentSourceUrl: null,
+      finishedAt: now,
+      lastProgressAt: now,
+      expiresAt: expiresAt(now),
+      durationMs: sql<number>`greatest(0, floor(extract(epoch from (${now}::timestamptz - ${shopImportJobs.startedAt})) * 1000))::int`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(shopImportJobs.id, jobId),
+        inArray(shopImportJobs.status, ACTIVE_JOB_STATUSES),
+      ),
+    )
+    .returning();
+
+  if (cancelled) {
+    abortShopImportJob(jobId);
+    return toImportJobSnapshot(cancelled);
+  }
+
+  return getShopImportJob(jobId);
+}
+
+function toImportJobListItem(row: ShopImportJobRow): ShopImportJobListItem {
+  const { items: _items, ...snapshot } = toImportJobSnapshot(row);
+  void _items;
+  return snapshot;
+}
+
+function toImportJobSnapshot(row: ShopImportJobRow): ShopImportJobSnapshot {
+  return {
+    id: row.id,
+    scrapeJobId: row.scrapeJobId,
+    status: row.status,
+    processed: row.processed,
+    total: row.total,
+    created: row.created,
+    updated: row.updated,
+    skipped: row.skipped,
+    failed: row.failed,
+    items: asImportItems(row.items),
+    productSourceUrls: row.productSourceUrls,
+    currentProductName: row.currentProductName,
+    currentSourceUrl: row.currentSourceUrl,
+    durationMs: row.durationMs,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    lastProgressAt: row.lastProgressAt,
+    expiresAt: row.expiresAt,
+    error: row.error,
   };
-  jobs.set(job.id, job);
-
-  void runShopImportJob(job, input.products, runner);
-
-  return toSnapshot(job);
 }
 
-export function getShopImportJob(jobId: string) {
-  cleanupExpiredJobs();
-  const job = jobs.get(jobId);
-  return job ? toSnapshot(job) : null;
-}
-
-export function cancelShopImportJob(jobId: string) {
-  const job = jobs.get(jobId);
-  if (!job) {
+function normalizeProductSourceUrls(sourceUrls: string[] | undefined) {
+  if (!sourceUrls) {
     return null;
   }
-
-  if (job.status === "queued" || job.status === "running") {
-    job.status = "cancelled";
-    job.finishedAt = new Date().toISOString();
-    job.durationMs = elapsedMs(job);
-    job.abortController.abort();
-  }
-
-  return toSnapshot(job);
+  return Array.from(
+    new Set(sourceUrls.map((url) => url.trim()).filter(Boolean)),
+  );
 }
 
-function runShopImportJob(
-  job: ShopImportJob,
+function filterProductsBySourceUrls(
   products: ScrapedShopProduct[],
-  runner: ShopImportRunner,
+  sourceUrls: string[] | undefined,
 ) {
-  job.status = "running";
-  return runner({
-    products,
-    signal: job.abortController.signal,
-    onProgress: (progress) => updateJobProgress(job, progress),
-  })
-    .then((result) => {
-      if (job.status === "cancelled") {
-        return;
-      }
-
-      job.status = "completed";
-      job.processed = products.length;
-      job.total = products.length;
-      job.created = result.created;
-      job.updated = result.updated;
-      job.skipped = result.skipped;
-      job.failed = result.failed;
-      job.items = result.items;
-      job.currentProductName = null;
-      job.currentSourceUrl = null;
-      job.durationMs = elapsedMs(job);
-      job.finishedAt = new Date().toISOString();
-      job.error = null;
-    })
-    .catch((error: unknown) => {
-      if (job.status === "cancelled") {
-        return;
-      }
-
-      job.status = "failed";
-      job.error =
-        error instanceof Error ? error.message : "Không thể nhập catalog.";
-      job.durationMs = elapsedMs(job);
-      job.finishedAt = new Date().toISOString();
-    });
-}
-
-function updateJobProgress(
-  job: ShopImportJob,
-  progress: ShopImportJobProgress,
-) {
-  if (job.status === "cancelled") {
-    return;
+  const normalized = normalizeProductSourceUrls(sourceUrls);
+  if (!normalized) {
+    return products;
   }
 
-  job.status = "running";
-  job.processed = progress.processed;
-  job.total = progress.total;
-  job.created = progress.created;
-  job.updated = progress.updated;
-  job.skipped = progress.skipped;
-  job.failed = progress.failed;
-  job.items = progress.items;
-  job.currentProductName = progress.currentProductName;
-  job.currentSourceUrl = progress.currentSourceUrl;
-  job.durationMs = elapsedMs(job);
+  const sourceUrlSet = new Set(normalized);
+  return products.filter((product) => sourceUrlSet.has(product.sourceUrl));
 }
 
-function toSnapshot(job: ShopImportJob): ShopImportJobSnapshot {
-  return {
-    id: job.id,
-    scrapeJobId: job.scrapeJobId,
-    status: job.status,
-    processed: job.processed,
-    total: job.total,
-    created: job.created,
-    updated: job.updated,
-    skipped: job.skipped,
-    failed: job.failed,
-    items: [...job.items],
-    currentProductName: job.currentProductName,
-    currentSourceUrl: job.currentSourceUrl,
-    durationMs: job.durationMs,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    error: job.error,
-  };
+function asScrapedProducts(value: unknown): ScrapedShopProduct[] {
+  return Array.isArray(value) ? (value as ScrapedShopProduct[]) : [];
 }
 
-function elapsedMs(job: ShopImportJob) {
-  return Date.now() - new Date(job.startedAt).getTime();
+function asImportItems(value: unknown): ShopImportJobItem[] {
+  return Array.isArray(value) ? (value as ShopImportJobItem[]) : [];
 }
 
-function cleanupExpiredJobs() {
-  const now = Date.now();
-  for (const [jobId, job] of jobs) {
-    const referenceTime = job.finishedAt ?? job.startedAt;
-    if (now - new Date(referenceTime).getTime() > JOB_TTL_MS) {
-      jobs.delete(jobId);
-    }
-  }
+function expiresAt(finishedAtIso: string) {
+  return new Date(
+    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+  ).toISOString();
+}
 
-  if (jobs.size <= MAX_JOB_CACHE_SIZE) {
-    return;
+function clampListLimit(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_LIST_LIMIT;
   }
+  return Math.min(MAX_LIST_LIMIT, Math.max(1, Math.trunc(value ?? 0)));
+}
 
-  const inactiveJobs = Array.from(jobs.entries())
-    .filter(([, job]) => job.status !== "queued" && job.status !== "running")
-    .sort(
-      ([, a], [, b]) =>
-        new Date(a.finishedAt ?? a.startedAt).getTime() -
-        new Date(b.finishedAt ?? b.startedAt).getTime(),
-    );
-
-  for (const [jobId] of inactiveJobs) {
-    if (jobs.size <= MAX_JOB_CACHE_SIZE) {
-      break;
-    }
-    jobs.delete(jobId);
+function requireRow(row: ShopImportJobRow | undefined) {
+  if (!row) {
+    throw new Error("Không thể tạo job nhập catalog.");
   }
+  return row;
 }

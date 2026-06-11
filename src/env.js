@@ -24,6 +24,10 @@ export const env = createEnv({
     BIDTOOL_PINS_BRANCH: z.string().optional(),
     BIDTOOL_GITHUB_REPO: z.string().optional(),
     BIDTOOL_PACKAGE_VERSION: z.string().default("0.1.0"),
+    SCRAPE_MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
+    SCRAPE_MAX_CONCURRENT_PAGES: z.coerce.number().int().positive().default(2),
+    IMPORT_MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
+    SCRAPE_JOB_TTL_DAYS: z.coerce.number().int().positive().default(7),
   },
 
   /**
@@ -55,6 +59,10 @@ export const env = createEnv({
     BIDTOOL_PINS_BRANCH: process.env.BIDTOOL_PINS_BRANCH,
     BIDTOOL_GITHUB_REPO: process.env.BIDTOOL_GITHUB_REPO,
     BIDTOOL_PACKAGE_VERSION: process.env.BIDTOOL_PACKAGE_VERSION,
+    SCRAPE_MAX_CONCURRENT_JOBS: process.env.SCRAPE_MAX_CONCURRENT_JOBS,
+    SCRAPE_MAX_CONCURRENT_PAGES: process.env.SCRAPE_MAX_CONCURRENT_PAGES,
+    IMPORT_MAX_CONCURRENT_JOBS: process.env.IMPORT_MAX_CONCURRENT_JOBS,
+    SCRAPE_JOB_TTL_DAYS: process.env.SCRAPE_JOB_TTL_DAYS,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**
