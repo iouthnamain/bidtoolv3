@@ -313,6 +313,131 @@ function isNotFoundTRPCError(error: unknown) {
   return code === "NOT_FOUND" || message.includes("Không tìm thấy job");
 }
 
+type PreviewStatus = {
+  label: string;
+  tone: Parameters<typeof Badge>[0]["tone"];
+  detail: string | null;
+};
+
+function previewStatusForJob(
+  job: ScrapeJobListItem,
+  options?: { focused?: boolean },
+): PreviewStatus {
+  const focused = options?.focused ?? false;
+
+  if (job.isExpired) {
+    return {
+      label: "Hết hạn",
+      tone: "warning",
+      detail: "Preview không còn khả dụng",
+    };
+  }
+
+  if (job.status === "queued") {
+    return {
+      label: "Chờ scrape",
+      tone: "neutral",
+      detail: "Chưa có sản phẩm để xem",
+    };
+  }
+
+  if (job.status === "running") {
+    if (job.productCount > 0) {
+      return {
+        label: focused ? "Đang xem preview" : "Preview tạm thời",
+        tone: "info",
+        detail: `${job.productCount.toLocaleString("vi-VN")} SP — cập nhật liên tục`,
+      };
+    }
+    return {
+      label: "Đang tìm SP",
+      tone: "neutral",
+      detail: job.message ?? "Chưa có sản phẩm trong preview",
+    };
+  }
+
+  if (job.status === "completed") {
+    if (job.productCount > 0) {
+      return {
+        label: focused ? "Đang xem preview" : "Sẵn sàng duyệt",
+        tone: "success",
+        detail: `${job.productCount.toLocaleString("vi-VN")} SP có thể chọn và nhập`,
+      };
+    }
+    return {
+      label: "Không có SP",
+      tone: "warning",
+      detail: job.stopReason
+        ? stopReasonLabel[job.stopReason]
+        : "Không tìm thấy sản phẩm",
+    };
+  }
+
+  if (job.status === "failed") {
+    return {
+      label: "Preview lỗi",
+      tone: "critical",
+      detail: job.error ?? job.message ?? "Job scrape thất bại",
+    };
+  }
+
+  return {
+    label: "Đã hủy",
+    tone: "warning",
+    detail:
+      job.productCount > 0
+        ? `${job.productCount.toLocaleString("vi-VN")} SP đã scrape trước khi hủy`
+        : "Không có preview",
+  };
+}
+
+function scrapeStateDetail(job: ScrapeJobListItem) {
+  if (isJobActive(job)) {
+    return (
+      job.message ??
+      (job.queueLength > 0
+        ? `Queue còn ${job.queueLength.toLocaleString("vi-VN")} URL`
+        : null) ??
+      (job.currentUrls.length > 0
+        ? `Đang đọc ${job.currentUrls.length.toLocaleString("vi-VN")} trang`
+        : null)
+    );
+  }
+
+  if (job.stopReason) {
+    return stopReasonLabel[job.stopReason];
+  }
+
+  return job.message ?? job.error ?? null;
+}
+
+function ScrapeJobConfigBadges({ job }: { job: ScrapeJobListItem }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Badge tone={job.scrapeMode === "all" ? "info" : "neutral"}>
+        {scrapeModeLabel[job.scrapeMode]}
+      </Badge>
+      <Badge tone="neutral">{scrapeMethodLabel[job.method]}</Badge>
+      <Badge
+        tone={
+          job.detailEnrichment === "missing_fields" ? "info" : "warning"
+        }
+      >
+        {detailEnrichmentLabel[job.detailEnrichment]}
+      </Badge>
+      {job.scrapeMode === "limited" ? (
+        <span className="text-[11px] font-medium text-slate-500">
+          {formatLimit(job.maxPages)} trang · {formatLimit(job.maxProducts)} SP
+        </span>
+      ) : (
+        <span className="text-[11px] font-medium text-slate-500">
+          Không giới hạn
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function MaterialScrapeClient() {
   const [shopUrl, setShopUrl] = useState("");
   const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
@@ -705,14 +830,33 @@ export function MaterialScrapeClient() {
     });
   };
 
-  const stopScrapeJob = (jobId: string) => {
-    if (cancelShopScrapeJob.isPending) {
-      return;
-    }
+  const focusScrapeJob = (jobId: string) => {
     setFocusedJobId(jobId);
     setStartedJob(null);
     setSelectedSourceUrls(new Set());
-    cancelShopScrapeJob.mutate({ jobId });
+  };
+
+  const stopScrapeJob = (job: { id: string; url: string }) => {
+    if (cancelShopScrapeJob.isPending) {
+      return;
+    }
+    if (!window.confirm(`Dừng job scrape ${hostFromUrl(job.url)}?`)) {
+      return;
+    }
+    focusScrapeJob(job.id);
+    cancelShopScrapeJob.mutate({ jobId: job.id });
+  };
+
+  const deleteScrapeJob = (job: { id: string; url: string }) => {
+    if (deleteShopScrapeJob.isPending) {
+      return;
+    }
+    if (
+      !window.confirm(`Xóa job scrape ${hostFromUrl(job.url)} khỏi danh sách?`)
+    ) {
+      return;
+    }
+    deleteShopScrapeJob.mutate({ jobId: job.id });
   };
 
   const submitScrape = (event: FormEvent<HTMLFormElement>) => {
@@ -1009,7 +1153,7 @@ export function MaterialScrapeClient() {
               leftIcon={<StopCircle className="h-4 w-4" />}
               onClick={() => {
                 if (activeJob) {
-                  stopScrapeJob(activeJob.id);
+                  stopScrapeJob(activeJob);
                 }
               }}
             >
@@ -1050,7 +1194,8 @@ export function MaterialScrapeClient() {
               Nhiều scrape chạy song song
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Chọn một job để xem sản phẩm và nhập catalog cho job đó.
+              Mỗi job giữ cấu hình scrape đã chọn, trạng thái chạy và preview
+              sản phẩm. Chọn một job để xem và nhập catalog.
             </p>
           </div>
           <Button
@@ -1066,114 +1211,267 @@ export function MaterialScrapeClient() {
         </div>
 
         {jobRows.length > 0 ? (
-          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
-                <tr>
-                  <th className="px-3 py-2">Shop</th>
-                  <th className="px-3 py-2">Trạng thái</th>
-                  <th className="px-3 py-2">Sản phẩm</th>
-                  <th className="px-3 py-2">Trang</th>
-                  <th className="px-3 py-2">Thời gian</th>
-                  <th className="px-3 py-2">Hết hạn</th>
-                  <th className="px-3 py-2 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {jobRows.map((job) => {
-                  const selected = focusedJobId === job.id;
-                  const active = isJobActive(job);
+          <>
+            <div className="mt-4 grid gap-3 md:hidden">
+              {jobRows.map((job) => {
+                const selected = focusedJobId === job.id;
+                const active = isJobActive(job);
+                const preview = previewStatusForJob(job, { focused: selected });
+                const stateDetail = scrapeStateDetail(job);
+                const isStopping =
+                  cancelShopScrapeJob.isPending &&
+                  cancelShopScrapeJob.variables?.jobId === job.id;
 
-                  return (
-                    <tr
-                      key={job.id}
-                      className={
-                        selected
-                          ? "cursor-pointer bg-sky-50/80"
-                          : "cursor-pointer hover:bg-slate-50"
-                      }
-                      onClick={() => {
-                        setFocusedJobId(job.id);
-                        setStartedJob(null);
-                        setSelectedSourceUrls(new Set());
-                      }}
-                    >
-                      <td className="max-w-xs px-3 py-2">
-                        <span className="block truncate font-semibold text-slate-950">
+                return (
+                  <article
+                    key={job.id}
+                    className={
+                      selected
+                        ? "rounded-lg border border-sky-300 bg-sky-50/80 p-3"
+                        : "rounded-lg border border-slate-200 bg-white p-3"
+                    }
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                        onClick={() => focusScrapeJob(job.id)}
+                        aria-current={selected ? "true" : undefined}
+                        aria-label={`Xem job ${hostFromUrl(job.url)}`}
+                      >
+                        <span className="block truncate text-sm font-semibold text-slate-950">
                           {hostFromUrl(job.url)}
                         </span>
-                        <span className="mt-1 block truncate text-xs text-slate-500">
+                        <span className="mt-1 line-clamp-2 text-xs break-all text-slate-500">
                           {job.url}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge tone={statusTone[job.status]}>
-                          {active ? (
+                      </button>
+                      {active ? (
+                        <button
+                          type="button"
+                          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-800 transition-colors duration-150 hover:bg-amber-50 hover:text-amber-900 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
+                          disabled={cancelShopScrapeJob.isPending}
+                          onClick={() => stopScrapeJob(job)}
+                          aria-label={`Dừng job ${hostFromUrl(job.url)}`}
+                          title="Dừng job"
+                        >
+                          {isStopping ? (
                             <Loader2
-                              className="h-3 w-3 animate-spin"
+                              className="h-4 w-4 animate-spin"
                               aria-hidden
                             />
-                          ) : null}
-                          {statusLabel[job.status]}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
-                        {job.productCount.toLocaleString("vi-VN")}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {job.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-                        {formatLimit(job.maxPages)}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {formatDuration(elapsedMsForJob(job, clockMs))}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {formatDateTime(job.expiresAt)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
+                          ) : (
+                            <StopCircle className="h-4 w-4" aria-hidden />
+                          )}
+                          Dừng
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-800 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
+                          disabled={deleteShopScrapeJob.isPending}
+                          onClick={() => deleteScrapeJob(job)}
+                          aria-label={`Xóa job ${hostFromUrl(job.url)}`}
+                          title="Xóa job"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          Xóa
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <ScrapeJobConfigBadges job={job} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge tone={statusTone[job.status]}>
                         {active ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-60"
-                            disabled={cancelShopScrapeJob.isPending}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              stopScrapeJob(job.id);
-                            }}
-                            aria-label={`Dừng job ${hostFromUrl(job.url)}`}
-                            title="Dừng job"
-                          >
-                            {cancelShopScrapeJob.isPending &&
-                            cancelShopScrapeJob.variables?.jobId === job.id ? (
+                          <Loader2
+                            className="h-3 w-3 animate-spin"
+                            aria-hidden
+                          />
+                        ) : null}
+                        {statusLabel[job.status]}
+                      </Badge>
+                      <Badge tone={preview.tone}>{preview.label}</Badge>
+                      <Badge tone="neutral" count={job.productCount}>
+                        Sản phẩm
+                      </Badge>
+                      <Badge tone="neutral" count={job.pagesVisited.length}>
+                        Trang
+                      </Badge>
+                    </div>
+                    {stateDetail ? (
+                      <p className="mt-2 text-xs text-slate-600">{stateDetail}</p>
+                    ) : null}
+                    {preview.detail ? (
+                      <p className="mt-1 text-xs font-medium text-slate-500">
+                        {preview.detail}
+                      </p>
+                    ) : null}
+                    <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-white/80 px-2 py-1.5">
+                        <dt className="font-semibold text-slate-500">
+                          Thời gian
+                        </dt>
+                        <dd className="mt-0.5 font-semibold text-slate-900 tabular-nums">
+                          {formatDuration(elapsedMsForJob(job, clockMs))}
+                        </dd>
+                      </div>
+                      <div className="rounded-md bg-white/80 px-2 py-1.5">
+                        <dt className="font-semibold text-slate-500">
+                          Hết hạn
+                        </dt>
+                        <dd className="mt-0.5 truncate font-semibold text-slate-900">
+                          {formatDateTime(job.expiresAt)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+              <table className="min-w-[1180px] divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-3 py-2">Shop</th>
+                    <th className="px-3 py-2">Cấu hình scrape</th>
+                    <th className="px-3 py-2">Trạng thái</th>
+                    <th className="px-3 py-2">Preview SP</th>
+                    <th className="px-3 py-2">Sản phẩm</th>
+                    <th className="px-3 py-2">Trang</th>
+                    <th className="px-3 py-2">Thời gian</th>
+                    <th className="px-3 py-2">Hết hạn</th>
+                    <th className="px-3 py-2 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {jobRows.map((job) => {
+                    const selected = focusedJobId === job.id;
+                    const active = isJobActive(job);
+                    const preview = previewStatusForJob(job, {
+                      focused: selected,
+                    });
+                    const stateDetail = scrapeStateDetail(job);
+                    const isStopping =
+                      cancelShopScrapeJob.isPending &&
+                      cancelShopScrapeJob.variables?.jobId === job.id;
+
+                    return (
+                      <tr
+                        key={job.id}
+                        tabIndex={0}
+                        aria-selected={selected}
+                        className={
+                          selected
+                            ? "cursor-pointer bg-sky-50/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none focus-visible:ring-inset"
+                            : "cursor-pointer hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none focus-visible:ring-inset"
+                        }
+                        onClick={() => focusScrapeJob(job.id)}
+                        onKeyDown={(event) => {
+                          if (event.currentTarget !== event.target) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            focusScrapeJob(job.id);
+                          }
+                        }}
+                      >
+                        <td className="max-w-xs px-3 py-2">
+                          <span className="block truncate font-semibold text-slate-950">
+                            {hostFromUrl(job.url)}
+                          </span>
+                          <span className="mt-1 block truncate text-xs text-slate-500">
+                            {job.url}
+                          </span>
+                        </td>
+                        <td className="min-w-[12rem] px-3 py-2">
+                          <ScrapeJobConfigBadges job={job} />
+                        </td>
+                        <td className="min-w-[9rem] px-3 py-2">
+                          <Badge tone={statusTone[job.status]}>
+                            {active ? (
                               <Loader2
-                                className="h-4 w-4 animate-spin"
+                                className="h-3 w-3 animate-spin"
                                 aria-hidden
                               />
-                            ) : (
-                              <StopCircle className="h-4 w-4" aria-hidden />
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
-                            disabled={deleteShopScrapeJob.isPending}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteShopScrapeJob.mutate({ jobId: job.id });
-                            }}
-                            aria-label={`Xóa job ${hostFromUrl(job.url)}`}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            ) : null}
+                            {statusLabel[job.status]}
+                          </Badge>
+                          {stateDetail ? (
+                            <p className="mt-1 max-w-[14rem] text-xs text-slate-600">
+                              {stateDetail}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="min-w-[9rem] px-3 py-2">
+                          <Badge tone={preview.tone}>{preview.label}</Badge>
+                          {preview.detail ? (
+                            <p className="mt-1 max-w-[14rem] text-xs text-slate-500">
+                              {preview.detail}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
+                          {job.productCount.toLocaleString("vi-VN")}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {job.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
+                          {formatLimit(job.maxPages)}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {formatDuration(elapsedMsForJob(job, clockMs))}
+                        </td>
+                        <td className="px-3 py-2 text-slate-600">
+                          {formatDateTime(job.expiresAt)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {active ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors duration-150 hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+                              disabled={cancelShopScrapeJob.isPending}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                stopScrapeJob(job);
+                              }}
+                              aria-label={`Dừng job ${hostFromUrl(job.url)}`}
+                              title="Dừng job"
+                            >
+                              {isStopping ? (
+                                <Loader2
+                                  className="h-4 w-4 animate-spin"
+                                  aria-hidden
+                                />
+                              ) : (
+                                <StopCircle className="h-4 w-4" aria-hidden />
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+                              disabled={deleteShopScrapeJob.isPending}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteScrapeJob(job);
+                              }}
+                              aria-label={`Xóa job ${hostFromUrl(job.url)}`}
+                              title="Xóa job"
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <EmptyState
             className="mt-4"
