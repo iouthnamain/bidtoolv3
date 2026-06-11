@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCheck, Filter, MailOpen, Trash2 } from "lucide-react";
+import { Check, CheckCheck, Filter, MailOpen, Trash2 } from "lucide-react";
 
 import {
   Badge,
@@ -168,14 +168,25 @@ export function NotificationsPageClient() {
                     : "border-sky-200 bg-sky-50/70"
               }`}
             >
-              <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={sel.selected.has(item.id)}
-                  onChange={() => sel.toggle(item.id)}
-                  className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-sky-600"
-                  aria-label={`Chọn "${item.title}"`}
-                />
+              <div className="flex items-start gap-2">
+                <label
+                  className="relative -ml-2 flex h-10 w-10 shrink-0 cursor-pointer items-start justify-center rounded-md pt-1.5 transition-colors focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 hover:bg-white/70"
+                  data-testid="notification-select-target"
+                >
+                  <input
+                    type="checkbox"
+                    checked={sel.selected.has(item.id)}
+                    onChange={() => sel.toggle(item.id)}
+                    className="peer absolute h-10 w-10 cursor-pointer opacity-0"
+                    aria-label={`Chọn "${item.title}"`}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-white transition-colors peer-checked:border-sky-700 peer-checked:bg-sky-700"
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                </label>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-slate-900">
