@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
-import { parseDepreciationFromSpecText } from "~/lib/materials/shop-promo-badges";
 import type { db as appDb } from "~/server/db";
 import { materials } from "~/server/db/schema";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
@@ -35,8 +34,6 @@ type MaterialInput = {
   defaultUnitPrice?: number | null;
   currency?: string | null;
   sourceUrl?: string | null;
-  defaultDepreciation: number;
-  defaultReusePct: number;
 };
 
 type MaterialLookupIndexes = {
@@ -198,7 +195,6 @@ export async function importScrapedProducts(
         continue;
       }
 
-      const parsedDepreciation = parseDepreciationFromSpecText(product.specText);
       const createInput: MaterialInput = {
         name,
         unit,
@@ -209,8 +205,6 @@ export async function importScrapedProducts(
         defaultUnitPrice: product.price,
         currency: product.currency,
         sourceUrl: product.sourceUrl,
-        defaultDepreciation: parsedDepreciation ?? 1,
-        defaultReusePct: 0,
       };
       const [row] = await db
         .insert(materials)

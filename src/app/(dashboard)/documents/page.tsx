@@ -14,7 +14,7 @@ export const metadata = createPageMetadata({
 
 const documentLinks = [
   {
-    href: "/search",
+    href: "/search/packages",
     label: "Tìm nguồn thầu",
     description: "Mở kết quả BidWinner và chi tiết hồ sơ mời thầu.",
   },
@@ -29,7 +29,7 @@ const documentLinks = [
     description: "Preview URL shop rồi nhập sản phẩm, giá và link nguồn.",
   },
   {
-    href: "/saved-items",
+    href: "/saved-items/smart-views",
     label: "Bộ lọc & Watchlist",
     description: "Quay lại Smart View hoặc nguồn đã lưu để theo dõi tiếp.",
   },

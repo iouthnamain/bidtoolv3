@@ -99,8 +99,6 @@ const materialInput = z.object({
   defaultUnitPrice: z.number().nonnegative().nullable().optional(),
   currency: z.string().trim().min(1).default("VND"),
   sourceUrl: z.string().trim().optional(),
-  defaultDepreciation: z.number().nonnegative().default(1),
-  defaultReusePct: z.number().int().min(0).max(100).default(0),
 });
 
 const materialSearchFiltersInput = z.object({
@@ -297,13 +295,6 @@ function parseMaterialsCsv(csv: string) {
     }
     return parseOptionalNumber(raw) ?? Number.NaN;
   };
-  const numberOrDefault = (value: string | undefined, fallback: number) => {
-    const raw = emptyToUndefined(value);
-    if (!raw) {
-      return fallback;
-    }
-    return parseOptionalNumber(raw) ?? Number.NaN;
-  };
 
   return {
     rows: result.data.map((row) => ({
@@ -317,8 +308,6 @@ function parseMaterialsCsv(csv: string) {
       defaultUnitPrice: optionalNumber(row.default_unit_price),
       currency: emptyToUndefined(row.currency) ?? "VND",
       sourceUrl: emptyToUndefined(row.source_url),
-      defaultDepreciation: numberOrDefault(row.default_depreciation, 1),
-      defaultReusePct: Math.trunc(numberOrDefault(row.default_reuse_pct, 0)),
       catalogPdfUrls: parseCatalogPdfUrlsCell(row.catalog_pdf_urls),
     })),
     errors: result.errors.map((error) => {
@@ -579,8 +568,6 @@ function materialExportCsvRow(
     defaultUnitPrice: number | null;
     currency: string;
     sourceUrl: string | null;
-    defaultDepreciation: number;
-    defaultReusePct: number;
   },
   catalogPdfUrls: string[] = [],
 ) {
@@ -598,8 +585,6 @@ function materialExportCsvRow(
         : String(material.defaultUnitPrice),
     currency: material.currency,
     source_url: material.sourceUrl ?? "",
-    default_depreciation: String(material.defaultDepreciation),
-    default_reuse_pct: String(material.defaultReusePct),
     catalog_pdf_urls: formatCatalogPdfUrlsCell(catalogPdfUrls),
   };
 }
@@ -1355,8 +1340,6 @@ export const materialRouter = createTRPCRouter({
           defaultUnitPrice: materials.defaultUnitPrice,
           currency: materials.currency,
           sourceUrl: materials.sourceUrl,
-          defaultDepreciation: materials.defaultDepreciation,
-          defaultReusePct: materials.defaultReusePct,
         })
         .from(materials)
         .where(and(...materialFilterConditions(input)))
@@ -1591,8 +1574,6 @@ export const materialRouter = createTRPCRouter({
           defaultUnitPrice: source.defaultUnitPrice,
           currency: source.currency,
           sourceUrl: source.sourceUrl,
-          defaultDepreciation: source.defaultDepreciation,
-          defaultReusePct: source.defaultReusePct,
           metadataJson: buildMaterialMetadata({ priceSources }),
           createdAt: now,
           updatedAt: now,
@@ -1776,8 +1757,6 @@ export const materialRouter = createTRPCRouter({
           defaultUnitPrice: row.unitPrice,
           currency: row.currency,
           sourceUrl: row.sourceUrl ?? undefined,
-          defaultDepreciation: row.depreciation,
-          defaultReusePct: row.reusePct,
         });
         if (!parsed.success) {
           errors.push(

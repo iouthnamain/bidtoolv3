@@ -8,11 +8,7 @@ import { ArrowLeft, PackagePlus, Plus, Save } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
-import {
-  parseIntegerOrDefault,
-  parseNumberOrDefault,
-  parseOptionalNumber,
-} from "~/lib/materials/format";
+import { parseOptionalNumber } from "~/lib/materials/format";
 import { api } from "~/trpc/react";
 
 type MaterialCreateFormState = {
@@ -26,8 +22,6 @@ type MaterialCreateFormState = {
   defaultUnitPrice: string;
   currency: string;
   sourceUrl: string;
-  defaultDepreciation: string;
-  defaultReusePct: string;
 };
 
 const emptyForm: MaterialCreateFormState = {
@@ -41,8 +35,6 @@ const emptyForm: MaterialCreateFormState = {
   defaultUnitPrice: "",
   currency: "VND",
   sourceUrl: "",
-  defaultDepreciation: "1",
-  defaultReusePct: "0",
 };
 
 const inputClass =
@@ -121,11 +113,6 @@ function buildCreatePayload(form: MaterialCreateFormState) {
     defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
     currency: form.currency || "VND",
     sourceUrl: form.sourceUrl || undefined,
-    defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
-    defaultReusePct: Math.min(
-      100,
-      Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
-    ),
   };
 }
 
@@ -339,36 +326,6 @@ export function MaterialCreateClient() {
               value={form.currency}
               onChange={(event) =>
                 setForm({ ...form, currency: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Khấu hao mặc định">
-            <input
-              name="defaultDepreciation"
-              autoComplete="off"
-              className={inputClass}
-              type="number"
-              min={0}
-              step={0.1}
-              inputMode="decimal"
-              value={form.defaultDepreciation}
-              onChange={(event) =>
-                setForm({ ...form, defaultDepreciation: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="% sử dụng lại mặc định">
-            <input
-              name="defaultReusePct"
-              autoComplete="off"
-              className={inputClass}
-              type="number"
-              min={0}
-              max={100}
-              inputMode="numeric"
-              value={form.defaultReusePct}
-              onChange={(event) =>
-                setForm({ ...form, defaultReusePct: event.target.value })
               }
             />
           </Field>

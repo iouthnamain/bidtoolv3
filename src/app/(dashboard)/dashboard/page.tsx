@@ -87,7 +87,7 @@ export default async function DashboardPage() {
   const latestWorkflow = recentWorkflowRuns[0] ?? null;
   const nextActions = [
     {
-      href: "/search",
+      href: "/search/packages",
       label: "Tạo bộ lọc mới",
       body: "Tìm realtime, lưu Smart View và chọn gói cần theo dõi.",
       icon: "search" as const,
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
       icon: "documents" as const,
     },
     {
-      href: "/saved-items",
+      href: "/saved-items/smart-views",
       label: "Mở bộ lọc đã lưu",
       body: "Áp lại Smart View hoặc kiểm tra Watchlist.",
       icon: "saved" as const,
@@ -283,7 +283,7 @@ export default async function DashboardPage() {
               description="Tạo bộ lọc và bật thông báo để nhận cảnh báo khi có gói thầu mới."
               cta={
                 <Link
-                  href="/search"
+                  href="/search/packages"
                   className="inline-flex items-center gap-1.5 rounded-md bg-sky-700 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   <Search className="h-4 w-4" aria-hidden />

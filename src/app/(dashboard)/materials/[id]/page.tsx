@@ -1,10 +1,7 @@
-import { Suspense } from "react";
 import { type Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { createPageMetadata } from "~/app/_lib/seo";
-import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
-import { materialDetailSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { MaterialDetailClient } from "~/app/_components/materials/detail-client";
 import { HydrateClient, api } from "~/trpc/server";
 
@@ -47,23 +44,8 @@ export default async function MaterialDetailsPage({
   prefetchMaterialDetailsPageData(id);
 
   return (
-    <DashboardShell
-      title="Chi tiết vật tư"
-      description="Xem, chỉnh sửa và kiểm tra thông tin catalog vật tư"
-      sectionNavItems={materialDetailSectionNavItems}
-      sectionNavTitle="Chi tiết vật tư"
-    >
-      <HydrateClient>
-        <Suspense
-          fallback={
-            <div className="panel p-5 text-sm text-slate-600">
-              Đang tải chi tiết vật tư…
-            </div>
-          }
-        >
-          <MaterialDetailClient id={id} />
-        </Suspense>
-      </HydrateClient>
-    </DashboardShell>
+    <HydrateClient>
+      <MaterialDetailClient id={id} view="overview" />
+    </HydrateClient>
   );
 }

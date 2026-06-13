@@ -36,9 +36,7 @@ export type MaterialFieldLockKey =
   | "defaultUnitPrice"
   | "currency"
   | "sourceUrl"
-  | "imageUrl"
-  | "defaultDepreciation"
-  | "defaultReusePct";
+  | "imageUrl";
 
 export const MATERIAL_FIELD_LOCK_KEYS = [
   "code",
@@ -52,8 +50,6 @@ export const MATERIAL_FIELD_LOCK_KEYS = [
   "currency",
   "sourceUrl",
   "imageUrl",
-  "defaultDepreciation",
-  "defaultReusePct",
 ] as const satisfies readonly MaterialFieldLockKey[];
 
 export type MaterialMetadata = {

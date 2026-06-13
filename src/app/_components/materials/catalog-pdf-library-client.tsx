@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -61,12 +62,21 @@ function formatFileSize(size: number | null) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function CatalogPdfLibraryClient() {
+export function CatalogPdfLibraryClient({
+  view = "library",
+  initialDocumentId,
+}: {
+  view?: "library" | "new" | "detail";
+  initialDocumentId?: number;
+} = {}) {
   const utils = api.useUtils();
   const toast = useToast();
 
+  const router = useRouter();
   const [keyword, setKeyword] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(
+    initialDocumentId ?? null,
+  );
   const [deleteTarget, setDeleteTarget] =
     useState<CatalogDocumentListItem | null>(null);
 
@@ -98,7 +108,11 @@ export function CatalogPdfLibraryClient() {
       setNewUrl("");
       setNewTitle("");
       setNewSupplier("");
-      setSelectedId(document.id);
+      if (view === "new") {
+        router.push(`/catalog-pdfs/${document.id}`);
+      } else {
+        setSelectedId(document.id);
+      }
       await refresh();
     },
     onError: (error) => toast.error(error.message),
@@ -110,7 +124,11 @@ export function CatalogPdfLibraryClient() {
       setUploadFile(null);
       setUploadTitle("");
       if (document) {
-        setSelectedId(document.id);
+        if (view === "new") {
+          router.push(`/catalog-pdfs/${document.id}`);
+        } else {
+          setSelectedId(document.id);
+        }
       }
       await refresh();
     },
@@ -178,7 +196,8 @@ export function CatalogPdfLibraryClient() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <section id="catalog-pdf-create" className="panel scroll-mt-6 p-5">
+      {view === "new" ? (
+      <section className="panel p-5">
         <h3 className="text-base font-bold text-slate-950">Thêm tài liệu</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <form
@@ -261,8 +280,10 @@ export function CatalogPdfLibraryClient() {
           </form>
         </div>
       </section>
+      ) : null}
 
-      <section id="catalog-pdf-list" className="panel scroll-mt-6 p-5">
+      {view === "library" ? (
+      <section className="panel p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-slate-500" aria-hidden />
@@ -318,9 +339,7 @@ export function CatalogPdfLibraryClient() {
                         <button
                           type="button"
                           className="text-left font-semibold text-slate-900 [overflow-wrap:anywhere] hover:text-sky-700"
-                          onClick={() =>
-                            setSelectedId(isSelected ? null : document.id)
-                          }
+                          onClick={() => router.push(`/catalog-pdfs/${document.id}`)}
                         >
                           {document.title}
                         </button>
@@ -385,9 +404,7 @@ export function CatalogPdfLibraryClient() {
                             variant="secondary"
                             size="sm"
                             leftIcon={<Pencil className="h-3.5 w-3.5" />}
-                            onClick={() =>
-                              setSelectedId(isSelected ? null : document.id)
-                            }
+                            onClick={() => router.push(`/catalog-pdfs/${document.id}`)}
                           >
                             {isSelected ? "Đóng" : "Chi tiết"}
                           </Button>
@@ -409,11 +426,12 @@ export function CatalogPdfLibraryClient() {
           </div>
         )}
       </section>
+      ) : null}
 
-      {selectedId != null ? (
+      {view === "detail" && selectedId != null ? (
         <CatalogPdfDetailPanel
           documentId={selectedId}
-          onClose={() => setSelectedId(null)}
+          onClose={() => router.push("/catalog-pdfs")}
           onChanged={refresh}
         />
       ) : null}

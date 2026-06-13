@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-
 import { createPageMetadata } from "~/app/_lib/seo";
-import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
-import { materialsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
 import { MaterialsListClient } from "~/app/_components/materials/list-client";
-
-export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
   title: "Sản phẩm / vật tư",
@@ -16,22 +10,5 @@ export const metadata = createPageMetadata({
 });
 
 export default function MaterialsPage() {
-  return (
-    <DashboardShell
-      title="Sản phẩm / vật tư"
-      description="Quản lý danh mục nội bộ để nhập, đối chiếu và chuẩn hóa vật tư"
-      sectionNavItems={materialsSectionNavItems}
-      sectionNavTitle="Khu vực vật tư"
-    >
-      <Suspense
-        fallback={
-          <div className="panel p-5 text-sm text-slate-600">
-            Đang tải danh mục vật tư…
-          </div>
-        }
-      >
-        <MaterialsListClient />
-      </Suspense>
-    </DashboardShell>
-  );
+  return <MaterialsListClient view="catalog" />;
 }

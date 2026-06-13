@@ -1,26 +1,40 @@
 import type { PageSectionNavItem } from "~/app/_components/dashboard/page-section-nav";
 
+import { getSearchPathForMode } from "~/lib/search-routes";
+
 export const searchSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/search#search-modes",
-    label: "Chế độ nguồn",
-    description: "Gói thầu, tỉnh, ngành nghề, KHLCNT hoặc dự án.",
+    href: getSearchPathForMode("package_keyword"),
+    label: "Gói thầu",
+    description: "Tìm theo từ khóa và bộ lọc package.",
     icon: "search",
   },
   {
-    href: "/search#search-filters",
-    label: "Bộ lọc",
-    description: "Từ khóa, địa phương, ngân sách, ngày và match score.",
-    icon: "sliders",
+    href: getSearchPathForMode("package_location"),
+    label: "Theo địa phương",
+    description: "Chế độ province-first trên BidWinner.",
+    icon: "search",
   },
   {
-    href: "/search#search-results",
-    label: "Kết quả",
-    description: "Phân trang, lưu dòng chọn và mở detail nguồn.",
-    icon: "table",
+    href: getSearchPathForMode("package_area_location"),
+    label: "Ngành & địa phương",
+    description: "Taxonomy classify public.",
+    icon: "search",
   },
   {
-    href: "/saved-items#smart-views",
+    href: getSearchPathForMode("plan"),
+    label: "KHLCNT",
+    description: "Kế hoạch lựa chọn nhà thầu.",
+    icon: "search",
+  },
+  {
+    href: getSearchPathForMode("project"),
+    label: "Dự án",
+    description: "Dự án đầu tư phát triển.",
+    icon: "search",
+  },
+  {
+    href: "/saved-items/smart-views",
     label: "Smart Views",
     description: "Áp lại bộ lọc đã lưu hoặc tạo workflow.",
     icon: "bookmark",
@@ -29,19 +43,19 @@ export const searchSectionNavItems: PageSectionNavItem[] = [
 
 export const savedItemsSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/saved-items#smart-views",
+    href: "/saved-items/smart-views",
     label: "Smart Views",
     description: "Bộ lọc đã lưu để dùng lại và tự động hóa.",
     icon: "bookmark",
   },
   {
-    href: "/saved-items#watchlist",
+    href: "/saved-items/watchlist",
     label: "Watchlist",
     description: "Các gói, KHLCNT và dự án cần quay lại.",
     icon: "bell",
   },
   {
-    href: "/search",
+    href: "/search/packages",
     label: "Tạo bộ lọc",
     description: "Quay về tìm kiếm để lưu Smart View mới.",
     icon: "search",
@@ -56,25 +70,25 @@ export const savedItemsSectionNavItems: PageSectionNavItem[] = [
 
 export const workflowSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/workflows#workflow-list",
+    href: "/workflows",
     label: "Danh sách",
     description: "Tạo, lọc, chạy thử và mở từng workflow.",
     icon: "workflow",
   },
   {
-    href: "/workflows#workflow-health",
+    href: "/workflows/health",
     label: "Trạng thái",
     description: "Active, paused, lỗi gần nhất và workflow chưa chạy.",
     icon: "activity",
   },
   {
-    href: "/workflows#workflow-notifications",
+    href: "/workflows/alerts",
     label: "Thông báo",
     description: "Cảnh báo gần đây sinh ra từ workflow.",
     icon: "bell",
   },
   {
-    href: "/saved-items#smart-views",
+    href: "/saved-items/smart-views",
     label: "Nguồn Smart View",
     description: "Quản lý bộ lọc đầu vào cho workflow.",
     icon: "bookmark",
@@ -110,18 +124,18 @@ export const workflowDetailSectionNavItems: PageSectionNavItem[] = [
 
 export const materialsSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/materials#material-summary",
-    label: "Tổng quan",
-    description: "Số vật tư, đơn giá, nguồn và category.",
-    icon: "bar-chart",
-    tone: "sky",
-  },
-  {
-    href: "/materials#material-catalog",
+    href: "/materials",
     label: "Danh mục",
     description: "Tìm, chọn, mở chi tiết và xóa vật tư.",
     icon: "boxes",
     tone: "slate",
+  },
+  {
+    href: "/materials/stats",
+    label: "Thống kê",
+    description: "Số vật tư, đơn giá, nguồn và category.",
+    icon: "bar-chart",
+    tone: "sky",
   },
   {
     href: "/materials/new",
@@ -145,13 +159,6 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     tone: "amber",
   },
   {
-    href: "/materials/import",
-    label: "Nhập hàng loạt",
-    description: "Upload Excel hoặc dán CSV.",
-    icon: "upload",
-    tone: "rose",
-  },
-  {
     href: "/catalog-pdfs",
     label: "Catalog PDFs",
     description: "Thư viện tài liệu catalog gắn với vật tư.",
@@ -169,28 +176,28 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
     tone: "slate",
   },
   {
-    href: "#material-overview",
+    href: "/materials/{id}",
     label: "Tổng quan",
     description: "Mã, giá, nguồn và trạng thái dữ liệu.",
     icon: "eye",
     tone: "sky",
   },
   {
-    href: "#material-prices",
+    href: "/materials/{id}/prices",
     label: "Nguồn giá",
     description: "Nhà cung cấp, URL, giá và ghi chú.",
     icon: "link",
     tone: "emerald",
   },
   {
-    href: "#material-documents",
+    href: "/materials/{id}/documents",
     label: "Catalog PDFs",
     description: "Tài liệu catalog gắn với vật tư.",
     icon: "file",
     tone: "violet",
   },
   {
-    href: "#material-edit",
+    href: "/materials/{id}/edit",
     label: "Chỉnh sửa",
     description: "Thông tin catalog, nguồn giá và metadata.",
     icon: "pencil",
@@ -200,14 +207,14 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
 
 export const catalogPdfSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/catalog-pdfs#catalog-pdf-create",
+    href: "/catalog-pdfs/new",
     label: "Thêm tài liệu",
     description: "Tạo từ URL PDF hoặc upload tệp.",
     icon: "plus",
     tone: "emerald",
   },
   {
-    href: "/catalog-pdfs#catalog-pdf-list",
+    href: "/catalog-pdfs",
     label: "Thư viện",
     description: "Tìm, sửa, tải bản cục bộ và gắn vật tư.",
     icon: "file",
@@ -236,7 +243,7 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
     icon: "workflow",
   },
   {
-    href: "/saved-items#watchlist",
+    href: "/saved-items/watchlist",
     label: "Watchlist",
     description: "Đối chiếu các mục đang theo dõi.",
     icon: "bookmark",
@@ -251,19 +258,19 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
 
 export const settingsSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "#settings-overview",
+    href: "/settings",
     label: "Tóm tắt",
     description: "Phiên bản, môi trường và trạng thái cập nhật.",
     icon: "activity",
   },
   {
-    href: "#desktop-client",
+    href: "/settings/desktop",
     label: "Desktop",
     description: "Cấu hình server URL cho Electron.",
     icon: "monitor",
   },
   {
-    href: "#about-version",
+    href: "/settings/updates",
     label: "Cập nhật",
     description: "Áp dụng bản mới và xem ghi chú phát hành.",
     icon: "download",
@@ -272,7 +279,7 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
 
 export const sourceDetailSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "/search",
+    href: "/search/packages",
     label: "Quay lại Search",
     description: "Trở về kết quả và bộ lọc đang dùng.",
     icon: "search",
@@ -305,25 +312,31 @@ export const sourceDetailSectionNavItems: PageSectionNavItem[] = [
 
 export const helpSectionNavItems: PageSectionNavItem[] = [
   {
-    href: "#bat-dau",
+    href: "/help",
+    label: "Tổng quan",
+    description: "Lối tắt, bản đồ luồng và mục lục chủ đề.",
+    icon: "home",
+  },
+  {
+    href: "/help/bat-dau",
     label: "Bắt đầu",
     description: "Cài đặt, mở app và kiểm tra dashboard.",
     icon: "home",
   },
   {
-    href: "#tim-kiem",
+    href: "/help/tim-kiem",
     label: "Tìm kiếm",
     description: "Nguồn BidWinner, Smart View và Watchlist.",
     icon: "search",
   },
   {
-    href: "#import-mapping",
+    href: "/help/import-mapping",
     label: "Import",
     description: "Nhập Excel/CSV, preview và catalog vật tư.",
     icon: "sheet",
   },
   {
-    href: "#khac-phuc-loi",
+    href: "/help/khac-phuc-loi",
     label: "Khắc phục lỗi",
     description: "Docker, env, migration và server local.",
     icon: "warning",

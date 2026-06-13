@@ -57,6 +57,10 @@ import {
   type SearchMode,
 } from "~/lib/search-modes";
 import {
+  getSearchPathForMode,
+  readSearchModeFromPathname,
+} from "~/lib/search-routes";
+import {
   Button,
   EmptyState,
   FilterField,
@@ -845,12 +849,14 @@ function ResultsTable(props: {
   );
 }
 
-export function SearchPageClient() {
+export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {}) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
 
-  const initialMode = readSearchModeFromSearchParams(searchParams);
+  const pathMode = readSearchModeFromPathname(pathname);
+  const resolvedMode = fixedMode ?? pathMode ?? readSearchModeFromSearchParams(searchParams);
+
   const initialCriteria = readSearchCriteriaFromSearchParams(searchParams);
   const initialSavedFilterId = parsePositiveId(
     searchParams.get("savedFilterId"),
@@ -859,7 +865,7 @@ export function SearchPageClient() {
   const initialLimit = parsePositiveInt(searchParams.get("limit"), 20);
   const initialSortOrder = readSortOrderFromSearchParams(searchParams);
 
-  const [mode, setMode] = useState<SearchMode>(initialMode);
+  const [mode, setMode] = useState<SearchMode>(resolvedMode);
   const [formState, setFormState] = useState<FormState>(
     buildFormState(initialCriteria),
   );
@@ -962,7 +968,7 @@ export function SearchPageClient() {
     [appliedCriteria],
   );
   const hasPendingSearchFilterChanges =
-    mode !== readSearchModeFromSearchParams(searchParams) ||
+    mode !== resolvedMode ||
     draftCriteriaKey !== appliedCriteriaKey;
 
   const budgetRangeError =
@@ -1030,7 +1036,9 @@ export function SearchPageClient() {
     }
     lastParamsKeyRef.current = key;
 
-    const nextMode = readSearchModeFromSearchParams(searchParams);
+    const nextMode =
+      readSearchModeFromPathname(pathname) ??
+      readSearchModeFromSearchParams(searchParams);
     const nextCriteria = readSearchCriteriaFromSearchParams(searchParams);
     setMode(nextMode);
     setFormState(buildFormState(nextCriteria));
@@ -1039,7 +1047,7 @@ export function SearchPageClient() {
     setLimit(parsePositiveInt(searchParams.get("limit"), 20));
     setSortOrder(readSortOrderFromSearchParams(searchParams));
     setSavedFilterId(parsePositiveId(searchParams.get("savedFilterId")));
-  }, [currentSearchParamsKey, searchParams]);
+  }, [currentSearchParamsKey, pathname, searchParams]);
 
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
@@ -1129,13 +1137,18 @@ export function SearchPageClient() {
     }
 
     hydratedSavedFilterKeyRef.current = hydratedKey;
-    setMode(savedFilterQuery.data.mode);
+    const nextMode = savedFilterQuery.data.mode;
+    setMode(nextMode);
     setFormState(buildFormState(savedFilterQuery.data.criteria));
     setAppliedCriteria(savedFilterQuery.data.criteria);
     setSmartViewName(savedFilterQuery.data.name);
     setSmartViewFrequency(savedFilterQuery.data.notificationFrequency);
     setPage(1);
-  }, [savedFilterId, savedFilterQuery.data]);
+    const targetPath = getSearchPathForMode(nextMode);
+    if (pathname !== targetPath) {
+      router.replace(targetPath);
+    }
+  }, [pathname, router, savedFilterId, savedFilterQuery.data]);
 
   const selectedItems = useMemo(
     () => items.filter((item) => selectedKeys.has(selectedKey(item))),
@@ -1229,7 +1242,7 @@ export function SearchPageClient() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/saved-items"
+              href="/saved-items/smart-views"
               className="inline-flex min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
@@ -1241,24 +1254,17 @@ export function SearchPageClient() {
         <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
             const isActive = mode === tabMode;
+            const tabHref = getSearchPathForMode(tabMode);
 
             return (
-              <button
+              <Link
                 key={tabMode}
-                type="button"
+                href={tabHref}
                 className={`rounded-lg border px-4 py-3 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   isActive
                     ? "border-sky-400 bg-sky-50"
                     : "border-slate-200 bg-white hover:border-slate-300"
                 }`}
-                onClick={() => {
-                  setMode(tabMode);
-                  setSavedFilterId(null);
-                  if (!budgetRangeError && !publishedDateRangeError) {
-                    setAppliedCriteria(draftCriteria);
-                  }
-                  setPage(1);
-                }}
               >
                 <p className="text-sm font-semibold text-slate-900">
                   {SEARCH_MODE_LABELS[tabMode]}
@@ -1266,7 +1272,7 @@ export function SearchPageClient() {
                 <p className="mt-1 text-xs text-slate-500">
                   {SEARCH_MODE_DESCRIPTIONS[tabMode]}
                 </p>
-              </button>
+              </Link>
             );
           })}
         </div>

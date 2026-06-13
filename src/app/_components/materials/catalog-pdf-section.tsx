@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import {
   ChevronDown,
@@ -67,8 +67,10 @@ const inputClass =
 
 export function MaterialCatalogPdfSection({
   materialId,
+  defaultExpanded = false,
 }: {
   materialId: number;
+  defaultExpanded?: boolean;
 }) {
   const utils = api.useUtils();
   const toast = useToast();
@@ -79,19 +81,7 @@ export function MaterialCatalogPdfSection({
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [detachTarget, setDetachTarget] = useState<LinkedDocument | null>(null);
-  const [isSectionOpen, setIsSectionOpen] = useState(false);
-
-  useEffect(() => {
-    const expandFromHash = () => {
-      if (window.location.hash === "#material-documents") {
-        setIsSectionOpen(true);
-      }
-    };
-
-    expandFromHash();
-    window.addEventListener("hashchange", expandFromHash);
-    return () => window.removeEventListener("hashchange", expandFromHash);
-  }, []);
+  const [isSectionOpen, setIsSectionOpen] = useState(defaultExpanded);
 
   const linkedQuery = api.catalogDocument.listByMaterial.useQuery({
     materialId,
