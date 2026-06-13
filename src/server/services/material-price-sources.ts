@@ -5,9 +5,11 @@ import { extractPriceFromText } from "~/lib/material-price-sources";
 
 export {
   buildMaterialMetadata,
+  MATERIAL_FIELD_LOCK_KEYS,
   normalizeMaterialMetadata,
 } from "~/lib/material-price-sources";
 export type {
+  MaterialFieldLockKey,
   MaterialMetadata,
   MaterialPriceSource,
   MaterialPriceSourceMode,

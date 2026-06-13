@@ -8,6 +8,7 @@ import {
 import {
   enrichProductWithPageText,
   extractProductsFromPageSnapshot,
+  extractProductsWithDiagnosticsFromPageSnapshot,
   isShopPromoBadgeText,
   mergeScrapedProductData,
   stripShopPromoBadgePrefix,
@@ -336,6 +337,172 @@ describe("extractProductsFromPageSnapshot", () => {
     });
   });
 
+  it("merges incomplete JSON-LD fields into the DOM product URL", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/category/tools/",
+      title: "Tools",
+      jsonLdTexts: [
+        JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: "Máy khoan pin 18V",
+          description: "Máy khoan pin 18V, 2 pin, sạc nhanh.",
+          brand: { name: "Makita" },
+          category: "Dụng cụ điện",
+          offers: {
+            price: "2100000",
+            priceCurrency: "VND",
+          },
+        }),
+      ],
+      cards: [
+        {
+          name: "Máy khoan pin 18V",
+          href: "https://shop.example.com/product/may-khoan-pin-18v/",
+          imageUrl: null,
+          category: null,
+          text: "Máy khoan pin 18V 2.050.000 đ",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      name: "Máy khoan pin 18V",
+      sourceUrl: "https://shop.example.com/product/may-khoan-pin-18v/",
+      manufacturer: "Makita",
+      category: "Dụng cụ điện",
+      specText: "Máy khoan pin 18V, 2 pin, sạc nhanh.",
+    });
+  });
+
+  it("keeps valid listing cards when price is missing or contact-only", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/category/tools/",
+      title: "Tools",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Máy cắt cầm tay Bosch GWS 060",
+          href: "https://shop.example.com/product/may-cat-bosch-gws-060/",
+          imageUrl: null,
+          category: "Dụng cụ điện",
+          text: "Máy cắt cầm tay Bosch GWS 060 Liên hệ Còn hàng",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      name: "Máy cắt cầm tay Bosch GWS 060",
+      price: null,
+      priceText: null,
+      sourceUrl: "https://shop.example.com/product/may-cat-bosch-gws-060/",
+    });
+  });
+
+  it("drops generic category/nav anchors that have no product evidence", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://www.thegioiic.com/",
+        title: "Thegioiic",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "IC - Mạch Tích Hợp",
+            href: "https://www.thegioiic.com/san-pham/ic-mach-tich-hop",
+            imageUrl: null,
+            category: null,
+            text: "IC - Mạch Tích Hợp",
+            extractSource: "generic_anchor",
+            nameSource: "anchor_text",
+          },
+          {
+            name: "Mạch Giảm Áp DC-DC Mini560 5A",
+            href: "https://caka.vn/mach-giam-ap-dc-dc-mini560-5a",
+            imageUrl: null,
+            category: null,
+            text: "Mạch Giảm Áp DC-DC Mini560 5A 20.000₫",
+            extractSource: "generic_anchor",
+            nameSource: "anchor_text",
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(1);
+    expect(products[0]?.name).toBe("Mạch Giảm Áp DC-DC Mini560 5A");
+  });
+
+  it("uses card text when stock count text is selected as the initial title", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://dientunguyenhien.vn/",
+      title: "Điện Tử Nguyễn Hiền",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Còn 10 cái",
+          href: "https://dientunguyenhien.vn/show/3705",
+          imageUrl: null,
+          category: null,
+          text: "Còn 10 cái\nMạch điều khiển động cơ bước TB6600\n990,000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      name: "Mạch điều khiển động cơ bước TB6600",
+      price: 990000,
+      unit: null,
+    });
+  });
+
+  it("reports per-card diagnostics for invalid listing URLs", () => {
+    const result = extractProductsWithDiagnosticsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/category/tools/",
+        title: "Tools",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Máy khoan Bosch",
+            href: "https://shop.example.com/category/tools/",
+            imageUrl: null,
+            category: null,
+            text: "Máy khoan Bosch 900.000 đ",
+          },
+          {
+            name: "Máy cắt Bosch",
+            href: "https://shop.example.com/product/may-cat-bosch/",
+            imageUrl: null,
+            category: null,
+            text: "Máy cắt Bosch 800.000 đ",
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(result.products).toHaveLength(1);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        href: "https://shop.example.com/category/tools/",
+        dropReason: "listing_page_url",
+      }),
+      expect.objectContaining({
+        href: "https://shop.example.com/product/may-cat-bosch/",
+        dropReason: null,
+      }),
+    ]);
+  });
+
   it("ignores promo badge labels as product names", () => {
     expect(isShopPromoBadgeText("Thịnh thành")).toBe(true);
     expect(isShopPromoBadgeText("Thịnh hành")).toBe(true);
@@ -480,7 +647,8 @@ describe("extractProductsFromPageSnapshot", () => {
     expect(products[0]).toMatchObject({
       name: "Đồng hồ đo đa năng Selec VAF36A 96x96mm",
       price: 700000,
-      sourceUrl: "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
+      sourceUrl:
+        "https://codienhaiau.com/product/dong-ho-do-da-nang-selec-vaf36a/",
     });
   });
 
@@ -529,12 +697,51 @@ describe("extractProductsFromPageSnapshot", () => {
     });
 
     expect(products[0]).toMatchObject({
+      name: "Vinasemi 948DB+ II Máy Hàn Trạm Điều Chỉnh Nhiệt Độ 75W, 220VAC, 200-480°C",
       price: 807120,
       priceText: "807.120 đ",
       unit: "máy",
       currency: "VND",
       imageUrl: "https://file.thegioiic.com/upload/medium/55894.jpg",
     });
+  });
+
+  it("does not infer units from metric model/thread tokens or Vietnamese word suffixes", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://icdayroi.com/",
+      title: "IC Đây Rồi",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Tán M2.5 (gói 10 con)",
+          href: "https://icdayroi.com/tan-m2-5-goi-10-con",
+          imageUrl: null,
+          category: null,
+          text: "Tán M2.5 (gói 10 con) 2.000₫",
+        },
+        {
+          name: "Nguồn LED 12V 100W 8.5A chống nước HPV-100-12V",
+          href: "https://caka.vn/nguon-led-12v-100w-8-5a-chong-nuoc-hpv-100-12v",
+          imageUrl: null,
+          category: null,
+          text: "Nguồn LED 12V 100W 8.5A chống nước HPV-100-12V 898.700₫",
+        },
+        {
+          name: "Bộ 22 loại tụ gốm thông dụng 6pF~0.1uF",
+          href: "https://hshop.vn/bo-22-loai-tu-gom-thong-dung",
+          imageUrl: null,
+          category: null,
+          text: "Bộ 22 loại tụ gốm thông dụng 6pF~0.1uF 40.000₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products.map((product) => product.unit)).toEqual([
+      "con",
+      null,
+      "bộ",
+    ]);
   });
 
   it("extracts products nested inside JSON-LD item lists", () => {
@@ -720,6 +927,15 @@ describe("extractPriceFromText", () => {
       price: 807120,
     });
   });
+
+  it("prefers the current lower price from sale/range text", () => {
+    expect(
+      extractPriceFromText("Giá cũ 1.200.000 đ Giá mới 980.000 đ"),
+    ).toEqual({
+      priceText: "980.000 đ",
+      price: 980000,
+    });
+  });
 });
 
 describe("material shop scrape metadata", () => {
@@ -750,5 +966,54 @@ describe("material shop scrape metadata", () => {
       availability: "in_stock",
       shopCategory: "Tools",
     });
+  });
+});
+
+describe("sparse product extraction", () => {
+  it("keeps generic_anchor products with product detail URLs but no price", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/category",
+        title: "Category",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Cảm biến nhiệt độ PT100",
+            href: "https://shop.example.com/product/cam-bien-pt100/",
+            imageUrl: null,
+            category: null,
+            text: "Cảm biến nhiệt độ PT100",
+            extractSource: "generic_anchor",
+            nameSource: "anchor_text",
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(1);
+    expect(products[0]?.price).toBeNull();
+  });
+
+  it("strips KH noise from scraped spec text", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/category",
+      title: "Category",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Đồng hồ đo điện áp",
+          href: "https://shop.example.com/product/dong-ho/",
+          imageUrl: null,
+          category: null,
+          text: "Đồng hồ đo điện áp KH 0.05 Thông số 220V 500.000 ₫",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]?.specText).not.toMatch(/\bKH\b/i);
+    expect(products[0]?.specText).toContain("Thông số");
   });
 });

@@ -38,7 +38,9 @@ import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-docume
 import {
   buildMaterialMetadata,
   fetchPriceFromUrl,
+  MATERIAL_FIELD_LOCK_KEYS,
   normalizeMaterialMetadata,
+  type MaterialFieldLockKey,
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
@@ -82,6 +84,7 @@ const materialSortByInput = z
 const sortOrderInput = z.enum(["asc", "desc"]).default("desc");
 const priceStatusInput = z.enum(["all", "priced", "missing"]).default("all");
 const sourceStatusInput = z.enum(["all", "with", "without"]).default("all");
+const catalogStatusInput = z.enum(["all", "with", "without"]).default("all");
 const MATERIAL_FILTER_OPTION_LIMIT = 200;
 const MATERIAL_EXPORT_LIMIT = 10_000;
 
@@ -109,6 +112,7 @@ const materialSearchFiltersInput = z.object({
   originCountry: z.string().trim().optional(),
   priceStatus: priceStatusInput,
   sourceStatus: sourceStatusInput,
+  catalogStatus: catalogStatusInput,
 });
 
 const shopScrapeInput = z
@@ -481,7 +485,60 @@ function materialFilterConditions(
           ) = 0`,
         )
       : undefined,
+    input.catalogStatus === "with"
+      ? sql`exists (
+          select 1
+          from material_catalog_document_links links
+          inner join material_catalog_documents docs
+            on docs.id = links.document_id
+          where links.material_id = ${materials.id}
+            and docs.deleted_at is null
+        )`
+      : undefined,
+    input.catalogStatus === "without"
+      ? sql`not exists (
+          select 1
+          from material_catalog_document_links links
+          inner join material_catalog_documents docs
+            on docs.id = links.document_id
+          where links.material_id = ${materials.id}
+            and docs.deleted_at is null
+        )`
+      : undefined,
   ];
+}
+
+async function catalogDocumentCountsByMaterialIds(
+  db: AppDb,
+  materialIds: number[],
+) {
+  const counts = new Map<number, number>();
+  if (materialIds.length === 0) {
+    return counts;
+  }
+
+  const rows = await db
+    .select({
+      materialId: materialCatalogDocumentLinks.materialId,
+      count: sql<number>`count(*)::int`.as("count"),
+    })
+    .from(materialCatalogDocumentLinks)
+    .innerJoin(
+      materialCatalogDocuments,
+      eq(materialCatalogDocumentLinks.documentId, materialCatalogDocuments.id),
+    )
+    .where(
+      and(
+        inArray(materialCatalogDocumentLinks.materialId, materialIds),
+        isNull(materialCatalogDocuments.deletedAt),
+      ),
+    )
+    .groupBy(materialCatalogDocumentLinks.materialId);
+
+  for (const row of rows) {
+    counts.set(row.materialId, Number(row.count ?? 0));
+  }
+  return counts;
 }
 
 async function selectMaterialTextOptions(db: AppDb, column: AnyPgColumn) {
@@ -1149,7 +1206,7 @@ export const materialRouter = createTRPCRouter({
           ? asc(materials[input.sortBy])
           : desc(materials[input.sortBy]);
 
-      return ctx.db
+      const rows = await ctx.db
         .select({
           id: materials.id,
           code: materials.code,
@@ -1170,6 +1227,16 @@ export const materialRouter = createTRPCRouter({
         .orderBy(order, desc(materials.updatedAt), asc(materials.id))
         .limit(input.limit)
         .offset(input.offset);
+
+      const catalogCounts = await catalogDocumentCountsByMaterialIds(
+        ctx.db,
+        rows.map((row) => row.id),
+      );
+
+      return rows.map((row) => ({
+        ...row,
+        catalogDocumentCount: catalogCounts.get(row.id) ?? 0,
+      }));
     }),
 
   getMaterialSummary: publicProcedure
@@ -1202,6 +1269,16 @@ export const materialRouter = createTRPCRouter({
           withOrigin: sql<number>`count(*) filter (
             where nullif(btrim(${materials.originCountry}), '') is not null
           )::int`.as("withOrigin"),
+          withCatalog: sql<number>`count(*) filter (
+            where exists (
+              select 1
+              from material_catalog_document_links links
+              inner join material_catalog_documents docs
+                on docs.id = links.document_id
+              where links.material_id = ${materials.id}
+                and docs.deleted_at is null
+            )
+          )::int`.as("withCatalog"),
           uniqueOrigins:
             sql<number>`count(distinct nullif(btrim(${materials.originCountry}), ''))::int`.as(
               "uniqueOrigins",
@@ -1221,6 +1298,7 @@ export const materialRouter = createTRPCRouter({
         withManufacturer: Number(summary?.withManufacturer ?? 0),
         uniqueManufacturers: Number(summary?.uniqueManufacturers ?? 0),
         withOrigin: Number(summary?.withOrigin ?? 0),
+        withCatalog: Number(summary?.withCatalog ?? 0),
         uniqueOrigins: Number(summary?.uniqueOrigins ?? 0),
       };
     }),
@@ -1401,6 +1479,55 @@ export const materialRouter = createTRPCRouter({
               ? undefined
               : patch.defaultUnitPrice,
           sourceUrl: patch.sourceUrl === "" ? null : patch.sourceUrl,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy vật tư.",
+        });
+      }
+
+      return updated;
+    }),
+
+  setMaterialFieldLocks: publicProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        fieldLocks: z.record(z.string(), z.boolean()),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const material = await getActiveMaterialById(ctx.db, input.id);
+      const metadata = normalizeMaterialMetadata(material.metadataJson);
+      const nextLocks = { ...metadata.fieldLocks };
+      for (const [key, value] of Object.entries(input.fieldLocks)) {
+        if (!MATERIAL_FIELD_LOCK_KEYS.includes(key as MaterialFieldLockKey)) {
+          continue;
+        }
+        if (value) {
+          nextLocks[key as keyof typeof nextLocks] = true;
+        } else {
+          delete nextLocks[key as keyof typeof nextLocks];
+        }
+      }
+
+      const [updated] = await ctx.db
+        .update(materials)
+        .set({
+          metadataJson: {
+            ...material.metadataJson,
+            ...buildMaterialMetadata({
+              priceSources: metadata.priceSources,
+              shopScrape: metadata.shopScrape,
+              fieldLocks:
+                Object.keys(nextLocks).length > 0 ? nextLocks : undefined,
+            }),
+          },
           updatedAt: new Date().toISOString(),
         })
         .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))

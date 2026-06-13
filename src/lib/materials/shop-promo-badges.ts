@@ -39,6 +39,12 @@ export const SHOP_PROMO_BADGE_LABELS = [
   "Yêu thích",
   "Đề xuất",
   "Gợi ý",
+  "Liên hệ",
+  "Contact",
+  "Đăng ký",
+  "Đăng nhập",
+  "Register",
+  "Login",
 ] as const;
 
 function normalizePromoKey(value: string) {
@@ -56,7 +62,9 @@ function escapeRegExp(value: string) {
 
 function buildPromoBadgeHelpers(labels: readonly string[]) {
   const sortedLabels = [...labels].sort((a, b) => b.length - a.length);
-  const normalizedLabels = new Set(labels.map((label) => normalizePromoKey(label)));
+  const normalizedLabels = new Set(
+    labels.map((label) => normalizePromoKey(label)),
+  );
 
   const isPromoBadgeText = (value: string | null | undefined) => {
     const trimmed = value?.replace(/\s+/g, " ").trim();
@@ -106,30 +114,111 @@ export function stripTrailingPriceFromProductName(value: string) {
     .trim()
     .replace(/\s*giá\s*:\s*/gi, " ")
     .replace(CARD_PRICE_SUFFIX_PATTERN, "")
-    .replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
+    .replace(
+      /\b(còn hàng|hết hàng|in stock|out of stock|hàng còn|hang con)\b.*$/i,
+      "",
+    )
     .trim();
 }
 
 function sanitizeScrapedProductNameSingle(value: string) {
   const stripped = stripTrailingPriceFromProductName(
-    stripShopPromoBadgePrefix(value.replace(/\s+/g, " ").trim()),
+    stripStockCountPrefix(
+      stripWarrantyPrefix(
+        stripShopPromoBadgePrefix(value.replace(/\s+/g, " ").trim()),
+      ),
+    ),
   );
   const cleaned = stripped
-    .replace(/\b(add to cart|mua ngay|chi tiết|xem thêm)\b/gi, " ")
+    .replace(
+      /\b(add to cart|mua ngay|chi tiết|xem thêm|liên hệ|lien he|đăng ký|dang ky|đăng nhập|dang nhap|register|login|cart|giỏ hàng|gio hang)\b/gi,
+      " ",
+    )
     .trim();
   if (
     !cleaned ||
     cleaned.length < 2 ||
     isShopPromoBadgeText(cleaned) ||
-    isPriceOnlyProductName(cleaned)
+    isPriceOnlyProductName(cleaned) ||
+    isUtilityOnlyProductName(cleaned)
   ) {
     return null;
   }
   return cleaned.slice(0, 220);
 }
 
+function stripWarrantyPrefix(value: string) {
+  return value
+    .replace(
+      /^(?:bh|bảo hành|bao hanh)\s*\d+\s*(?:tháng|thang|năm|nam)\s*/i,
+      "",
+    )
+    .trim();
+}
+
+function stripStockCountPrefix(value: string) {
+  return value
+    .replace(
+      /^(?:còn|con|hàng còn|hang con)\s*\d+\s*(?:cái|chiếc|con|bộ|máy|pcs|set)?\s*/i,
+      "",
+    )
+    .trim();
+}
+
+export function stripStockCountFromProductName(value: string) {
+  return stripStockCountPrefix(value);
+}
+
+export function stripWarrantyFromProductName(value: string) {
+  return stripWarrantyPrefix(value);
+}
+
+/** Remove KH / Khấu hao column noise from scraped spec text. */
+export function stripKhauHaoFromSpecText(value: string) {
+  return value
+    .replace(
+      /\b(?:kh|khấu hao|khau hao)\s*[:：]?\s*\d+(?:[.,]\d+)?\s*%?/gi,
+      " ",
+    )
+    .replace(/\b(?:khấu hao|khau hao)\b/gi, " ")
+    .replace(/\bKH\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Parse depreciation from spec text; returns 0–1 scale or null. */
+export function parseDepreciationFromSpecText(value: string) {
+  const match =
+    /\b(?:kh|khấu hao|khau hao)\s*[:：]?\s*(\d+(?:[.,]\d+)?)\s*(%)?/i.exec(
+      value,
+    );
+  if (!match?.[1]) {
+    return null;
+  }
+  const raw = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(raw)) {
+    return null;
+  }
+  if (match[2] === "%") {
+    return raw > 1 ? raw / 100 : raw;
+  }
+  if (raw > 1 && raw <= 100) {
+    return raw / 100;
+  }
+  if (raw >= 0 && raw <= 1) {
+    return raw;
+  }
+  return null;
+}
+
 function isPriceOnlyProductName(value: string) {
   return /^(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d{4,})\s*(?:vnd|vnđ|₫|đ|dong|đồng)?$/i.test(
+    value.trim(),
+  );
+}
+
+function isUtilityOnlyProductName(value: string) {
+  return /^(?:bh|bảo hành|bao hanh)\s*\d+\s*(?:tháng|thang|năm|nam)$|^(?:còn hàng|hết hàng|in stock|out of stock|available|unavailable)$|^(?:còn|con|hàng còn|hang con)\s*\d+\s*(?:cái|chiếc|con|bộ|máy|pcs|set)?$/i.test(
     value.trim(),
   );
 }
@@ -167,17 +256,95 @@ export function extractProductNameFromCardText(text: string) {
   return sanitizeScrapedProductName(text);
 }
 
-/** Pick the longest valid product name from DOM/card candidates. */
+export type ScrapedProductNameSource =
+  | "json_ld"
+  | "title"
+  | "anchor_title"
+  | "anchor_text"
+  | "card_text"
+  | "snapshot_name";
+
+export type ScrapedProductNameCandidate =
+  | string
+  | null
+  | undefined
+  | {
+      value: string | null | undefined;
+      source?: ScrapedProductNameSource;
+    };
+
+const NAME_SOURCE_SCORES: Record<ScrapedProductNameSource, number> = {
+  title: 40,
+  json_ld: 38,
+  anchor_title: 30,
+  snapshot_name: 25,
+  anchor_text: 20,
+  card_text: 10,
+};
+
+export function scoreScrapedProductName(
+  name: string | null | undefined,
+  source?: ScrapedProductNameSource,
+) {
+  const sanitized = sanitizeScrapedProductName(name);
+  if (!sanitized) {
+    return -1;
+  }
+  const sourceScore = source ? (NAME_SOURCE_SCORES[source] ?? 15) : 15;
+  return sourceScore * 1000 + sanitized.length;
+}
+
+export function chooseScrapedProductName(
+  baseName: string,
+  incomingName: string,
+  baseSource?: ScrapedProductNameSource,
+  incomingSource?: ScrapedProductNameSource,
+) {
+  const base = sanitizeScrapedProductName(baseName);
+  const incoming = sanitizeScrapedProductName(incomingName);
+  if (!incoming) {
+    return base ?? baseName;
+  }
+  if (!base || isShopPromoBadgeText(baseName)) {
+    return incoming;
+  }
+  if (isShopPromoBadgeText(incomingName)) {
+    return base;
+  }
+  const baseScore = scoreScrapedProductName(base, baseSource);
+  const incomingScore = scoreScrapedProductName(incoming, incomingSource);
+  if (incomingScore === baseScore) {
+    return incoming.length > base.length ? incoming : base;
+  }
+  return incomingScore > baseScore ? incoming : base;
+}
+
+/** Pick the best valid product name from DOM/card candidates. */
 export function resolveProductNameFromCandidates(
-  candidates: Array<string | null | undefined>,
+  candidates: Array<ScrapedProductNameCandidate>,
   cardText?: string | null,
 ) {
-  const fromCandidates = candidates
-    .map((candidate) => sanitizeScrapedProductName(candidate))
-    .filter((name): name is string => Boolean(name));
+  const scored: Array<{ name: string; score: number }> = [];
+  for (const candidate of candidates) {
+    const value =
+      typeof candidate === "object" && candidate !== null && "value" in candidate
+        ? candidate.value
+        : candidate;
+    const source =
+      typeof candidate === "object" && candidate !== null && "value" in candidate
+        ? candidate.source
+        : undefined;
+    const sanitized = sanitizeScrapedProductName(value);
+    if (sanitized) {
+      scored.push({
+        name: sanitized,
+        score: scoreScrapedProductName(sanitized, source),
+      });
+    }
+  }
 
-  if (fromCandidates.length > 0) {
-    return fromCandidates.sort((a, b) => b.length - a.length)[0] ?? null;
+  if (scored.length > 0) {
+    return scored.sort((a, b) => b.score - a.score)[0]?.name ?? null;
   }
 
   if (cardText?.trim()) {
@@ -194,12 +361,37 @@ export type ScrapedProductNameFields = {
 
 function isCategoryListingUrl(url: string) {
   try {
-    const path = new URL(url).pathname;
-    return /\/category\/|\/categories\/|\/danh-muc\/|\/collection\//i.test(
-      path,
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/g, "") || "/";
+    if (path === "/") {
+      return true;
+    }
+    return (
+      /\/category\/|\/categories\/|\/danh-muc\/|\/collection\//i.test(path) ||
+      /\/product-category\/|\/search\b|\/tag\b|\/page\/\d+$/i.test(path) ||
+      /\/(?:account|login|register|cart|checkout)(?:\/|$)/i.test(path) ||
+      ["s", "q", "search", "paged", "page", "orderby"].some((key) =>
+        parsed.searchParams.has(key),
+      )
     );
   } catch {
     return false;
+  }
+}
+
+function sourceUrlIdentity(url: string) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    parsed.protocol = "https:";
+    parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (parsed.pathname.length > 1) {
+      parsed.pathname = parsed.pathname.replace(/\/+$/g, "");
+    }
+    parsed.searchParams.sort();
+    return `${parsed.hostname}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url.trim();
   }
 }
 
@@ -223,7 +415,8 @@ export function isInvalidListingOnlyProduct<T extends ScrapedProductNameFields>(
     if (
       productUrl.origin === listingUrl.origin &&
       productUrl.pathname.replace(/\/+$/g, "") ===
-        listingUrl.pathname.replace(/\/+$/g, "")
+        listingUrl.pathname.replace(/\/+$/g, "") &&
+      isCategoryListingUrl(pageUrl)
     ) {
       return true;
     }
@@ -246,9 +439,14 @@ export function sanitizeScrapedProductList<T extends ScrapedProductNameFields>(
     }
 
     const sanitized = { ...product, name };
-    const identity = product.sourceUrl.trim() || `${name}|`;
+    const identity = product.sourceUrl.trim()
+      ? sourceUrlIdentity(product.sourceUrl)
+      : `${name}|`;
     const existing = byIdentity.get(identity);
-    if (!existing || name.length > existing.name.length) {
+    if (
+      !existing ||
+      scoreScrapedProductName(name) > scoreScrapedProductName(existing.name)
+    ) {
       byIdentity.set(identity, sanitized);
     }
   }

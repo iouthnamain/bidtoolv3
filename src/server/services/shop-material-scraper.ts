@@ -7,13 +7,18 @@ import type { Browser, Page } from "playwright";
 import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
 import {
+  chooseScrapedProductName,
   isShopPromoBadgeText,
   resolveProductNameFromCandidates,
   sanitizeScrapedProductList,
   sanitizeScrapedProductName,
   SHOP_PROMO_BADGE_LABELS,
+  stripKhauHaoFromSpecText,
 } from "~/lib/materials/shop-promo-badges";
 import { isServerlessRuntime } from "~/server/runtime";
+import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
+
+export { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
 
 export {
   isShopPromoBadgeText,
@@ -93,6 +98,8 @@ type ProductCardSnapshot = {
   imageUrl: string | null;
   category: string | null;
   pdfUrls?: string[];
+  extractSource?: ProductExtractSource;
+  nameSource?: ProductNameSource;
 };
 
 type ShopPageSnapshot = {
@@ -109,16 +116,43 @@ type BrowserWithProcess = Browser & {
   process?: () => { kill: (signal?: string) => boolean };
 };
 
+type ProductExtractSource =
+  | "json_ld"
+  | "woocommerce"
+  | "generic_anchor"
+  | "generic_node"
+  | "snapshot";
+
+type ProductNameSource =
+  | "json_ld"
+  | "title"
+  | "anchor_title"
+  | "anchor_text"
+  | "card_text"
+  | "snapshot_name";
+
+export type ShopProductExtractionDiagnostic = {
+  name: string | null;
+  href: string | null;
+  text: string;
+  extractSource: ProductExtractSource;
+  dropReason: string | null;
+  score: number;
+};
+
+type ExtractedProductCandidate = {
+  product: ScrapedShopProduct;
+  extractSource: ProductExtractSource;
+  nameSource: ProductNameSource;
+  score: number;
+};
+
 const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_PRODUCTS = 100;
 const DEFAULT_CONCURRENT_PAGES = 2;
 const DNS_TIMEOUT_MS = 5_000;
 const PAGE_GOTO_TIMEOUT_MS = 15_000;
 const PAGE_NETWORK_IDLE_TIMEOUT_MS = 2_000;
-const SCRAPE_BASE_TIMEOUT_MS = 15_000;
-const SCRAPE_PAGE_TIMEOUT_MS = 8_000;
-const SCRAPE_MAX_TIMEOUT_PAGES = 100;
-const SCRAPE_ALL_TIMEOUT_MS = 20 * 60_000;
 const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
 const PUBLIC_HOST_CACHE = new Map<string, Promise<void>>();
 let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
@@ -177,7 +211,8 @@ export async function scrapeShopMaterialsFromUrl({
       (async () => {
         const queue = [startUrl.href];
         const queuedPages = new Set(queue);
-        const seenPages = new Set<string>();
+        const completedPages = new Set<string>();
+        const inProgressPages = new Set<string>();
         const currentUrlsByWorker = new Map<number, string>();
         const products = new Map<string, ScrapedShopProduct>();
         const failedPages: ShopScrapeResult["failedPages"] = [];
@@ -202,7 +237,7 @@ export async function scrapeShopMaterialsFromUrl({
             status,
             currentUrl: activeUrls[0] ?? null,
             currentUrls: activeUrls,
-            pagesVisited: Array.from(seenPages),
+            pagesVisited: Array.from(completedPages),
             failedPages: [...failedPages],
             productCount: products.size,
             queueLength: queue.length,
@@ -233,7 +268,7 @@ export async function scrapeShopMaterialsFromUrl({
         const assertWithinScrapeDeadline = () => {
           if (Date.now() >= scrapeDeadline) {
             throw new Error(
-              `Scrape shop quá thời gian bảo vệ trước khi đọc hết queue. Đã đọc ${seenPages.size.toLocaleString(
+              `Scrape shop quá thời gian bảo vệ trước khi đọc hết queue. Đã đọc ${completedPages.size.toLocaleString(
                 "vi-VN",
               )} trang, còn ${queue.length.toLocaleString("vi-VN")} URL chờ.`,
             );
@@ -246,7 +281,7 @@ export async function scrapeShopMaterialsFromUrl({
             if (stopReason) {
               return null;
             }
-            if (maxPages != null && seenPages.size >= maxPages) {
+            if (maxPages != null && completedPages.size >= maxPages) {
               stopReason = "page_limit";
               notifyWorkers();
               return null;
@@ -259,10 +294,13 @@ export async function scrapeShopMaterialsFromUrl({
 
             const pageUrl = queue.shift();
             if (pageUrl) {
-              if (seenPages.has(pageUrl)) {
+              if (
+                completedPages.has(pageUrl) ||
+                inProgressPages.has(pageUrl)
+              ) {
                 continue;
               }
-              seenPages.add(pageUrl);
+              inProgressPages.add(pageUrl);
               activePageCount += 1;
               currentUrlsByWorker.set(workerIndex, pageUrl);
               return pageUrl;
@@ -280,13 +318,20 @@ export async function scrapeShopMaterialsFromUrl({
           notifyWorkers();
         };
         const enqueueNextUrls = async (hrefs: string[]) => {
+          if (maxPages === 1) {
+            return;
+          }
           if (maxProducts != null && products.size >= maxProducts) {
             stopReason = "product_limit";
             return;
           }
 
           for (const href of hrefs) {
-            if (maxPages != null && queue.length + seenPages.size >= maxPages) {
+            if (
+              maxPages != null &&
+              queue.length + completedPages.size + inProgressPages.size >=
+                maxPages
+            ) {
               break;
             }
             try {
@@ -295,7 +340,8 @@ export async function scrapeShopMaterialsFromUrl({
                 startUrl.hostname,
               );
               if (
-                !seenPages.has(nextUrl.href) &&
+                !completedPages.has(nextUrl.href) &&
+                !inProgressPages.has(nextUrl.href) &&
                 !queuedPages.has(nextUrl.href)
               ) {
                 queue.push(nextUrl.href);
@@ -366,11 +412,14 @@ export async function scrapeShopMaterialsFromUrl({
                     : pageProducts;
                 currentUrlsByWorker.set(workerIndex, pageUrl);
                 mergeProducts(enrichedPageProducts);
+                inProgressPages.delete(pageUrl);
+                completedPages.add(pageUrl);
 
                 if (!stopReason) {
                   await enqueueNextUrls(snapshot.nextLinks);
                 }
               } catch (error) {
+                inProgressPages.delete(pageUrl);
                 failedPages.push({
                   url: pageUrl,
                   message:
@@ -400,7 +449,7 @@ export async function scrapeShopMaterialsFromUrl({
 
         throwIfAborted(signal);
         stopReason ??=
-          maxPages != null && seenPages.size >= maxPages
+          maxPages != null && completedPages.size >= maxPages
             ? "page_limit"
             : maxProducts != null && products.size >= maxProducts
               ? "product_limit"
@@ -408,7 +457,7 @@ export async function scrapeShopMaterialsFromUrl({
         reportProgress("complete", stopReason);
         return {
           products: productList(),
-          pagesVisited: Array.from(seenPages),
+          pagesVisited: Array.from(completedPages),
           failedPages,
           durationMs: Date.now() - startedAt,
           stopReason,
@@ -455,62 +504,87 @@ async function scrapePageSnapshot({
   await page.waitForTimeout(250).catch(() => undefined);
   await page
     .waitForSelector(
-      ".woocommerce-loop-product__title, .catepage .motsanpham, ul.products li.product",
+      ".woocommerce-loop-product__title, .catepage .motsanpham, ul.products li.product, li.product.type-product, article, [class*='product' i], a[href*='/product/'], a[href*='/san-pham/'], a[href*='/p/'], a[href*='/item/']",
       {
-        timeout: Math.max(
-          500,
-          Math.min(5_000, scrapeDeadline - Date.now()),
-        ),
+        timeout: Math.max(500, Math.min(5_000, scrapeDeadline - Date.now())),
       },
     )
     .catch(() => undefined);
   await page
     .waitForFunction(
       () => {
+        const productPathPattern = /\/(?:product|san-pham|p|item)\//i;
+        const isExcluded = (node: Element) =>
+          node.classList.contains("product_list_widget") ||
+          Boolean(
+            node.closest(
+              "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i], header, footer, nav, [class*='related' i], [id*='related' i], [class*='upsell' i], [class*='cross-sell' i]",
+            ),
+          );
+        const text = (node: Element | null | undefined) =>
+          node?.textContent?.replace(/\s+/g, " ").trim() ?? "";
         const cards = Array.from(
           document.querySelectorAll(
             ".catepage .motsanpham, ul.products li.product, li.product.type-product",
           ),
+        ).filter((node) => !isExcluded(node));
+        const productAnchors = Array.from(
+          document.querySelectorAll<HTMLAnchorElement>("a[href]"),
         ).filter(
-          (node) =>
-            !node.classList.contains("product_list_widget") &&
-            !node.closest(
-              "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i]",
-            ),
+          (anchor) =>
+            !isExcluded(anchor) &&
+            productPathPattern.test(anchor.getAttribute("href") ?? "") &&
+            text(anchor).length >= 4,
         );
-        if (cards.length === 0) {
+        const candidates = cards.length > 0 ? cards : productAnchors;
+        if (candidates.length === 0) {
           return false;
         }
-        const pricePattern =
-          /(?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?/i;
-        return cards.every((card) => {
-          const title = card
-            .querySelector(".woocommerce-loop-product__title, h2, h3")
-            ?.textContent?.replace(/\s+/g, " ")
-            .trim();
-          const priceText = card.querySelector(
-            ".price, .woocommerce-Price-amount, [class*='price' i]",
-          )?.textContent;
-          return (
-            Boolean(title && title.length > 3) &&
-            Boolean(priceText && pricePattern.test(priceText))
-          );
+        const readyCards = candidates.filter((card) => {
+          const title =
+            card
+              .querySelector(".woocommerce-loop-product__title, h2, h3")
+              ?.textContent?.replace(/\s+/g, " ")
+              .trim() || text(card);
+          return Boolean(title && title.length > 3);
         });
+        return (
+          readyCards.length >= Math.max(1, Math.ceil(candidates.length * 0.8))
+        );
       },
       undefined,
       {
-        timeout: Math.max(
-          500,
-          Math.min(8_000, scrapeDeadline - Date.now()),
-        ),
+        timeout: Math.max(500, Math.min(8_000, scrapeDeadline - Date.now())),
       },
     )
     .catch(() => undefined);
+  await autoScrollPageForLazyProducts(page, scrapeDeadline);
 
   await assertSafeScrapeUrl(page.url(), expectedHostname);
   return page.evaluate(collectShopPageSnapshot, {
     promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
   });
+}
+
+async function autoScrollPageForLazyProducts(
+  page: Page,
+  scrapeDeadline: number,
+) {
+  const timeoutMs = Math.max(250, Math.min(1_000, scrapeDeadline - Date.now()));
+  if (timeoutMs <= 250) {
+    return;
+  }
+  await page
+    .evaluate(
+      async (delay) => {
+        const startY = window.scrollY;
+        window.scrollTo(0, Math.max(document.body.scrollHeight, 0));
+        await new Promise((resolve) => window.setTimeout(resolve, delay));
+        window.scrollTo(0, startY);
+      },
+      Math.min(500, timeoutMs),
+    )
+    .catch(() => undefined);
 }
 
 function throwIfAborted(signal: AbortSignal | undefined) {
@@ -545,13 +619,33 @@ export function extractProductsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
 ): ScrapedShopProduct[] {
-  const products: ScrapedShopProduct[] = [];
+  return extractProductsWithDiagnosticsFromPageSnapshot(snapshot, method)
+    .products;
+}
+
+export function extractProductsWithDiagnosticsFromPageSnapshot(
+  snapshot: ShopPageSnapshot,
+  method: ShopScrapeMethod = "auto",
+): {
+  products: ScrapedShopProduct[];
+  diagnostics: ShopProductExtractionDiagnostic[];
+} {
+  const candidates: ExtractedProductCandidate[] = [];
+  const diagnostics: ShopProductExtractionDiagnostic[] = [];
 
   if (method === "auto" || method === "json_ld") {
     for (const jsonLdText of snapshot.jsonLdTexts) {
       for (const value of parseJsonLdText(jsonLdText)) {
         for (const product of productsFromJsonLd(value, snapshot.pageUrl)) {
-          products.push(product);
+          const candidate = candidateFromProduct(
+            product,
+            "json_ld",
+            "json_ld",
+            snapshot.pageUrl,
+          );
+          if (candidate) {
+            candidates.push(candidate);
+          }
         }
       }
     }
@@ -559,25 +653,21 @@ export function extractProductsFromPageSnapshot(
 
   if (method === "auto" || method === "dom_cards") {
     for (const card of snapshot.cards) {
-      const product = productFromCardSnapshot(card, snapshot.pageUrl);
-      if (product) {
-        products.push(product);
+      const result = productCandidateFromCardSnapshot(card, snapshot.pageUrl);
+      diagnostics.push(result.diagnostic);
+      if (result.candidate) {
+        candidates.push(result.candidate);
       }
     }
   }
 
-  const byIdentity = new Map<string, ScrapedShopProduct>();
-  for (const product of products) {
-    const existing = byIdentity.get(productIdentity(product));
-    if (!existing || scoreProduct(product) > scoreProduct(existing)) {
-      byIdentity.set(productIdentity(product), product);
-    }
-  }
-
-  return sanitizeScrapedProductList(
-    Array.from(byIdentity.values()),
+  const products = sanitizeScrapedProductList(
+    mergeProductCandidates(candidates, snapshot.pageUrl).map(
+      (candidate) => candidate.product,
+    ),
     snapshot.pageUrl,
   );
+  return { products, diagnostics };
 }
 
 type DetailEnrichmentInput = {
@@ -717,6 +807,7 @@ export function mergeScrapedProductData(
       : base.specText;
 
   const mergedName = chooseScrapedProductName(base.name, incoming.name);
+  const priceSource = chooseScrapedProductPrice(base, incoming);
 
   return {
     ...base,
@@ -726,10 +817,10 @@ export function mergeScrapedProductData(
     specText: betterSpecText,
     manufacturer: base.manufacturer ?? incoming.manufacturer,
     originCountry: base.originCountry ?? incoming.originCountry,
-    price: base.price ?? incoming.price,
-    priceText: base.priceText ?? incoming.priceText,
-    currency: base.currency || incoming.currency,
-    sourceUrl: base.sourceUrl || incoming.sourceUrl,
+    price: priceSource.price,
+    priceText: priceSource.priceText,
+    currency: priceSource.currency,
+    sourceUrl: chooseProductSourceUrl(base.sourceUrl, incoming.sourceUrl),
     imageUrl: base.imageUrl ?? incoming.imageUrl,
     sku: base.sku ?? incoming.sku,
     model: base.model ?? incoming.model,
@@ -919,16 +1010,6 @@ function withTimeout<T>(
   });
 }
 
-function scrapeTimeoutMs(maxPages: number | null) {
-  if (maxPages == null) {
-    return SCRAPE_ALL_TIMEOUT_MS;
-  }
-
-  return (
-    SCRAPE_BASE_TIMEOUT_MS +
-    Math.min(maxPages, SCRAPE_MAX_TIMEOUT_PAGES) * SCRAPE_PAGE_TIMEOUT_MS
-  );
-}
 
 function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
   switch (stopReason) {
@@ -1072,8 +1153,7 @@ export function collectShopPageSnapshot(
   };
   const titleSelectors = [
     "[class*='product-title' i], [class*='product_title' i], [class*='product-name' i], [class*='product_name' i], .woocommerce-loop-product__title",
-    "h1, h2, h3, h4",
-    "[class*='name' i], [class*='title' i]",
+    "h2, h3",
   ];
   const findTitleElement = (root: Element) => {
     for (const selector of titleSelectors) {
@@ -1111,7 +1191,7 @@ export function collectShopPageSnapshot(
     node.classList.contains("product_list_widget") ||
     Boolean(
       node.closest(
-        "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i]",
+        "aside, .sidebar, #secondary, .widget-area, [class*='widget-area' i], [class*='sidebar' i], header, footer, nav, [class*='related' i], [id*='related' i], [class*='upsell' i], [class*='cross-sell' i]",
       ),
     );
   const stripTrailingPrice = (value: string) =>
@@ -1125,35 +1205,88 @@ export function collectShopPageSnapshot(
       )
       .replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
       .trim();
-  const resolveCardName = (
-    candidates: Array<string | null | undefined>,
-    cardText: string,
-  ) => {
-    const sanitizeCandidate = (candidate: string | null | undefined) => {
-      if (!candidate?.trim()) {
-        return null;
-      }
-      const values = [candidate.replace(/\s+/g, " ").trim()];
-      for (const line of candidate.split(/\r?\n+/)) {
-        values.push(line.trim());
-      }
-      for (const value of values) {
-        const stripped = stripTrailingPrice(stripPromoBadgePrefix(value));
-        if (stripped && !isPromoBadgeText(stripped)) {
-          return stripped;
-        }
-      }
+  const stripStockCountPrefix = (value: string) =>
+    value
+      .replace(
+        /^(?:còn|con|hàng còn|hang con)\s*\d+\s*(?:cái|chiếc|con|bộ|máy|pcs|set)?\s*/i,
+        "",
+      )
+      .trim();
+  const stripWarrantyPrefix = (value: string) =>
+    value
+      .replace(
+        /^(?:bh|bảo hành|bao hanh)\s*\d+\s*(?:tháng|thang|năm|nam)\s*/i,
+        "",
+      )
+      .trim();
+  const sanitizeNameCandidate = (candidate: string | null | undefined) => {
+    if (!candidate?.trim()) {
       return null;
-    };
-    for (const candidate of candidates) {
-      const name = sanitizeCandidate(candidate);
-      if (name) {
-        return name;
+    }
+    const values = [candidate.replace(/\s+/g, " ").trim()];
+    for (const line of candidate.split(/\r?\n+/)) {
+      values.push(line.trim());
+    }
+    for (const value of values) {
+      const stripped = stripTrailingPrice(
+        stripStockCountPrefix(
+          stripWarrantyPrefix(stripPromoBadgePrefix(value)),
+        ),
+      );
+      if (stripped && !isPromoBadgeText(stripped)) {
+        return stripped;
       }
     }
-    return sanitizeCandidate(stripTrailingPrice(cardText.replace(/\s+/g, " ").trim()));
+    return null;
   };
-  const cardNameScore = (card: { name: string | null }) => {
+  const resolveCardName = (
+    candidates: Array<{
+      value: string | null | undefined;
+      source: ProductNameSource;
+    }>,
+    cardText: string,
+  ) => {
+    const scored = candidates
+      .map((candidate) => {
+        const name = sanitizeNameCandidate(candidate.value);
+        if (!name) {
+          return null;
+        }
+        const sourceScore =
+          candidate.source === "title"
+            ? 40
+            : candidate.source === "anchor_title"
+              ? 30
+              : candidate.source === "anchor_text"
+                ? 20
+                : 10;
+        return { name, score: sourceScore * 1000 + name.length };
+      })
+      .filter((entry): entry is { name: string; score: number } =>
+        Boolean(entry),
+      )
+      .sort((a, b) => b.score - a.score);
+    if (scored[0]) {
+      const best = scored[0];
+      const source =
+        candidates.find(
+          (candidate) => sanitizeNameCandidate(candidate.value) === best.name,
+        )?.source ?? "card_text";
+      return { name: best.name, source };
+    }
+    const fallback = sanitizeNameCandidate(
+      stripTrailingPrice(cardText.replace(/\s+/g, " ").trim()),
+    );
+    return {
+      name: fallback,
+      source: "card_text" as ProductNameSource,
+    };
+  };
+  const cardNameScore = (card: {
+    name: string | null;
+    extractSource?: ProductExtractSource;
+    nameSource?: ProductNameSource;
+  }) => {
     const rawName = card.name?.replace(/\s+/g, " ").trim() ?? "";
     if (!rawName || isPromoBadgeText(rawName)) {
       return 0;
@@ -1162,7 +1295,21 @@ export function collectShopPageSnapshot(
     if (!stripped || isPromoBadgeText(stripped)) {
       return 0;
     }
-    return stripped.length;
+    const sourceScore =
+      card.extractSource === "woocommerce"
+        ? 50
+        : card.extractSource === "generic_anchor"
+          ? 25
+          : 10;
+    const nameScore =
+      card.nameSource === "title"
+        ? 35
+        : card.nameSource === "anchor_title"
+          ? 25
+          : card.nameSource === "anchor_text"
+            ? 15
+            : 5;
+    return sourceScore + nameScore + stripped.length;
   };
   const cardHasPrice = (card: { text: string }, root: Element) => {
     if (pricePattern.test(card.text)) {
@@ -1174,7 +1321,10 @@ export function collectShopPageSnapshot(
     const priceValue = text(priceElement);
     return Boolean(priceValue && pricePattern.test(priceValue));
   };
-  const buildCardFromNode = (node: Element) => {
+  const buildCardFromNode = (
+    node: Element,
+    extractSource: ProductExtractSource,
+  ) => {
     const anchors = Array.from(
       node.querySelectorAll<HTMLAnchorElement>("a[href]"),
     );
@@ -1216,8 +1366,8 @@ export function collectShopPageSnapshot(
       ".price, .woocommerce-Price-amount, [class*='price' i]",
     );
     const anchorTitle = anchor?.getAttribute("title")?.trim();
-    const anchorText = text(anchor);
     const titleText = text(titleElement);
+    const anchorText = text(anchor);
     const nodeText = text(node) ?? "";
     const priceText = text(priceElement);
     const cardText =
@@ -1226,14 +1376,24 @@ export function collectShopPageSnapshot(
         : nodeText;
     const imageSrc =
       image?.getAttribute("src") ?? image?.getAttribute("data-src");
+    const resolvedName = resolveCardName(
+      [
+        { value: titleText, source: "title" },
+        { value: anchorTitle, source: "anchor_title" },
+        { value: anchorText, source: "anchor_text" },
+      ],
+      cardText,
+    );
 
     return {
       text: cardText,
-      name: resolveCardName([titleText, anchorTitle], cardText),
+      name: resolvedName.name,
+      nameSource: resolvedName.source,
       href: abs(anchor?.getAttribute("href")),
       imageUrl: abs(imageSrc),
       category: text(categoryElement),
       pdfUrls: collectPdfUrls(cardRoot, 5),
+      extractSource,
     };
   };
   const wooNodes = Array.from(
@@ -1250,11 +1410,13 @@ export function collectShopPageSnapshot(
       imageUrl: string | null;
       category: string | null;
       pdfUrls: string[];
+      extractSource: ProductExtractSource;
+      nameSource: ProductNameSource;
     }
   >();
   for (const node of wooNodes) {
-    const card = buildCardFromNode(node);
-    if (!card.href || !card.name || !cardHasPrice(card, node)) {
+    const card = buildCardFromNode(node, "woocommerce");
+    if (!card.href || !card.name) {
       continue;
     }
     const existing = cardsByHref.get(card.href);
@@ -1262,7 +1424,13 @@ export function collectShopPageSnapshot(
       cardsByHref.set(card.href, card);
     }
   }
-  const likelyNodeSet = new Set<Element>();
+  const productPathPattern = /\/(?:product|products|san-pham|p|item)\//i;
+  const likelyNodeSources = new Map<Element, ProductExtractSource>();
+  const addLikelyNode = (node: Element, source: ProductExtractSource) => {
+    if (!likelyNodeSources.has(node)) {
+      likelyNodeSources.set(node, source);
+    }
+  };
   const productAnchors = Array.from(
     document.querySelectorAll<HTMLAnchorElement>("a[href]"),
   ).filter((anchor) => {
@@ -1272,10 +1440,21 @@ export function collectShopPageSnapshot(
     if (/^(xem thêm|chi tiết|mua ngay|add to cart|giỏ hàng)$/i.test(value)) {
       return false;
     }
-    return !/^(#|javascript:|mailto:|tel:)/i.test(href);
+    return (
+      !isWidgetProductNode(anchor) &&
+      !/^(#|javascript:|mailto:|tel:)/i.test(href)
+    );
   });
 
   for (const anchor of productAnchors) {
+    const href = anchor.getAttribute("href") ?? "";
+    if (productPathPattern.test(href)) {
+      addLikelyNode(
+        anchor.closest("article, li, [class*='product' i]") ?? anchor,
+        "generic_anchor",
+      );
+      continue;
+    }
     let node: Element | null = anchor;
     for (let depth = 0; node && depth < 7; depth += 1) {
       const value = text(node);
@@ -1286,7 +1465,7 @@ export function collectShopPageSnapshot(
         pricePattern.test(value) &&
         node.querySelectorAll("a[href]").length <= 8
       ) {
-        likelyNodeSet.add(node);
+        addLikelyNode(node, "generic_node");
         break;
       }
       node = node.parentElement;
@@ -1306,14 +1485,25 @@ export function collectShopPageSnapshot(
     );
   });
 
-  fallbackNodes.slice(0, 120).forEach((node) => likelyNodeSet.add(node));
-  const likelyNodes = Array.from(likelyNodeSet)
-    .filter((node) => !isWidgetProductNode(node))
+  fallbackNodes
+    .slice(0, 120)
+    .forEach((node) => addLikelyNode(node, "generic_node"));
+  const likelyNodes = Array.from(likelyNodeSources.entries())
+    .filter(([node]) => !isWidgetProductNode(node))
     .slice(0, 160);
 
-  for (const node of likelyNodes) {
-    const card = buildCardFromNode(node);
-    if (!card.href || !card.name || !cardHasPrice(card, node)) {
+  for (const [node, source] of likelyNodes) {
+    const card = buildCardFromNode(node, source);
+    const hasProductPath = Boolean(
+      card.href && productPathPattern.test(new URL(card.href).pathname),
+    );
+    if (
+      !card.href ||
+      !card.name ||
+      (source !== "generic_anchor" &&
+        !hasProductPath &&
+        !cardHasPrice(card, node))
+    ) {
       continue;
     }
     const existing = cardsByHref.get(card.href);
@@ -1451,27 +1641,42 @@ function productsFromJsonLd(
   return results;
 }
 
-function productFromCardSnapshot(
+function productCandidateFromCardSnapshot(
   card: ProductCardSnapshot,
   pageUrl: string,
-): ScrapedShopProduct | null {
-  if (!card.href?.trim()) {
-    return null;
+): {
+  candidate: ExtractedProductCandidate | null;
+  diagnostic: ShopProductExtractionDiagnostic;
+} {
+  const extractSource = card.extractSource ?? "snapshot";
+  const href = normalizeProductSourceUrl(card.href, pageUrl);
+  const diagnosticBase = {
+    name: card.name,
+    href,
+    text: card.text,
+    extractSource,
+    score: 0,
+  };
+  if (!href) {
+    return {
+      candidate: null,
+      diagnostic: { ...diagnosticBase, dropReason: "missing_product_url" },
+    };
   }
-  if (normalizeKey(card.href) === normalizeKey(pageUrl)) {
-    return null;
-  }
-  const name = resolveProductNameFromCandidates([card.name], card.text);
+
+  const name = resolveProductNameFromCandidates(
+    [{ value: card.name, source: card.nameSource ?? "snapshot_name" }],
+    card.text,
+  );
   if (!name) {
-    return null;
+    return {
+      candidate: null,
+      diagnostic: { ...diagnosticBase, dropReason: "invalid_product_name" },
+    };
   }
   const priceResult = extractPriceFromText(card.text);
-  if (!priceResult.price && !priceResult.priceText) {
-    return null;
-  }
   const labels = extractProductLabels(card.text);
-
-  return {
+  const product: ScrapedShopProduct = {
     name,
     unit: detectUnit(`${name} ${card.text}`),
     category: card.category ?? labels.category,
@@ -1481,7 +1686,7 @@ function productFromCardSnapshot(
     price: priceResult.price,
     priceText: priceResult.priceText,
     currency: detectCurrency(priceResult.priceText) ?? "VND",
-    sourceUrl: card.href,
+    sourceUrl: href,
     imageUrl: card.imageUrl,
     sku: labels.sku ?? detectSku(card.text),
     model: labels.model,
@@ -1489,16 +1694,293 @@ function productFromCardSnapshot(
     shopCategory: card.category ?? labels.category,
     catalogPdfUrls: mergeCatalogPdfUrls(card.pdfUrls),
   };
+  const nameSource = card.nameSource ?? "snapshot_name";
+  const candidate = candidateFromProduct(
+    product,
+    extractSource,
+    nameSource,
+    pageUrl,
+  );
+  if (!candidate) {
+    return {
+      candidate: null,
+      diagnostic: {
+        ...diagnosticBase,
+        name,
+        dropReason:
+          productValidationDropReason(product, pageUrl, extractSource) ??
+          "invalid_product",
+      },
+    };
+  }
+
+  return {
+    candidate,
+    diagnostic: {
+      ...diagnosticBase,
+      name: candidate.product.name,
+      dropReason: null,
+      score: candidate.score,
+    },
+  };
+}
+
+function candidateFromProduct(
+  product: ScrapedShopProduct,
+  extractSource: ProductExtractSource,
+  nameSource: ProductNameSource,
+  pageUrl: string,
+): ExtractedProductCandidate | null {
+  const name = sanitizeScrapedProductName(product.name);
+  const sourceUrl = normalizeProductSourceUrl(product.sourceUrl, pageUrl);
+  if (!name || !sourceUrl) {
+    return null;
+  }
+
+  const normalizedProduct = {
+    ...product,
+    name,
+    sourceUrl,
+    catalogPdfUrls: mergeCatalogPdfUrls(product.catalogPdfUrls),
+  };
+  if (productValidationDropReason(normalizedProduct, pageUrl, extractSource)) {
+    return null;
+  }
+
+  return {
+    product: normalizedProduct,
+    extractSource,
+    nameSource,
+    score: scoreProductCandidate(
+      normalizedProduct,
+      extractSource,
+      nameSource,
+      pageUrl,
+    ),
+  };
+}
+
+type ProductMergeBucket = {
+  candidate: ExtractedProductCandidate;
+  hasProductUrl: boolean;
+};
+
+function mergeProductCandidates(
+  candidates: ExtractedProductCandidate[],
+  pageUrl: string,
+) {
+  const buckets: ProductMergeBucket[] = [];
+  const byUrl = new Map<string, ProductMergeBucket>();
+  const bySku = new Map<string, ProductMergeBucket>();
+  const byName = new Map<string, ProductMergeBucket>();
+
+  for (const candidate of candidates) {
+    const urlKey = usableProductUrlIdentity(candidate.product, pageUrl);
+    const skuKey = productSkuIdentity(candidate.product);
+    const nameKey = productNameIdentity(candidate.product);
+    const nameBucket = nameKey ? byName.get(nameKey) : undefined;
+    const bucket =
+      (urlKey ? byUrl.get(urlKey) : undefined) ??
+      (skuKey ? bySku.get(skuKey) : undefined) ??
+      (nameBucket && shouldMergeByName(candidate, nameBucket, pageUrl)
+        ? nameBucket
+        : undefined);
+
+    if (!bucket) {
+      const nextBucket: ProductMergeBucket = {
+        candidate,
+        hasProductUrl: Boolean(urlKey),
+      };
+      buckets.push(nextBucket);
+      indexProductMergeBucket(nextBucket, byUrl, bySku, byName, pageUrl);
+      continue;
+    }
+
+    bucket.candidate = mergeProductCandidate(
+      bucket.candidate,
+      candidate,
+      pageUrl,
+    );
+    bucket.hasProductUrl =
+      bucket.hasProductUrl ||
+      Boolean(usableProductUrlIdentity(candidate.product, pageUrl));
+    indexProductMergeBucket(bucket, byUrl, bySku, byName, pageUrl);
+  }
+
+  return buckets.map((bucket) => bucket.candidate);
+}
+
+function mergeProductCandidate(
+  existing: ExtractedProductCandidate,
+  incoming: ExtractedProductCandidate,
+  pageUrl: string,
+): ExtractedProductCandidate {
+  const primary = incoming.score > existing.score ? incoming : existing;
+  const secondary = primary === incoming ? existing : incoming;
+  const merged = mergeScrapedProductData(primary.product, secondary.product);
+  const product = {
+    ...merged,
+    name: chooseScrapedProductName(
+      primary.product.name,
+      secondary.product.name,
+      primary.nameSource,
+      secondary.nameSource,
+    ),
+  };
+  const extractSource = primary.extractSource;
+  const nameSource = primary.nameSource;
+  return {
+    product,
+    extractSource,
+    nameSource,
+    score: scoreProductCandidate(product, extractSource, nameSource, pageUrl),
+  };
+}
+
+function indexProductMergeBucket(
+  bucket: ProductMergeBucket,
+  byUrl: Map<string, ProductMergeBucket>,
+  bySku: Map<string, ProductMergeBucket>,
+  byName: Map<string, ProductMergeBucket>,
+  pageUrl: string,
+) {
+  const urlKey = usableProductUrlIdentity(bucket.candidate.product, pageUrl);
+  const skuKey = productSkuIdentity(bucket.candidate.product);
+  const nameKey = productNameIdentity(bucket.candidate.product);
+  if (urlKey) {
+    byUrl.set(urlKey, bucket);
+  }
+  if (skuKey) {
+    bySku.set(skuKey, bucket);
+  }
+  if (nameKey) {
+    byName.set(nameKey, bucket);
+  }
+}
+
+function shouldMergeByName(
+  candidate: ExtractedProductCandidate,
+  bucket: ProductMergeBucket,
+  pageUrl: string,
+) {
+  const incomingUrlKey = usableProductUrlIdentity(candidate.product, pageUrl);
+  const existingUrlKey = usableProductUrlIdentity(
+    bucket.candidate.product,
+    pageUrl,
+  );
+  if (!incomingUrlKey || !existingUrlKey) {
+    return true;
+  }
+  return incomingUrlKey === existingUrlKey;
+}
+
+function productValidationDropReason(
+  product: ScrapedShopProduct,
+  pageUrl: string,
+  extractSource: ProductExtractSource,
+) {
+  if (!sanitizeScrapedProductName(product.name)) {
+    return "invalid_product_name";
+  }
+  const sourceUrl = normalizeProductSourceUrl(product.sourceUrl, pageUrl);
+  if (!sourceUrl) {
+    return "missing_product_url";
+  }
+  const samePage = sameCanonicalUrl(sourceUrl, pageUrl);
+  if (samePage && !canUseCurrentPageAsProductUrl(pageUrl, extractSource)) {
+    if (extractSource === "json_ld") {
+      return null;
+    }
+    return "listing_page_url";
+  }
+  if (
+    isLikelyListingOnlyUrl(sourceUrl) &&
+    !isLikelyProductDetailUrl(sourceUrl)
+  ) {
+    if (extractSource === "json_ld") {
+      return null;
+    }
+    return "listing_page_url";
+  }
+  if (
+    extractSource === "generic_anchor" &&
+    product.price == null &&
+    !product.priceText &&
+    !product.imageUrl &&
+    !hasStrongProductUrlSignal(sourceUrl) &&
+    !isLikelyProductDetailUrl(sourceUrl)
+  ) {
+    return "generic_anchor_without_product_evidence";
+  }
+  return null;
+}
+
+function canUseCurrentPageAsProductUrl(
+  pageUrl: string,
+  extractSource: ProductExtractSource,
+) {
+  if (isLikelyListingOnlyUrl(pageUrl)) {
+    return false;
+  }
+  return extractSource === "json_ld" || isLikelyProductDetailUrl(pageUrl);
+}
+
+function scoreProductCandidate(
+  product: ScrapedShopProduct,
+  extractSource: ProductExtractSource,
+  nameSource: ProductNameSource,
+  pageUrl: string,
+) {
+  if (productValidationDropReason(product, pageUrl, extractSource)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const extractSourceScore: Record<ProductExtractSource, number> = {
+    json_ld: 30,
+    woocommerce: 32,
+    generic_anchor: 18,
+    generic_node: 12,
+    snapshot: 10,
+  };
+  const nameSourceScore: Record<ProductNameSource, number> = {
+    json_ld: 34,
+    title: 34,
+    anchor_title: 24,
+    anchor_text: 14,
+    snapshot_name: 14,
+    card_text: 6,
+  };
+  let score =
+    extractSourceScore[extractSource] +
+    nameSourceScore[nameSource] +
+    Math.min(product.name.length, 80) / 8;
+
+  if (isLikelyProductDetailUrl(product.sourceUrl)) score += 40;
+  else score += 15;
+  if (product.price != null) score += 20;
+  if (product.priceText) score += 5;
+  if (product.manufacturer) score += 10;
+  if (product.originCountry) score += 8;
+  if (product.category) score += 8;
+  if (product.unit) score += 6;
+  if (product.specText.trim()) score += 10;
+  if (product.sku) score += 14;
+  if (product.model) score += 12;
+  if (product.availability) score += 4;
+  if (product.imageUrl) score += 4;
+  if (product.catalogPdfUrls.length > 0) score += 8;
+  return score;
 }
 
 function productIdentity(product: ScrapedShopProduct) {
   return (
-    product.sourceUrl || `${normalizeKey(product.name)}|${product.unit ?? ""}`
+    productSourceUrlIdentity(product.sourceUrl) ??
+    productNameIdentity(product) ??
+    ""
   );
 }
 
 function scoreProduct(product: ScrapedShopProduct) {
-  return [
+  const baseScore = [
     product.name,
     product.price,
     product.specText,
@@ -1511,6 +1993,7 @@ function scoreProduct(product: ScrapedShopProduct) {
     product.model,
     product.availability,
   ].filter(Boolean).length;
+  return baseScore + (isLikelyProductDetailUrl(product.sourceUrl) ? 5 : 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1567,27 +2050,218 @@ function absoluteUrl(value: string | null | undefined, baseUrl: string) {
   }
 }
 
+const PRODUCT_DETAIL_PATH_PATTERN = /\/(?:product|products|san-pham|p|item)\//i;
+const STRONG_PRODUCT_DETAIL_PATH_PATTERN =
+  /\/(?:product|products|p|item|show)(?:\/|$)|_p\d+\.aspx$/i;
+const LISTING_PATH_PATTERN =
+  /\/(?:category|categories|product-category|danh-muc|collections?|search|tag|tags|archive|account|login|register|cart|checkout)\b/i;
+const SHOP_URL_PROFILES = [
+  {
+    hostPattern: /(?:^|\.)thegioiic\.com$/i,
+    listingPathPatterns: [/^\/san-pham(?:\/|$)/i],
+  },
+  {
+    hostPattern: /(?:^|\.)dientutuonglai\.com$/i,
+    listingPathPatterns: [/^\/san-pham(?:\/|$)/i],
+  },
+  {
+    hostPattern: /(?:^|\.)linhkienchatluong\.vn$/i,
+    listingPathPatterns: [/_s\d+\.aspx$/i],
+  },
+] as const;
+
+function normalizeProductSourceUrl(
+  value: string | null | undefined,
+  baseUrl: string,
+) {
+  if (!value?.trim()) {
+    return null;
+  }
+  try {
+    const url = new URL(value.trim(), baseUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return null;
+    }
+    url.hash = "";
+    url.username = "";
+    url.password = "";
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function productSourceUrlIdentity(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return null;
+  }
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    url.username = "";
+    url.password = "";
+    url.protocol = "https:";
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (url.pathname.length > 1) {
+      url.pathname = url.pathname.replace(/\/+$/g, "");
+    }
+    url.searchParams.sort();
+    return `${url.hostname}${url.pathname}${url.search}`;
+  } catch {
+    const normalized = normalizeKey(value);
+    return normalized || null;
+  }
+}
+
+function sameCanonicalUrl(left: string, right: string) {
+  const leftKey = productSourceUrlIdentity(left);
+  const rightKey = productSourceUrlIdentity(right);
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+function isLikelyProductDetailUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/g, "") || "/";
+    if (matchesShopListingProfile(url)) {
+      return false;
+    }
+    if (PRODUCT_DETAIL_PATH_PATTERN.test(`${path}/`)) {
+      return true;
+    }
+    return path !== "/" && !isLikelyListingOnlyUrl(value);
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyListingOnlyUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/g, "") || "/";
+    if (path === "/") {
+      return true;
+    }
+    if (matchesShopListingProfile(url)) {
+      return true;
+    }
+    if (LISTING_PATH_PATTERN.test(path)) {
+      return true;
+    }
+    if (/\/page\/\d+$/i.test(path)) {
+      return true;
+    }
+    const listingQueryKeys = [
+      "s",
+      "q",
+      "search",
+      "keyword",
+      "paged",
+      "page",
+      "orderby",
+      "filter",
+      "min_price",
+      "max_price",
+    ];
+    return listingQueryKeys.some((key) => url.searchParams.has(key));
+  } catch {
+    return false;
+  }
+}
+
+function matchesShopListingProfile(url: URL) {
+  const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+  return SHOP_URL_PROFILES.some(
+    (profile) =>
+      profile.hostPattern.test(hostname) &&
+      profile.listingPathPatterns.some((pattern) => pattern.test(url.pathname)),
+  );
+}
+
+function hasStrongProductUrlSignal(value: string) {
+  try {
+    return STRONG_PRODUCT_DETAIL_PATH_PATTERN.test(new URL(value).pathname);
+  } catch {
+    return false;
+  }
+}
+
+function usableProductUrlIdentity(
+  product: ScrapedShopProduct,
+  pageUrl: string,
+) {
+  const sourceUrl = normalizeProductSourceUrl(product.sourceUrl, pageUrl);
+  if (!sourceUrl) {
+    return null;
+  }
+  if (sameCanonicalUrl(sourceUrl, pageUrl) && isLikelyListingOnlyUrl(pageUrl)) {
+    return null;
+  }
+  if (
+    isLikelyListingOnlyUrl(sourceUrl) &&
+    !isLikelyProductDetailUrl(sourceUrl)
+  ) {
+    return null;
+  }
+  return productSourceUrlIdentity(sourceUrl);
+}
+
+function productSkuIdentity(product: ScrapedShopProduct) {
+  const sku =
+    normalizeKey(product.sku ?? "") || normalizeKey(product.model ?? "");
+  return sku ? `sku:${sku}` : null;
+}
+
+function productNameIdentity(product: ScrapedShopProduct) {
+  const name = sanitizeScrapedProductName(product.name);
+  if (!name) {
+    return null;
+  }
+  return `name:${normalizeKey(name)}|${normalizeKey(product.unit ?? "")}`;
+}
+
 function cleanName(value: string | null | undefined) {
   return sanitizeScrapedProductName(value);
 }
 
-function chooseScrapedProductName(baseName: string, incomingName: string) {
-  const base = sanitizeScrapedProductName(baseName);
-  const incoming = sanitizeScrapedProductName(incomingName);
-  if (!incoming) {
-    return base ?? baseName;
+function chooseProductSourceUrl(baseUrl: string, incomingUrl: string) {
+  const baseScore = scoreSourceUrl(baseUrl);
+  const incomingScore = scoreSourceUrl(incomingUrl);
+  return incomingScore > baseScore ? incomingUrl : baseUrl || incomingUrl;
+}
+
+function scoreSourceUrl(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return 0;
   }
-  if (!base || isShopPromoBadgeText(baseName)) {
-    return incoming;
+  if (isLikelyListingOnlyUrl(value) && !isLikelyProductDetailUrl(value)) {
+    return -20;
   }
-  if (isShopPromoBadgeText(incomingName)) {
-    return base;
+  return isLikelyProductDetailUrl(value) ? 30 : 10;
+}
+
+function chooseScrapedProductPrice(
+  base: ScrapedShopProduct,
+  incoming: ScrapedShopProduct,
+) {
+  if (base.price != null || base.priceText) {
+    return {
+      price: base.price,
+      priceText: base.priceText,
+      currency: base.currency || incoming.currency || "VND",
+    };
   }
-  return incoming.length > base.length ? incoming : base;
+  return {
+    price: incoming.price,
+    priceText: incoming.priceText,
+    currency: incoming.currency || base.currency || "VND",
+  };
 }
 
 function cleanDescription(text: string, name: string) {
-  return text.replace(name, " ").replace(/\s+/g, " ").trim().slice(0, 1000);
+  return stripKhauHaoFromSpecText(
+    text.replace(name, " ").replace(/\s+/g, " ").trim(),
+  ).slice(0, 1000);
 }
 
 const labeledValueDefinitions = {
@@ -1710,18 +2384,26 @@ export function enrichProductWithPageText(
 }
 
 function detectUnit(text: string) {
-  const priceUnitMatch =
-    /(?:₫|đ|vnd|vnđ|dong|đồng)\s*\/\s*(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp)/i.exec(
-      text,
-    );
+  const unitText = text.replace(
+    /(?:^|\s)(?:còn|con|hàng còn|hang con)\s*\d+\s*(?:cái|chiếc|con|bộ|máy|pcs|set)(?=\s|$)/gi,
+    " ",
+  );
+  const explicitUnits =
+    "cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp";
+  const inferredUnits =
+    "cái|chiếc|bộ|kg|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp";
+  const priceUnitMatch = new RegExp(
+    `(?:₫|đ|vnd|vnđ|dong|đồng)\\s*\\/\\s*(${explicitUnits})(?![\\p{L}\\p{N}.,])`,
+    "iu",
+  ).exec(unitText);
   if (priceUnitMatch?.[1]) {
     return priceUnitMatch[1].toLowerCase();
   }
 
-  const match =
-    /\b(cái|chiếc|bộ|kg|g|m2|m²|m3|m³|lít|lit|hộp|cuộn|tấm|thùng|chai|bao|máy|con|pcs|set|module|mô đun|thanh|cây|sợi|ống|đôi|cặp)\b/i.exec(
-      text,
-    );
+  const match = new RegExp(
+    `(?<![\\p{L}\\p{N}])(${inferredUnits})(?![\\p{L}\\p{N}.,])`,
+    "iu",
+  ).exec(unitText);
   return match?.[1]?.toLowerCase() ?? null;
 }
 
