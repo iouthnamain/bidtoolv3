@@ -9,7 +9,6 @@ import { materials } from "~/server/db/schema";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
-  MATERIAL_FIELD_LOCK_KEYS,
   normalizeMaterialMetadata,
   type MaterialFieldLockKey,
   type MaterialMetadata,

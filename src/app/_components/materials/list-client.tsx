@@ -48,7 +48,13 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { Button, ConfirmDialog, EmptyState, SearchableSelect } from "~/app/_components/ui";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  SearchableSelect,
+} from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   formatCoverage,

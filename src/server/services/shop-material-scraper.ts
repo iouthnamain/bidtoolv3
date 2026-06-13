@@ -8,7 +8,6 @@ import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
 import {
   chooseScrapedProductName,
-  isShopPromoBadgeText,
   resolveProductNameFromCandidates,
   sanitizeScrapedProductList,
   sanitizeScrapedProductName,
@@ -541,11 +540,12 @@ async function scrapePageSnapshot({
           return false;
         }
         const readyCards = candidates.filter((card) => {
+          const titleText = card
+            .querySelector(".woocommerce-loop-product__title, h2, h3")
+            ?.textContent?.replace(/\s+/g, " ")
+            .trim();
           const title =
-            card
-              .querySelector(".woocommerce-loop-product__title, h2, h3")
-              ?.textContent?.replace(/\s+/g, " ")
-              .trim() || text(card);
+            titleText && titleText.length > 0 ? titleText : text(card);
           return Boolean(title && title.length > 3);
         });
         return (
