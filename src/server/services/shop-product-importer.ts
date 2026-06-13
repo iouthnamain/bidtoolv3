@@ -3,12 +3,14 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
+import { parseDepreciationFromSpecText } from "~/lib/materials/shop-promo-badges";
 import type { db as appDb } from "~/server/db";
 import { materials } from "~/server/db/schema";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
   normalizeMaterialMetadata,
+  type MaterialFieldLockKey,
   type MaterialMetadata,
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
@@ -120,38 +122,58 @@ export async function importScrapedProducts(
         unit,
       });
       if (existing) {
+        const locks =
+          normalizeMaterialMetadata(existing.metadataJson).fieldLocks ?? {};
         const metadataJson = metadataForScrapedProduct(existing, product, now);
         const [row] = await db
           .update(materials)
           .set({
-            category:
-              existing.category?.trim() || !product.category
-                ? existing.category
-                : product.category,
+            category: applyLockedFillEmptyField(
+              locks,
+              "category",
+              existing.category,
+              product.category,
+            ),
             specText:
-              existing.specText.trim() || !product.specText
-                ? existing.specText
-                : product.specText,
-            manufacturer:
-              existing.manufacturer?.trim() || !product.manufacturer
-                ? existing.manufacturer
-                : product.manufacturer,
-            originCountry:
-              existing.originCountry?.trim() || !product.originCountry
-                ? existing.originCountry
-                : product.originCountry,
-            defaultUnitPrice:
-              existing.defaultUnitPrice == null && product.price != null
-                ? product.price
-                : existing.defaultUnitPrice,
-            currency:
-              existing.defaultUnitPrice == null && product.price != null
-                ? product.currency
-                : existing.currency,
-            sourceUrl: existing.sourceUrl?.trim()
-              ? existing.sourceUrl
-              : product.sourceUrl,
-            imageUrl: materialImageUrlFromScrape(product.imageUrl),
+              applyLockedFillEmptyField(
+                locks,
+                "specText",
+                existing.specText,
+                product.specText,
+              ) ?? existing.specText,
+            manufacturer: applyLockedFillEmptyField(
+              locks,
+              "manufacturer",
+              existing.manufacturer,
+              product.manufacturer,
+            ),
+            originCountry: applyLockedFillEmptyField(
+              locks,
+              "originCountry",
+              existing.originCountry,
+              product.originCountry,
+            ),
+            defaultUnitPrice: applyLockedPriceField(
+              locks,
+              existing.defaultUnitPrice,
+              product.price,
+            ),
+            currency: applyLockedCurrencyField(
+              locks,
+              existing.defaultUnitPrice,
+              existing.currency,
+              product.price,
+              product.currency,
+            ),
+            sourceUrl: applyLockedFillEmptyField(
+              locks,
+              "sourceUrl",
+              existing.sourceUrl,
+              product.sourceUrl,
+            ),
+            imageUrl: isFieldLocked(locks, "imageUrl")
+              ? existing.imageUrl
+              : materialImageUrlFromScrape(product.imageUrl),
             metadataJson,
             updatedAt: now,
           })
@@ -169,13 +191,14 @@ export async function importScrapedProducts(
           sourceUrl: product.sourceUrl,
           action: "updated",
           materialId: updatedRow.id,
-          message: importMessageForUpdated(existing, product),
+          message: importMessageForUpdated(existing, product, locks),
         });
         processed += 1;
         reportProgress(name, product.sourceUrl);
         continue;
       }
 
+      const parsedDepreciation = parseDepreciationFromSpecText(product.specText);
       const createInput: MaterialInput = {
         name,
         unit,
@@ -186,7 +209,7 @@ export async function importScrapedProducts(
         defaultUnitPrice: product.price,
         currency: product.currency,
         sourceUrl: product.sourceUrl,
-        defaultDepreciation: 1,
+        defaultDepreciation: parsedDepreciation ?? 1,
         defaultReusePct: 0,
       };
       const [row] = await db
@@ -456,8 +479,67 @@ function metadataForScrapedProduct(
     ...buildMaterialMetadata({
       priceSources,
       shopScrape: scrapedShopMetadata(product, scrapedAt),
+      fieldLocks: normalizeMaterialMetadata(material?.metadataJson).fieldLocks,
     }),
   };
+}
+
+function isFieldLocked(
+  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
+  field: MaterialFieldLockKey,
+) {
+  return locks[field] === true;
+}
+
+function applyLockedFillEmptyField(
+  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
+  field: MaterialFieldLockKey,
+  existing: string | null | undefined,
+  scraped: string | null | undefined,
+): string | undefined {
+  if (isFieldLocked(locks, field)) {
+    return existing ?? undefined;
+  }
+  const existingTrimmed = existing?.trim();
+  if (existingTrimmed) {
+    return existing ?? undefined;
+  }
+  const scrapedTrimmed = scraped?.trim();
+  return scrapedTrimmed ? (scraped ?? undefined) : (existing ?? undefined);
+}
+
+function applyLockedPriceField(
+  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
+  existingPrice: number | null,
+  scrapedPrice: number | null,
+) {
+  if (isFieldLocked(locks, "defaultUnitPrice")) {
+    return existingPrice;
+  }
+  return existingPrice == null && scrapedPrice != null
+    ? scrapedPrice
+    : existingPrice;
+}
+
+function applyLockedCurrencyField(
+  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
+  existingPrice: number | null,
+  existingCurrency: string,
+  scrapedPrice: number | null,
+  scrapedCurrency: string,
+) {
+  if (isFieldLocked(locks, "currency")) {
+    return existingCurrency;
+  }
+  return existingPrice == null && scrapedPrice != null
+    ? scrapedCurrency
+    : existingCurrency;
+}
+
+function countLockedFields(
+  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
+) {
+  return Object.values(locks).filter(Boolean).length;
 }
 
 function throwIfImportAborted(signal: AbortSignal | undefined) {
@@ -495,25 +577,43 @@ function availableScrapedFieldLabels(product: ScrapedShopProduct) {
 function filledExistingMaterialFieldLabels(
   existing: MaterialRow,
   product: ScrapedShopProduct,
+  locks: Partial<Record<MaterialFieldLockKey, boolean>> = {},
 ) {
   return [
-    !existing.category?.trim() && product.category
+    !isFieldLocked(locks, "category") &&
+    !existing.category?.trim() &&
+    product.category
       ? scrapedFieldLabels.category
       : null,
-    !existing.specText.trim() && product.specText.trim()
+    !isFieldLocked(locks, "specText") &&
+    !existing.specText.trim() &&
+    product.specText.trim()
       ? scrapedFieldLabels.specText
       : null,
-    !existing.manufacturer?.trim() && product.manufacturer
+    !isFieldLocked(locks, "manufacturer") &&
+    !existing.manufacturer?.trim() &&
+    product.manufacturer
       ? scrapedFieldLabels.manufacturer
       : null,
-    !existing.originCountry?.trim() && product.originCountry
+    !isFieldLocked(locks, "originCountry") &&
+    !existing.originCountry?.trim() &&
+    product.originCountry
       ? scrapedFieldLabels.originCountry
       : null,
-    existing.defaultUnitPrice == null && product.price != null
+    !isFieldLocked(locks, "defaultUnitPrice") &&
+    existing.defaultUnitPrice == null &&
+    product.price != null
       ? scrapedFieldLabels.defaultUnitPrice
       : null,
-    !existing.sourceUrl?.trim() && product.sourceUrl
+    !isFieldLocked(locks, "sourceUrl") &&
+    !existing.sourceUrl?.trim() &&
+    product.sourceUrl
       ? scrapedFieldLabels.sourceUrl
+      : null,
+    !isFieldLocked(locks, "imageUrl") &&
+    !existing.imageUrl?.trim() &&
+    product.imageUrl
+      ? scrapedFieldLabels.imageUrl
       : null,
   ].filter(Boolean) as string[];
 }
@@ -553,9 +653,13 @@ function importMessageForCreated(product: ScrapedShopProduct) {
 function importMessageForUpdated(
   existing: MaterialRow,
   product: ScrapedShopProduct,
+  locks: Partial<Record<MaterialFieldLockKey, boolean>> = {},
 ) {
-  const fields = filledExistingMaterialFieldLabels(existing, product);
+  const fields = filledExistingMaterialFieldLabels(existing, product, locks);
+  const lockedCount = countLockedFields(locks);
+  const lockedSuffix =
+    lockedCount > 0 ? ` Đã bỏ qua ${lockedCount} trường đã khóa.` : "";
   return fields.length > 0
-    ? `Bổ sung trường trống: ${fields.join(", ")}.`
-    : "Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.";
+    ? `Bổ sung trường trống: ${fields.join(", ")}.${lockedSuffix}`
+    : `Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.${lockedSuffix}`;
 }

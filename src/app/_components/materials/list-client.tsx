@@ -48,7 +48,13 @@ import {
   WalletCards,
 } from "lucide-react";
 
-import { Button, ConfirmDialog, EmptyState, SearchableSelect } from "~/app/_components/ui";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  SearchableSelect,
+} from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   formatCoverage,
@@ -66,6 +72,7 @@ type MaterialSortBy = NonNullable<MaterialSearchInput["sortBy"]>;
 type SortOrder = NonNullable<MaterialSearchInput["sortOrder"]>;
 type PriceStatus = NonNullable<MaterialSearchInput["priceStatus"]>;
 type SourceStatus = NonNullable<MaterialSearchInput["sourceStatus"]>;
+type CatalogStatus = NonNullable<MaterialSearchInput["catalogStatus"]>;
 
 type EnrichedMaterialListItem = MaterialListItem & {
   details: string;
@@ -89,6 +96,7 @@ const materialColumnOptions: Array<{ id: string; label: string }> = [
   { id: "code", label: "Mã vật tư" },
   { id: "specText", label: "Thông số" },
   { id: "details", label: "Chi tiết" },
+  { id: "catalog", label: "Catalog PDF" },
   { id: "updatedAt", label: "Cập nhật" },
 ];
 
@@ -101,6 +109,7 @@ const emptySummary = {
   uniqueManufacturers: 0,
   withOrigin: 0,
   uniqueOrigins: 0,
+  withCatalog: 0,
 };
 
 const materialSortOptions: Array<{ value: MaterialSortBy; label: string }> = [
@@ -123,6 +132,12 @@ const sourceStatusOptions: Array<{ value: SourceStatus; label: string }> = [
   { value: "all", label: "Tất cả nguồn" },
   { value: "with", label: "Có nguồn giá" },
   { value: "without", label: "Chưa có nguồn" },
+];
+
+const catalogStatusOptions: Array<{ value: CatalogStatus; label: string }> = [
+  { value: "all", label: "Tất cả catalog" },
+  { value: "with", label: "Có catalog PDF" },
+  { value: "without", label: "Chưa có catalog" },
 ];
 
 const materialControlClass =
@@ -150,6 +165,10 @@ function isPriceStatus(value: string): value is PriceStatus {
 
 function isSourceStatus(value: string): value is SourceStatus {
   return sourceStatusOptions.some((option) => option.value === value);
+}
+
+function isCatalogStatus(value: string): value is CatalogStatus {
+  return catalogStatusOptions.some((option) => option.value === value);
 }
 
 function parsePageSize(value: string) {
@@ -217,6 +236,9 @@ function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
     item.code ? `Mã ${item.code}` : null,
     item.category ? `Nhóm ${item.category}` : null,
     sourceCount > 0 ? `${sourceCount.toLocaleString("vi-VN")} nguồn` : null,
+    item.catalogDocumentCount > 0
+      ? `${item.catalogDocumentCount.toLocaleString("vi-VN")} catalog PDF`
+      : null,
   ]
     .filter(Boolean)
     .join(" • ");
@@ -246,6 +268,7 @@ function materialTableCellClass(columnId: string) {
     unit: "px-3 py-2 text-slate-700",
     specText: "max-w-96 px-3 py-2 text-slate-600",
     details: "max-w-80 px-3 py-2 text-slate-600",
+    catalog: "px-3 py-2",
     manufacturer: "max-w-52 px-3 py-2 text-slate-600",
     originCountry: "max-w-36 px-3 py-2 text-slate-600",
     defaultUnitPrice: "px-3 py-2",
@@ -427,9 +450,11 @@ function MaterialMobileCard({
 
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="truncate text-xs text-slate-500">
-          {material.sourceCount > 0
-            ? `${material.sourceCount.toLocaleString("vi-VN")} nguồn giá`
-            : "Chưa có nguồn giá"}
+          {material.catalogDocumentCount > 0
+            ? `${material.catalogDocumentCount.toLocaleString("vi-VN")} catalog PDF`
+            : material.sourceCount > 0
+              ? `${material.sourceCount.toLocaleString("vi-VN")} nguồn giá`
+              : "Chưa có nguồn giá"}
         </span>
         <div className="flex shrink-0 gap-1.5">
           <Link
@@ -455,7 +480,11 @@ function MaterialMobileCard({
   );
 }
 
-export function MaterialsListClient() {
+export function MaterialsListClient({
+  view = "catalog",
+}: {
+  view?: "catalog" | "stats";
+}) {
   const router = useRouter();
   const initialSearchParams = useSearchParams();
   const [hasMounted, setHasMounted] = useState(false);
@@ -487,6 +516,10 @@ export function MaterialsListClient() {
   const [sourceStatus, setSourceStatus] = useState<SourceStatus>(() => {
     const value = readSearchParam(initialSearchParams, "sources");
     return isSourceStatus(value) ? value : "all";
+  });
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => {
+    const value = readSearchParam(initialSearchParams, "catalog");
+    return isCatalogStatus(value) ? value : "all";
   });
   const [sortBy, setSortBy] = useState<MaterialSortBy>(() => {
     const value = readSearchParam(initialSearchParams, "sort");
@@ -530,6 +563,7 @@ export function MaterialsListClient() {
       originCountry: originFilter || undefined,
       priceStatus,
       sourceStatus,
+      catalogStatus,
     }),
     [
       deferredKeyword,
@@ -540,6 +574,7 @@ export function MaterialsListClient() {
       originFilter,
       priceStatus,
       sourceStatus,
+      catalogStatus,
     ],
   );
   const materialSearchInput = useMemo(
@@ -656,6 +691,7 @@ export function MaterialsListClient() {
     updateUrlParam(params, "origin", originFilter);
     updateUrlParam(params, "price", priceStatus, "all");
     updateUrlParam(params, "sources", sourceStatus, "all");
+    updateUrlParam(params, "catalog", catalogStatus, "all");
     updateUrlParam(params, "sort", sortBy, "updatedAt");
     updateUrlParam(params, "order", sortOrder, "desc");
     updateUrlParam(params, "page", pagination.pageIndex + 1, 1);
@@ -683,6 +719,7 @@ export function MaterialsListClient() {
     pagination.pageSize,
     priceStatus,
     sourceStatus,
+    catalogStatus,
     sortBy,
     sortOrder,
     unitFilter,
@@ -742,6 +779,7 @@ export function MaterialsListClient() {
     originFilter,
     priceStatus !== "all" ? priceStatus : "",
     sourceStatus !== "all" ? sourceStatus : "",
+    catalogStatus !== "all" ? catalogStatus : "",
   ].filter(Boolean).length;
   const hasActiveViewControls =
     activeFilterCount > 0 ||
@@ -882,6 +920,11 @@ export function MaterialsListClient() {
   };
 
   const scrollToCatalog = () => {
+    if (view === "stats") {
+      router.push("/materials");
+      return;
+    }
+
     document
       .getElementById("material-catalog")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1123,6 +1166,19 @@ export function MaterialsListClient() {
         ),
       },
       {
+        id: "catalog",
+        accessorKey: "catalogDocumentCount",
+        header: "Catalog",
+        cell: ({ row }) =>
+          row.original.catalogDocumentCount > 0 ? (
+            <Badge tone="info" count={row.original.catalogDocumentCount}>
+              PDF
+            </Badge>
+          ) : (
+            <span className="text-xs text-slate-400">-</span>
+          ),
+      },
+      {
         accessorKey: "manufacturer",
         header: () => (
           <MaterialSortableHeader
@@ -1344,7 +1400,8 @@ export function MaterialsListClient() {
         onCancel={() => setSingleDeleteTarget(null)}
       />
 
-      <section id="material-summary" className="panel scroll-mt-6 p-4">
+      {view === "stats" ? (
+      <section className="panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-950">
@@ -1391,7 +1448,7 @@ export function MaterialsListClient() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           <button
             type="button"
             className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
@@ -1470,6 +1527,28 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
+            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
+            onClick={() => setCatalogStatus("with")}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-violet-700">
+                Có catalog PDF
+              </p>
+              <FileText className="h-4 w-4 text-violet-600" aria-hidden />
+            </div>
+            <p className="mt-1 text-2xl font-bold text-violet-950">
+              {showSummaryLoading
+                ? "-"
+                : summary.withCatalog.toLocaleString("vi-VN")}
+            </p>
+            <p className="mt-1 text-[11px] font-medium text-violet-700">
+              {showSummaryLoading
+                ? "-"
+                : `${formatCoverage(summary.withCatalog, summary.total)} — lọc có catalog`}
+            </p>
+          </button>
+          <button
+            type="button"
             className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
@@ -1509,11 +1588,11 @@ export function MaterialsListClient() {
             </p>
           </button>
         </div>
+      </section>
+      ) : null}
 
-        <div
-          id="material-catalog"
-          className="-mx-4 mt-4 scroll-mt-6 border-t border-slate-200 bg-white px-4 pt-4"
-        >
+      {view === "catalog" ? (
+      <section id="material-catalog" className="panel scroll-mt-6 p-4">
           <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
             <div>
               <h2 className="text-sm font-bold text-slate-950">
@@ -1815,6 +1894,26 @@ export function MaterialsListClient() {
                   }
                 >
                   {sourceStatusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Catalog PDF
+                </span>
+                <select
+                  className={materialControlClass}
+                  aria-label="Lọc theo catalog PDF"
+                  value={catalogStatus}
+                  onChange={(event) =>
+                    setCatalogStatus(event.target.value as CatalogStatus)
+                  }
+                >
+                  {catalogStatusOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -2381,8 +2480,8 @@ export function MaterialsListClient() {
               </button>
             </div>
           </div>
-        </div>
       </section>
+      ) : null}
     </div>
   );
 }

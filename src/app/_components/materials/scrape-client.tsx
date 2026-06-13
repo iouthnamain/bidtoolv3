@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -852,7 +853,9 @@ function ScrapeJobConfigBadges({ job }: { job: ScrapeJobListItem }) {
   );
 }
 
-export function MaterialScrapeClient() {
+export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } = {}) {
+  const router = useRouter();
+  const isJobPage = routeJobId != null;
   const [shopUrl, setShopUrl] = useState("");
   const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
   const [scrapeMethod, setScrapeMethod] = useState<ScrapeMethod>("auto");
@@ -860,7 +863,9 @@ export function MaterialScrapeClient() {
     useState<DetailEnrichmentMode>("none");
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
-  const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
+  const [focusedJobId, setFocusedJobId] = useState<string | null>(
+    routeJobId ?? null,
+  );
   const [startedJob, setStartedJob] = useState<ScrapeJob | null>(null);
   const [pendingScrapeJob, setPendingScrapeJob] =
     useState<PendingScrapeJob | null>(null);
@@ -1398,6 +1403,10 @@ export function MaterialScrapeClient() {
   };
 
   const focusScrapeJob = (jobId: string) => {
+    if (!isJobPage) {
+      router.push(`/materials/scrape/jobs/${jobId}`);
+      return;
+    }
     closeProductDetail();
     setFocusedJobId(jobId);
     setStartedJob(null);
@@ -1479,6 +1488,10 @@ export function MaterialScrapeClient() {
       return;
     }
     closeProductDetail();
+    if (isJobPage) {
+      router.push("/materials/scrape");
+      return;
+    }
     setFocusedJobId(null);
     setStartedJob(null);
     setPendingScrapeJob(null);
@@ -1515,6 +1528,19 @@ export function MaterialScrapeClient() {
 
   return (
     <div className="space-y-4">
+      {isJobPage ? (
+        <section className="panel p-4 sm:p-5">
+          <Link
+            href="/materials/scrape"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+          >
+            ← Quay lại danh sách job
+          </Link>
+        </section>
+      ) : null}
+
+      {!isJobPage ? (
+      <>
       <section className="panel p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -2049,7 +2075,11 @@ export function MaterialScrapeClient() {
           />
         )}
       </section>
+      </>
+      ) : null}
 
+      {!isJobPage ? null : (
+        <>
       {scrapeJobPollingError ? (
         <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2291,6 +2321,19 @@ export function MaterialScrapeClient() {
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               {activeJob.failedPages.length.toLocaleString("vi-VN")} trang không
               đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
+            </div>
+          ) : null}
+
+          {activeJob.maxPages != null &&
+          activeJob.pagesVisited.length >= activeJob.maxPages &&
+          activeJob.productCount === 0 ? (
+            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
+              Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
+              {activeJob.maxPages.toLocaleString("vi-VN")} trang nhưng không
+              trích xuất được sản phẩm nào.
+              {activeJob.failedPages.length > 0
+                ? " Kiểm tra danh sách trang lỗi bên trên."
+                : " Thử tăng giới hạn trang, bật “Bổ sung thiếu”, hoặc kiểm tra URL shop."}
             </div>
           ) : null}
         </section>
@@ -2903,6 +2946,8 @@ export function MaterialScrapeClient() {
           </div>
         </section>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

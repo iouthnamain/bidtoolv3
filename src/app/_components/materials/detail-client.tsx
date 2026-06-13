@@ -16,6 +16,7 @@ import {
   FileText,
   Globe2,
   Link as LinkIcon,
+  Lock,
   Package,
   Pencil,
   Plus,
@@ -40,6 +41,7 @@ import {
 import { resolveMaterialImageUrl } from "~/lib/materials/image";
 import {
   normalizeMaterialMetadata,
+  type MaterialFieldLockKey,
   type MaterialPriceSource,
   type MaterialPriceSourceMode,
 } from "~/lib/material-price-sources";
@@ -158,6 +160,47 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function LockableField({
+  label,
+  fieldKey,
+  locked,
+  onToggleLock,
+  children,
+  className = "",
+}: {
+  label: string;
+  fieldKey: MaterialFieldLockKey;
+  locked: boolean;
+  onToggleLock: (field: MaterialFieldLockKey, nextLocked: boolean) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col gap-1 ${className}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+          {label}
+        </span>
+        <button
+          type="button"
+          className="inline-flex items-center rounded p-0.5 text-slate-400 transition hover:text-amber-600"
+          title={
+            locked
+              ? "Đã khóa — không ghi đè khi scrape lại"
+              : "Khóa trường này khi scrape lại"
+          }
+          aria-pressed={locked}
+          aria-label={`${locked ? "Mở khóa" : "Khóa"} ${label}`}
+          onClick={() => onToggleLock(fieldKey, !locked)}
+        >
+          <Lock className={`h-3.5 w-3.5 ${locked ? "text-amber-600" : ""}`} />
+        </button>
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -410,7 +453,15 @@ function PriceSourceCard({
   );
 }
 
-export function MaterialDetailClient({ id }: { id: number }) {
+export type MaterialDetailView = "overview" | "prices" | "documents" | "edit";
+
+export function MaterialDetailClient({
+  id,
+  view = "overview",
+}: {
+  id: number;
+  view?: MaterialDetailView;
+}) {
   const router = useRouter();
   const utils = api.useUtils();
   const toast = useToast();
@@ -425,8 +476,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
     useState<Material | null>(null);
   const [deleteSourceTarget, setDeleteSourceTarget] =
     useState<MaterialPriceSource | null>(null);
-  const [isPricesSectionOpen, setIsPricesSectionOpen] = useState(false);
-  const [isEditSectionOpen, setIsEditSectionOpen] = useState(false);
+  const [isPricesSectionOpen, setIsPricesSectionOpen] = useState(
+    view === "prices",
+  );
+  const [isEditSectionOpen, setIsEditSectionOpen] = useState(view === "edit");
+  const [fieldLocks, setFieldLocks] = useState<
+    Partial<Record<MaterialFieldLockKey, boolean>>
+  >({});
 
   const materialQuery = api.material.getById.useQuery({ id }, { retry: false });
 
@@ -435,6 +491,10 @@ export function MaterialDetailClient({ id }: { id: number }) {
       const nextForm = formFromMaterial(materialQuery.data);
       setForm(nextForm);
       setSavedFormSnapshot(nextForm);
+      setFieldLocks(
+        normalizeMaterialMetadata(materialQuery.data.metadataJson).fieldLocks ??
+          {},
+      );
     }
   }, [materialQuery.data]);
 
@@ -467,6 +527,38 @@ export function MaterialDetailClient({ id }: { id: number }) {
       setActionError(error.message || "Không thể lưu vật tư.");
     },
   });
+
+  const setMaterialFieldLocks = api.material.setMaterialFieldLocks.useMutation({
+    onSuccess: async (material) => {
+      setFieldLocks(
+        normalizeMaterialMetadata(material.metadataJson).fieldLocks ?? {},
+      );
+      utils.material.getById.setData({ id }, material);
+      toast.success("Đã cập nhật khóa trường scrape.");
+    },
+    onError: (error) => {
+      setActionError(error.message || "Không thể cập nhật khóa trường.");
+    },
+  });
+
+  const toggleFieldLock = useCallback(
+    (field: MaterialFieldLockKey, locked: boolean) => {
+      setFieldLocks((current) => {
+        const next = { ...current };
+        if (locked) {
+          next[field] = true;
+        } else {
+          delete next[field];
+        }
+        return next;
+      });
+      setMaterialFieldLocks.mutate({
+        id,
+        fieldLocks: { [field]: locked },
+      });
+    },
+    [id, setMaterialFieldLocks],
+  );
 
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: async () => {
@@ -883,6 +975,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
         onCancel={() => setDeleteSourceTarget(null)}
       />
 
+      {view === "overview" ? (
       <section
         id="material-overview"
         className="panel scroll-mt-6 overflow-hidden"
@@ -1093,7 +1186,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {view === "prices" ? (
       <section
         id="material-prices"
         className="panel scroll-mt-6 overflow-hidden"
@@ -1342,9 +1437,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         ) : null}
       </section>
+      ) : null}
 
+      {view === "documents" ? (
       <MaterialCatalogPdfSection materialId={id} />
+      ) : null}
 
+      {view === "edit" ? (
       <section
         id="material-edit"
         className="panel scroll-mt-6 overflow-hidden"
@@ -1385,12 +1484,18 @@ export function MaterialDetailClient({ id }: { id: number }) {
           <div className="border-b border-slate-200 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
             <p className="mt-1 text-xs text-slate-500">
-              Cập nhật mã, tên, đơn giá, thông số và metadata catalog.
+              Cập nhật mã, tên, đơn giá, thông số và metadata catalog. Biểu
+              tượng khóa giúp giữ trường khi scrape/import lại.
             </p>
           </div>
 
           <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={save}>
-            <Field label="Mã vật tư">
+            <LockableField
+              label="Mã vật tư"
+              fieldKey="code"
+              locked={Boolean(fieldLocks.code)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="code"
                 autoComplete="off"
@@ -1400,8 +1505,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, code: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Tên vật tư">
+            </LockableField>
+            <LockableField
+              label="Tên vật tư"
+              fieldKey="name"
+              locked={Boolean(fieldLocks.name)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="name"
                 autoComplete="off"
@@ -1411,8 +1521,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, name: event.target.value })
                 }
               />
-            </Field>
-            <Field label="ĐVT">
+            </LockableField>
+            <LockableField
+              label="ĐVT"
+              fieldKey="unit"
+              locked={Boolean(fieldLocks.unit)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="unit"
                 autoComplete="off"
@@ -1422,8 +1537,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, unit: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Nhóm">
+            </LockableField>
+            <LockableField
+              label="Nhóm"
+              fieldKey="category"
+              locked={Boolean(fieldLocks.category)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="category"
                 autoComplete="off"
@@ -1433,8 +1553,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, category: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Nhà sản xuất / NCC">
+            </LockableField>
+            <LockableField
+              label="Nhà sản xuất / NCC"
+              fieldKey="manufacturer"
+              locked={Boolean(fieldLocks.manufacturer)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="manufacturer"
                 autoComplete="organization"
@@ -1444,8 +1569,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, manufacturer: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Xuất xứ">
+            </LockableField>
+            <LockableField
+              label="Xuất xứ"
+              fieldKey="originCountry"
+              locked={Boolean(fieldLocks.originCountry)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="originCountry"
                 autoComplete="country-name"
@@ -1455,8 +1585,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, originCountry: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Đơn giá">
+            </LockableField>
+            <LockableField
+              label="Đơn giá"
+              fieldKey="defaultUnitPrice"
+              locked={Boolean(fieldLocks.defaultUnitPrice)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="defaultUnitPrice"
                 className={inputClass}
@@ -1468,8 +1603,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, defaultUnitPrice: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Tiền tệ">
+            </LockableField>
+            <LockableField
+              label="Tiền tệ"
+              fieldKey="currency"
+              locked={Boolean(fieldLocks.currency)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="currency"
                 autoComplete="off"
@@ -1479,8 +1619,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, currency: event.target.value })
                 }
               />
-            </Field>
-            <Field label="Khấu hao mặc định">
+            </LockableField>
+            <LockableField
+              label="Khấu hao mặc định"
+              fieldKey="defaultDepreciation"
+              locked={Boolean(fieldLocks.defaultDepreciation)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="defaultDepreciation"
                 className={inputClass}
@@ -1493,8 +1638,13 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, defaultDepreciation: event.target.value })
                 }
               />
-            </Field>
-            <Field label="% sử dụng lại mặc định">
+            </LockableField>
+            <LockableField
+              label="% sử dụng lại mặc định"
+              fieldKey="defaultReusePct"
+              locked={Boolean(fieldLocks.defaultReusePct)}
+              onToggleLock={toggleFieldLock}
+            >
               <input
                 name="defaultReusePct"
                 className={inputClass}
@@ -1507,8 +1657,14 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, defaultReusePct: event.target.value })
                 }
               />
-            </Field>
-            <Field label="URL nguồn (legacy)" className="md:col-span-2">
+            </LockableField>
+            <LockableField
+              label="URL nguồn (legacy)"
+              fieldKey="sourceUrl"
+              locked={Boolean(fieldLocks.sourceUrl)}
+              onToggleLock={toggleFieldLock}
+              className="md:col-span-2"
+            >
               <input
                 name="sourceUrl"
                 type="url"
@@ -1534,8 +1690,14 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   Chuyển sang nguồn giá
                 </Button>
               ) : null}
-            </Field>
-            <Field label="Thông số kỹ thuật" className="md:col-span-2">
+            </LockableField>
+            <LockableField
+              label="Thông số kỹ thuật"
+              fieldKey="specText"
+              locked={Boolean(fieldLocks.specText)}
+              onToggleLock={toggleFieldLock}
+              className="md:col-span-2"
+            >
               <textarea
                 name="specText"
                 autoComplete="off"
@@ -1545,7 +1707,7 @@ export function MaterialDetailClient({ id }: { id: number }) {
                   setForm({ ...form, specText: event.target.value })
                 }
               />
-            </Field>
+            </LockableField>
           </form>
         </article>
 
@@ -1584,6 +1746,31 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </article>
 
           <article className="rounded-lg border border-slate-200 bg-white p-5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-slate-950">Ảnh sản phẩm</h3>
+              <button
+                type="button"
+                className="inline-flex items-center rounded p-0.5 text-slate-400 transition hover:text-amber-600"
+                title={
+                  fieldLocks.imageUrl
+                    ? "Đã khóa — không ghi đè khi scrape lại"
+                    : "Khóa ảnh khi scrape lại"
+                }
+                aria-pressed={Boolean(fieldLocks.imageUrl)}
+                aria-label="Khóa ảnh sản phẩm"
+                onClick={() => toggleFieldLock("imageUrl", !fieldLocks.imageUrl)}
+              >
+                <Lock
+                  className={`h-3.5 w-3.5 ${fieldLocks.imageUrl ? "text-amber-600" : ""}`}
+                />
+              </button>
+            </div>
+            <div className="mt-3">
+              <MaterialImagePreview material={material} />
+            </div>
+          </article>
+
+          <article className="rounded-lg border border-slate-200 bg-white p-5">
             <h3 className="text-sm font-bold text-slate-950">Metadata</h3>
             <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
@@ -1600,8 +1787,9 @@ export function MaterialDetailClient({ id }: { id: number }) {
           </div>
         ) : null}
       </section>
+      ) : null}
 
-      {isDirty ? (
+      {view === "edit" && isDirty ? (
         <div className="sticky bottom-4 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-sky-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
           <p className="text-sm font-semibold text-slate-800">
             Có thay đổi chưa lưu

@@ -25,9 +25,41 @@ export type MaterialShopScrapeMetadata = {
   shopCategory: string | null;
 };
 
+export type MaterialFieldLockKey =
+  | "code"
+  | "name"
+  | "unit"
+  | "category"
+  | "specText"
+  | "manufacturer"
+  | "originCountry"
+  | "defaultUnitPrice"
+  | "currency"
+  | "sourceUrl"
+  | "imageUrl"
+  | "defaultDepreciation"
+  | "defaultReusePct";
+
+export const MATERIAL_FIELD_LOCK_KEYS = [
+  "code",
+  "name",
+  "unit",
+  "category",
+  "specText",
+  "manufacturer",
+  "originCountry",
+  "defaultUnitPrice",
+  "currency",
+  "sourceUrl",
+  "imageUrl",
+  "defaultDepreciation",
+  "defaultReusePct",
+] as const satisfies readonly MaterialFieldLockKey[];
+
 export type MaterialMetadata = {
   priceSources: MaterialPriceSource[];
   shopScrape?: MaterialShopScrapeMetadata;
+  fieldLocks?: Partial<Record<MaterialFieldLockKey, boolean>>;
 };
 
 export function normalizePriceSource(
@@ -74,6 +106,9 @@ export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
   const shopScrape = normalizeShopScrapeMetadata(
     (record as { shopScrape?: unknown }).shopScrape,
   );
+  const fieldLocks = normalizeFieldLocks(
+    (record as { fieldLocks?: unknown }).fieldLocks,
+  );
 
   return {
     priceSources: Array.isArray(priceSourcesValue)
@@ -82,13 +117,33 @@ export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
           .filter((source): source is MaterialPriceSource => source !== null)
       : [],
     ...(shopScrape ? { shopScrape } : {}),
+    ...(fieldLocks ? { fieldLocks } : {}),
   };
+}
+
+function normalizeFieldLocks(
+  value: unknown,
+): Partial<Record<MaterialFieldLockKey, boolean>> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const locks: Partial<Record<MaterialFieldLockKey, boolean>> = {};
+  for (const key of MATERIAL_FIELD_LOCK_KEYS) {
+    const locked = (value as Record<string, unknown>)[key];
+    if (locked === true) {
+      locks[key] = true;
+    }
+  }
+  return Object.keys(locks).length > 0 ? locks : undefined;
 }
 
 export function buildMaterialMetadata(input: MaterialMetadata) {
   return {
     priceSources: input.priceSources,
     ...(input.shopScrape ? { shopScrape: input.shopScrape } : {}),
+    ...(input.fieldLocks && Object.keys(input.fieldLocks).length > 0
+      ? { fieldLocks: input.fieldLocks }
+      : {}),
   };
 }
 
@@ -128,25 +183,76 @@ export function extractPriceFromText(text: string): {
   price: number | null;
 } {
   const normalized = text.replace(/\s+/g, " ").slice(0, 250_000);
+  const currencyPattern = "(?:vnd|vnđ|₫|đ|dong|đồng|usd|us\\$|\\$|eur|€)";
   const matches = Array.from(
     normalized.matchAll(
-      /((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng)))/gi,
+      new RegExp(
+        `((?:${currencyPattern})\\s*(?:\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?)|(?:\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d+)?|\\d{4,})\\s*(?:${currencyPattern}))`,
+        "gi",
+      ),
     ),
   );
 
   const explicitMatch =
-    /(?:gia|giá|price|don gia|đơn giá)\s*[:\-]?\s*((?:\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng))?)/i.exec(
+    /(?:gia|giá|price|don gia|đơn giá)\s*[:\-]?\s*((?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d{4,})(?:\s*(?:vnd|vnđ|₫|đ|dong|đồng|usd|us\$|\$|eur|€))?)/i.exec(
       normalized,
     );
 
-  const priceText = explicitMatch?.[1] ?? matches[0]?.[1] ?? null;
-  if (!priceText) {
+  const explicitPriceText = explicitMatch?.[1];
+  const priceTexts = explicitPriceText
+    ? [explicitPriceText]
+    : matches.flatMap((match) =>
+        typeof match[1] === "string" ? [match[1]] : [],
+      );
+  const candidates = priceTexts.map((priceText) => ({
+    priceText,
+    price: parsePriceNumber(priceText),
+  }));
+  const selected =
+    explicitPriceText && candidates[0]
+      ? candidates[0]
+      : (candidates
+          .filter((candidate) => candidate.price != null)
+          .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0] ??
+        candidates[0] ??
+        null);
+  if (!selected) {
     return { priceText: null, price: null };
   }
 
-  const numeric = Number(priceText.replace(/[^\d]/g, ""));
   return {
-    priceText: priceText.trim(),
-    price: Number.isFinite(numeric) && numeric > 0 ? numeric : null,
+    priceText: selected.priceText.trim(),
+    price: selected.price,
   };
+}
+
+function parsePriceNumber(priceText: string) {
+  const cleaned = priceText.trim();
+  const currencyFirst = /^[^\d]+/.test(cleaned);
+  const numericText = cleaned.replace(/[^\d.,]/g, "");
+  const isDecimalCurrency = /usd|us\$|\$|eur|€/i.test(cleaned);
+  if (isDecimalCurrency) {
+    const normalized = normalizeDecimalPrice(numericText, currencyFirst);
+    const value = Number(normalized);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  const numeric = Number(numericText.replace(/[^\d]/g, ""));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function normalizeDecimalPrice(value: string, currencyFirst: boolean) {
+  const separators = [...value.matchAll(/[.,]/g)].map(
+    (match) => match.index ?? -1,
+  );
+  if (separators.length === 0) {
+    return value;
+  }
+  const lastSeparator = separators[separators.length - 1] ?? -1;
+  const integerPart = value.slice(0, lastSeparator).replace(/[^\d]/g, "");
+  const decimalPart = value.slice(lastSeparator + 1).replace(/[^\d]/g, "");
+  if (decimalPart.length === 3 && !currencyFirst) {
+    return value.replace(/[^\d]/g, "");
+  }
+  return `${integerPart}.${decimalPart}`;
 }
