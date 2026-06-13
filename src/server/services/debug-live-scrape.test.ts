@@ -46,7 +46,7 @@ describe.skipIf(!LIVE_SCRAPE)("live codienhaiau scrape", () => {
     });
     const page = await context.newPage();
     await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle", { timeout: 2000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 2000 }).catch(() => undefined);
     await page.waitForTimeout(250);
 
     const snapshot = await page.evaluate(collectShopPageSnapshot, {
