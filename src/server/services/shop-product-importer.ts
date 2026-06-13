@@ -134,12 +134,13 @@ export async function importScrapedProducts(
               existing.category,
               product.category,
             ),
-            specText: applyLockedFillEmptyField(
-              locks,
-              "specText",
-              existing.specText,
-              product.specText,
-            ),
+            specText:
+              applyLockedFillEmptyField(
+                locks,
+                "specText",
+                existing.specText,
+                product.specText,
+              ) ?? existing.specText,
             manufacturer: applyLockedFillEmptyField(
               locks,
               "manufacturer",
@@ -495,16 +496,16 @@ function applyLockedFillEmptyField(
   field: MaterialFieldLockKey,
   existing: string | null | undefined,
   scraped: string | null | undefined,
-) {
+): string | undefined {
   if (isFieldLocked(locks, field)) {
-    return existing ?? null;
+    return existing ?? undefined;
   }
   const existingTrimmed = existing?.trim();
   if (existingTrimmed) {
-    return existing;
+    return existing ?? undefined;
   }
   const scrapedTrimmed = scraped?.trim();
-  return scrapedTrimmed ? scraped : (existing ?? null);
+  return scrapedTrimmed ? (scraped ?? undefined) : (existing ?? undefined);
 }
 
 function applyLockedPriceField(
