@@ -34,10 +34,10 @@ function fileToBase64(file: File) {
 }
 
 const csvHeader =
-  "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct";
+  "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url";
 
 const csvExample = `${csvHeader}
-M001,Dây điện 2.5mm,Cái,Điện,Dây đồng bọc PVC,NCC A,Việt Nam,25000,VND,https://example.com/day-dien,1,0`;
+M001,Dây điện 2.5mm,Cái,Điện,Dây đồng bọc PVC,NCC A,Việt Nam,25000,VND,https://example.com/day-dien`;
 
 type ImportResult = {
   source: "Excel" | "CSV";

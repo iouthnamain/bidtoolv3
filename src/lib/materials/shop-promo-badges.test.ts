@@ -4,7 +4,6 @@ import {
   chooseScrapedProductName,
   extractProductNameFromCardText,
   isShopPromoBadgeText,
-  parseDepreciationFromSpecText,
   resolveProductNameFromCandidates,
   sanitizeScrapedProductList,
   sanitizeScrapedProductName,
@@ -130,7 +129,6 @@ describe("shop promo badge helpers", () => {
         "Đồng hồ đo KH 0.05 Thông số kỹ thuật điện áp 220V",
       ),
     ).toBe("Đồng hồ đo Thông số kỹ thuật điện áp 220V");
-    expect(parseDepreciationFromSpecText("Khấu hao: 5%")).toBe(0.05);
   });
 
   it("chooses higher-quality product names when merging", () => {

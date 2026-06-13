@@ -53,12 +53,10 @@ async function importMaterialRowsViaCsv(
       String(10_000 + index),
       "VND",
       "",
-      "1",
-      "0",
     ].join(",");
   });
   const csv = [
-    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct",
+    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url",
     ...rows,
   ].join("\n");
 
@@ -371,9 +369,9 @@ test("material catalog table supports header sort and quick filters", async ({
 }) => {
   const prefix = `E2E-TABLE-${Date.now()}`;
   const csv = [
-    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct",
-    `,${prefix} Alpha,Cái,E2E,Spec A,Alpha NCC,VN,10000,VND,,1,0`,
-    `,${prefix} Beta,Mét,E2E,Spec B,Beta NCC,JP,20000,VND,,1,0`,
+    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url",
+    `,${prefix} Alpha,Cái,E2E,Spec A,Alpha NCC,VN,10000,VND,`,
+    `,${prefix} Beta,Mét,E2E,Spec B,Beta NCC,JP,20000,VND,`,
   ].join("\n");
 
   await page.goto("/materials/import");
@@ -583,9 +581,9 @@ test("shop scrape clears expired focused job ids and legacy job keys", async ({
 test("CSV import skips duplicate material name and unit", async ({ page }) => {
   const prefix = `E2E CSV duplicate ${Date.now()}`;
   const csv = [
-    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url,default_depreciation,default_reuse_pct",
-    `,${prefix},Cái,Test,Spec A,NCC,VN,12000,VND,,1,0`,
-    `,${prefix},Cái,Test,Spec B,NCC,VN,13000,VND,,1,0`,
+    "code,name,unit,category,spec_text,manufacturer,origin_country,default_unit_price,currency,source_url",
+    `,${prefix},Cái,Test,Spec A,NCC,VN,12000,VND,`,
+    `,${prefix},Cái,Test,Spec B,NCC,VN,13000,VND,`,
   ].join("\n");
 
   await page.goto("/materials/import");
@@ -660,8 +658,7 @@ test("manual material save shows a friendly duplicate code error", async ({
   ]);
   await expect(page.getByRole("heading", { name: reusedName })).toBeVisible();
   await expandMaterialEditSection(page);
-  await expect(page.getByLabel("Khấu hao mặc định")).toBeVisible();
-  await expect(page.getByLabel("% sử dụng lại mặc định")).toBeVisible();
+  await expect(page.getByLabel("URL nguồn (legacy)")).toBeVisible();
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");

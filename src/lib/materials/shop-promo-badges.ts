@@ -186,31 +186,6 @@ export function stripKhauHaoFromSpecText(value: string) {
     .trim();
 }
 
-/** Parse depreciation from spec text; returns 0–1 scale or null. */
-export function parseDepreciationFromSpecText(value: string) {
-  const match =
-    /\b(?:kh|khấu hao|khau hao)\s*[:：]?\s*(\d+(?:[.,]\d+)?)\s*(%)?/i.exec(
-      value,
-    );
-  if (!match?.[1]) {
-    return null;
-  }
-  const raw = Number(match[1].replace(",", "."));
-  if (!Number.isFinite(raw)) {
-    return null;
-  }
-  if (match[2] === "%") {
-    return raw > 1 ? raw / 100 : raw;
-  }
-  if (raw > 1 && raw <= 100) {
-    return raw / 100;
-  }
-  if (raw >= 0 && raw <= 1) {
-    return raw;
-  }
-  return null;
-}
-
 function isPriceOnlyProductName(value: string) {
   return /^(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d{4,})\s*(?:vnd|vnđ|₫|đ|dong|đồng)?$/i.test(
     value.trim(),
