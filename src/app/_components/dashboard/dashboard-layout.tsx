@@ -88,7 +88,18 @@ const navSections: NavSection[] = [
     id: "work",
     title: "Tác vụ",
     items: [
-      { href: "/search/packages", label: "Tìm kiếm", icon: "search" },
+      {
+        href: "/search/packages",
+        label: "Tìm kiếm",
+        icon: "search",
+        subItems: [
+          { href: "/search/packages", label: "Gói thầu" },
+          { href: "/search/packages/location", label: "Theo địa phương" },
+          { href: "/search/packages/area", label: "Ngành & địa phương" },
+          { href: "/search/plans", label: "KHLCNT" },
+          { href: "/search/projects", label: "Dự án" },
+        ],
+      },
       {
         href: "/documents",
         label: "Documents",
@@ -99,8 +110,27 @@ const navSections: NavSection[] = [
         label: "Import & Mapping",
         icon: "excel",
       },
-      { href: "/materials", label: "Sản phẩm / vật tư", icon: "materials" },
-      { href: "/catalog-pdfs", label: "Catalog PDFs", icon: "documents" },
+      {
+        href: "/materials",
+        label: "Sản phẩm / vật tư",
+        icon: "materials",
+        subItems: [
+          { href: "/materials", label: "Danh mục" },
+          { href: "/materials/new", label: "Thêm thủ công" },
+          { href: "/materials/scrape", label: "Scrape shop" },
+          { href: "/materials/import", label: "Import" },
+          { href: "/materials/match-review", label: "Match review" },
+        ],
+      },
+      {
+        href: "/catalog-pdfs",
+        label: "Catalog PDFs",
+        icon: "documents",
+        subItems: [
+          { href: "/catalog-pdfs", label: "Thư viện" },
+          { href: "/catalog-pdfs/new", label: "Thêm tài liệu" },
+        ],
+      },
       {
         href: "/saved-items",
         label: "Bộ lọc & Watchlist",
@@ -110,7 +140,16 @@ const navSections: NavSection[] = [
           { href: "/saved-items/watchlist", label: "Watchlist" },
         ],
       },
-      { href: "/workflows", label: "Quy trình", icon: "workflow" },
+      {
+        href: "/workflows",
+        label: "Quy trình",
+        icon: "workflow",
+        subItems: [
+          { href: "/workflows", label: "Danh sách" },
+          { href: "/workflows/health", label: "Trạng thái" },
+          { href: "/workflows/alerts", label: "Thông báo" },
+        ],
+      },
     ],
   },
   {
@@ -489,7 +528,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         <MobileBanner />
         <AdminUpdateBanner />
-        <main id="main-content" className="min-h-0 flex-1 overflow-y-auto">
+        <main id="main-content" className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
           <div className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}
           </div>

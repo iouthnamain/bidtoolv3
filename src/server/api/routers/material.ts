@@ -21,6 +21,7 @@ import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
+  materialMatchDecisions,
   materials,
 } from "~/server/db/schema";
 import {
@@ -55,6 +56,7 @@ import {
   startShopImportJob,
 } from "~/server/services/shop-import-jobs";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
+import { findFuzzyCandidates } from "~/server/services/ai-product-matcher";
 import {
   addShopScrapeJobProduct,
   cancelShopScrapeJob,
@@ -1260,7 +1262,7 @@ export const materialRouter = createTRPCRouter({
               from material_catalog_document_links links
               inner join material_catalog_documents docs
                 on docs.id = links.document_id
-              where links.material_id = ${materials.id}
+              where links.material_id = "materials"."id"
                 and docs.deleted_at is null
             )
           )::int`.as("withCatalog"),
@@ -1789,5 +1791,150 @@ export const materialRouter = createTRPCRouter({
         )
         .returning({ id: materials.id });
       return { count: updated.length };
+    }),
+
+  matchScrapedProduct: publicProcedure
+    .input(
+      z.object({
+        product: scrapedShopProductInput,
+        limit: z.number().int().min(1).max(20).default(8),
+        minSimilarity: z.number().min(0).max(1).default(0.1),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const product = {
+        ...input.product,
+        specText: input.product.specText ?? "",
+        currency: input.product.currency ?? "VND",
+        catalogPdfUrls: input.product.catalogPdfUrls ?? [],
+        shopCategory: input.product.shopCategory ?? null,
+      };
+      const candidates = await findFuzzyCandidates(
+        ctx.db,
+        product,
+        input.minSimilarity,
+        input.limit,
+      );
+      return { candidates };
+    }),
+
+  listPendingMatches: publicProcedure
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(100).default(50),
+        offset: z.number().int().min(0).default(0),
+        minConfidence: z.number().min(0).max(1).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(materialMatchDecisions.status, "pending")];
+      if (input.minConfidence != null) {
+        conditions.push(
+          sql`${materialMatchDecisions.confidence} >= ${input.minConfidence}`,
+        );
+      }
+
+      const rows = await ctx.db
+        .select()
+        .from(materialMatchDecisions)
+        .where(and(...conditions))
+        .orderBy(desc(materialMatchDecisions.confidence))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      const countResult = await ctx.db
+        .select({ count: sql<number>`count(*)` })
+        .from(materialMatchDecisions)
+        .where(and(...conditions));
+
+      return {
+        items: rows.map((row) => ({
+          ...row,
+          confidence: Number(row.confidence),
+        })),
+        total: Number(countResult[0]?.count ?? 0),
+      };
+    }),
+
+  acceptMatch: publicProcedure
+    .input(
+      z.object({
+        decisionId: z.number().int().positive(),
+        materialId: z.number().int().positive(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString();
+      const [updated] = await ctx.db
+        .update(materialMatchDecisions)
+        .set({
+          status: "accepted",
+          matchedMaterialId: input.materialId,
+          reviewedAt: now,
+        })
+        .where(
+          and(
+            eq(materialMatchDecisions.id, input.decisionId),
+            eq(materialMatchDecisions.status, "pending"),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy quyết định ghép hoặc đã được xử lý.",
+        });
+      }
+
+      return { success: true, decisionId: updated.id };
+    }),
+
+  rejectMatch: publicProcedure
+    .input(z.object({ decisionId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString();
+      const [updated] = await ctx.db
+        .update(materialMatchDecisions)
+        .set({ status: "rejected", reviewedAt: now })
+        .where(
+          and(
+            eq(materialMatchDecisions.id, input.decisionId),
+            eq(materialMatchDecisions.status, "pending"),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy quyết định ghép hoặc đã được xử lý.",
+        });
+      }
+
+      return { success: true, decisionId: updated.id };
+    }),
+
+  bulkAcceptMatches: publicProcedure
+    .input(
+      z.object({
+        minConfidence: z.number().min(0).max(1).default(0.85),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date().toISOString();
+      const updated = await ctx.db
+        .update(materialMatchDecisions)
+        .set({ status: "accepted", reviewedAt: now })
+        .where(
+          and(
+            eq(materialMatchDecisions.status, "pending"),
+            sql`${materialMatchDecisions.confidence} >= ${input.minConfidence}`,
+            isNotNull(materialMatchDecisions.matchedMaterialId),
+          ),
+        )
+        .returning({ id: materialMatchDecisions.id });
+
+      return { accepted: updated.length };
     }),
 });

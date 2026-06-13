@@ -95,8 +95,8 @@ function SourceMatrixVisual() {
       <div className="bg-slate-900 px-3 py-2 text-xs font-bold tracking-wide text-white uppercase">
         Ma trận độ chính xác nguồn BidWinner
       </div>
-      <div className="overflow-x-auto bg-white">
-        <table className="min-w-[760px] text-left text-sm">
+      <div className="overflow-hidden bg-white">
+        <table className="w-full table-fixed text-left text-sm break-words">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-3 py-2 font-bold">Mode</th>

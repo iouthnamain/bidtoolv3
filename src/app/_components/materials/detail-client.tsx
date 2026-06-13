@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   BadgeDollarSign,
   CheckCircle2,
-  ChevronDown,
   Clock,
   Copy,
   ExternalLink,
@@ -209,12 +208,12 @@ function MaterialImagePreview({ material }: { material: Material }) {
   const showPlaceholder = !imageUrl || failed;
 
   return (
-    <div className="flex w-40 shrink-0 flex-col gap-1">
+    <div className="flex w-full shrink-0 flex-col gap-1 sm:w-40">
       <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
         Ảnh sản phẩm
       </span>
       {showPlaceholder ? (
-        <div className="flex h-48 w-full items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-center">
+        <div className="flex h-40 w-full items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-center sm:h-48">
           <div className="flex flex-col items-center gap-2 px-3 text-slate-500">
             <Package className="h-8 w-8" aria-hidden />
             <span className="text-xs font-medium">Chưa có ảnh</span>
@@ -226,7 +225,7 @@ function MaterialImagePreview({ material }: { material: Material }) {
           alt=""
           referrerPolicy="no-referrer"
           loading="lazy"
-          className="h-48 w-full max-w-xs rounded-md border border-slate-200 object-contain"
+          className="h-40 w-full rounded-md border border-slate-200 object-contain sm:h-48 sm:max-w-xs"
           onError={() => setFailed(true)}
         />
       )}
@@ -470,10 +469,6 @@ export function MaterialDetailClient({
     useState<Material | null>(null);
   const [deleteSourceTarget, setDeleteSourceTarget] =
     useState<MaterialPriceSource | null>(null);
-  const [isPricesSectionOpen, setIsPricesSectionOpen] = useState(
-    view === "prices",
-  );
-  const [isEditSectionOpen, setIsEditSectionOpen] = useState(view === "edit");
   const [fieldLocks, setFieldLocks] = useState<
     Partial<Record<MaterialFieldLockKey, boolean>>
   >({});
@@ -814,7 +809,6 @@ export function MaterialDetailClient({
       mode: "linked",
       isPrimary: priceSources.length === 0,
     });
-    setIsPricesSectionOpen(true);
     document
       .getElementById("material-prices")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -953,7 +947,7 @@ export function MaterialDetailClient({
       >
         <div className="border-b border-slate-200 bg-white px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex min-w-0 flex-1 gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row">
               <MaterialImagePreview material={material} />
               <div className="min-w-0 flex-1">
               <Link
@@ -1164,13 +1158,7 @@ export function MaterialDetailClient({
         id="material-prices"
         className="panel scroll-mt-6 overflow-hidden"
       >
-        <button
-          type="button"
-          className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-          onClick={() => setIsPricesSectionOpen((open) => !open)}
-          aria-expanded={isPricesSectionOpen}
-          aria-controls="material-prices-content"
-        >
+        <div className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4 text-emerald-700" aria-hidden />
@@ -1187,20 +1175,13 @@ export function MaterialDetailClient({
             <Badge tone="info" count={priceSources.length}>
               Nguồn
             </Badge>
-            <ChevronDown
-              className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
-                isPricesSectionOpen ? "rotate-180" : ""
-              }`}
-              aria-hidden
-            />
           </div>
-        </button>
+        </div>
 
-        {isPricesSectionOpen ? (
-          <div
-            id="material-prices-content"
-            className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[0.85fr_1.15fr]"
-          >
+        <div
+          id="material-prices-content"
+          className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[0.85fr_1.15fr]"
+        >
         <article className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="border-b border-slate-200 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Thêm nguồn giá</h4>
@@ -1405,8 +1386,7 @@ export function MaterialDetailClient({
             </ul>
           )}
         </article>
-          </div>
-        ) : null}
+        </div>
       </section>
       ) : null}
 
@@ -1419,13 +1399,7 @@ export function MaterialDetailClient({
         id="material-edit"
         className="panel scroll-mt-6 overflow-hidden"
       >
-        <button
-          type="button"
-          className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-          onClick={() => setIsEditSectionOpen((open) => !open)}
-          aria-expanded={isEditSectionOpen}
-          aria-controls="material-edit-content"
-        >
+        <div className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Pencil className="h-4 w-4 text-amber-700" aria-hidden />
@@ -1438,19 +1412,12 @@ export function MaterialDetailClient({
               tư.
             </p>
           </div>
-          <ChevronDown
-            className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${
-              isEditSectionOpen ? "rotate-180" : ""
-            }`}
-            aria-hidden
-          />
-        </button>
+        </div>
 
-        {isEditSectionOpen ? (
-          <div
-            id="material-edit-content"
-            className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[1.25fr_0.75fr]"
-          >
+        <div
+          id="material-edit-content"
+          className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[1.25fr_0.75fr]"
+        >
         <article className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="border-b border-slate-200 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
@@ -1717,8 +1684,7 @@ export function MaterialDetailClient({
             </dl>
           </article>
         </aside>
-          </div>
-        ) : null}
+        </div>
       </section>
       ) : null}
 

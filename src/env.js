@@ -28,6 +28,8 @@ export const env = createEnv({
     SCRAPE_MAX_CONCURRENT_PAGES: z.coerce.number().int().positive().default(2),
     IMPORT_MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
     SCRAPE_JOB_TTL_DAYS: z.coerce.number().int().positive().default(7),
+    AI_MATCH_AUTO_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+    AI_MATCH_CANDIDATE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),
   },
 
   /**
@@ -63,6 +65,8 @@ export const env = createEnv({
     SCRAPE_MAX_CONCURRENT_PAGES: process.env.SCRAPE_MAX_CONCURRENT_PAGES,
     IMPORT_MAX_CONCURRENT_JOBS: process.env.IMPORT_MAX_CONCURRENT_JOBS,
     SCRAPE_JOB_TTL_DAYS: process.env.SCRAPE_JOB_TTL_DAYS,
+    AI_MATCH_AUTO_THRESHOLD: process.env.AI_MATCH_AUTO_THRESHOLD,
+    AI_MATCH_CANDIDATE_THRESHOLD: process.env.AI_MATCH_CANDIDATE_THRESHOLD,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

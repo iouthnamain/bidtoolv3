@@ -5,6 +5,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
 import type { db as appDb } from "~/server/db";
 import { materials } from "~/server/db/schema";
+import {
+  findFuzzyCandidates,
+  getCachedDecision,
+  hashScrapedProduct,
+  saveMatchDecision,
+} from "~/server/services/ai-product-matcher";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
@@ -193,6 +199,108 @@ export async function importScrapedProducts(
         processed += 1;
         reportProgress(name, product.sourceUrl);
         continue;
+      }
+
+      // Tier 4: Fuzzy matching via pg_trgm + multi-signal scoring
+      const fuzzyResult = await tryFuzzyMatch(db, product, unit, indexes);
+      if (fuzzyResult) {
+        if (fuzzyResult.action === "auto_matched" && fuzzyResult.materialRow) {
+          const locks =
+            normalizeMaterialMetadata(fuzzyResult.materialRow.metadataJson)
+              .fieldLocks ?? {};
+          const metadataJson = metadataForScrapedProduct(
+            fuzzyResult.materialRow,
+            product,
+            now,
+          );
+          const [row] = await db
+            .update(materials)
+            .set({
+              category: applyLockedFillEmptyField(
+                locks,
+                "category",
+                fuzzyResult.materialRow.category,
+                product.category,
+              ),
+              specText:
+                applyLockedFillEmptyField(
+                  locks,
+                  "specText",
+                  fuzzyResult.materialRow.specText,
+                  product.specText,
+                ) ?? fuzzyResult.materialRow.specText,
+              manufacturer: applyLockedFillEmptyField(
+                locks,
+                "manufacturer",
+                fuzzyResult.materialRow.manufacturer,
+                product.manufacturer,
+              ),
+              originCountry: applyLockedFillEmptyField(
+                locks,
+                "originCountry",
+                fuzzyResult.materialRow.originCountry,
+                product.originCountry,
+              ),
+              defaultUnitPrice: applyLockedPriceField(
+                locks,
+                fuzzyResult.materialRow.defaultUnitPrice,
+                product.price,
+              ),
+              currency: applyLockedCurrencyField(
+                locks,
+                fuzzyResult.materialRow.defaultUnitPrice,
+                fuzzyResult.materialRow.currency,
+                product.price,
+                product.currency,
+              ),
+              sourceUrl: applyLockedFillEmptyField(
+                locks,
+                "sourceUrl",
+                fuzzyResult.materialRow.sourceUrl,
+                product.sourceUrl,
+              ),
+              imageUrl: isFieldLocked(locks, "imageUrl")
+                ? fuzzyResult.materialRow.imageUrl
+                : materialImageUrlFromScrape(product.imageUrl),
+              metadataJson,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(materials.id, fuzzyResult.materialRow.id),
+                isNull(materials.deletedAt),
+              ),
+            )
+            .returning();
+
+          const updatedRow = requireUpdatedMaterial(row);
+          indexMaterialRow(indexes, updatedRow);
+          await linkScrapedCatalogPdfs(db, updatedRow.id, product);
+          updated += 1;
+          items.push({
+            name,
+            sourceUrl: product.sourceUrl,
+            action: "updated",
+            materialId: updatedRow.id,
+            message: `Ghép tự động (AI: ${(fuzzyResult.confidence * 100).toFixed(0)}%) với "${fuzzyResult.materialRow.name}".`,
+          });
+          processed += 1;
+          reportProgress(name, product.sourceUrl);
+          continue;
+        }
+
+        if (fuzzyResult.action === "pending_review") {
+          skipped += 1;
+          items.push({
+            name,
+            sourceUrl: product.sourceUrl,
+            action: "skipped",
+            message: `Tìm thấy ứng viên tương tự (${(fuzzyResult.confidence * 100).toFixed(0)}%), chờ xác nhận.`,
+          });
+          processed += 1;
+          reportProgress(name, product.sourceUrl);
+          continue;
+        }
       }
 
       const createInput: MaterialInput = {
@@ -656,4 +764,94 @@ function importMessageForUpdated(
   return fields.length > 0
     ? `Bổ sung trường trống: ${fields.join(", ")}.${lockedSuffix}`
     : `Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.${lockedSuffix}`;
+}
+
+const AI_MATCH_AUTO_THRESHOLD = parseFloat(
+  process.env.AI_MATCH_AUTO_THRESHOLD ?? "0.85",
+);
+const AI_MATCH_CANDIDATE_THRESHOLD = parseFloat(
+  process.env.AI_MATCH_CANDIDATE_THRESHOLD ?? "0.40",
+);
+
+async function tryFuzzyMatch(
+  db: AppDb,
+  product: ScrapedShopProduct,
+  unit: string,
+  indexes: MaterialLookupIndexes,
+): Promise<{
+  action: "auto_matched" | "pending_review" | "no_match";
+  confidence: number;
+  materialRow?: MaterialRow;
+} | null> {
+  const hash = hashScrapedProduct(product);
+
+  const cached = await getCachedDecision(db, hash);
+  if (cached) {
+    if (cached.status === "accepted" && cached.matchedMaterialId) {
+      const row = await db
+        .select()
+        .from(materials)
+        .where(
+          and(
+            eq(materials.id, cached.matchedMaterialId),
+            isNull(materials.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (row[0]) {
+        return {
+          action: "auto_matched",
+          confidence: cached.confidence,
+          materialRow: row[0],
+        };
+      }
+    }
+    if (cached.status === "rejected") {
+      return null;
+    }
+    if (cached.status === "pending") {
+      return {
+        action: "pending_review",
+        confidence: cached.confidence,
+      };
+    }
+  }
+
+  const candidates = await findFuzzyCandidates(db, product);
+  if (candidates.length === 0) return null;
+
+  const decision = await saveMatchDecision(db, product, candidates, {
+    autoThreshold: AI_MATCH_AUTO_THRESHOLD,
+    candidateThreshold: AI_MATCH_CANDIDATE_THRESHOLD,
+  });
+
+  if (decision.action === "auto_matched" && decision.matchedMaterialId) {
+    const row = await db
+      .select()
+      .from(materials)
+      .where(
+        and(
+          eq(materials.id, decision.matchedMaterialId),
+          isNull(materials.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (row[0]) {
+      indexMaterialRow(indexes, row[0]);
+      return {
+        action: "auto_matched",
+        confidence: decision.confidence,
+        materialRow: row[0],
+      };
+    }
+  }
+
+  if (decision.action === "pending_review") {
+    return {
+      action: "pending_review",
+      confidence: decision.confidence,
+    };
+  }
+
+  return null;
 }

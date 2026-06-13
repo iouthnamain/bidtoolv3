@@ -198,7 +198,7 @@ function XlsxPreviewPanel({
 
         {sheet.previewRows.length > 0 ? (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full min-w-[1280px] divide-y divide-slate-200 text-sm">
+            <table className="w-full min-w-[44rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="bg-slate-100 text-left text-slate-600 uppercase">
                 <tr>
                   <th className="px-3 py-2">Dòng</th>

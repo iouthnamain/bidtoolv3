@@ -31,6 +31,13 @@ export function WorkflowsLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+
+  // Workflow detail routes (/workflows/[id]...) own their own shell via
+  // workflows/[id]/layout.tsx — skip this one to avoid a doubled header/nav.
+  if (/^\/workflows\/\d+/.test(pathname)) {
+    return <>{children}</>;
+  }
+
   const meta = PAGE_META[pathname] ?? DEFAULT_META;
 
   return (

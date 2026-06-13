@@ -121,10 +121,10 @@ test("previews provided sample material workbooks without phantom row warnings",
   await expect(page.getByText(/hơn 5\.000 dòng/)).toHaveCount(0);
 });
 
-test("material stats and catalog pages show important fields", async ({
+test("material stats and catalog show on the same page", async ({
   page,
 }) => {
-  await page.goto("/materials/stats");
+  await page.goto("/materials");
   await page.waitForLoadState("networkidle");
 
   await expect(
@@ -134,11 +134,6 @@ test("material stats and catalog pages show important fields", async ({
   await expect(
     page.getByRole("button", { name: /Thiếu giá/ }),
   ).toBeVisible();
-  await expect(page.getByText("Snapshot catalog")).toHaveCount(0);
-  await expect(page.getByRole("table")).toHaveCount(0);
-
-  await page.goto("/materials");
-  await page.waitForLoadState("networkidle");
 
   const catalog = page.locator("#material-catalog");
   await expect(catalog).toBeVisible();
@@ -227,7 +222,7 @@ test("material mobile controls keep touch targets usable", async ({ page }) => {
       .getByRole("link", { name: /Danh mục/i }),
     44,
   );
-  await page.goto("/materials/stats");
+  await page.goto("/materials");
   await page.waitForLoadState("networkidle");
   await expectMinTouchTarget(
     page.getByRole("link", {

@@ -40,21 +40,10 @@ export function WorkflowDetailLayoutClient({
   const meta = PAGE_META[sectionKey] ?? PAGE_META.overview!;
 
   const sectionNavItems = useMemo((): PageSectionNavItem[] => {
-    return workflowDetailSectionNavItems.map((item) => {
-      if (item.href.startsWith("#")) {
-        const segment =
-          item.href === "#workflow-overview"
-            ? ""
-            : item.href === "#workflow-edit"
-              ? "/edit"
-              : "/runs";
-        return {
-          ...item,
-          href: `/workflows/${workflowId}${segment}`,
-        };
-      }
-      return item;
-    });
+    return workflowDetailSectionNavItems.map((item) => ({
+      ...item,
+      href: item.href.replace("{id}", workflowId),
+    }));
   }, [workflowId]);
 
   return (

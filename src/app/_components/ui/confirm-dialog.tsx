@@ -60,8 +60,6 @@ export function ConfirmDialog({
     [isLoading, onCancel],
   );
 
-  if (!open) return null;
-
   return (
     <dialog
       ref={dialogRef}

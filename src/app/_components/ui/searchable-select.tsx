@@ -106,7 +106,7 @@ export function SearchableSelect({
             role="listbox"
             aria-label={ariaLabel}
           >
-            <li>
+            <li role="option" aria-selected={!value}>
               <button
                 type="button"
                 className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${!value ? "bg-sky-50 font-semibold text-sky-800" : "text-slate-700"}`}
@@ -116,12 +116,12 @@ export function SearchableSelect({
               </button>
             </li>
             {filteredOptions.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-slate-500">
+              <li role="option" aria-selected={false} className="px-3 py-2 text-xs text-slate-500">
                 Không có lựa chọn phù hợp.
               </li>
             ) : (
               filteredOptions.map((option) => (
-                <li key={option}>
+                <li key={option} role="option" aria-selected={value === option}>
                   <button
                     type="button"
                     className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${value === option ? "bg-sky-50 font-semibold text-sky-800" : "text-slate-800"}`}

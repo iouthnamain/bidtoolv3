@@ -250,33 +250,50 @@ function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
   };
 }
 
+const materialColumnWidthClass: Record<string, string> = {
+  select: "w-12",
+  name: "w-[20%]",
+  code: "w-28",
+  unit: "w-20",
+  specText: "w-[16%]",
+  details: "w-[14%]",
+  catalog: "w-24",
+  manufacturer: "w-[12%]",
+  originCountry: "w-32",
+  defaultUnitPrice: "w-32",
+  updatedAt: "w-28",
+  actions: "w-28",
+};
+
 function materialTableHeaderClass(columnId: string) {
+  const width = materialColumnWidthClass[columnId] ?? "";
   if (columnId === "select") {
-    return "px-3 py-2 text-center";
+    return `px-3 py-2 text-center ${width}`;
   }
   if (columnId === "actions") {
-    return "px-3 py-2 text-right";
+    return `px-3 py-2 text-right ${width}`;
   }
-  return "px-3 py-2";
+  return `px-3 py-2 ${width}`;
 }
 
 function materialTableCellClass(columnId: string) {
   const classes: Record<string, string> = {
-    select: "px-3 py-2 text-center",
-    name: "max-w-72 px-3 py-2 font-semibold text-slate-900",
-    code: "max-w-36 px-3 py-2 font-mono text-xs text-slate-700",
-    unit: "px-3 py-2 text-slate-700",
-    specText: "max-w-96 px-3 py-2 text-slate-600",
-    details: "max-w-80 px-3 py-2 text-slate-600",
-    catalog: "px-3 py-2",
-    manufacturer: "max-w-52 px-3 py-2 text-slate-600",
-    originCountry: "max-w-36 px-3 py-2 text-slate-600",
-    defaultUnitPrice: "px-3 py-2",
-    updatedAt: "px-3 py-2",
-    actions: "px-3 py-2",
+    select: "px-3 py-2 text-center align-top",
+    name: "px-3 py-2 align-top font-semibold text-slate-900",
+    code: "px-3 py-2 align-top font-mono text-xs text-slate-700 truncate",
+    unit: "px-3 py-2 align-top text-slate-700",
+    specText: "px-3 py-2 align-top text-slate-600",
+    details: "px-3 py-2 align-top text-slate-600",
+    catalog: "px-3 py-2 align-top",
+    manufacturer: "px-3 py-2 align-top text-slate-600",
+    originCountry: "px-3 py-2 align-top text-slate-600",
+    defaultUnitPrice: "px-3 py-2 align-top",
+    updatedAt: "px-3 py-2 align-top",
+    actions: "px-3 py-2 align-top",
   };
 
-  return classes[columnId] ?? "px-3 py-2";
+  const width = materialColumnWidthClass[columnId] ?? "";
+  return `${classes[columnId] ?? "px-3 py-2 align-top"} ${width}`.trim();
 }
 
 function MaterialSortableHeader({
@@ -480,11 +497,7 @@ function MaterialMobileCard({
   );
 }
 
-export function MaterialsListClient({
-  view = "catalog",
-}: {
-  view?: "catalog" | "stats";
-}) {
+export function MaterialsListClient() {
   const router = useRouter();
   const initialSearchParams = useSearchParams();
   const [hasMounted, setHasMounted] = useState(false);
@@ -920,11 +933,6 @@ export function MaterialsListClient({
   };
 
   const scrollToCatalog = () => {
-    if (view === "stats") {
-      router.push("/materials");
-      return;
-    }
-
     document
       .getElementById("material-catalog")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1400,7 +1408,6 @@ export function MaterialsListClient({
         onCancel={() => setSingleDeleteTarget(null)}
       />
 
-      {view === "stats" ? (
       <section className="panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -1589,9 +1596,7 @@ export function MaterialsListClient({
           </button>
         </div>
       </section>
-      ) : null}
 
-      {view === "catalog" ? (
       <section id="material-catalog" className="panel scroll-mt-6 p-4">
           <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
             <div>
@@ -2259,7 +2264,7 @@ export function MaterialsListClient({
           </div>
 
           <div
-            className="relative mt-3 hidden overflow-x-auto rounded-lg border border-slate-200 md:block"
+            className="relative mt-3 hidden overflow-hidden rounded-lg border border-slate-200 md:block"
             aria-busy={isCatalogBusy}
           >
             {isRefreshing ? (
@@ -2269,7 +2274,7 @@ export function MaterialsListClient({
             ) : null}
             <table
               aria-label="Danh mục vật tư"
-              className="w-full min-w-[1280px] divide-y divide-slate-200 text-sm"
+              className="w-full table-fixed divide-y divide-slate-200 text-sm break-words"
             >
               <thead className="sticky top-0 z-10 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
                 {materialTable.getHeaderGroups().map((headerGroup) => (
@@ -2481,7 +2486,6 @@ export function MaterialsListClient({
             </div>
           </div>
       </section>
-      ) : null}
     </div>
   );
 }

@@ -17,7 +17,7 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section className="flex min-h-full flex-col space-y-4">
       <header className="border-b border-slate-200 pb-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
@@ -39,7 +39,7 @@ export function DashboardShell({
         <PageSectionNav title={sectionNavTitle} items={sectionNavItems} />
       ) : null}
 
-      <div>{children}</div>
+      <div className="flex-1">{children}</div>
     </section>
   );
 }

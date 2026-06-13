@@ -265,7 +265,7 @@ tRPC write functions that touch the database will fail.
   confirm production `DATABASE_URL` is non-empty and production migrations have
   been applied.
 
-## Scripts
+
 
 - `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, and migrations.
 - `bun run dev:update` - post-pull sync: deps, PostgreSQL, and migrations.

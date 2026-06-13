@@ -732,8 +732,8 @@ function ResultsTable(props: {
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
-        <table className="min-w-[1180px] divide-y divide-slate-200 bg-white text-sm">
+      <div className="hidden overflow-hidden rounded-lg border border-slate-200 md:block">
+        <table className="w-full table-fixed divide-y divide-slate-200 bg-white text-sm break-words">
           <thead className="bg-white text-left text-[13px] font-semibold text-slate-500">
             <tr>
               <th className="w-10 px-3 py-4">
@@ -744,24 +744,24 @@ function ResultsTable(props: {
                   aria-label="Chọn tất cả"
                 />
               </th>
-              <th className="w-32 px-3 py-4">
+              <th className="w-28 px-3 py-4">
                 {idHeaderForEntity(entityType)}
               </th>
-              <th className="min-w-[300px] px-3 py-4">
+              <th className="px-3 py-4">
                 {titleHeaderForEntity(entityType)}
               </th>
-              <th className="w-44 px-3 py-4">Địa điểm thực hiện</th>
-              <th className="min-w-[220px] px-3 py-4">
+              <th className="w-36 px-3 py-4">Địa điểm thực hiện</th>
+              <th className="w-44 px-3 py-4">
                 Bên mời thầu/Chủ đầu tư
               </th>
-              <th className="w-32 px-3 py-4">
+              <th className="w-28 px-3 py-4">
                 {deadlineHeaderForEntity(entityType)}
               </th>
-              <th className="w-36 px-3 py-4 text-right">
+              <th className="w-32 px-3 py-4 text-right">
                 {budgetHeaderForEntity(entityType)}
               </th>
-              <th className="w-28 px-3 py-4">Đăng tải</th>
-              <th className="w-44 px-3 py-4">Hành động</th>
+              <th className="w-24 px-3 py-4">Đăng tải</th>
+              <th className="w-36 px-3 py-4">Hành động</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

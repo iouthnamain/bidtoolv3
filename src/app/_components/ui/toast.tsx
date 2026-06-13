@@ -84,10 +84,12 @@ function ToastItem({
     setTimeout(() => onDismiss(toast.id), 200);
   }, [toast.id, onDismiss]);
 
+  const isUrgent = toast.variant === "error" || toast.variant === "warning";
+
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={isUrgent ? "alert" : "status"}
+      aria-live={isUrgent ? "assertive" : "polite"}
       className={`toast-enter flex items-start gap-2.5 rounded-md border px-3.5 py-2.5 text-sm font-medium shadow-md transition-[opacity,transform] duration-200 ${
         variantStyles[toast.variant]
       } ${exiting ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"}`}

@@ -10,5 +10,5 @@ export const metadata = createPageMetadata({
 });
 
 export default function MaterialsPage() {
-  return <MaterialsListClient view="catalog" />;
+  return <MaterialsListClient />;
 }

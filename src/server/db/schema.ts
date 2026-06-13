@@ -853,3 +853,49 @@ export const excelWorkspaceEvents = pgTable(
     ).on(table.workspaceId, table.at),
   }),
 );
+
+export const materialMatchDecisions = pgTable(
+  "material_match_decisions",
+  {
+    id: serial("id").primaryKey(),
+    scrapedProductHash: text("scraped_product_hash").notNull(),
+    matchedMaterialId: integer("matched_material_id").references(
+      () => materials.id,
+      { onDelete: "set null" },
+    ),
+    matchMethod: text("match_method").notNull().default("trigram"),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }).notNull(),
+    reasoning: text("reasoning").notNull().default(""),
+    candidatesJson: jsonb("candidates_json")
+      .$type<
+        Array<{
+          materialId: number;
+          name: string;
+          unit: string;
+          score: number;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    status: text("status").notNull().default("pending"),
+    scrapedName: text("scraped_name").notNull().default(""),
+    scrapedUnit: text("scraped_unit").notNull().default(""),
+    scrapedSourceUrl: text("scraped_source_url").notNull().default(""),
+    reviewedAt: timestamp("reviewed_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    hashUniqueIdx: uniqueIndex("material_match_decisions_hash_unique").on(
+      table.scrapedProductHash,
+    ),
+    statusIdx: index("material_match_decisions_status_idx").on(table.status),
+    materialIdx: index("material_match_decisions_material_idx").on(
+      table.matchedMaterialId,
+    ),
+  }),
+);

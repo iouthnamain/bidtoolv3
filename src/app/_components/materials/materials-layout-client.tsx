@@ -10,10 +10,6 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     title: "Sản phẩm / vật tư",
     description: "Quản lý danh mục nội bộ để nhập, đối chiếu và chuẩn hóa vật tư",
   },
-  "/materials/stats": {
-    title: "Thống kê vật tư",
-    description: "Tổng quan số vật tư, đơn giá, nguồn và category trong catalog.",
-  },
   "/materials/new": {
     title: "Thêm vật tư",
     description: "Tạo một vật tư chuẩn cho catalog.",

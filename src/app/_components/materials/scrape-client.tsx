@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { MatchCompareDrawer } from "~/app/_components/materials/match-compare-drawer";
 import { useToast } from "~/app/_components/ui/toast";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import { api, type RouterOutputs } from "~/trpc/react";
@@ -891,6 +892,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [deleteProductTarget, setDeleteProductTarget] =
     useState<ScrapedProduct | null>(null);
   const [bulkDeleteSelectedOpen, setBulkDeleteSelectedOpen] = useState(false);
+  const [compareProduct, setCompareProduct] = useState<ScrapedProduct | null>(
+    null,
+  );
   const [clockMs, setClockMs] = useState(() => Date.now());
   const utils = api.useUtils();
   const toast = useToast();
@@ -1926,8 +1930,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               })}
             </div>
 
-            <div className="mt-4 hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
-              <table className="min-w-[1180px] divide-y divide-slate-200 text-sm">
+            <div className="mt-4 hidden overflow-hidden rounded-lg border border-slate-200 md:block">
+              <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
                     <th className="px-3 py-2">Shop</th>
@@ -1982,10 +1986,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             {job.url}
                           </span>
                         </td>
-                        <td className="min-w-[12rem] px-3 py-2">
+                        <td className="px-3 py-2 truncate">
                           <ScrapeJobConfigBadges job={job} />
                         </td>
-                        <td className="min-w-[9rem] px-3 py-2">
+                        <td className="px-3 py-2 truncate">
                           <Badge tone={statusTone[job.status]}>
                             {active ? (
                               <Loader2
@@ -2001,7 +2005,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             </p>
                           ) : null}
                         </td>
-                        <td className="min-w-[9rem] px-3 py-2">
+                        <td className="px-3 py-2 truncate">
                           <Badge tone={preview.tone}>{preview.label}</Badge>
                           {preview.detail ? (
                             <p className="mt-1 max-w-[14rem] text-xs text-slate-500">
@@ -2402,6 +2406,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             }}
           />
 
+          <MatchCompareDrawer
+            open={compareProduct !== null}
+            product={compareProduct}
+            onClose={() => setCompareProduct(null)}
+          />
+
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-title">Duyệt sản phẩm scrape</p>
@@ -2432,6 +2442,21 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={scrapeProducts.length === 0}
+                leftIcon={<Search className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  const firstSelected = scrapeProducts.find((p) =>
+                    selectedSourceUrls.has(productKey(p)),
+                  );
+                  setCompareProduct(firstSelected ?? scrapeProducts[0] ?? null);
+                }}
+              >
+                Đối chiếu vật tư
+              </Button>
               {canEditScrapeProducts ? (
                 <Button
                   type="button"
@@ -2655,8 +2680,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           {scrapeProducts.length > 0 ? (
-            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-[1680px] divide-y divide-slate-200 text-sm">
+            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+              <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
                     <th className="w-10 px-3 py-2"> </th>
@@ -2775,15 +2800,16 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             ) : null}
                           </div>
                         </td>
-                        <td className="max-w-xs px-3 py-2 text-xs text-slate-600">
+                        <td className="px-3 py-2 text-xs text-slate-600">
                           <a
                             href={item.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex max-w-full items-center gap-1 hover:text-sky-700 hover:underline"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
                             onClick={(event) => event.stopPropagation()}
+                            aria-label={`Mở trang nguồn của ${item.name}`}
+                            title={item.sourceUrl}
                           >
-                            <span className="truncate">{item.sourceUrl}</span>
                             <ExternalLink
                               className="h-3.5 w-3.5 shrink-0"
                               aria-hidden
@@ -2794,7 +2820,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openProductDetail(item);
@@ -2803,13 +2829,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                               title="Xem chi tiết"
                             >
                               <Eye className="h-3.5 w-3.5" aria-hidden />
-                              Chi tiết
                             </button>
                             {canEditScrapeProducts ? (
                               <>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-white text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     openProductDetail(item);
@@ -2818,11 +2843,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                                   title="Sửa sản phẩm"
                                 >
                                   <Pencil className="h-3.5 w-3.5" aria-hidden />
-                                  Sửa
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
                                   disabled={deleteShopScrapeJobProduct.isPending}
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -2832,7 +2856,6 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                                   title="Xóa khỏi preview — không nhập DB"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                                  Xóa
                                 </button>
                               </>
                             ) : null}
@@ -2890,8 +2913,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+            <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                 <tr>
                   <th className="px-3 py-2">Sản phẩm</th>

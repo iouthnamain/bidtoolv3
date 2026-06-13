@@ -103,19 +103,19 @@ export const workflowDetailSectionNavItems: PageSectionNavItem[] = [
     icon: "list",
   },
   {
-    href: "#workflow-overview",
+    href: "/workflows/{id}",
     label: "Tổng quan",
     description: "Trạng thái, lần chạy gần nhất và hành động nhanh.",
     icon: "eye",
   },
   {
-    href: "#workflow-edit",
+    href: "/workflows/{id}/edit",
     label: "Cấu hình",
     description: "Sửa trigger, criteria và trạng thái hoạt động.",
     icon: "pencil",
   },
   {
-    href: "#workflow-runs",
+    href: "/workflows/{id}/runs",
     label: "Lịch sử",
     description: "Log chạy, kết quả và thông điệp lỗi.",
     icon: "history",
@@ -129,13 +129,6 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     description: "Tìm, chọn, mở chi tiết và xóa vật tư.",
     icon: "boxes",
     tone: "slate",
-  },
-  {
-    href: "/materials/stats",
-    label: "Thống kê",
-    description: "Số vật tư, đơn giá, nguồn và category.",
-    icon: "bar-chart",
-    tone: "sky",
   },
   {
     href: "/materials/new",

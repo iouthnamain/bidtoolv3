@@ -315,8 +315,8 @@ export function CatalogPdfLibraryClient({
             icon={<FileText className="h-5 w-5" aria-hidden />}
           />
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+          <div className="mt-4 overflow-hidden">
+            <table className="w-full table-fixed text-left text-sm break-words">
               <thead>
                 <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500 uppercase">
                   <th className="px-2 py-2">Tài liệu</th>
