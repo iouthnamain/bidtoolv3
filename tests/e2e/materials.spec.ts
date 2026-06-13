@@ -123,24 +123,28 @@ test("previews provided sample material workbooks without phantom row warnings",
   await expect(page.getByText(/hơn 5\.000 dòng/)).toHaveCount(0);
 });
 
-test("material summary shows import-preview-style important fields", async ({
+test("material stats and catalog pages show important fields", async ({
   page,
 }) => {
-  await page.goto("/materials#material-summary");
+  await page.goto("/materials/stats");
   await page.waitForLoadState("networkidle");
 
-  const summary = page.locator("#material-summary");
   await expect(
-    summary.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
+    page.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
   ).toBeVisible();
-  await expect(summary.getByText("Tổng vật tư")).toBeVisible();
+  await expect(page.getByText("Tổng vật tư")).toBeVisible();
   await expect(
-    summary.getByRole("button", { name: /Thiếu giá/ }),
+    page.getByRole("button", { name: /Thiếu giá/ }),
   ).toBeVisible();
-  await expect(summary.locator(":scope > #material-catalog")).toBeVisible();
-  await expect(summary.getByText("Snapshot catalog")).toHaveCount(0);
-  await expect(summary.getByRole("table")).toHaveCount(1);
-  const catalogTable = summary.getByRole("table", {
+  await expect(page.getByText("Snapshot catalog")).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(0);
+
+  await page.goto("/materials");
+  await page.waitForLoadState("networkidle");
+
+  const catalog = page.locator("#material-catalog");
+  await expect(catalog).toBeVisible();
+  const catalogTable = page.getByRole("table", {
     name: "Danh mục vật tư",
   });
 
@@ -171,8 +175,7 @@ test("material page keeps navigation compact on mobile", async ({ page }) => {
     bodyWidth: document.body.scrollWidth,
     viewportWidth: window.innerWidth,
     firstPanelTop:
-      document.querySelector("#material-summary")?.getBoundingClientRect()
-        .top ?? 0,
+      document.querySelector(".panel")?.getBoundingClientRect().top ?? 0,
     sectionNavHeight:
       document
         .querySelector("nav[aria-label='Khu vực vật tư']")
@@ -226,20 +229,22 @@ test("material mobile controls keep touch targets usable", async ({ page }) => {
       .getByRole("link", { name: /Danh mục/i }),
     44,
   );
+  await page.goto("/materials/stats");
+  await page.waitForLoadState("networkidle");
   await expectMinTouchTarget(
-    page.locator("#material-summary").getByRole("link", {
+    page.getByRole("link", {
       name: "Thêm thủ công",
     }),
     40,
   );
   await expectMinTouchTarget(
-    page.locator("#material-summary").getByRole("link", {
+    page.getByRole("link", {
       name: "Nhập sheet",
     }),
     40,
   );
   await expectMinTouchTarget(
-    page.locator("#material-summary").getByRole("link", {
+    page.getByRole("link", {
       name: "Scrape shop",
     }),
     40,
@@ -304,7 +309,7 @@ test("material catalog paginates server-backed table rows", async ({
   await importMaterialRowsViaCsv(page, prefix, 30);
 
   try {
-    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.goto(`/materials?q=${prefix}`);
     await page.waitForLoadState("networkidle");
 
     const catalog = page.locator("#material-catalog");
@@ -350,7 +355,7 @@ test("material catalog paginates server-backed table rows", async ({
     await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
 
     await page.goto(
-      `/materials?q=${prefix}&pageSize=25&page=2#material-catalog`,
+      `/materials?q=${prefix}&pageSize=25&page=2`,
     );
     await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("25");
     await expect(catalog.getByText("Trang 2 /")).toBeVisible();
@@ -378,7 +383,7 @@ test("material catalog table supports header sort and quick filters", async ({
   await expect(page.getByText("Đã nhập 2 dòng")).toBeVisible();
 
   try {
-    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.goto(`/materials?q=${prefix}`);
     await page.waitForLoadState("networkidle");
 
     const catalog = page.locator("#material-catalog");
@@ -444,7 +449,7 @@ test("material catalog bulk update changes selected rows", async ({ page }) => {
   await importMaterialRowsViaCsv(page, prefix, 2);
 
   try {
-    await page.goto(`/materials?q=${prefix}#material-catalog`);
+    await page.goto(`/materials?q=${prefix}`);
     await page.waitForLoadState("networkidle");
 
     const catalog = page.locator("#material-catalog");

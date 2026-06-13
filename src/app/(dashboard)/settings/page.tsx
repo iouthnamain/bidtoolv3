@@ -1,6 +1,5 @@
 import { createPageMetadata } from "~/app/_lib/seo";
-import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
-import { SettingsPageClient } from "~/app/_components/dashboard/settings-page-client";
+import { SettingsStatusStrip } from "~/app/_components/dashboard/settings-status-strip";
 
 export const metadata = createPageMetadata({
   title: "Cài đặt",
@@ -11,12 +10,5 @@ export const metadata = createPageMetadata({
 });
 
 export default function SettingsPage() {
-  return (
-    <DashboardShell
-      title="Cài đặt"
-      description="Phiên bản, desktop client và cập nhật hệ thống"
-    >
-      <SettingsPageClient />
-    </DashboardShell>
-  );
+  return <SettingsStatusStrip />;
 }

@@ -3,6 +3,7 @@ import {
   normalizeProvinceFilterValues,
 } from "~/lib/search-filter-utils";
 import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
+import { getSearchPathForMode } from "~/lib/search-routes";
 
 export const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -290,10 +291,6 @@ export function buildSearchUrlParams(options: {
   const criteria = normalizeSearchCriteria(options.criteria);
   const params = new URLSearchParams();
 
-  if (options.mode !== "package_keyword") {
-    params.set("mode", options.mode);
-  }
-
   if (criteria.keyword) {
     params.set("keyword", criteria.keyword);
   }
@@ -355,7 +352,7 @@ export function buildSearchHref(options: {
 }) {
   const params = buildSearchUrlParams(options);
   const query = params.toString();
-  return `/search${query ? `?${query}` : ""}`;
+  return `${getSearchPathForMode(options.mode)}${query ? `?${query}` : ""}`;
 }
 
 function formatCurrencyRange(min: number | null, max: number | null): string {

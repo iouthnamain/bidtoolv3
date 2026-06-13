@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function DesktopSettingsPage() {
-  redirect("/settings#desktop-client");
+  redirect("/settings/desktop");
 }

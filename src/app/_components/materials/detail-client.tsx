@@ -34,8 +34,6 @@ import { useToast } from "~/app/_components/ui/toast";
 import {
   formatDateTime,
   formatMoney,
-  parseIntegerOrDefault,
-  parseNumberOrDefault,
   parseOptionalNumber,
 } from "~/lib/materials/format";
 import { resolveMaterialImageUrl } from "~/lib/materials/image";
@@ -60,8 +58,6 @@ type MaterialFormState = {
   defaultUnitPrice: string;
   currency: string;
   sourceUrl: string;
-  defaultDepreciation: string;
-  defaultReusePct: string;
 };
 
 type PriceSourceFormState = {
@@ -99,8 +95,6 @@ function formFromMaterial(material: Material): MaterialFormState {
         : String(material.defaultUnitPrice),
     currency: material.currency || "VND",
     sourceUrl: material.sourceUrl ?? "",
-    defaultDepreciation: String(material.defaultDepreciation ?? 1),
-    defaultReusePct: String(material.defaultReusePct ?? 0),
   };
 }
 
@@ -782,11 +776,6 @@ export function MaterialDetailClient({
           defaultUnitPrice: parseOptionalNumber(form.defaultUnitPrice),
           currency: form.currency || "VND",
           sourceUrl: form.sourceUrl || "",
-          defaultDepreciation: parseNumberOrDefault(form.defaultDepreciation, 1),
-          defaultReusePct: Math.min(
-            100,
-            Math.max(0, parseIntegerOrDefault(form.defaultReusePct, 0)),
-          ),
         },
       });
     },
@@ -834,31 +823,13 @@ export function MaterialDetailClient({
 
   const scrollToSection = (sectionId: string) => {
     if (sectionId === "material-prices") {
-      setIsPricesSectionOpen(true);
+      router.push(`/materials/${id}/prices`);
+      return;
     }
     if (sectionId === "material-edit") {
-      setIsEditSectionOpen(true);
+      router.push(`/materials/${id}/edit`);
     }
-    document
-      .getElementById(sectionId)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-
-  useEffect(() => {
-    const expandSectionFromHash = () => {
-      const hash = window.location.hash;
-      if (hash === "#material-prices") {
-        setIsPricesSectionOpen(true);
-      }
-      if (hash === "#material-edit") {
-        setIsEditSectionOpen(true);
-      }
-    };
-
-    expandSectionFromHash();
-    window.addEventListener("hashchange", expandSectionFromHash);
-    return () => window.removeEventListener("hashchange", expandSectionFromHash);
-  }, []);
 
   const addSource = (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -1440,7 +1411,7 @@ export function MaterialDetailClient({
       ) : null}
 
       {view === "documents" ? (
-      <MaterialCatalogPdfSection materialId={id} />
+      <MaterialCatalogPdfSection materialId={id} defaultExpanded />
       ) : null}
 
       {view === "edit" ? (
@@ -1617,44 +1588,6 @@ export function MaterialDetailClient({
                 value={form.currency}
                 onChange={(event) =>
                   setForm({ ...form, currency: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Khấu hao mặc định"
-              fieldKey="defaultDepreciation"
-              locked={Boolean(fieldLocks.defaultDepreciation)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="defaultDepreciation"
-                className={inputClass}
-                type="number"
-                min={0}
-                step={0.1}
-                inputMode="decimal"
-                value={form.defaultDepreciation}
-                onChange={(event) =>
-                  setForm({ ...form, defaultDepreciation: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="% sử dụng lại mặc định"
-              fieldKey="defaultReusePct"
-              locked={Boolean(fieldLocks.defaultReusePct)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="defaultReusePct"
-                className={inputClass}
-                type="number"
-                min={0}
-                max={100}
-                inputMode="numeric"
-                value={form.defaultReusePct}
-                onChange={(event) =>
-                  setForm({ ...form, defaultReusePct: event.target.value })
                 }
               />
             </LockableField>
