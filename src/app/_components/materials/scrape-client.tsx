@@ -892,9 +892,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [deleteProductTarget, setDeleteProductTarget] =
     useState<ScrapedProduct | null>(null);
   const [bulkDeleteSelectedOpen, setBulkDeleteSelectedOpen] = useState(false);
-  const [compareProduct, setCompareProduct] = useState<ScrapedProduct | null>(
-    null,
-  );
+  const [compareProducts, setCompareProducts] = useState<ScrapedProduct[]>([]);
+  const [compareIndex, setCompareIndex] = useState(0);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const utils = api.useUtils();
   const toast = useToast();
@@ -2407,9 +2406,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           />
 
           <MatchCompareDrawer
-            open={compareProduct !== null}
-            product={compareProduct}
-            onClose={() => setCompareProduct(null)}
+            open={compareProducts.length > 0}
+            products={compareProducts}
+            index={compareIndex}
+            onNavigate={setCompareIndex}
+            onClose={() => {
+              setCompareProducts([]);
+              setCompareIndex(0);
+            }}
           />
 
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2449,13 +2453,17 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 disabled={scrapeProducts.length === 0}
                 leftIcon={<Search className="h-3.5 w-3.5" />}
                 onClick={() => {
-                  const firstSelected = scrapeProducts.find((p) =>
+                  const selected = scrapeProducts.filter((p) =>
                     selectedSourceUrls.has(productKey(p)),
                   );
-                  setCompareProduct(firstSelected ?? scrapeProducts[0] ?? null);
+                  const list = selected.length > 0 ? selected : scrapeProducts;
+                  setCompareProducts(list);
+                  setCompareIndex(0);
                 }}
               >
-                Đối chiếu vật tư
+                {selectedCount > 0
+                  ? `Đối chiếu đã chọn (${selectedCount.toLocaleString("vi-VN")})`
+                  : "Đối chiếu vật tư"}
               </Button>
               {canEditScrapeProducts ? (
                 <Button
@@ -2680,8 +2688,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           {scrapeProducts.length > 0 ? (
-            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-              <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
+            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
                     <th className="w-10 px-3 py-2"> </th>
@@ -2913,8 +2921,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-            <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[34rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                 <tr>
                   <th className="px-3 py-2">Sản phẩm</th>

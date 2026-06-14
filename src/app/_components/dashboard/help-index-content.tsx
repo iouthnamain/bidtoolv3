@@ -91,7 +91,7 @@ export function HelpIndexContent() {
             <Link
               key={item.href}
               href={item.href}
-              className="group flex min-h-40 flex-col justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50/70 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="group flex flex-col justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50/70 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-40"
             >
               <span>
                 <span className="block text-sm font-bold text-slate-950">

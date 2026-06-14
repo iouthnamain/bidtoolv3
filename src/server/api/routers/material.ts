@@ -27,9 +27,19 @@ import {
 import {
   parseWorkbookBase64,
   parseOptionalNumber,
+  rebuildSheetWithHeaderRow,
   rowsFromMapping,
   type ColumnMapping,
+  type ParsedWorkbookSheet,
 } from "~/server/services/excel-workbook";
+import {
+  extractRowFields,
+  matchRows,
+  writeEnrichedWorkbook,
+  ENRICH_THRESHOLDS,
+  MAX_ENRICH_ROWS,
+  FILLABLE_FIELDS,
+} from "~/server/services/excel-enrich";
 import type { db as appDb } from "~/server/db";
 import {
   formatCatalogPdfUrlsCell,
@@ -1751,8 +1761,10 @@ export const materialRouter = createTRPCRouter({
       const validRows: MaterialImportRow[] = [];
       for (const [index, row] of rows.entries()) {
         const parsed = materialInput.safeParse({
+          code: row.code ?? undefined,
           name: row.productName,
           unit: row.unit,
+          category: row.category ?? undefined,
           specText: row.specText,
           manufacturer: row.vendorHint ?? undefined,
           originCountry: row.originHint ?? undefined,
@@ -1936,5 +1948,237 @@ export const materialRouter = createTRPCRouter({
         .returning({ id: materialMatchDecisions.id });
 
       return { accepted: updated.length };
+    }),
+
+  // -------------------------------------------------------------------------
+  // Excel Enrich & Export (AI-less, pg_trgm + weighted scoring)
+  // -------------------------------------------------------------------------
+
+  enrichPreviewXlsx: publicProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1).default("materials.xlsx"),
+        workbookBase64: z.string().min(1),
+        sheetName: z.string().optional(),
+        headerRowIndex: z.number().int().min(1).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const workbook = await parseWorkbookBase64(
+        input.fileName,
+        input.workbookBase64,
+      );
+      const selectedSheet = selectWorkbookSheet(workbook, input.sheetName);
+      if (!selectedSheet) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Không tìm thấy trang tính hợp lệ.",
+        });
+      }
+
+      return {
+        selectedSheetName: selectedSheet.name,
+        warnings: workbook.warnings,
+        sheets: workbook.sheets.map((sheet) => {
+          const active =
+            sheet.name === selectedSheet.name && input.headerRowIndex
+              ? rebuildSheetWithHeaderRow(sheet, input.headerRowIndex)
+              : sheet;
+          return {
+            name: active.name,
+            detectedHeaderRowIndex: active.detectedHeaderRowIndex,
+            activeHeaderRowIndex: active.activeHeaderRowIndex,
+            rowCount: active.rows.length,
+            headers: active.headers.slice(0, 60),
+            suggestedMapping: active.suggestedMapping,
+            warnings: active.warnings,
+            previewRows: active.previewRows.slice(0, 12).map((values, i) => ({
+              key: i,
+              values,
+            })),
+          };
+        }),
+      };
+    }),
+
+  enrichMatchRows: publicProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1).default("materials.xlsx"),
+        workbookBase64: z.string().min(1),
+        sheetName: z.string().optional(),
+        headerRowIndex: z.number().int().min(1).optional(),
+        mapping: z.record(z.string(), z.string().nullable()),
+        minSimilarity: z.number().min(0).max(1).default(0.1),
+        limit: z.number().int().min(1).max(20).default(8),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const workbook = await parseWorkbookBase64(
+        input.fileName,
+        input.workbookBase64,
+      );
+      const baseSheet = selectWorkbookSheet(workbook, input.sheetName);
+      if (!baseSheet) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Không tìm thấy trang tính hợp lệ.",
+        });
+      }
+      const sheet: ParsedWorkbookSheet = input.headerRowIndex
+        ? rebuildSheetWithHeaderRow(baseSheet, input.headerRowIndex)
+        : baseSheet;
+
+      let rows;
+      try {
+        rows = extractRowFields(sheet, input.mapping as ColumnMapping);
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Không đọc được dòng dữ liệu.",
+        });
+      }
+
+      const truncated = rows.length > MAX_ENRICH_ROWS;
+      const limitedRows = truncated ? rows.slice(0, MAX_ENRICH_ROWS) : rows;
+
+      const results = await matchRows(ctx.db, limitedRows, {
+        minSimilarity: input.minSimilarity,
+        limit: input.limit,
+      });
+
+      // Index source rows so each result carries the sheet name + field values
+      // the review UI needs to render the Excel row and recompute fill plans
+      // locally when the user swaps the chosen candidate.
+      const rowByIndex = new Map(
+        limitedRows.map((row) => [row.originalRowIndex, row]),
+      );
+      const resultsWithRow = results.map((result) => {
+        const source = rowByIndex.get(result.originalRowIndex);
+        return {
+          ...result,
+          name: source?.name ?? "",
+          sheetFields: source?.fields ?? {},
+        };
+      });
+
+      const summary = results.reduce(
+        (acc, r) => {
+          acc[r.status] += 1;
+          acc.fieldsToFill += r.fillPlan.filter(
+            (cell) => cell.action === "filled",
+          ).length;
+          return acc;
+        },
+        { auto: 0, review: 0, unmatched: 0, fieldsToFill: 0 },
+      );
+
+      return {
+        sheetName: sheet.name,
+        thresholds: ENRICH_THRESHOLDS,
+        totalRows: rows.length,
+        matchedRows: limitedRows.length,
+        truncated,
+        summary,
+        results: resultsWithRow,
+      };
+    }),
+
+  enrichSearchMaterials: publicProcedure
+    .input(
+      z.object({
+        query: z.string().trim().min(1),
+        limit: z.number().int().min(1).max(20).default(8),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select()
+        .from(materials)
+        .where(
+          and(isNull(materials.deletedAt), ilike(materials.name, `%${input.query}%`)),
+        )
+        .orderBy(asc(materials.name))
+        .limit(input.limit);
+
+      return {
+        candidates: rows.map((row) => ({
+          materialId: row.id,
+          name: row.name,
+          code: row.code,
+          unit: row.unit,
+          category: row.category,
+          manufacturer: row.manufacturer,
+          originCountry: row.originCountry,
+          defaultUnitPrice: row.defaultUnitPrice,
+          currency: row.currency,
+          imageUrl: row.imageUrl,
+          sourceUrl: row.sourceUrl,
+          specSnippet: (row.specText ?? "").slice(0, 120),
+          score: 0,
+          breakdown: null,
+        })),
+      };
+    }),
+
+  enrichExportXlsx: publicProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1).default("materials.xlsx"),
+        workbookBase64: z.string().min(1),
+        sheetName: z.string().min(1),
+        headerRowIndex: z.number().int().min(1),
+        mapping: z.record(z.string(), z.string().nullable()),
+        mode: z.enum(["preserve", "clean"]).default("preserve"),
+        decisions: z
+          .array(
+            z.object({
+              originalRowIndex: z.number().int().min(1),
+              materialId: z.number().int().positive().nullable(),
+              fields: z.array(z.enum(FILLABLE_FIELDS)),
+            }),
+          )
+          .max(MAX_ENRICH_ROWS),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const materialIds = Array.from(
+        new Set(
+          input.decisions
+            .map((d) => d.materialId)
+            .filter((id): id is number => id != null),
+        ),
+      );
+
+      const materialRows = materialIds.length
+        ? await ctx.db
+            .select()
+            .from(materials)
+            .where(inArray(materials.id, materialIds))
+        : [];
+      const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+
+      const buffer = await writeEnrichedWorkbook({
+        workbookBase64: input.workbookBase64,
+        sheetName: input.sheetName,
+        mapping: input.mapping as ColumnMapping,
+        headerRowIndex: input.headerRowIndex,
+        decisions: input.decisions.map((d) => ({
+          originalRowIndex: d.originalRowIndex,
+          materialId: d.materialId,
+          fields: d.fields,
+        })),
+        materialsById,
+        mode: input.mode,
+      });
+
+      const baseName = input.fileName.replace(/\.xlsx$/i, "");
+      return {
+        fileName: `${baseName}-enriched.xlsx`,
+        workbookBase64: buffer.toString("base64"),
+      };
     }),
 });

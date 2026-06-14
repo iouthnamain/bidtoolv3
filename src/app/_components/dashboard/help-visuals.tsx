@@ -95,8 +95,8 @@ function SourceMatrixVisual() {
       <div className="bg-slate-900 px-3 py-2 text-xs font-bold tracking-wide text-white uppercase">
         Ma trận độ chính xác nguồn BidWinner
       </div>
-      <div className="overflow-hidden bg-white">
-        <table className="w-full table-fixed text-left text-sm break-words">
+      <div className="overflow-x-auto bg-white">
+        <table className="w-full min-w-[34rem] text-left text-sm break-words">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
               <th className="px-3 py-2 font-bold">Mode</th>
@@ -108,7 +108,7 @@ function SourceMatrixVisual() {
           <tbody className="divide-y divide-slate-100">
             {sourceMatrixRows.map((row) => (
               <tr key={row.mode}>
-                <th className="w-36 px-3 py-3 text-sm font-bold text-slate-950">
+                <th className="w-36 px-3 py-3 text-sm font-bold whitespace-nowrap text-slate-950">
                   {row.mode}
                 </th>
                 <td className="px-3 py-3 text-xs leading-5 text-slate-600">

@@ -308,8 +308,8 @@ export function BidWinnerSourceDetailsPageClient({
             Không tìm thấy dữ liệu cho bảng Hồ sơ mời thầu.
           </p>
         ) : (
-          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
-            <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
+          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[32rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
                   <th className="px-3 py-2">Tên hiển thị</th>
@@ -406,8 +406,8 @@ export function BidWinnerSourceDetailsPageClient({
             Không tìm thấy link hợp lệ trên trang nguồn.
           </p>
         ) : (
-          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
-            <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
+          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[40rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
                   <th className="px-3 py-2">Text</th>

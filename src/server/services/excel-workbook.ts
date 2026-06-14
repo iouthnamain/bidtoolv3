@@ -5,7 +5,9 @@ export const MAX_IMPORT_COLS = 80;
 const HEADER_SCAN_ROWS = 40;
 
 export const columnKeys = [
+  "code",
   "materialName",
+  "category",
   "specText",
   "unit",
   "term",
@@ -54,7 +56,9 @@ export type ImportedWorkbookRow = {
   originalRowIndex: number;
   originalDataJson: Record<string, string>;
   productName: string;
+  code: string | null;
   materialName: string;
+  category: string | null;
   specText: string;
   unit: string;
   term: WorkbookTerm;
@@ -79,6 +83,18 @@ export type ImportedWorkbookRow = {
 const REQUIRED_PRODUCT_KEY: ColumnKey = "materialName";
 
 const aliases: Record<ColumnKey, string[]> = {
+  code: [
+    "code",
+    "ma",
+    "ma vt",
+    "ma vat tu",
+    "ma san pham",
+    "ma sp",
+    "ma hang",
+    "sku",
+    "item code",
+    "product code",
+  ],
   materialName: [
     "product",
     "product name",
@@ -93,6 +109,18 @@ const aliases: Record<ColumnKey, string[]> = {
     "ten quy cach vat tu",
     "hang hoa",
     "vat tu",
+  ],
+  category: [
+    "category",
+    "nhom",
+    "nhom vt",
+    "nhom vat tu",
+    "nhom hang",
+    "loai",
+    "loai vat tu",
+    "phan loai",
+    "danh muc",
+    "group",
   ],
   specText: [
     "description",
@@ -545,6 +573,8 @@ export function rowsFromMapping(
         return column ? (row.values[column] ?? "") : "";
       };
       const materialName = get("materialName");
+      const code = get("code");
+      const category = get("category");
       const specText = get("specText");
       const unit = get("unit");
       const vendorHint = get("vendorHint");
@@ -557,7 +587,9 @@ export function rowsFromMapping(
         originalRowIndex: row.originalRowIndex,
         originalDataJson: row.values,
         productName: materialName,
+        code: code || null,
         materialName,
+        category: category || null,
         specText,
         unit,
         term: normalizeTerm(get("term")),

@@ -145,11 +145,29 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     tone: "violet",
   },
   {
-    href: "/materials/import",
-    label: "Import & Mapping",
-    description: "Upload Excel hoặc dán CSV để nhập và map catalog.",
+    href: "/catalog-pdfs",
+    label: "Catalog PDFs",
+    description: "Thư viện tài liệu catalog gắn với vật tư.",
+    icon: "file",
+    tone: "violet",
+  },
+];
+
+export const enrichSectionNavItems: PageSectionNavItem[] = [
+  {
+    href: "/enrich",
+    label: "Đối chiếu & điền",
+    description: "Tải Excel thiếu trường, ghép catalog và xuất file đã điền.",
     icon: "sheet",
-    tone: "amber",
+    tone: "emerald",
+    match: "exact",
+  },
+  {
+    href: "/materials",
+    label: "Danh mục vật tư",
+    description: "Nguồn catalog dùng để đối chiếu và điền.",
+    icon: "boxes",
+    tone: "slate",
   },
   {
     href: "/catalog-pdfs",

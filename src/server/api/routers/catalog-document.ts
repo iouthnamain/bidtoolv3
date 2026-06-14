@@ -19,8 +19,10 @@ import {
   listCatalogDocumentsForMaterial,
 } from "~/server/services/catalog-documents";
 import {
+  assertValidCatalogPdf,
   CatalogPdfStorageError,
   decodeCatalogPdfBase64,
+  deleteCatalogPdfFiles,
   downloadCatalogPdfFromUrl,
   saveCatalogPdfFile,
 } from "~/server/services/catalog-pdf-storage";
@@ -266,6 +268,87 @@ export const catalogDocumentRouter = createTRPCRouter({
         .delete(materialCatalogDocumentLinks)
         .where(eq(materialCatalogDocumentLinks.documentId, input.id));
       return { id: input.id };
+    }),
+
+  bulkDelete: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.number().int().positive()).min(1).max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const ids = Array.from(new Set(input.ids));
+      const existing = await ctx.db
+        .select({ id: materialCatalogDocuments.id })
+        .from(materialCatalogDocuments)
+        .where(
+          and(
+            inArray(materialCatalogDocuments.id, ids),
+            isNull(materialCatalogDocuments.deletedAt),
+          ),
+        );
+      const activeIds = existing.map((row) => row.id);
+      if (activeIds.length === 0) {
+        return { deleted: 0 };
+      }
+
+      const now = new Date().toISOString();
+      await ctx.db
+        .update(materialCatalogDocuments)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(inArray(materialCatalogDocuments.id, activeIds));
+      await ctx.db
+        .delete(materialCatalogDocumentLinks)
+        .where(inArray(materialCatalogDocumentLinks.documentId, activeIds));
+      return { deleted: activeIds.length };
+    }),
+
+  reuploadPdf: publicProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        fileName: z.string().trim().min(1),
+        fileBase64: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const document = await getActiveDocumentById(ctx.db, input.id);
+
+      let buffer: Buffer;
+      try {
+        buffer = decodeCatalogPdfBase64(input.fileBase64);
+        // Validate the new file BEFORE touching the existing one, so a
+        // corrupt/invalid reupload never destroys the good file on disk.
+        assertValidCatalogPdf(buffer);
+      } catch (error) {
+        storageErrorToTrpc(error);
+      }
+
+      let stored;
+      try {
+        // Clear any previously stored file first so a reupload with a
+        // different file name does not leave an orphan on disk.
+        await deleteCatalogPdfFiles(document.id);
+        stored = await saveCatalogPdfFile(document.id, input.fileName, buffer);
+      } catch (error) {
+        storageErrorToTrpc(error);
+      }
+
+      const [updated] = await ctx.db
+        .update(materialCatalogDocuments)
+        .set({
+          localFilePath: stored.localFilePath,
+          fileName: stored.fileName,
+          fileSize: stored.fileSize,
+          mimeType: stored.mimeType,
+          checksum: stored.checksum,
+          sourceType:
+            document.sourceType === "manual_url" ? "uploaded" : document.sourceType,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(materialCatalogDocuments.id, document.id))
+        .returning();
+      return updated ?? document;
     }),
 
   uploadPdf: publicProcedure

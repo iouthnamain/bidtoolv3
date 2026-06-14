@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { ExternalLink, Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2, X } from "lucide-react";
 
-import { Badge, EmptyState } from "~/app/_components/ui";
+import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { api, type RouterInputs, type RouterOutputs } from "~/trpc/react";
 
 type ScrapedProductInput = RouterInputs["material"]["matchScrapedProduct"]["product"];
@@ -36,30 +36,44 @@ function barColor(value: number): string {
 
 export function MatchCompareDrawer({
   open,
-  product,
+  products,
+  index,
+  onNavigate,
   onClose,
 }: {
   open: boolean;
-  product: ScrapedProductInput | null;
+  products: ScrapedProductInput[];
+  index: number;
+  onNavigate: (index: number) => void;
   onClose: () => void;
 }) {
+  const total = products.length;
+  const safeIndex = Math.min(Math.max(index, 0), Math.max(total - 1, 0));
+  const product = products[safeIndex] ?? null;
   const query = api.material.matchScrapedProduct.useQuery(
     { product: product!, limit: 8 },
     { enabled: open && product !== null, staleTime: 30_000 },
   );
 
+  const goPrev = () => onNavigate(Math.max(safeIndex - 1, 0));
+  const goNext = () => onNavigate(Math.min(safeIndex + 1, total - 1));
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "ArrowRight") goNext();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, onClose, safeIndex, total]);
 
   if (!open || !product) return null;
 
   const candidates = query.data?.candidates ?? [];
+  const hasMultiple = total > 1;
 
   return (
     <aside
@@ -69,7 +83,14 @@ export function MatchCompareDrawer({
     >
         <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div className="min-w-0">
-            <p className="section-title">Đối chiếu vật tư catalog</p>
+            <div className="flex items-center gap-2">
+              <p className="section-title">Đối chiếu vật tư catalog</p>
+              {hasMultiple ? (
+                <Badge tone="info">
+                  {safeIndex + 1}/{total}
+                </Badge>
+              ) : null}
+            </div>
             <h2 className="mt-1 truncate text-base font-bold text-slate-950">
               {product.name}
             </h2>
@@ -92,6 +113,34 @@ export function MatchCompareDrawer({
             <X className="h-4 w-4" />
           </button>
         </header>
+
+        {hasMultiple ? (
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={safeIndex === 0}
+              leftIcon={<ChevronLeft className="h-3.5 w-3.5" />}
+              onClick={goPrev}
+            >
+              Trước
+            </Button>
+            <span className="text-xs font-medium text-slate-500 tabular-nums">
+              Sản phẩm {safeIndex + 1} / {total}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={safeIndex === total - 1}
+              rightIcon={<ChevronRight className="h-3.5 w-3.5" />}
+              onClick={goNext}
+            >
+              Sau
+            </Button>
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {query.isLoading ? (

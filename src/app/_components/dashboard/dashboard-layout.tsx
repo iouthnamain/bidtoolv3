@@ -9,6 +9,7 @@ import {
   Boxes,
   ChevronRight,
   CircleHelp,
+  FileCheck2,
   FileSpreadsheet,
   FileText,
   LayoutDashboard,
@@ -35,6 +36,7 @@ type IconName =
   | "dashboard"
   | "search"
   | "excel"
+  | "enrich"
   | "documents"
   | "materials"
   | "saved"
@@ -118,9 +120,13 @@ const navSections: NavSection[] = [
           { href: "/materials", label: "Danh mục" },
           { href: "/materials/new", label: "Thêm thủ công" },
           { href: "/materials/scrape", label: "Scrape shop" },
-          { href: "/materials/import", label: "Import" },
           { href: "/materials/match-review", label: "Match review" },
         ],
+      },
+      {
+        href: "/enrich",
+        label: "Đối chiếu Excel",
+        icon: "enrich",
       },
       {
         href: "/catalog-pdfs",
@@ -196,6 +202,7 @@ const navIconMap: Record<IconName, LucideIcon> = {
   dashboard: LayoutDashboard,
   search: Search,
   excel: FileSpreadsheet,
+  enrich: FileCheck2,
   documents: FileText,
   materials: Boxes,
   saved: BookmarkCheck,

@@ -40,12 +40,15 @@ import {
   PackagePlus,
   Plus,
   RotateCcw,
+  Rows2,
+  Rows3,
   Search,
   SlidersHorizontal,
   SquareCheckBig,
   SquarePen,
   Trash2,
   WalletCards,
+  X,
 } from "lucide-react";
 
 import {
@@ -55,6 +58,7 @@ import {
   EmptyState,
   SearchableSelect,
 } from "~/app/_components/ui";
+import { Skeleton, SkeletonCard } from "~/app/_components/ui/skeleton";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   formatCoverage,
@@ -86,6 +90,9 @@ const MATERIAL_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
 const MATERIAL_SEARCH_STALE_MS = 10_000;
 const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
 const MATERIAL_COLUMN_VISIBILITY_KEY = "bidtool:material-catalog-columns:v1";
+const MATERIAL_DENSITY_KEY = "bidtool:material-catalog-density:v1";
+
+type TableDensity = "comfortable" | "compact";
 
 const defaultColumnVisibility: VisibilityState = {
   code: false,
@@ -204,6 +211,16 @@ function loadColumnVisibility(): VisibilityState {
   }
 }
 
+function loadDensity(): TableDensity {
+  if (typeof window === "undefined") {
+    return "comfortable";
+  }
+
+  return localStorage.getItem(MATERIAL_DENSITY_KEY) === "compact"
+    ? "compact"
+    : "comfortable";
+}
+
 function updateUrlParam(
   params: URLSearchParams,
   name: string,
@@ -265,35 +282,37 @@ const materialColumnWidthClass: Record<string, string> = {
   actions: "w-28",
 };
 
-function materialTableHeaderClass(columnId: string) {
+function materialTableHeaderClass(columnId: string, density: TableDensity) {
   const width = materialColumnWidthClass[columnId] ?? "";
+  const pad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
   if (columnId === "select") {
-    return `px-3 py-2 text-center ${width}`;
+    return `${pad} text-center ${width}`;
   }
   if (columnId === "actions") {
-    return `px-3 py-2 text-right ${width}`;
+    return `${pad} text-right ${width}`;
   }
-  return `px-3 py-2 ${width}`;
+  return `${pad} ${width}`;
 }
 
-function materialTableCellClass(columnId: string) {
+function materialTableCellClass(columnId: string, density: TableDensity) {
+  const pad = density === "compact" ? "px-3 py-1.5 text-[13px]" : "px-3 py-2.5";
   const classes: Record<string, string> = {
-    select: "px-3 py-2 text-center align-top",
-    name: "px-3 py-2 align-top font-semibold text-slate-900",
-    code: "px-3 py-2 align-top font-mono text-xs text-slate-700 truncate",
-    unit: "px-3 py-2 align-top text-slate-700",
-    specText: "px-3 py-2 align-top text-slate-600",
-    details: "px-3 py-2 align-top text-slate-600",
-    catalog: "px-3 py-2 align-top",
-    manufacturer: "px-3 py-2 align-top text-slate-600",
-    originCountry: "px-3 py-2 align-top text-slate-600",
-    defaultUnitPrice: "px-3 py-2 align-top",
-    updatedAt: "px-3 py-2 align-top",
-    actions: "px-3 py-2 align-top",
+    select: `${pad} text-center align-top`,
+    name: `${pad} align-top font-semibold text-slate-900`,
+    code: `${pad} align-top font-mono text-xs text-slate-700 truncate`,
+    unit: `${pad} align-top text-slate-700`,
+    specText: `${pad} align-top text-slate-600`,
+    details: `${pad} align-top text-slate-600`,
+    catalog: `${pad} align-top`,
+    manufacturer: `${pad} align-top text-slate-600`,
+    originCountry: `${pad} align-top text-slate-600`,
+    defaultUnitPrice: `${pad} align-top text-right`,
+    updatedAt: `${pad} align-top`,
+    actions: `${pad} align-top`,
   };
 
   const width = materialColumnWidthClass[columnId] ?? "";
-  return `${classes[columnId] ?? "px-3 py-2 align-top"} ${width}`.trim();
+  return `${classes[columnId] ?? `${pad} align-top`} ${width}`.trim();
 }
 
 function MaterialSortableHeader({
@@ -550,6 +569,7 @@ export function MaterialsListClient() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     defaultColumnVisibility,
   );
+  const [density, setDensity] = useState<TableDensity>("comfortable");
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [pageJumpValue, setPageJumpValue] = useState("1");
@@ -662,6 +682,7 @@ export function MaterialsListClient() {
   useEffect(() => {
     setHasMounted(true);
     setColumnVisibility(loadColumnVisibility());
+    setDensity(loadDensity());
   }, []);
 
   useEffect(() => {
@@ -674,6 +695,14 @@ export function MaterialsListClient() {
       JSON.stringify(columnVisibility),
     );
   }, [columnVisibility, hasMounted]);
+
+  useEffect(() => {
+    if (!hasMounted || typeof window === "undefined") {
+      return;
+    }
+
+    localStorage.setItem(MATERIAL_DENSITY_KEY, density);
+  }, [density, hasMounted]);
 
   useEffect(() => {
     if (!showColumnPicker) {
@@ -794,6 +823,77 @@ export function MaterialsListClient() {
     sourceStatus !== "all" ? sourceStatus : "",
     catalogStatus !== "all" ? catalogStatus : "",
   ].filter(Boolean).length;
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{
+      key: string;
+      label: string;
+      value: string;
+      onClear: () => void;
+    }> = [];
+    const pushText = (
+      key: string,
+      label: string,
+      value: string,
+      onClear: () => void,
+    ) => {
+      const trimmed = value.trim();
+      if (trimmed) {
+        chips.push({ key, label, value: trimmed, onClear });
+      }
+    };
+
+    pushText("q", "Tìm kiếm", keyword, () => setKeyword(""));
+    pushText("name", "Tên", nameFilter, () => setNameFilter(""));
+    pushText("unit", "ĐVT", unitFilter, () => setUnitFilter(""));
+    pushText("category", "Nhóm", categoryFilter, () => setCategoryFilter(""));
+    pushText("manufacturer", "NCC", manufacturerFilter, () =>
+      setManufacturerFilter(""),
+    );
+    pushText("origin", "Xuất xứ", originFilter, () => setOriginFilter(""));
+
+    if (priceStatus !== "all") {
+      chips.push({
+        key: "price",
+        label: "Giá",
+        value:
+          priceStatusOptions.find((option) => option.value === priceStatus)
+            ?.label ?? priceStatus,
+        onClear: () => setPriceStatus("all"),
+      });
+    }
+    if (sourceStatus !== "all") {
+      chips.push({
+        key: "sources",
+        label: "Nguồn",
+        value:
+          sourceStatusOptions.find((option) => option.value === sourceStatus)
+            ?.label ?? sourceStatus,
+        onClear: () => setSourceStatus("all"),
+      });
+    }
+    if (catalogStatus !== "all") {
+      chips.push({
+        key: "catalog",
+        label: "Catalog",
+        value:
+          catalogStatusOptions.find((option) => option.value === catalogStatus)
+            ?.label ?? catalogStatus,
+        onClear: () => setCatalogStatus("all"),
+      });
+    }
+
+    return chips;
+  }, [
+    keyword,
+    nameFilter,
+    unitFilter,
+    categoryFilter,
+    manufacturerFilter,
+    originFilter,
+    priceStatus,
+    sourceStatus,
+    catalogStatus,
+  ]);
   const hasActiveViewControls =
     activeFilterCount > 0 ||
     sortBy !== "updatedAt" ||
@@ -915,6 +1015,7 @@ export function MaterialsListClient() {
     setOriginFilter("");
     setPriceStatus("all");
     setSourceStatus("all");
+    setCatalogStatus("all");
     setSortBy("updatedAt");
     setSortOrder("desc");
     setPagination({
@@ -1475,7 +1576,11 @@ export function MaterialsListClient() {
           <button
             type="button"
             className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
-            onClick={() => setPriceStatus("priced")}
+            onClick={() =>
+              setPriceStatus((current) =>
+                current === "priced" ? "all" : "priced",
+              )
+            }
           >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-emerald-700">
@@ -1497,7 +1602,11 @@ export function MaterialsListClient() {
           <button
             type="button"
             className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
-            onClick={() => setPriceStatus("missing")}
+            onClick={() =>
+              setPriceStatus((current) =>
+                current === "missing" ? "all" : "missing",
+              )
+            }
           >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
@@ -1515,7 +1624,9 @@ export function MaterialsListClient() {
           <button
             type="button"
             className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
-            onClick={() => setSourceStatus("with")}
+            onClick={() =>
+              setSourceStatus((current) => (current === "with" ? "all" : "with"))
+            }
           >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
@@ -1535,7 +1646,11 @@ export function MaterialsListClient() {
           <button
             type="button"
             className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
-            onClick={() => setCatalogStatus("with")}
+            onClick={() =>
+              setCatalogStatus((current) =>
+                current === "with" ? "all" : "with",
+              )
+            }
           >
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-violet-700">
@@ -1647,6 +1762,30 @@ export function MaterialsListClient() {
               >
                 Đặt lại
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={
+                  density === "compact" ? (
+                    <Rows3 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Rows2 className="h-3.5 w-3.5" />
+                  )
+                }
+                aria-pressed={density === "compact"}
+                onClick={() =>
+                  setDensity((current) =>
+                    current === "compact" ? "comfortable" : "compact",
+                  )
+                }
+                title={
+                  density === "compact"
+                    ? "Đang ở chế độ gọn — bấm để giãn dòng"
+                    : "Đang ở chế độ thoáng — bấm để thu gọn dòng"
+                }
+              >
+                {density === "compact" ? "Gọn" : "Thoáng"}
+              </Button>
               <div ref={columnPickerRef} className="relative">
                 <Button
                   variant="secondary"
@@ -1698,6 +1837,35 @@ export function MaterialsListClient() {
               </div>
             </div>
           </div>
+
+          {activeFilterChips.length > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+                Đang lọc
+              </span>
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 py-0.5 pr-1.5 pl-2.5 text-xs font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                  onClick={chip.onClear}
+                  aria-label={`Bỏ lọc ${chip.label}: ${chip.value}`}
+                  title={`Bỏ lọc ${chip.label}`}
+                >
+                  <span className="text-sky-500">{chip.label}:</span>
+                  <span className="max-w-40 truncate">{chip.value}</span>
+                  <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                </button>
+              ))}
+              <button
+                type="button"
+                className="ml-1 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:underline"
+                onClick={resetViewControls}
+              >
+                Xóa tất cả
+              </button>
+            </div>
+          ) : null}
 
           <div
             id="material-catalog-filters"
@@ -1949,7 +2117,13 @@ export function MaterialsListClient() {
             ) : null}
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div
+            className={`sticky top-2 z-20 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors ${
+              someSelected
+                ? "border-sky-300 bg-sky-50/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-sky-50/80"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
             <label
               className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
                 visibleMaterials.length === 0
@@ -1976,13 +2150,18 @@ export function MaterialsListClient() {
 
             <div className="flex flex-wrap items-center gap-2">
               {someSelected ? (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900"
-                  onClick={clearSelection}
-                >
-                  Bỏ chọn
-                </button>
+                <>
+                  <span className="rounded-full border border-sky-300 bg-white px-2.5 py-0.5 text-xs font-bold text-sky-800 tabular-nums">
+                    {selectedCount.toLocaleString("vi-VN")} đã chọn
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    onClick={clearSelection}
+                  >
+                    Bỏ chọn
+                  </button>
+                </>
               ) : null}
               <Button
                 variant="secondary"
@@ -2208,8 +2387,10 @@ export function MaterialsListClient() {
             aria-label="Danh sách vật tư dạng thẻ"
           >
             {showInitialLoading ? (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-8 text-center text-sm font-medium text-slate-500">
-                Đang tải danh mục vật tư…
+              <div className="grid gap-2" aria-hidden>
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <SkeletonCard key={index} />
+                ))}
               </div>
             ) : null}
             {!showInitialLoading
@@ -2282,7 +2463,7 @@ export function MaterialsListClient() {
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        className={materialTableHeaderClass(header.column.id)}
+                        className={materialTableHeaderClass(header.column.id, density)}
                       >
                         {header.isPlaceholder
                           ? null
@@ -2296,16 +2477,28 @@ export function MaterialsListClient() {
                 ))}
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {showInitialLoading ? (
-                  <tr>
-                    <td
-                      colSpan={visibleColumnCount}
-                      className="px-3 py-10 text-center text-sm font-medium text-slate-500"
-                    >
-                      Đang tải danh mục vật tư...
-                    </td>
-                  </tr>
-                ) : null}
+                {showInitialLoading
+                  ? Array.from({ length: 8 }).map((_, rowIndex) => (
+                      <tr key={`skeleton-${rowIndex}`} aria-hidden>
+                        {Array.from({ length: visibleColumnCount }).map(
+                          (__, cellIndex) => (
+                            <td
+                              key={cellIndex}
+                              className={
+                                density === "compact"
+                                  ? "px-3 py-1.5"
+                                  : "px-3 py-2.5"
+                              }
+                            >
+                              <Skeleton
+                                className={`h-3.5 ${cellIndex === 1 ? "w-3/4" : "w-1/2"}`}
+                              />
+                            </td>
+                          ),
+                        )}
+                      </tr>
+                    ))
+                  : null}
                 {!showInitialLoading
                   ? visibleRows.map((row) => (
                       <tr
@@ -2322,7 +2515,7 @@ export function MaterialsListClient() {
                         {row.getVisibleCells().map((cell) => (
                           <td
                             key={cell.id}
-                            className={materialTableCellClass(cell.column.id)}
+                            className={materialTableCellClass(cell.column.id, density)}
                           >
                             {flexRender(
                               cell.column.columnDef.cell,

@@ -406,7 +406,7 @@ export function AboutVersionSection() {
 
         {showApplyButton && applyAction ? (
           <div className="rounded-lg border border-sky-200 bg-gradient-to-br from-sky-50 to-white px-4 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold tracking-wide text-sky-700 uppercase">
                   Hành động cập nhật
@@ -424,7 +424,7 @@ export function AboutVersionSection() {
                   </code>
                 ) : null}
               </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 sm:shrink-0">
                 {versionStatus?.updateCommand &&
                 applyAction === "copy-onprem-command" ? (
                   <Button
