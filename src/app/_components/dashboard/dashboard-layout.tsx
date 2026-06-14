@@ -14,6 +14,7 @@ import {
   FileText,
   LayoutDashboard,
   Menu,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -43,6 +44,7 @@ type IconName =
   | "workflow"
   | "notification"
   | "help"
+  | "chat"
   | "settings";
 
 type SubNavItem = {
@@ -124,6 +126,11 @@ const navSections: NavSection[] = [
         icon: "enrich",
       },
       {
+        href: "/research-enrich",
+        label: "Nghiên cứu Excel",
+        icon: "excel",
+      },
+      {
         href: "/catalog-pdfs",
         label: "Catalog PDFs",
         icon: "documents",
@@ -181,10 +188,16 @@ const navSections: NavSection[] = [
         ],
       },
       {
+        href: "/chat",
+        label: "Chat sandbox",
+        icon: "chat",
+      },
+      {
         href: "/settings",
         label: "Cài đặt",
         icon: "settings",
         subItems: [
+          { href: "/settings/ai", label: "OpenRouter" },
           { href: "/settings/desktop", label: "Desktop client" },
           { href: "/settings/updates", label: "Cập nhật" },
         ],
@@ -204,6 +217,7 @@ const navIconMap: Record<IconName, LucideIcon> = {
   workflow: Workflow,
   notification: Bell,
   help: CircleHelp,
+  chat: MessageSquare,
   settings: Settings,
 };
 
@@ -474,7 +488,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, [hasLoadedSidebarPreference, sidebarCollapsed]);
 
   return (
-    <div className="flex h-dvh flex-col text-slate-900 sm:flex-row">
+    <div className="flex h-dvh flex-col overflow-hidden text-slate-900 sm:flex-row">
       <a
         href="#main-content"
         className="pointer-events-none fixed top-3 left-3 z-[60] inline-flex min-h-10 -translate-y-20 items-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white opacity-0 transition-[opacity,transform] duration-150 focus:pointer-events-auto focus:translate-y-0 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -515,7 +529,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="relative flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur sm:hidden">
           <BrandHeader collapsed={false} />
           <button

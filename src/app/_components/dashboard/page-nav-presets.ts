@@ -145,11 +145,44 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     tone: "violet",
   },
   {
+    href: "/materials/enrich",
+    label: "Làm giàu",
+    description: "Tìm web, bổ sung thông số và catalog PDF cho vật tư.",
+    icon: "sparkles",
+    tone: "emerald",
+  },
+  {
     href: "/catalog-pdfs",
     label: "Catalog PDFs",
     description: "Thư viện tài liệu catalog gắn với vật tư.",
     icon: "file",
     tone: "violet",
+  },
+];
+
+export const researchEnrichSectionNavItems: PageSectionNavItem[] = [
+  {
+    href: "/research-enrich",
+    label: "Nghiên cứu Excel",
+    description:
+      "Tải Excel, chạy job AI nghiên cứu sản phẩm, duyệt kết quả và xuất file.",
+    icon: "sheet",
+    tone: "violet",
+    match: "exact",
+  },
+  {
+    href: "/enrich",
+    label: "Đối chiếu & điền",
+    description: "Ghép catalog có sẵn và điền các ô trống trong Excel.",
+    icon: "sheet",
+    tone: "emerald",
+  },
+  {
+    href: "/materials",
+    label: "Danh mục vật tư",
+    description: "Catalog dùng làm nguồn tham chiếu khi nghiên cứu.",
+    icon: "boxes",
+    tone: "slate",
   },
 ];
 
@@ -273,6 +306,12 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
     label: "Tóm tắt",
     description: "Phiên bản, môi trường và trạng thái cập nhật.",
     icon: "activity",
+  },
+  {
+    href: "/settings/ai",
+    label: "OpenRouter",
+    description: "API key và model mặc định cho chat LLM.",
+    icon: "settings",
   },
   {
     href: "/settings/desktop",

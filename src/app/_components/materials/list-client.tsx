@@ -45,6 +45,7 @@ import {
   Search,
   SlidersHorizontal,
   SquareCheckBig,
+  Sparkles,
   SquarePen,
   Trash2,
   WalletCards,
@@ -86,7 +87,10 @@ type EnrichedMaterialListItem = MaterialListItem & {
 const EMPTY_MATERIAL_ROWS: MaterialListItem[] = [];
 const EMPTY_ENRICHED_MATERIAL_ROWS: EnrichedMaterialListItem[] = [];
 const DEFAULT_MATERIAL_PAGE_SIZE = 50;
-const MATERIAL_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
+const MATERIAL_VIEW_ALL_PAGE_SIZE = 10_000;
+const MATERIAL_PAGE_SIZE_OPTIONS = [
+  25, 50, 80, 100, MATERIAL_VIEW_ALL_PAGE_SIZE,
+] as const;
 const MATERIAL_SEARCH_STALE_MS = 10_000;
 const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
 const MATERIAL_COLUMN_VISIBILITY_KEY = "bidtool:material-catalog-columns:v1";
@@ -2176,6 +2180,19 @@ export function MaterialsListClient() {
                 variant="secondary"
                 size="sm"
                 disabled={!someSelected}
+                leftIcon={<Sparkles className="h-3.5 w-3.5" />}
+                onClick={() =>
+                  router.push(
+                    `/materials/enrich?ids=${selectedIds.join(",")}`,
+                  )
+                }
+              >
+                Làm giàu
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!someSelected}
                 leftIcon={<FileText className="h-3.5 w-3.5" />}
                 onClick={() => setAttachPdfOpen((current) => !current)}
               >
@@ -2610,7 +2627,9 @@ export function MaterialsListClient() {
                 >
                   {MATERIAL_PAGE_SIZE_OPTIONS.map((pageSize) => (
                     <option key={pageSize} value={pageSize}>
-                      {pageSize.toLocaleString("vi-VN")}
+                      {pageSize === MATERIAL_VIEW_ALL_PAGE_SIZE
+                        ? "Tất cả"
+                        : pageSize.toLocaleString("vi-VN")}
                     </option>
                   ))}
                 </select>

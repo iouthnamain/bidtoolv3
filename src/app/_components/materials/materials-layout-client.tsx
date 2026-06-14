@@ -20,7 +20,13 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
   },
   "/materials/scrape": {
     title: "Scrape shop vật tư",
-    description: "Preview URL shop rồi nhập sản phẩm vào catalog.",
+    description:
+      "Chạy job scrape nhiều trang, theo dõi tiến độ rồi nhập sản phẩm vào catalog.",
+  },
+  "/materials/enrich": {
+    title: "Làm giàu vật tư",
+    description:
+      "Tìm kiếm web, bổ sung thông số và catalog PDF cho vật tư trong danh mục.",
   },
 };
 
@@ -32,7 +38,14 @@ export function MaterialsLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const meta = PAGE_META[pathname] ?? DEFAULT_META;
+  const meta =
+    pathname.startsWith("/materials/enrich/jobs/")
+      ? {
+          title: "Job làm giàu vật tư",
+          description:
+            "Theo dõi tiến độ enrichment, duyệt kết quả và commit vào catalog.",
+        }
+      : (PAGE_META[pathname] ?? DEFAULT_META);
 
   if (pathname.startsWith("/materials/") && /\/materials\/\d+/.test(pathname)) {
     return <>{children}</>;

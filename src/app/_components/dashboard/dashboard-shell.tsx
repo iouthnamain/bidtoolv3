@@ -1,3 +1,4 @@
+import { Breadcrumbs } from "~/app/_components/dashboard/breadcrumbs";
 import {
   PageSectionNav,
   type PageSectionNavItem,
@@ -19,7 +20,8 @@ export function DashboardShell({
   return (
     <section className="flex min-h-full flex-col space-y-4">
       <header className="border-b border-slate-200 pb-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <Breadcrumbs />
+        <div className="mt-1.5 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <p className="section-title">BidTool workspace</p>
             <h1 className="mt-1 text-2xl leading-tight font-bold tracking-tight text-balance text-slate-950">

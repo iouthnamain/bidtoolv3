@@ -27,9 +27,29 @@ export const env = createEnv({
     SCRAPE_MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
     SCRAPE_MAX_CONCURRENT_PAGES: z.coerce.number().int().positive().default(2),
     IMPORT_MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
+    ENRICHMENT_MAX_CONCURRENT_JOBS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1),
     SCRAPE_JOB_TTL_DAYS: z.coerce.number().int().positive().default(7),
     AI_MATCH_AUTO_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
     AI_MATCH_CANDIDATE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),
+    OPENROUTER_API_KEY: z.string().optional(),
+    OPENROUTER_DEFAULT_MODEL: z.string().optional(),
+    EXCEL_RESEARCH_MAX_CONCURRENT_JOBS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1),
+    EXCEL_RESEARCH_BATCH_SIZE: z.coerce.number().int().positive().default(10),
+    EXCEL_RESEARCH_JOB_TTL_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(7),
+    SEARXNG_BASE_URL: z.string().url().optional(),
+    BIDTOOL_EXCEL_RESEARCH_DIR: z.string().optional(),
   },
 
   /**
@@ -64,9 +84,18 @@ export const env = createEnv({
     SCRAPE_MAX_CONCURRENT_JOBS: process.env.SCRAPE_MAX_CONCURRENT_JOBS,
     SCRAPE_MAX_CONCURRENT_PAGES: process.env.SCRAPE_MAX_CONCURRENT_PAGES,
     IMPORT_MAX_CONCURRENT_JOBS: process.env.IMPORT_MAX_CONCURRENT_JOBS,
+    ENRICHMENT_MAX_CONCURRENT_JOBS: process.env.ENRICHMENT_MAX_CONCURRENT_JOBS,
     SCRAPE_JOB_TTL_DAYS: process.env.SCRAPE_JOB_TTL_DAYS,
     AI_MATCH_AUTO_THRESHOLD: process.env.AI_MATCH_AUTO_THRESHOLD,
     AI_MATCH_CANDIDATE_THRESHOLD: process.env.AI_MATCH_CANDIDATE_THRESHOLD,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_DEFAULT_MODEL: process.env.OPENROUTER_DEFAULT_MODEL,
+    EXCEL_RESEARCH_MAX_CONCURRENT_JOBS:
+      process.env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS,
+    EXCEL_RESEARCH_BATCH_SIZE: process.env.EXCEL_RESEARCH_BATCH_SIZE,
+    EXCEL_RESEARCH_JOB_TTL_DAYS: process.env.EXCEL_RESEARCH_JOB_TTL_DAYS,
+    SEARXNG_BASE_URL: process.env.SEARXNG_BASE_URL,
+    BIDTOOL_EXCEL_RESEARCH_DIR: process.env.BIDTOOL_EXCEL_RESEARCH_DIR,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

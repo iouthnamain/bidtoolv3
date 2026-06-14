@@ -25,6 +25,13 @@ export type MaterialShopScrapeMetadata = {
   shopCategory: string | null;
 };
 
+export type MaterialWebEnrichmentMetadata = {
+  lastEnrichedAt: string | null;
+  lastEnrichmentJobId: string | null;
+  enrichmentConfidence: number | null;
+  enrichmentStatus: string | null;
+};
+
 export type MaterialFieldLockKey =
   | "code"
   | "name"
@@ -55,6 +62,7 @@ export const MATERIAL_FIELD_LOCK_KEYS = [
 export type MaterialMetadata = {
   priceSources: MaterialPriceSource[];
   shopScrape?: MaterialShopScrapeMetadata;
+  webEnrichment?: MaterialWebEnrichmentMetadata;
   fieldLocks?: Partial<Record<MaterialFieldLockKey, boolean>>;
 };
 
@@ -102,6 +110,9 @@ export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
   const shopScrape = normalizeShopScrapeMetadata(
     (record as { shopScrape?: unknown }).shopScrape,
   );
+  const webEnrichment = normalizeWebEnrichmentMetadata(
+    (record as { webEnrichment?: unknown }).webEnrichment,
+  );
   const fieldLocks = normalizeFieldLocks(
     (record as { fieldLocks?: unknown }).fieldLocks,
   );
@@ -113,6 +124,7 @@ export function normalizeMaterialMetadata(value: unknown): MaterialMetadata {
           .filter((source): source is MaterialPriceSource => source !== null)
       : [],
     ...(shopScrape ? { shopScrape } : {}),
+    ...(webEnrichment ? { webEnrichment } : {}),
     ...(fieldLocks ? { fieldLocks } : {}),
   };
 }
@@ -137,9 +149,56 @@ export function buildMaterialMetadata(input: MaterialMetadata) {
   return {
     priceSources: input.priceSources,
     ...(input.shopScrape ? { shopScrape: input.shopScrape } : {}),
+    ...(input.webEnrichment ? { webEnrichment: input.webEnrichment } : {}),
     ...(input.fieldLocks && Object.keys(input.fieldLocks).length > 0
       ? { fieldLocks: input.fieldLocks }
       : {}),
+  };
+}
+
+export function normalizeWebEnrichmentMetadata(
+  value: unknown,
+): MaterialWebEnrichmentMetadata | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const enrichment = value as Partial<MaterialWebEnrichmentMetadata>;
+  const lastEnrichedAt =
+    typeof enrichment.lastEnrichedAt === "string" &&
+    enrichment.lastEnrichedAt.trim().length > 0
+      ? enrichment.lastEnrichedAt
+      : null;
+  const lastEnrichmentJobId =
+    typeof enrichment.lastEnrichmentJobId === "string" &&
+    enrichment.lastEnrichmentJobId.trim().length > 0
+      ? enrichment.lastEnrichmentJobId
+      : null;
+  const enrichmentConfidence =
+    typeof enrichment.enrichmentConfidence === "number" &&
+    Number.isFinite(enrichment.enrichmentConfidence)
+      ? Math.min(100, Math.max(0, Math.round(enrichment.enrichmentConfidence)))
+      : null;
+  const enrichmentStatus =
+    typeof enrichment.enrichmentStatus === "string" &&
+    enrichment.enrichmentStatus.trim().length > 0
+      ? enrichment.enrichmentStatus
+      : null;
+
+  if (
+    !lastEnrichedAt &&
+    !lastEnrichmentJobId &&
+    enrichmentConfidence == null &&
+    !enrichmentStatus
+  ) {
+    return null;
+  }
+
+  return {
+    lastEnrichedAt,
+    lastEnrichmentJobId,
+    enrichmentConfidence,
+    enrichmentStatus,
   };
 }
 

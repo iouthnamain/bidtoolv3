@@ -1193,7 +1193,7 @@ export const materialRouter = createTRPCRouter({
       materialSearchFiltersInput.extend({
         sortBy: materialSortByInput,
         sortOrder: sortOrderInput,
-        limit: z.number().int().min(1).max(100).default(20),
+        limit: z.number().int().min(1).max(MATERIAL_EXPORT_LIMIT).default(20),
         offset: z.number().int().min(0).default(0),
       }),
     )

@@ -29,6 +29,7 @@ import {
   Server,
   Settings,
   SlidersHorizontal,
+  Sparkles,
   Table2,
   Tags,
   Upload,
@@ -63,6 +64,7 @@ export type PageSectionNavIcon =
   | "settings"
   | "sheet"
   | "sliders"
+  | "sparkles"
   | "table"
   | "tags"
   | "upload"
@@ -182,6 +184,7 @@ const iconMap: Record<PageSectionNavIcon, LucideIcon> = {
   settings: Settings,
   sheet: FileSpreadsheet,
   sliders: SlidersHorizontal,
+  sparkles: Sparkles,
   table: Table2,
   tags: Tags,
   upload: Upload,
@@ -226,13 +229,13 @@ export function PageSectionNav({
   }
 
   return (
-    <nav aria-label={title} className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="section-title">{title}</p>
-        <span className="text-xs font-medium text-slate-500">
-          {items.length} mục
+    <nav aria-label={title} className="space-y-2.5">
+      <p className="section-title">
+        {title}
+        <span className="ml-1.5 font-medium tracking-normal text-slate-400 normal-case">
+          · {items.length} mục
         </span>
-      </div>
+      </p>
 
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-4">
         {items.map((item) => {
@@ -241,6 +244,7 @@ export function PageSectionNav({
           const tone = item.tone
             ? toneStyles[item.tone]
             : defaultToneStyles;
+          const inactive = toneStyles.slate;
 
           return (
             <Link
@@ -248,12 +252,12 @@ export function PageSectionNav({
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`group flex min-h-11 min-w-[9.25rem] shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-0 sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:py-3 ${
-                active ? tone.linkActive : tone.linkInactive
+                active ? tone.linkActive : inactive.linkInactive
               }`}
             >
               <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md sm:mt-0.5 ${
-                  active ? tone.iconActive : tone.iconInactive
+                  active ? tone.iconActive : inactive.iconInactive
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -263,7 +267,9 @@ export function PageSectionNav({
                   {item.label}
                 </span>
                 <span
-                  className={`mt-0.5 hidden text-xs leading-5 sm:line-clamp-2 sm:block ${tone.description}`}
+                  className={`mt-0.5 hidden text-xs leading-5 sm:line-clamp-2 sm:block ${
+                    active ? tone.description : inactive.description
+                  }`}
                 >
                   {item.description}
                 </span>

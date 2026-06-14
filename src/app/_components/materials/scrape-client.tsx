@@ -6,12 +6,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   ArrowUpRight,
-  Boxes,
   CheckSquare,
   Clock3,
   ExternalLink,
   Eye,
-  FileSpreadsheet,
   Link as LinkIcon,
   Loader2,
   Pencil,
@@ -1544,47 +1542,23 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
       {!isJobPage ? (
       <>
-      <section className="panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="section-title">Scrape shop</p>
-            <h2 className="mt-1 text-base font-bold text-slate-950">
-              Chạy job scrape nhiều trang rồi nhập vào catalog
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Job chạy nền trên server, tự theo link trang sau cùng domain, cập
-              nhật tiến độ liên tục và chỉ nhập vào DB khi bạn chọn sản phẩm cần
-              thêm.
-            </p>
+      <section className="panel overflow-hidden">
+        <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-violet-700" aria-hidden />
+            <h2 className="text-sm font-bold text-slate-950">Cấu hình job scrape</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/materials"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-            >
-              <Boxes className="h-4 w-4" aria-hidden />
-              Danh mục
-            </Link>
-            <Link
-              href="/materials/import"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-            >
-              <FileSpreadsheet className="h-4 w-4" aria-hidden />
-              Nhập sheet
-            </Link>
-            <Link
-              href="/materials/new"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Thêm thủ công
-            </Link>
-          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Job chạy nền trên server, theo pagination cùng domain và chỉ nhập
+            vào catalog sau khi bạn duyệt sản phẩm.
+          </p>
         </div>
 
-        <form onSubmit={submitScrape} className="mt-5 space-y-3">
+        <form onSubmit={submitScrape} className="space-y-4 p-4 sm:p-5">
           <label className="grid gap-1.5">
-            <span className="text-xs font-bold text-slate-700">Shop URL</span>
+            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+              Shop URL
+            </span>
             <span className="relative">
               <LinkIcon
                 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -1601,9 +1575,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </span>
           </label>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:items-end xl:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
+          <div className="grid gap-4 lg:grid-cols-3">
             <fieldset className="grid gap-1.5">
-              <legend className="text-xs font-bold text-slate-700">
+              <legend className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                 Phạm vi
               </legend>
               <div className="grid grid-cols-2 rounded-lg border border-slate-300 bg-slate-50 p-0.5">
@@ -1626,7 +1600,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               </div>
             </fieldset>
             <label className="grid gap-1.5">
-              <span className="text-xs font-bold text-slate-700">Cách đọc</span>
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                Cách đọc
+              </span>
               <select
                 className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
                 value={scrapeMethod}
@@ -1649,7 +1625,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               ) : null}
             </label>
             <label className="grid gap-1.5">
-              <span className="text-xs font-bold text-slate-700">
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                 Bổ sung thông tin
               </span>
               <select
@@ -1673,9 +1649,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 {detailEnrichmentHelp[detailEnrichment]}
               </span>
             </label>
-            {showLimitFields ? (
+          </div>
+
+          {showLimitFields ? (
+            <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
               <label className="grid gap-1.5">
-                <span className="text-xs font-bold text-slate-700">
+                <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                   Trang tối đa
                 </span>
                 <input
@@ -1701,10 +1680,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   aria-label="Số trang tối đa cần scrape"
                 />
               </label>
-            ) : null}
-            {showLimitFields ? (
               <label className="grid gap-1.5">
-                <span className="text-xs font-bold text-slate-700">
+                <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                   Sản phẩm tối đa
                 </span>
                 <input
@@ -1730,56 +1707,60 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   aria-label="Số sản phẩm tối đa cần scrape"
                 />
               </label>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!canStart}
-              isLoading={isStartingScrape}
-              leftIcon={<Search className="h-4 w-4" />}
-            >
-              {isStartingScrape ? "Đang khởi động" : "Bắt đầu scrape"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!isActive || !activeJob}
-              isLoading={cancelShopScrapeJob.isPending}
-              leftIcon={<StopCircle className="h-4 w-4" />}
-              onClick={() => {
-                if (activeJob) {
-                  stopScrapeJob(activeJob);
-                }
-              }}
-            >
-              Dừng job
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={isStartingScrape}
-              leftIcon={<RotateCcw className="h-4 w-4" />}
-              onClick={resetJob}
-            >
-              Xóa trạng thái
-            </Button>
-            <Badge tone="neutral">Theo pagination cùng domain</Badge>
-            <Badge tone="neutral">Chặn ảnh / font / media</Badge>
-            <Badge tone="neutral">Nhập sau khi duyệt</Badge>
-            {detailEnrichment === "none" ? (
-              <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
-            ) : null}
-            {isAutoMethod ? (
-              <Badge tone="info">Tự động: JSON-LD + DOM cards</Badge>
-            ) : null}
-            {isScrapeAll ? (
-              <Badge tone="info">
-                Scrape hết — không giới hạn trang/sản phẩm
-              </Badge>
-            ) : null}
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!canStart}
+                isLoading={isStartingScrape}
+                leftIcon={<Search className="h-4 w-4" />}
+              >
+                {isStartingScrape ? "Đang khởi động" : "Bắt đầu scrape"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!isActive || !activeJob}
+                isLoading={cancelShopScrapeJob.isPending}
+                leftIcon={<StopCircle className="h-4 w-4" />}
+                onClick={() => {
+                  if (activeJob) {
+                    stopScrapeJob(activeJob);
+                  }
+                }}
+              >
+                Dừng job
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={isStartingScrape}
+                leftIcon={<RotateCcw className="h-4 w-4" />}
+                onClick={resetJob}
+              >
+                Xóa trạng thái
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 rounded-lg bg-slate-50 px-3 py-2">
+              <Badge tone="neutral">Theo pagination cùng domain</Badge>
+              <Badge tone="neutral">Chặn ảnh / font / media</Badge>
+              <Badge tone="neutral">Nhập sau khi duyệt</Badge>
+              {detailEnrichment === "none" ? (
+                <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
+              ) : null}
+              {isAutoMethod ? (
+                <Badge tone="info">Tự động: JSON-LD + DOM cards</Badge>
+              ) : null}
+              {isScrapeAll ? (
+                <Badge tone="info">
+                  Scrape hết — không giới hạn trang/sản phẩm
+                </Badge>
+              ) : null}
+            </div>
           </div>
         </form>
       </section>

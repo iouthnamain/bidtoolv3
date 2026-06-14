@@ -10,6 +10,10 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     title: "Cài đặt",
     description: "Phiên bản, môi trường và trạng thái cập nhật.",
   },
+  "/settings/ai": {
+    title: "OpenRouter",
+    description: "Cấu hình API key và model mặc định cho chat sandbox.",
+  },
   "/settings/desktop": {
     title: "Desktop client",
     description: "Cấu hình server URL cho Electron.",

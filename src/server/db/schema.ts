@@ -854,6 +854,287 @@ export const excelWorkspaceEvents = pgTable(
   }),
 );
 
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const excelResearchJobStatusEnum = pgEnum("excel_research_job_status", [
+  "draft",
+  "queued",
+  "running",
+  "paused",
+  "awaiting_review",
+  "exporting",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const excelResearchRowStatusEnum = pgEnum("excel_research_row_status", [
+  "pending",
+  "processing",
+  "matched",
+  "needs_review",
+  "approved",
+  "skipped",
+  "error",
+]);
+
+export const excelResearchEvidenceTypeEnum = pgEnum(
+  "excel_research_evidence_type",
+  [
+    "catalog_match",
+    "web_search",
+    "page_scrape",
+    "pdf_found",
+    "pdf_generated",
+    "ai_extraction",
+  ],
+);
+
+export const excelResearchArtifactKindEnum = pgEnum(
+  "excel_research_artifact_kind",
+  [
+    "original_xlsx",
+    "enriched_xlsx",
+    "review_report_json",
+    "review_report_xlsx",
+    "export_zip",
+    "pdf_found",
+    "pdf_generated",
+  ],
+);
+
+export const excelResearchJobs = pgTable(
+  "excel_research_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    name: text("name").notNull(),
+    status: excelResearchJobStatusEnum("status").notNull().default("draft"),
+    sourceFileName: text("source_file_name").notNull(),
+    sheetName: text("sheet_name").notNull(),
+    headerRowIndex: integer("header_row_index").notNull(),
+    columnMappingJson: jsonb("column_mapping_json")
+      .$type<Record<string, string | null>>()
+      .notNull()
+      .default({}),
+    configJson: jsonb("config_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    totalRows: integer("total_rows").notNull().default(0),
+    processedRows: integer("processed_rows").notNull().default(0),
+    matchedRows: integer("matched_rows").notNull().default(0),
+    needsReviewRows: integer("needs_review_rows").notNull().default(0),
+    errorRows: integer("error_rows").notNull().default(0),
+    pdfsFoundCount: integer("pdfs_found_count").notNull().default(0),
+    pdfsGeneratedCount: integer("pdfs_generated_count").notNull().default(0),
+    currentBatchId: uuid("current_batch_id"),
+    message: text("message"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    statusStartedAtIdx: index("excel_research_jobs_status_started_at_idx").on(
+      table.status,
+      table.startedAt,
+    ),
+    updatedAtIdx: index("excel_research_jobs_updated_at_idx").on(
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const excelResearchJobRows = pgTable(
+  "excel_research_job_rows",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => excelResearchJobs.id, { onDelete: "cascade" }),
+    rowNumber: integer("row_number").notNull(),
+    status: excelResearchRowStatusEnum("status").notNull().default("pending"),
+    productName: text("product_name").notNull(),
+    inputFieldsJson: jsonb("input_fields_json")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    originalCellsJson: jsonb("original_cells_json")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    matchedMaterialId: integer("matched_material_id").references(
+      () => materials.id,
+      { onDelete: "set null" },
+    ),
+    selectedCandidateId: integer("selected_candidate_id"),
+    confidenceScore: numeric("confidence_score", { precision: 4, scale: 3 }),
+    fillPlanJson: jsonb("fill_plan_json").$type<unknown[]>().notNull().default([]),
+    excelUpdatesJson: jsonb("excel_updates_json")
+      .$type<unknown[]>()
+      .notNull()
+      .default([]),
+    resultJson: jsonb("result_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    errorMessage: text("error_message"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    processingToken: uuid("processing_token"),
+    processingStartedAt: timestamp("processing_started_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    reviewedAt: timestamp("reviewed_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobRowUnique: uniqueIndex("excel_research_job_rows_job_row_unique").on(
+      table.jobId,
+      table.rowNumber,
+    ),
+    jobStatusIdx: index("excel_research_job_rows_job_status_idx").on(
+      table.jobId,
+      table.status,
+    ),
+  }),
+);
+
+export const excelResearchRowEvidence = pgTable(
+  "excel_research_row_evidence",
+  {
+    id: serial("id").primaryKey(),
+    jobRowId: integer("job_row_id")
+      .notNull()
+      .references(() => excelResearchJobRows.id, { onDelete: "cascade" }),
+    evidenceType: excelResearchEvidenceTypeEnum("evidence_type").notNull(),
+    provider: text("provider").notNull().default(""),
+    query: text("query"),
+    title: text("title"),
+    url: text("url"),
+    domain: text("domain"),
+    snippet: text("snippet"),
+    rawEvidence: text("raw_evidence"),
+    imageUrl: text("image_url"),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    extractedJson: jsonb("extracted_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    confidenceScore: integer("confidence_score"),
+    matchReasonsJson: jsonb("match_reasons_json")
+      .$type<unknown>()
+      .notNull()
+      .default([]),
+    isSelected: boolean("is_selected").notNull().default(false),
+    artifactId: integer("artifact_id"),
+    fetchedAt: timestamp("fetched_at", { mode: "string", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobRowIdx: index("excel_research_row_evidence_job_row_idx").on(
+      table.jobRowId,
+    ),
+  }),
+);
+
+export const excelResearchFileArtifacts = pgTable(
+  "excel_research_file_artifacts",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => excelResearchJobs.id, { onDelete: "cascade" }),
+    jobRowId: integer("job_row_id").references(() => excelResearchJobRows.id, {
+      onDelete: "set null",
+    }),
+    kind: excelResearchArtifactKindEnum("kind").notNull(),
+    localFilePath: text("local_file_path").notNull(),
+    fileName: text("file_name").notNull(),
+    fileSize: bigint("file_size", { mode: "number" }),
+    mimeType: text("mime_type"),
+    checksum: text("checksum"),
+    sourceUrl: text("source_url"),
+    metadataJson: jsonb("metadata_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobKindIdx: index("excel_research_file_artifacts_job_kind_idx").on(
+      table.jobId,
+      table.kind,
+    ),
+  }),
+);
+
+export const excelResearchChangeLog = pgTable(
+  "excel_research_change_log",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => excelResearchJobs.id, { onDelete: "cascade" }),
+    jobRowId: integer("job_row_id").references(() => excelResearchJobRows.id, {
+      onDelete: "set null",
+    }),
+    rowNumber: integer("row_number"),
+    event: text("event").notNull(),
+    actor: text("actor").notNull().default("system"),
+    field: text("field"),
+    before: text("before"),
+    after: text("after"),
+    action: text("action"),
+    payloadJson: jsonb("payload_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    at: timestamp("at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobAtIdx: index("excel_research_change_log_job_at_idx").on(
+      table.jobId,
+      table.at,
+    ),
+  }),
+);
+
 export const materialMatchDecisions = pgTable(
   "material_match_decisions",
   {
@@ -897,5 +1178,180 @@ export const materialMatchDecisions = pgTable(
     materialIdx: index("material_match_decisions_material_idx").on(
       table.matchedMaterialId,
     ),
+  }),
+);
+
+export const materialEnrichmentJobs = pgTable(
+  "material_enrichment_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    status: shopJobStatusEnum("status").notNull().default("queued"),
+    optionsJson: jsonb("options_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    materialIds: jsonb("material_ids").$type<number[]>().notNull().default([]),
+    filterSnapshotJson: jsonb("filter_snapshot_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    total: integer("total").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    matched: integer("matched").notNull().default(0),
+    needsReview: integer("needs_review").notNull().default(0),
+    pdfsFound: integer("pdfs_found").notNull().default(0),
+    pdfsGenerated: integer("pdfs_generated").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    currentMaterialId: integer("current_material_id"),
+    currentMaterialName: text("current_material_name"),
+    message: text("message"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    statusStartedAtIdx: index(
+      "material_enrichment_jobs_status_started_at_idx",
+    ).on(table.status, table.startedAt),
+  }),
+);
+
+export const materialEnrichmentItems = pgTable(
+  "material_enrichment_items",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => materialEnrichmentJobs.id, { onDelete: "cascade" }),
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => materials.id, { onDelete: "cascade" }),
+    originalSnapshotJson: jsonb("original_snapshot_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    resultJson: jsonb("result_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: text("status").notNull().default("pending"),
+    committedAt: timestamp("committed_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobSortOrderIdx: index("material_enrichment_items_job_sort_order_idx").on(
+      table.jobId,
+      table.sortOrder,
+    ),
+    materialIdx: index("material_enrichment_items_material_idx").on(
+      table.materialId,
+    ),
+  }),
+);
+
+export const materialWebCandidates = pgTable(
+  "material_web_candidates",
+  {
+    id: serial("id").primaryKey(),
+    enrichmentItemId: integer("enrichment_item_id")
+      .notNull()
+      .references(() => materialEnrichmentItems.id, { onDelete: "cascade" }),
+    materialId: integer("material_id")
+      .notNull()
+      .references(() => materials.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("duckduckgo"),
+    query: text("query").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    domain: text("domain").notNull(),
+    snippet: text("snippet").notNull().default(""),
+    rawEvidence: text("raw_evidence").notNull().default(""),
+    imageUrl: text("image_url"),
+    extractedSpecJson: jsonb("extracted_spec_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    catalogPdfUrls: jsonb("catalog_pdf_urls")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    confidenceScore: integer("confidence_score").notNull().default(0),
+    matchReasons: jsonb("match_reasons")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    isSelected: boolean("is_selected").notNull().default(false),
+    sourceType: text("source_type"),
+    fetchedAt: timestamp("fetched_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    enrichmentItemIdx: index(
+      "material_web_candidates_enrichment_item_idx",
+    ).on(table.enrichmentItemId),
+    materialIdx: index("material_web_candidates_material_idx").on(
+      table.materialId,
+    ),
+    urlIdx: index("material_web_candidates_url_idx").on(table.url),
+  }),
+);
+
+export const materialEnrichmentEvents = pgTable(
+  "material_enrichment_events",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => materialEnrichmentJobs.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").references(() => materialEnrichmentItems.id, {
+      onDelete: "cascade",
+    }),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    field: text("field").notNull(),
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    action: text("action").notNull(),
+    evidenceJson: jsonb("evidence_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobCreatedAtIdx: index("material_enrichment_events_job_created_at_idx").on(
+      table.jobId,
+      table.createdAt,
+    ),
+    itemIdx: index("material_enrichment_events_item_idx").on(table.itemId),
   }),
 );

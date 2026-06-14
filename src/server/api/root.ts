@@ -1,4 +1,7 @@
 import { catalogDocumentRouter } from "~/server/api/routers/catalog-document";
+import { aiRouter } from "~/server/api/routers/ai";
+import { excelResearchRouter } from "~/server/api/routers/excel-research";
+import { materialEnrichmentRouter } from "~/server/api/routers/material-enrichment";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
@@ -13,8 +16,11 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  ai: aiRouter,
   catalogDocument: catalogDocumentRouter,
+  excelResearch: excelResearchRouter,
   material: materialRouter,
+  materialEnrichment: materialEnrichmentRouter,
   notification: notificationRouter,
   search: searchRouter,
   version: versionRouter,

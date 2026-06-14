@@ -5,7 +5,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { env } from "~/env";
 import { db } from "~/server/db";
-import { shopImportJobs, shopScrapeJobs } from "~/server/db/schema";
+import { shopImportJobs, shopScrapeJobs, excelResearchJobs, materialEnrichmentJobs } from "~/server/db/schema";
 import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import {
@@ -15,9 +15,18 @@ import {
 } from "~/server/services/shop-material-scraper";
 import type { ShopImportJobProgress } from "~/server/services/shop-import-jobs";
 import { importScrapedProducts } from "~/server/services/shop-product-importer";
+import {
+  processJobBatch,
+  resetStaleExcelResearchRows,
+} from "~/server/services/excel-research/process-batch";
+import {
+  processEnrichmentJob,
+  type MaterialEnrichmentJobProgress,
+} from "~/server/services/material-enrichment-runner";
 
 type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
+type MaterialEnrichmentJobRow = typeof materialEnrichmentJobs.$inferSelect;
 type TimerHandle = ReturnType<typeof setInterval>;
 
 const SCHEDULER_POLL_MS = 1_000;
@@ -25,6 +34,8 @@ const PROGRESS_WRITE_MS = 2_000;
 const CLEANUP_POLL_MS = 60 * 60_000;
 const activeScrapeRuns = new Map<string, AbortController>();
 const activeImportRuns = new Map<string, AbortController>();
+const activeEnrichmentRuns = new Map<string, AbortController>();
+const activeExcelResearchRuns = new Set<string>();
 
 let schedulerStarted = false;
 let pollTimer: TimerHandle | null = null;
@@ -64,8 +75,13 @@ export function stopJobSchedulerForTests() {
   for (const controller of activeImportRuns.values()) {
     controller.abort();
   }
+  for (const controller of activeEnrichmentRuns.values()) {
+    controller.abort();
+  }
   activeScrapeRuns.clear();
   activeImportRuns.clear();
+  activeEnrichmentRuns.clear();
+  activeExcelResearchRuns.clear();
   pollTimer = null;
   cleanupTimer = null;
   pollInFlight = false;
@@ -80,6 +96,10 @@ export function abortShopImportJob(jobId: string) {
   activeImportRuns.get(jobId)?.abort();
 }
 
+export function abortMaterialEnrichmentJob(jobId: string) {
+  activeEnrichmentRuns.get(jobId)?.abort();
+}
+
 export async function runJobSchedulerTickForTests() {
   await pollScheduler();
 }
@@ -87,6 +107,7 @@ export async function runJobSchedulerTickForTests() {
 async function initializeScheduler() {
   try {
     await resetStaleRunningJobs();
+    await resetStaleExcelResearchRows();
     await cleanupExpiredJobs();
     await pollScheduler();
   } catch (error) {
@@ -101,7 +122,12 @@ async function pollScheduler() {
 
   pollInFlight = true;
   try {
-    await Promise.all([fillScrapeSlots(), fillImportSlots()]);
+    await Promise.all([
+      fillScrapeSlots(),
+      fillImportSlots(),
+      fillEnrichmentSlots(),
+      fillExcelResearchSlots(),
+    ]);
   } catch (error) {
     console.error("[job-scheduler] Poll failed:", error);
   } finally {
@@ -126,6 +152,106 @@ async function fillImportSlots() {
       return;
     }
     void runImportJob(job);
+  }
+}
+
+async function fillEnrichmentSlots() {
+  while (activeEnrichmentRuns.size < env.ENRICHMENT_MAX_CONCURRENT_JOBS) {
+    const job = await claimNextEnrichmentJob();
+    if (!job) {
+      return;
+    }
+    void runEnrichmentJob(job);
+  }
+}
+
+async function fillExcelResearchSlots() {
+  while (
+    activeExcelResearchRuns.size < env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS
+  ) {
+    const jobId = await claimNextExcelResearchJob();
+    if (!jobId) {
+      return;
+    }
+    void runExcelResearchJob(jobId);
+  }
+}
+
+async function claimNextExcelResearchJob() {
+  const [job] = await db
+    .select({ id: excelResearchJobs.id })
+    .from(excelResearchJobs)
+    .where(eq(excelResearchJobs.status, "running"))
+    .orderBy(asc(excelResearchJobs.startedAt))
+    .limit(1);
+
+  if (!job || activeExcelResearchRuns.has(job.id)) {
+    return null;
+  }
+
+  return job.id;
+}
+
+async function runExcelResearchJob(jobId: string) {
+  activeExcelResearchRuns.add(jobId);
+  try {
+    while (true) {
+      const [job] = await db
+        .select({ status: excelResearchJobs.status })
+        .from(excelResearchJobs)
+        .where(eq(excelResearchJobs.id, jobId))
+        .limit(1);
+
+      if (!job || job.status !== "running") {
+        break;
+      }
+
+      const remaining = await processJobBatch(jobId);
+      if (remaining === 0) {
+        const now = new Date().toISOString();
+        const [snapshot] = await db
+          .select({
+            needsReviewRows: excelResearchJobs.needsReviewRows,
+          })
+          .from(excelResearchJobs)
+          .where(eq(excelResearchJobs.id, jobId))
+          .limit(1);
+
+        const nextStatus =
+          (snapshot?.needsReviewRows ?? 0) > 0
+            ? "awaiting_review"
+            : "completed";
+
+        await db
+          .update(excelResearchJobs)
+          .set({
+            status: nextStatus,
+            finishedAt: now,
+            message:
+              nextStatus === "awaiting_review"
+                ? "Hoàn tất — còn dòng cần duyệt."
+                : "Hoàn tất nghiên cứu.",
+            updatedAt: now,
+            lastProgressAt: now,
+          })
+          .where(eq(excelResearchJobs.id, jobId));
+        break;
+      }
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Lỗi không xác định.";
+    await db
+      .update(excelResearchJobs)
+      .set({
+        status: "failed",
+        error: message,
+        message: "Job nghiên cứu thất bại.",
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(excelResearchJobs.id, jobId));
+  } finally {
+    activeExcelResearchRuns.delete(jobId);
   }
 }
 
@@ -193,6 +319,43 @@ async function claimNextImportJob() {
         and(
           eq(shopImportJobs.id, nextJob.id),
           eq(shopImportJobs.status, "queued"),
+        ),
+      )
+      .returning();
+
+    return claimed ?? null;
+  });
+}
+
+async function claimNextEnrichmentJob() {
+  return db.transaction(async (tx) => {
+    const [nextJob] = await tx
+      .select()
+      .from(materialEnrichmentJobs)
+      .where(eq(materialEnrichmentJobs.status, "queued"))
+      .orderBy(asc(materialEnrichmentJobs.startedAt))
+      .limit(1)
+      .for("update", { skipLocked: true });
+
+    if (!nextJob) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const [claimed] = await tx
+      .update(materialEnrichmentJobs)
+      .set({
+        status: "running",
+        currentMaterialId: null,
+        currentMaterialName: null,
+        message: "Đang chạy enrichment vật liệu.",
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialEnrichmentJobs.id, nextJob.id),
+          eq(materialEnrichmentJobs.status, "queued"),
         ),
       )
       .returning();
@@ -366,6 +529,82 @@ async function runImportJob(job: ShopImportJobRow) {
   }
 }
 
+async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
+  const controller = new AbortController();
+  activeEnrichmentRuns.set(job.id, controller);
+  const progressWriter = createEnrichmentProgressWriter(job.id);
+
+  try {
+    await processEnrichmentJob(job.id, {
+      signal: controller.signal,
+      onProgress: (progress) => {
+        progressWriter.queue(progress);
+      },
+    });
+
+    await progressWriter.flush();
+    if (
+      controller.signal.aborted ||
+      (await isJobCancelled("enrichment", job.id))
+    ) {
+      return;
+    }
+
+    const finishedAt = new Date().toISOString();
+    await db
+      .update(materialEnrichmentJobs)
+      .set({
+        status: "completed",
+        currentMaterialId: null,
+        currentMaterialName: null,
+        message: "Job enrichment đã hoàn tất.",
+        error: null,
+        finishedAt,
+        lastProgressAt: finishedAt,
+        expiresAt: expiresAt(finishedAt),
+        updatedAt: finishedAt,
+      })
+      .where(
+        and(
+          eq(materialEnrichmentJobs.id, job.id),
+          eq(materialEnrichmentJobs.status, "running"),
+        ),
+      );
+  } catch (error) {
+    await progressWriter.flush();
+    if (
+      controller.signal.aborted ||
+      (await isJobCancelled("enrichment", job.id))
+    ) {
+      return;
+    }
+
+    const finishedAt = new Date().toISOString();
+    const message = errorMessage(error, "Không thể enrichment vật liệu.");
+    await db
+      .update(materialEnrichmentJobs)
+      .set({
+        status: "failed",
+        currentMaterialId: null,
+        currentMaterialName: null,
+        message,
+        error: message,
+        finishedAt,
+        lastProgressAt: finishedAt,
+        expiresAt: expiresAt(finishedAt),
+        updatedAt: finishedAt,
+      })
+      .where(
+        and(
+          eq(materialEnrichmentJobs.id, job.id),
+          eq(materialEnrichmentJobs.status, "running"),
+        ),
+      );
+  } finally {
+    activeEnrichmentRuns.delete(job.id);
+  }
+}
+
 function createScrapeProgressWriter(jobId: string) {
   let pendingProgress: ShopScrapeProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -502,6 +741,74 @@ function createImportProgressWriter(jobId: string) {
   };
 }
 
+function createEnrichmentProgressWriter(jobId: string) {
+  let pendingProgress: MaterialEnrichmentJobProgress | null = null;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastWriteAt = 0;
+  let flushChain: Promise<void> = Promise.resolve();
+
+  const flush = () => {
+    if (!pendingProgress) {
+      return flushChain;
+    }
+
+    const progress = pendingProgress;
+    pendingProgress = null;
+    lastWriteAt = Date.now();
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+
+    flushChain = flushChain
+      .catch(() => undefined)
+      .then(async () => {
+        const now = new Date().toISOString();
+        await db
+          .update(materialEnrichmentJobs)
+          .set({
+            processed: progress.processed,
+            total: progress.total,
+            matched: progress.matched,
+            needsReview: progress.needsReview,
+            pdfsFound: progress.pdfsFound,
+            pdfsGenerated: progress.pdfsGenerated,
+            failed: progress.failed,
+            currentMaterialId: progress.currentMaterialId,
+            currentMaterialName: progress.currentMaterialName,
+            message: progress.message ?? null,
+            lastProgressAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(materialEnrichmentJobs.id, jobId),
+              eq(materialEnrichmentJobs.status, "running"),
+            ),
+          );
+      });
+
+    return flushChain;
+  };
+
+  return {
+    queue(progress: MaterialEnrichmentJobProgress) {
+      pendingProgress = progress;
+      if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
+        void flush();
+        return;
+      }
+      if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          void flush();
+        }, PROGRESS_WRITE_MS);
+        flushTimer.unref?.();
+      }
+    },
+    flush,
+  };
+}
+
 async function loadProductsForImportJob(job: ShopImportJobRow) {
   const [scrapeJob] = await db
     .select({
@@ -524,7 +831,10 @@ async function loadProductsForImportJob(job: ShopImportJobRow) {
   return products.filter((product) => sourceUrlSet.has(product.sourceUrl));
 }
 
-async function isJobCancelled(type: "scrape" | "import", jobId: string) {
+async function isJobCancelled(
+  type: "scrape" | "import" | "enrichment",
+  jobId: string,
+) {
   if (type === "scrape") {
     const [job] = await db
       .select({ status: shopScrapeJobs.status })
@@ -534,10 +844,19 @@ async function isJobCancelled(type: "scrape" | "import", jobId: string) {
     return job?.status === "cancelled";
   }
 
+  if (type === "import") {
+    const [job] = await db
+      .select({ status: shopImportJobs.status })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, jobId))
+      .limit(1);
+    return job?.status === "cancelled";
+  }
+
   const [job] = await db
-    .select({ status: shopImportJobs.status })
-    .from(shopImportJobs)
-    .where(eq(shopImportJobs.id, jobId))
+    .select({ status: materialEnrichmentJobs.status })
+    .from(materialEnrichmentJobs)
+    .where(eq(materialEnrichmentJobs.id, jobId))
     .limit(1);
   return job?.status === "cancelled";
 }
@@ -567,6 +886,19 @@ async function resetStaleRunningJobs() {
         updatedAt: now,
       })
       .where(eq(shopImportJobs.status, "running")),
+    db
+      .update(materialEnrichmentJobs)
+      .set({
+        status: "queued",
+        currentMaterialId: null,
+        currentMaterialName: null,
+        error: null,
+        message:
+          "Server vừa khởi động lại; job enrichment được đưa lại vào hàng chờ.",
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(eq(materialEnrichmentJobs.status, "running")),
   ]);
 }
 
@@ -586,6 +918,14 @@ async function cleanupExpiredJobs() {
       and(
         isNotNull(shopScrapeJobs.expiresAt),
         lt(shopScrapeJobs.expiresAt, now),
+      ),
+    );
+  await db
+    .delete(materialEnrichmentJobs)
+    .where(
+      and(
+        isNotNull(materialEnrichmentJobs.expiresAt),
+        lt(materialEnrichmentJobs.expiresAt, now),
       ),
     );
 }
