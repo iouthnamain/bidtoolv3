@@ -15,9 +15,11 @@ import {
   normalizeProvinceKey,
 } from "~/lib/search-filter-utils";
 import {
+  computeScanPageRange,
   searchBidWinnerLive,
   type LivePackageItem,
 } from "~/server/services/bidwinner-search";
+import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -186,6 +188,8 @@ export type UnifiedSearchResult = {
   items: SearchResultItem[];
   total: number;
   visibleCount: number;
+  scannedCount: number;
+  windowTruncated: boolean;
   offset: number;
   limit: number;
   windowBudgetRange: {
@@ -335,50 +339,52 @@ async function fetchBidWinnerHtml(
     url.searchParams.set(key, value);
   });
 
-  let lastError: unknown;
+  return fetchHtmlWithCache(url.toString(), async () => {
+    let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
-    );
+    for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
+      );
 
-    try {
-      const response = await fetch(url, {
-        headers: DEFAULT_HEADERS,
-        signal: controller.signal,
-        cache: "no-store",
-        redirect: "follow",
-      });
-      const html = await response.text();
+      try {
+        const response = await fetch(url, {
+          headers: DEFAULT_HEADERS,
+          signal: controller.signal,
+          cache: "no-store",
+          redirect: "follow",
+        });
+        const html = await response.text();
 
-      if (!response.ok) {
-        throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+        if (!response.ok) {
+          throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+        }
+
+        if (!/<body/i.test(html)) {
+          throw new Error(
+            `BidWinner trả về HTML không hợp lệ (${summarizeHtmlFailure(html)}).`,
+          );
+        }
+
+        return html;
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      if (!/<body/i.test(html)) {
-        throw new Error(
-          `BidWinner trả về HTML không hợp lệ (${summarizeHtmlFailure(html)}).`,
-        );
-      }
-
-      return html;
-    } catch (error) {
-      lastError = error;
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  const message =
-    lastError instanceof Error
-      ? lastError.message
-      : "Lỗi không xác định khi gọi BidWinner.";
+    const message =
+      lastError instanceof Error
+        ? lastError.message
+        : "Lỗi không xác định khi gọi BidWinner.";
 
-  throw new Error(
-    `Không thể lấy dữ liệu BidWinner cho ${pathname} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
-  );
+    throw new Error(
+      `Không thể lấy dữ liệu BidWinner cho ${pathname} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
+    );
+  });
 }
 
 function parseProvincePayload(html: string): ProvinceMap {
@@ -694,24 +700,6 @@ function buildSearchOptions(
   items: SearchResultItem[],
   classifies: SearchModeClassifyOption[] = [],
 ): SearchModeOptions {
-  const dynamicKeywords = Array.from(
-    new Set(
-      items
-        .flatMap((item) =>
-          normalizeText(
-            item.entityType === "package"
-              ? `${item.title} ${item.inviter}`
-              : item.entityType === "plan"
-                ? `${item.title} ${item.owner} ${item.planName}`
-                : `${item.title} ${item.owner}`,
-          )
-            .split(/[^\p{L}\p{N}]+/u)
-            .filter((token) => token.length >= 4),
-        )
-        .slice(0, 40),
-    ),
-  ).sort((a, b) => a.localeCompare(b, "vi"));
-
   const planFields = Array.from(
     new Set(
       items
@@ -748,9 +736,7 @@ function buildSearchOptions(
 
   return {
     provinces: [...PROVINCE_OPTIONS],
-    keywords: Array.from(
-      new Set([...KEYWORD_OPTIONS, ...dynamicKeywords]),
-    ).sort((a, b) => a.localeCompare(b, "vi")),
+    keywords: [...KEYWORD_OPTIONS],
     packageCategories: [...CATEGORY_OPTIONS],
     planFields,
     procurementMethods,
@@ -928,7 +914,15 @@ async function searchPackageModes(input: {
     mode: input.mode,
     items,
     total: packageResult.total,
-    visibleCount: items.length,
+    // area_location applies extra in-app province/classify filtering here, so
+    // its visible count is the post-filter window length; the other package
+    // modes report the full matched count computed in searchBidWinnerLive.
+    visibleCount:
+      input.mode === "package_area_location"
+        ? items.length
+        : packageResult.visibleCount,
+    scannedCount: packageResult.scannedCount,
+    windowTruncated: packageResult.windowTruncated,
     offset: input.offset,
     limit: input.limit,
     windowBudgetRange: toBudgetRange(items),
@@ -1025,29 +1019,64 @@ async function fetchProjectPage(page: number) {
   };
 }
 
-async function fetchWindowItems<T>(options: {
+async function fetchWindowItems<T extends { externalId: string }>(options: {
   offset: number;
   limit: number;
+  refineActive?: boolean;
   fetchPage: (page: number) => Promise<{
     payload: PublicPagePayload<unknown>;
     items: T[];
   }>;
 }) {
-  const startRemotePage = Math.floor(options.offset / BIDWINNER_PER_PAGE) + 1;
-  const endRemotePage =
-    Math.floor((options.offset + options.limit - 1) / BIDWINNER_PER_PAGE) + 1;
-  const pageNumbers: number[] = [];
+  // Probe page 1 first to learn last_page/per_page before deciding the range.
+  const firstPage = await options.fetchPage(1);
+  const perPage =
+    typeof firstPage.payload.per_page === "number" &&
+    firstPage.payload.per_page > 0
+      ? firstPage.payload.per_page
+      : BIDWINNER_PER_PAGE;
+  const lastPage =
+    typeof firstPage.payload.last_page === "number" &&
+    firstPage.payload.last_page > 0
+      ? firstPage.payload.last_page
+      : 1;
+  const sourceTotal = firstPage.payload.total ?? 0;
 
-  for (let page = startRemotePage; page <= endRemotePage; page += 1) {
-    pageNumbers.push(page);
+  // Share the same (clamped, lastPage-aware) page-range logic as the package
+  // modes so paginating past the source's last page never fetches phantom
+  // pages and the refine cap stays consistent across all search modes.
+  const { pages: pageNumbers, truncated: windowTruncated } =
+    computeScanPageRange({
+      offset: options.offset,
+      limit: options.limit,
+      perPage,
+      refineActive: Boolean(options.refineActive),
+      lastPage,
+    });
+
+  const remainingPages = pageNumbers.filter((page) => page !== 1);
+  const pages = [
+    ...(pageNumbers.includes(1) ? [firstPage] : []),
+    ...(await Promise.all(
+      remainingPages.map((page) => options.fetchPage(page)),
+    )),
+  ];
+
+  // Dedupe across page boundaries: the source can repeat a row on adjacent
+  // pages, which would otherwise double-count in totals and the window slice.
+  const seen = new Set<string>();
+  const allItems: T[] = [];
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (seen.has(item.externalId)) {
+        continue;
+      }
+      seen.add(item.externalId);
+      allItems.push(item);
+    }
   }
 
-  const pages = await Promise.all(
-    pageNumbers.map((page) => options.fetchPage(page)),
-  );
-  const allItems = pages.flatMap((page) => page.items);
-  const sourceTotal = pages[0]?.payload.total ?? 0;
-  const perPage = pages[0]?.payload.per_page ?? BIDWINNER_PER_PAGE;
+  const startRemotePage = pageNumbers[0] ?? 1;
   const localStart = Math.max(
     0,
     options.offset - (startRemotePage - 1) * perPage,
@@ -1056,6 +1085,10 @@ async function fetchWindowItems<T>(options: {
   return {
     sourceTotal,
     allItems,
+    scannedCount: allItems.length,
+    windowTruncated,
+    // Exact-window slice for the non-refine path; refine path ignores this and
+    // paginates `allItems` after filtering.
     items: allItems.slice(localStart, localStart + options.limit),
   };
 }
@@ -1067,11 +1100,6 @@ async function searchPlanMode(input: {
   sortOrder: SortOrder;
 }): Promise<UnifiedSearchResult> {
   const criteria = normalizeSearchCriteria(input.criteria);
-  const window = await fetchWindowItems({
-    offset: input.offset,
-    limit: input.limit,
-    fetchPage: fetchPlanPage,
-  });
 
   const localFields = Array.from(
     new Set<SourceMetaField>([
@@ -1089,7 +1117,19 @@ async function searchPlanMode(input: {
         : []),
     ]),
   );
-  let items = window.items.filter((item) => {
+  const refineActive = localFields.length > 0;
+
+  const window = await fetchWindowItems({
+    offset: input.offset,
+    limit: input.limit,
+    refineActive,
+    fetchPage: fetchPlanPage,
+  });
+
+  // When refinement is active, filter across the whole scanned window and
+  // paginate the filtered list; otherwise keep the exact source window.
+  const refineSource = refineActive ? window.allItems : window.items;
+  let items = refineSource.filter((item) => {
     if (!matchesKeyword(criteria.keyword, `${item.title} ${item.owner}`)) {
       return false;
     }
@@ -1134,13 +1174,19 @@ async function searchPlanMode(input: {
     return true;
   });
 
+  const matchedCount = items.length;
   items = sortByPublishedAt(items, input.sortOrder);
+  if (refineActive) {
+    items = items.slice(input.offset, input.offset + input.limit);
+  }
 
   return {
     mode: "plan",
     items,
-    total: window.sourceTotal,
-    visibleCount: items.length,
+    total: refineActive ? matchedCount : window.sourceTotal,
+    visibleCount: refineActive ? matchedCount : items.length,
+    scannedCount: window.scannedCount,
+    windowTruncated: window.windowTruncated,
     offset: input.offset,
     limit: input.limit,
     windowBudgetRange: toBudgetRange(items),
@@ -1173,11 +1219,6 @@ async function searchProjectMode(input: {
   sortOrder: SortOrder;
 }): Promise<UnifiedSearchResult> {
   const criteria = normalizeSearchCriteria(input.criteria);
-  const window = await fetchWindowItems({
-    offset: input.offset,
-    limit: input.limit,
-    fetchPage: fetchProjectPage,
-  });
 
   const localFields = Array.from(
     new Set<SourceMetaField>([
@@ -1194,7 +1235,17 @@ async function searchProjectMode(input: {
         : []),
     ]),
   );
-  let items = window.items.filter((item) => {
+  const refineActive = localFields.length > 0;
+
+  const window = await fetchWindowItems({
+    offset: input.offset,
+    limit: input.limit,
+    refineActive,
+    fetchPage: fetchProjectPage,
+  });
+
+  const refineSource = refineActive ? window.allItems : window.items;
+  let items = refineSource.filter((item) => {
     if (!matchesKeyword(criteria.keyword, `${item.title} ${item.owner}`)) {
       return false;
     }
@@ -1229,13 +1280,19 @@ async function searchProjectMode(input: {
     return true;
   });
 
+  const matchedCount = items.length;
   items = sortByPublishedAt(items, input.sortOrder);
+  if (refineActive) {
+    items = items.slice(input.offset, input.offset + input.limit);
+  }
 
   return {
     mode: "project",
     items,
-    total: window.sourceTotal,
-    visibleCount: items.length,
+    total: refineActive ? matchedCount : window.sourceTotal,
+    visibleCount: refineActive ? matchedCount : items.length,
+    scannedCount: window.scannedCount,
+    windowTruncated: window.windowTruncated,
     offset: input.offset,
     limit: input.limit,
     windowBudgetRange: toBudgetRange(items),

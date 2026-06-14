@@ -342,8 +342,14 @@ export const helpSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/help/import-mapping",
-    label: "Import",
+    label: "Nhập catalog",
     description: "Nhập Excel/CSV, preview và catalog vật tư.",
+    icon: "sheet",
+  },
+  {
+    href: "/help/doi-chieu-dien",
+    label: "Đối chiếu & điền",
+    description: "Ghép catalog và điền file Excel còn thiếu trường.",
     icon: "sheet",
   },
   {

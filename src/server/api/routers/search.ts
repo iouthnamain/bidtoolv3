@@ -432,6 +432,8 @@ export const searchRouter = createTRPCRouter({
           items: [],
           total: 0,
           visibleCount: 0,
+          scannedCount: 0,
+          windowTruncated: false,
           offset: input.offset,
           limit: input.limit,
           windowBudgetRange: {

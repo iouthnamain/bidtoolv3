@@ -1,0 +1,280 @@
+"use client";
+
+import { memo, type Dispatch, type SetStateAction } from "react";
+
+import { type api } from "~/trpc/react";
+
+import {
+  budgetHeaderForEntity,
+  deadlineHeaderForEntity,
+  deadlineTextForItem,
+  fieldTextForItem,
+  formatCurrency,
+  formatDate,
+  idHeaderForEntity,
+  ownerTextForItem,
+  titleHeaderForEntity,
+} from "./search-format";
+import { ResultActions, detailHrefForItem } from "./result-actions";
+import { selectedKey, type SearchItem } from "./search-types";
+
+import Link from "next/link";
+
+type AddWatchlist = ReturnType<typeof api.watchlist.addItem.useMutation>;
+
+const ResultCard = memo(function ResultCard({
+  item,
+  isChecked,
+  onToggle,
+  addWatchlist,
+}: {
+  item: SearchItem;
+  isChecked: boolean;
+  onToggle: (item: SearchItem, checked: boolean) => void;
+  addWatchlist: AddWatchlist;
+}) {
+  return (
+    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={isChecked}
+          onChange={(event) => onToggle(item, event.target.checked)}
+          aria-label={`Chọn ${item.externalId}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm leading-5 font-semibold [overflow-wrap:anywhere] text-slate-950">
+            {item.title}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {item.externalId} • {item.province}
+          </p>
+        </div>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-400">Đơn vị</dt>
+          <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
+            {ownerTextForItem(item)}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-400">Lĩnh vực</dt>
+          <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
+            {fieldTextForItem(item)}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-400">Ngân sách</dt>
+          <dd className="mt-0.5 font-mono font-semibold text-slate-800">
+            {formatCurrency(item.budget)}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-400">Ngày đăng</dt>
+          <dd className="mt-0.5 font-medium text-slate-700">
+            {formatDate(item.publishedAt)}
+          </dd>
+        </div>
+        <div className="rounded-md bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-400">
+            {deadlineHeaderForEntity(item.entityType)}
+          </dt>
+          <dd className="mt-0.5 font-medium text-slate-700">
+            {deadlineTextForItem(item)}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-3">
+        <ResultActions item={item} addWatchlist={addWatchlist} />
+      </div>
+    </article>
+  );
+});
+
+const ResultRow = memo(function ResultRow({
+  item,
+  isChecked,
+  onToggle,
+  addWatchlist,
+}: {
+  item: SearchItem;
+  isChecked: boolean;
+  onToggle: (item: SearchItem, checked: boolean) => void;
+  addWatchlist: AddWatchlist;
+}) {
+  return (
+    <tr className="align-top">
+      <td className="px-3 py-3">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={(event) => onToggle(item, event.target.checked)}
+          aria-label={`Chọn ${item.externalId}`}
+        />
+      </td>
+      <td className="px-3 py-3">
+        <Link
+          href={detailHrefForItem(item)}
+          className="inline-block text-sm leading-5 font-medium [overflow-wrap:anywhere] text-[#0091ff] hover:underline"
+        >
+          {item.externalId}
+        </Link>
+      </td>
+      <td className="px-3 py-3">
+        <div>
+          <p className="font-semibold text-slate-900">{item.title}</p>
+          {item.entityType === "package" ? (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+              <span>{item.category}</span>
+              <span
+                className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700"
+                title={`Match score ${item.matchScore}%`}
+              >
+                Match {item.matchScore}%
+              </span>
+            </p>
+          ) : null}
+          {item.entityType === "plan" ? (
+            <p className="mt-1 text-xs text-slate-500">{item.planName}</p>
+          ) : null}
+          {item.entityType === "project" && item.relatedPlans.length > 0 ? (
+            <div className="mt-1 space-y-1">
+              <p className="text-xs text-slate-500">
+                KHLCNT liên quan: {item.relatedPlanCount}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {item.relatedPlans.slice(0, 2).map((plan) => (
+                  <a
+                    key={plan.externalId}
+                    href={plan.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
+                  >
+                    {plan.title}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-3 text-xs text-slate-700">{item.province}</td>
+      <td className="px-3 py-3 text-xs text-slate-700">
+        {ownerTextForItem(item)}
+      </td>
+      <td className="px-3 py-3 text-xs text-slate-700">
+        {deadlineTextForItem(item)}
+      </td>
+      <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
+        {formatCurrency(item.budget)}
+      </td>
+      <td className="px-3 py-3 text-xs text-slate-700">
+        {formatDate(item.publishedAt)}
+      </td>
+      <td className="px-3 py-3">
+        <ResultActions item={item} addWatchlist={addWatchlist} compact />
+      </td>
+    </tr>
+  );
+});
+
+export function ResultsTable(props: {
+  items: SearchItem[];
+  selectedKeys: Set<string>;
+  setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
+  addWatchlist: AddWatchlist;
+}) {
+  const allSelected =
+    props.items.length > 0 &&
+    props.items.every((item) => props.selectedKeys.has(selectedKey(item)));
+
+  const toggleAll = (checked: boolean) => {
+    props.setSelectedKeys(
+      checked
+        ? new Set(props.items.map((item) => selectedKey(item)))
+        : new Set<string>(),
+    );
+  };
+
+  const toggleOne = (item: SearchItem, checked: boolean) => {
+    props.setSelectedKeys((previous) => {
+      const next = new Set(previous);
+      const key = selectedKey(item);
+
+      if (checked) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+
+      return next;
+    });
+  };
+
+  if (props.items.length === 0) {
+    return null;
+  }
+
+  const entityType = props.items[0]?.entityType ?? "package";
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2 md:hidden">
+        {props.items.map((item) => (
+          <ResultCard
+            key={selectedKey(item)}
+            item={item}
+            isChecked={props.selectedKeys.has(selectedKey(item))}
+            onToggle={toggleOne}
+            addWatchlist={props.addWatchlist}
+          />
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+        <table className="w-full min-w-[920px] table-fixed divide-y divide-slate-200 bg-white text-sm break-words">
+          <thead className="bg-white text-left text-[13px] font-semibold text-slate-500">
+            <tr>
+              <th className="w-10 px-3 py-4">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) => toggleAll(event.target.checked)}
+                  aria-label="Chọn tất cả"
+                />
+              </th>
+              <th className="w-28 px-3 py-4">{idHeaderForEntity(entityType)}</th>
+              <th className="px-3 py-4">{titleHeaderForEntity(entityType)}</th>
+              <th className="w-36 px-3 py-4">Địa điểm thực hiện</th>
+              <th className="w-44 px-3 py-4">Bên mời thầu/Chủ đầu tư</th>
+              <th className="w-28 px-3 py-4">
+                {deadlineHeaderForEntity(entityType)}
+              </th>
+              <th className="w-32 px-3 py-4 text-right">
+                {budgetHeaderForEntity(entityType)}
+              </th>
+              <th className="w-24 px-3 py-4">Đăng tải</th>
+              <th className="w-28 px-3 py-4">Hành động</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {props.items.map((item) => (
+              <ResultRow
+                key={selectedKey(item)}
+                item={item}
+                isChecked={props.selectedKeys.has(selectedKey(item))}
+                onToggle={toggleOne}
+                addWatchlist={props.addWatchlist}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

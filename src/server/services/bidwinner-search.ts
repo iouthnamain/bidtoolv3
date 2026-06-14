@@ -10,6 +10,7 @@ import {
   normalizeProvinceKey,
   normalizeSearchSelections,
 } from "~/lib/search-filter-utils";
+import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
 
 type SearchOptions = {
   keyword?: string;
@@ -122,6 +123,8 @@ export type LiveSearchResult = {
   items: LivePackageItem[];
   total: number;
   visibleCount: number;
+  scannedCount: number;
+  windowTruncated: boolean;
   offset: number;
   limit: number;
   windowBudgetRange: {
@@ -155,33 +158,61 @@ const PROVINCE_PAYLOAD_REGEX = /<bid-search[^>]*:ttp="([^"]+)"/i;
 const MAX_FETCH_ATTEMPTS = 3;
 const BIDWINNER_PER_PAGE = 20;
 
-const STOP_WORDS = new Set([
-  "goi",
-  "gói",
-  "thau",
-  "thầu",
-  "so",
-  "số",
-  "nam",
-  "năm",
-  "cho",
-  "cua",
-  "của",
-  "tai",
-  "tại",
-  "va",
-  "và",
-  "theo",
-  "dot",
-  "đợt",
-  "phuc",
-  "phục",
-  "vu",
-  "vụ",
-  "mua",
-  "sam",
-  "sắm",
-]);
+/**
+ * When local refinement (keyword/category/budget/date/match) is active, the
+ * remote source cannot pre-filter for us, so we scan a wider window of source
+ * pages and filter in-app. This bounds how many source pages a single refined
+ * query will pull (≈ MAX_REFINE_PAGES * BIDWINNER_PER_PAGE items) so a sparse
+ * filter cannot fan out into an unbounded number of remote fetches.
+ */
+const MAX_REFINE_PAGES = 5;
+
+/**
+ * Computes the inclusive 1-based remote page list to fetch.
+ *
+ * - No refinement: fetch only the exact page window that covers
+ *   [offset, offset+limit), clamped to `lastPage`. Pagination maps 1:1 to the
+ *   source so `total` stays the source total.
+ * - Refinement active: the source cannot pre-filter, so anchor the scan at
+ *   page 1 and pull up to `MAX_REFINE_PAGES` pages. The caller filters this
+ *   whole set, then slices by offset — this keeps pagination consistent (no
+ *   duplicate/skipped rows across pages) at the cost of only covering the first
+ *   `MAX_REFINE_PAGES * perPage` source items. `truncated` is true when the
+ *   source has more pages than were scanned.
+ */
+export function computeScanPageRange(options: {
+  offset: number;
+  limit: number;
+  perPage: number;
+  refineActive: boolean;
+  lastPage: number;
+}): { pages: number[]; truncated: boolean } {
+  const perPage = Math.max(1, options.perPage);
+  const lastPage = Math.max(1, options.lastPage);
+
+  if (options.refineActive) {
+    const endPage = Math.min(MAX_REFINE_PAGES, lastPage);
+    const pages: number[] = [];
+    for (let page = 1; page <= endPage; page += 1) {
+      pages.push(page);
+    }
+    return { pages, truncated: lastPage > endPage };
+  }
+
+  const startPage = Math.min(
+    Math.floor(options.offset / perPage) + 1,
+    lastPage,
+  );
+  const endPage = Math.min(
+    Math.floor((options.offset + options.limit - 1) / perPage) + 1,
+    lastPage,
+  );
+  const pages: number[] = [];
+  for (let page = startPage; page <= endPage; page += 1) {
+    pages.push(page);
+  }
+  return { pages, truncated: false };
+}
 
 function normalizeText(input: string): string {
   return input
@@ -278,27 +309,6 @@ function inferCategory(title: string): string {
   }
 
   return "Khác";
-}
-
-function extractDynamicKeywords(items: LivePackageItem[]): string[] {
-  const counter = new Map<string, number>();
-
-  for (const item of items) {
-    const tokens = `${item.title} ${item.inviter}`
-      .toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u)
-      .map((token) => token.trim())
-      .filter((token) => token.length >= 4 && !STOP_WORDS.has(token));
-
-    for (const token of tokens) {
-      counter.set(token, (counter.get(token) ?? 0) + 1);
-    }
-  }
-
-  return Array.from(counter.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30)
-    .map(([token]) => token);
 }
 
 function parseBidSearchPayload(html: string): BidWinnerPayload {
@@ -432,10 +442,9 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
   };
 }
 
-function applyLocalRefinement(
-  items: LivePackageItem[],
+export function getRefinementFields(
   input: SearchOptions,
-): { items: LivePackageItem[]; fields: LocalRefinementField[] } {
+): LocalRefinementField[] {
   const keywords = (input.keyword ?? "")
     .split(",")
     .map((term) => normalizeText(term))
@@ -454,6 +463,23 @@ function applyLocalRefinement(
     fields.push("budget");
   if (publishedFrom || publishedTo) fields.push("publishedAt");
   if (input.minMatchScore > 0) fields.push("minMatchScore");
+
+  return fields;
+}
+
+function applyLocalRefinement(
+  items: LivePackageItem[],
+  input: SearchOptions,
+): { items: LivePackageItem[]; fields: LocalRefinementField[] } {
+  const keywords = (input.keyword ?? "")
+    .split(",")
+    .map((term) => normalizeText(term))
+    .filter(Boolean);
+  const categories = input.categories.map((value) => normalizeText(value));
+  const publishedFrom = input.publishedFrom?.trim();
+  const publishedTo = input.publishedTo?.trim();
+
+  const fields = getRefinementFields(input);
 
   const filtered = items.filter((item) => {
     if (keywords.length > 0) {
@@ -549,16 +575,12 @@ function comparePackagesByPublishedAtDesc(
   return a.sourceUrl.localeCompare(b.sourceUrl, "vi");
 }
 
-function buildOptions(items: LivePackageItem[]) {
-  const dynamicKeywords = extractDynamicKeywords(items);
-
-  const provinces = [...PROVINCE_OPTIONS];
-  const categories = [...CATEGORY_OPTIONS];
-  const keywords = Array.from(
-    new Set([...KEYWORD_OPTIONS, ...dynamicKeywords]),
-  ).sort((a, b) => a.localeCompare(b, "vi"));
-
-  return { provinces, categories, keywords };
+function buildOptions() {
+  return {
+    provinces: [...PROVINCE_OPTIONS],
+    categories: [...CATEGORY_OPTIONS],
+    keywords: [...KEYWORD_OPTIONS],
+  };
 }
 
 function sleep(ms: number) {
@@ -605,53 +627,55 @@ async function fetchBidWinnerPage(
     url.searchParams.set("matp", provinceCode);
   }
 
-  let lastError: unknown;
+  return fetchHtmlWithCache(url.toString(), async () => {
+    let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
-    );
+    for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
+      );
 
-    try {
-      const response = await fetch(url, {
-        headers: DEFAULT_HEADERS,
-        signal: controller.signal,
-        cache: "no-store",
-        redirect: "follow",
-      });
-      const html = await response.text();
+      try {
+        const response = await fetch(url, {
+          headers: DEFAULT_HEADERS,
+          signal: controller.signal,
+          cache: "no-store",
+          redirect: "follow",
+        });
+        const html = await response.text();
 
-      if (!response.ok) {
-        throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+        if (!response.ok) {
+          throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
+        }
+
+        if (!SEARCH_PAYLOAD_REGEX.test(html)) {
+          throw new Error(
+            `BidWinner trả về HTML không chứa payload tìm kiếm (${summarizeHtmlFailure(html)}).`,
+          );
+        }
+
+        return html;
+      } catch (error) {
+        lastError = error;
+
+        if (attempt < MAX_FETCH_ATTEMPTS) {
+          await sleep(attempt * 500);
+        }
+      } finally {
+        clearTimeout(timeout);
       }
-
-      if (!SEARCH_PAYLOAD_REGEX.test(html)) {
-        throw new Error(
-          `BidWinner trả về HTML không chứa payload tìm kiếm (${summarizeHtmlFailure(html)}).`,
-        );
-      }
-
-      return html;
-    } catch (error) {
-      lastError = error;
-
-      if (attempt < MAX_FETCH_ATTEMPTS) {
-        await sleep(attempt * 500);
-      }
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  const message =
-    lastError instanceof Error
-      ? lastError.message
-      : "Lỗi không xác định khi gọi BidWinner.";
-  throw new Error(
-    `Không thể lấy dữ liệu BidWinner cho page=${page} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
-  );
+    const message =
+      lastError instanceof Error
+        ? lastError.message
+        : "Lỗi không xác định khi gọi BidWinner.";
+    throw new Error(
+      `Không thể lấy dữ liệu BidWinner cho page=${page} sau ${MAX_FETCH_ATTEMPTS} lần thử. ${message}`,
+    );
+  });
 }
 
 async function fetchParsedBidWinnerPage(
@@ -677,10 +701,7 @@ async function fetchParsedBidWinnerPage(
   };
 }
 
-async function ensureProvinceStreamHasItem(
-  stream: ProvinceStream,
-  keywordItems: LivePackageItem[],
-) {
+async function ensureProvinceStreamHasItem(stream: ProvinceStream) {
   while (stream.nextIndex >= stream.buffer.length) {
     if (stream.currentPage >= stream.lastPage) {
       return false;
@@ -700,8 +721,6 @@ async function ensureProvinceStreamHasItem(
         : stream.currentPage;
     stream.buffer = parsedPage.items;
     stream.nextIndex = 0;
-
-    keywordItems.push(...parsedPage.items);
 
     if (stream.buffer.length === 0 && stream.currentPage >= stream.lastPage) {
       return false;
@@ -739,6 +758,8 @@ export async function searchBidWinnerLive(
       items: [],
       total: 0,
       visibleCount: 0,
+      scannedCount: 0,
+      windowTruncated: false,
       offset: normalizedInput.offset,
       limit: normalizedInput.limit,
       windowBudgetRange: {
@@ -753,52 +774,61 @@ export async function searchBidWinnerLive(
         active: false,
         fields: [],
       },
-      options: buildOptions([]),
+      options: buildOptions(),
     };
   }
 
-  const keywordItems: LivePackageItem[] = [];
   let windowItems: LivePackageItem[] = [];
   let sourceTotal = 0;
+  let scannedCount = 0;
+  let windowTruncated = false;
+  let refinedTotal: number | null = null;
+  const refineActive = getRefinementFields(normalizedInput).length > 0;
 
   if (provinceCodes.length <= 1) {
     const selectedProvinceCode = provinceCodes[0];
-    const startRemotePage =
-      Math.floor(normalizedInput.offset / BIDWINNER_PER_PAGE) + 1;
-    const endRemotePage =
-      Math.floor((normalizedInput.offset + limit - 1) / BIDWINNER_PER_PAGE) + 1;
-    const pageNumbers: number[] = [];
-    for (let page = startRemotePage; page <= endRemotePage; page += 1) {
-      pageNumbers.push(page);
+
+    // Probe page 1 first so we know last_page before deciding the scan range.
+    const firstPage = await fetchParsedBidWinnerPage(1, selectedProvinceCode);
+    const sourcePerPage =
+      typeof firstPage.payload.per_page === "number" &&
+      firstPage.payload.per_page > 0
+        ? firstPage.payload.per_page
+        : BIDWINNER_PER_PAGE;
+    const lastPage =
+      typeof firstPage.payload.last_page === "number" &&
+      firstPage.payload.last_page > 0
+        ? firstPage.payload.last_page
+        : 1;
+    if (
+      typeof firstPage.payload.total === "number" &&
+      firstPage.payload.total >= 0
+    ) {
+      sourceTotal = firstPage.payload.total;
     }
 
-    const parsedPages = await Promise.all(
-      pageNumbers.map((page) =>
-        fetchParsedBidWinnerPage(page, selectedProvinceCode),
-      ),
-    );
+    const { pages: pageNumbers, truncated } = computeScanPageRange({
+      offset: normalizedInput.offset,
+      limit,
+      perPage: sourcePerPage,
+      refineActive,
+      lastPage,
+    });
 
-    let sourcePerPage = BIDWINNER_PER_PAGE;
+    const remainingPages = pageNumbers.filter((page) => page !== 1);
+    const parsedPages = [
+      ...(pageNumbers.includes(1) ? [firstPage] : []),
+      ...(await Promise.all(
+        remainingPages.map((page) =>
+          fetchParsedBidWinnerPage(page, selectedProvinceCode),
+        ),
+      )),
+    ];
+
     const fetchedItems: LivePackageItem[] = [];
     const seen = new Set<string>();
 
     for (const parsedPage of parsedPages) {
-      if (
-        typeof parsedPage.payload.total === "number" &&
-        parsedPage.payload.total >= 0
-      ) {
-        sourceTotal = parsedPage.payload.total;
-      }
-
-      if (
-        typeof parsedPage.payload.per_page === "number" &&
-        parsedPage.payload.per_page > 0
-      ) {
-        sourcePerPage = parsedPage.payload.per_page;
-      }
-
-      keywordItems.push(...parsedPage.items);
-
       for (const item of parsedPage.items) {
         if (seen.has(item.externalId)) {
           continue;
@@ -809,9 +839,29 @@ export async function searchBidWinnerLive(
       }
     }
 
-    const spanStart = (startRemotePage - 1) * sourcePerPage;
-    const localStart = Math.max(0, normalizedInput.offset - spanStart);
-    windowItems = fetchedItems.slice(localStart, localStart + limit);
+    scannedCount = fetchedItems.length;
+
+    if (refineActive) {
+      // Source cannot pre-filter: refine across the page-1-anchored scan, then
+      // paginate the filtered list. `total` becomes the filtered count so the
+      // client's page count is honest; `windowTruncated` flags that filtering
+      // only covered the first `MAX_REFINE_PAGES` source pages.
+      const { items: filteredWindow } = applyLocalRefinement(
+        fetchedItems,
+        normalizedInput,
+      );
+      refinedTotal = filteredWindow.length;
+      windowItems = filteredWindow.slice(
+        normalizedInput.offset,
+        normalizedInput.offset + limit,
+      );
+      windowTruncated = truncated;
+    } else {
+      const startRemotePage = pageNumbers[0] ?? 1;
+      const spanStart = (startRemotePage - 1) * sourcePerPage;
+      const localStart = Math.max(0, normalizedInput.offset - spanStart);
+      windowItems = fetchedItems.slice(localStart, localStart + limit);
+    }
   } else {
     const firstPages = await Promise.all(
       provinceCodes.map((code) => fetchParsedBidWinnerPage(1, code)),
@@ -819,8 +869,6 @@ export async function searchBidWinnerLive(
 
     const streams: ProvinceStream[] = [];
     for (const [index, parsedPage] of firstPages.entries()) {
-      keywordItems.push(...parsedPage.items);
-
       sourceTotal +=
         typeof parsedPage.payload.total === "number" &&
         parsedPage.payload.total > 0
@@ -853,7 +901,7 @@ export async function searchBidWinnerLive(
       let bestItem: LivePackageItem | null = null;
 
       for (const [index, stream] of streams.entries()) {
-        const hasItem = await ensureProvinceStreamHasItem(stream, keywordItems);
+        const hasItem = await ensureProvinceStreamHasItem(stream);
         if (!hasItem) {
           continue;
         }
@@ -894,6 +942,7 @@ export async function searchBidWinnerLive(
       normalizedInput.offset,
       normalizedInput.offset + limit,
     );
+    scannedCount = mergedItems.length;
   }
 
   const windowBudgetValues = windowItems
@@ -918,8 +967,10 @@ export async function searchBidWinnerLive(
 
   return {
     items: sorted,
-    total: sourceTotal,
-    visibleCount: sorted.length,
+    total: refinedTotal ?? sourceTotal,
+    visibleCount: refinedTotal ?? sorted.length,
+    scannedCount,
+    windowTruncated,
     offset: normalizedInput.offset,
     limit: normalizedInput.limit,
     windowBudgetRange,
@@ -930,6 +981,6 @@ export async function searchBidWinnerLive(
       active: fields.length > 0,
       fields,
     },
-    options: buildOptions(keywordItems),
+    options: buildOptions(),
   };
 }

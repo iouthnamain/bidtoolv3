@@ -78,7 +78,8 @@ export const quickLinks: HelpLink[] = [
   { href: "/dashboard", label: "Tổng quan" },
   { href: "/search/packages", label: "Tìm kiếm" },
   { href: "/documents", label: "Documents" },
-  { href: "/import-mapping", label: "Import & Mapping" },
+  { href: "/materials/import", label: "Nhập catalog" },
+  { href: "/enrich", label: "Đối chiếu & điền" },
   { href: "/materials", label: "Vật tư" },
   { href: "/workflows", label: "Workflows" },
   { href: "/settings", label: "Cài đặt" },
@@ -108,9 +109,9 @@ export const taskFlow: TaskFlow[] = [
   },
   {
     title: "4. Nhập và chuẩn hóa vật tư",
-    body: "Dùng Import & Mapping hoặc nhập catalog để preview Excel/CSV trước khi đưa vào danh mục.",
-    href: "/import-mapping",
-    cta: "Import & Mapping",
+    body: "Nhập catalog từ Excel/CSV, scrape shop hoặc đối chiếu & điền file Excel còn thiếu trường từ catalog.",
+    href: "/materials/import",
+    cta: "Nhập catalog",
     signal: "Dùng khi có file vật tư hoặc catalog cần chuẩn hóa.",
   },
 ];
@@ -127,9 +128,9 @@ export const helpMetrics: HelpMetric[] = [
     body: "Tìm kiếm, Smart View, workflow cảnh báo và notification queue.",
   },
   {
-    value: "2",
-    label: "luồng nhập vật tư",
-    body: "Import & Mapping cho không gian mới và nhập catalog hàng loạt.",
+    value: "4",
+    label: "luồng dựng catalog",
+    body: "Nhập Excel/CSV, scrape shop, đối chiếu & điền Excel và thư viện catalog PDF.",
   },
   {
     value: "1",
@@ -353,8 +354,13 @@ export const pageDirectory: PageDirectoryItem[] = [
   },
   {
     href: "/materials/import",
-    title: "Import & Mapping",
+    title: "Nhập catalog",
     body: "Upload Excel hoặc dán CSV, xem preview và nhập hàng loạt catalog vật tư.",
+  },
+  {
+    href: "/enrich",
+    title: "Đối chiếu & điền Excel",
+    body: "Tải Excel còn thiếu trường, ghép catalog theo độ tương tự rồi xuất file đã điền.",
   },
   {
     href: "/materials",
@@ -364,12 +370,22 @@ export const pageDirectory: PageDirectoryItem[] = [
   {
     href: "/materials/scrape",
     title: "Scrape shop",
-    body: "Preview URL shop để kiểm tra sản phẩm, giá và nguồn trước khi nhập catalog.",
+    body: "Chạy job scrape URL shop nhiều trang rồi nhập sản phẩm, giá và nguồn vào catalog.",
+  },
+  {
+    href: "/materials/match-review",
+    title: "Xét duyệt ghép sản phẩm",
+    body: "Duyệt đề xuất ghép sản phẩm scrape với vật tư catalog theo độ tương tự.",
+  },
+  {
+    href: "/catalog-pdfs",
+    title: "Catalog PDFs",
+    body: "Thư viện tài liệu catalog PDF: upload, lưu URL nguồn và gắn với vật tư.",
   },
   {
     href: "/settings",
     title: "Cài đặt",
-    body: "Cấu hình desktop client và các thiết lập vận hành liên quan.",
+    body: "Phiên bản, môi trường, cập nhật hệ thống và cấu hình desktop client.",
   },
 ];
 
@@ -523,48 +539,72 @@ export const sections: Section[] = [
   {
     id: "import-mapping",
     eyebrow: "Import",
-    title: "Import & Mapping",
+    title: "Nhập catalog vật tư",
     intro:
-      "Import & Mapping là trang mới cho luồng nhập dữ liệu và ánh xạ catalog vật tư. Catalog hiện vẫn nhập thực tế qua `/materials/import` với preview sau upload.",
+      "Nhập catalog là luồng đưa dữ liệu vật tư vào hệ thống qua `/materials/import`: upload `.xlsx` hoặc dán CSV, xem preview rồi nhập hàng loạt. Lối tắt `/import-mapping` cũ giờ tự chuyển hướng về trang nhập catalog này.",
     steps: [
-      "Mở `/import-mapping` khi cần không gian riêng cho luồng import/mapping mới.",
       "Mở `/materials/import` để upload `.xlsx` hoặc dán CSV catalog.",
-      "Sau khi chọn file Excel, xem preview header, mapping gợi ý, cảnh báo và 10 dòng mẫu trước khi nhập.",
+      "Sau khi chọn file Excel, xem preview header, mapping gợi ý, cảnh báo và các dòng mẫu trước khi nhập.",
       "Kiểm tra các cột bắt buộc như tên vật tư và đơn vị; bổ sung thông số, NCC, xuất xứ và đơn giá nếu có.",
       "Bấm nhập khi preview hợp lệ; dòng trùng name + unit sẽ được bỏ qua để giữ catalog sạch.",
     ],
     notes: [
       "Preview giúp kiểm tra dữ liệu trước khi ghi vào catalog.",
       "File `.xls` cũ cần chuyển sang `.xlsx` trước khi upload.",
+      "Cần điền ngược dữ liệu vào một file Excel có sẵn? Dùng Đối chiếu & điền tại `/enrich`.",
     ],
     links: [
-      { href: "/import-mapping", label: "Mở Import & Mapping" },
       { href: "/materials/import", label: "Nhập catalog" },
+      { href: "/enrich", label: "Đối chiếu & điền" },
       { href: "/materials/scrape", label: "Scrape shop" },
     ],
     visual: "import-pipeline",
+  },
+  {
+    id: "doi-chieu-dien",
+    eyebrow: "Đối chiếu",
+    title: "Đối chiếu & điền Excel",
+    intro:
+      "Đối chiếu & điền (`/enrich`) nhận một file Excel còn thiếu trường, ghép từng dòng với catalog vật tư bằng độ tương tự (pg_trgm), rồi điền các ô trống và xuất lại file. Khác với Nhập catalog ở chỗ dữ liệu đi từ catalog ra file của bạn, không phải từ file vào catalog.",
+    steps: [
+      "Mở `/enrich` và upload file `.xlsx` cần bổ sung dữ liệu.",
+      "Xem preview các sheet, chọn sheet và xác nhận cột tên vật tư để đối chiếu.",
+      "Chạy đối chiếu: mỗi dòng nhận trạng thái Tự động, Cần duyệt hoặc Chưa khớp kèm ứng viên catalog.",
+      "Với dòng Cần duyệt, chọn đúng vật tư và tick các trường muốn điền (đơn vị, thông số, NCC, xuất xứ, đơn giá...).",
+      "Xuất file Excel đã điền; các ô đã có sẵn dữ liệu được giữ nguyên.",
+    ],
+    notes: [
+      "Đối chiếu dựa trên catalog `/materials`, nên catalog càng đầy đủ thì kết quả ghép càng tốt.",
+      "Dòng Chưa khớp nghĩa là không có ứng viên đủ tương tự; bổ sung vật tư vào catalog rồi chạy lại.",
+      "Chỉ các trường được tick mới ghi vào file; dữ liệu gốc trong ô đã có không bị ghi đè.",
+    ],
+    links: [
+      { href: "/enrich", label: "Mở Đối chiếu & điền" },
+      { href: "/materials", label: "Danh mục vật tư" },
+    ],
   },
   {
     id: "vat-tu",
     eyebrow: "Catalog",
     title: "Sản phẩm / vật tư",
     intro:
-      "Danh mục vật tư là catalog nội bộ dùng để chuẩn hóa tên, đơn vị, đơn giá và nguồn sản phẩm.",
+      "Danh mục vật tư là catalog nội bộ dùng để chuẩn hóa tên, đơn vị, đơn giá và nguồn sản phẩm. Catalog có thể dựng bằng nhập thủ công, nhập Excel/CSV hoặc scrape shop, kèm thư viện catalog PDF gắn vào từng vật tư.",
     steps: [
       "Mở `/materials` để kiểm tra danh sách vật tư đã có.",
-      "Tạo vật tư thủ công khi cần một item chuẩn trước khi nhập hàng loạt.",
-      "Dùng trang nhập hàng loạt nếu đã có sheet catalog riêng.",
-      "Mở chi tiết vật tư để cập nhật thông số, link nhà cung cấp hoặc nguồn giá.",
-      "Dùng catalog này làm nguồn chuẩn cho các luồng nhập và mapping tiếp theo.",
+      "Tạo vật tư thủ công tại `/materials/new` khi cần một item chuẩn trước khi nhập hàng loạt.",
+      "Chạy job scrape shop tại `/materials/scrape`, rồi duyệt đề xuất ghép tại `/materials/match-review`.",
+      "Mở chi tiết vật tư để cập nhật thông số, nguồn giá hoặc gắn tài liệu catalog PDF.",
+      "Dùng catalog này làm nguồn chuẩn cho nhập catalog và đối chiếu & điền Excel.",
     ],
     notes: [
       "Xóa vật tư khỏi catalog không ảnh hưởng đến file nguồn đã upload.",
       "Giữ tên, đơn vị và nguồn giá nhất quán để workbook export dễ kiểm tra.",
+      "Catalog PDFs (`/catalog-pdfs`) lưu tài liệu nguồn và gắn vào vật tư để tra cứu sau.",
     ],
     links: [
       { href: "/materials", label: "Mở Vật tư" },
-      { href: "/materials/import", label: "Nhập catalog" },
       { href: "/materials/scrape", label: "Scrape shop" },
+      { href: "/catalog-pdfs", label: "Catalog PDFs" },
     ],
     image: {
       src: "/help/materials.png",

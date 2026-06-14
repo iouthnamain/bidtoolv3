@@ -1,30 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useState, type KeyboardEvent } from "react";
 import {
-  type Dispatch,
-  type KeyboardEvent,
-  type SetStateAction,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  usePathname,
-  useRouter,
-  useSearchParams,
-  type ReadonlyURLSearchParams,
-} from "next/navigation";
-import {
-  BellPlus,
   BookmarkCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
-  Eye,
   RefreshCw,
   Save,
+  Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -34,87 +19,41 @@ import {
   KEYWORD_OPTIONS,
   PAGE_SIZE_OPTIONS,
   PROVINCE_OPTIONS,
-  type SortOrder,
 } from "~/constants/search-options";
+import { parseOptionalNumber, parsePositiveInt } from "~/lib/search-criteria";
 import {
-  buildSearchUrlParams,
-  emptySearchCriteria,
-  normalizeSearchCriteria,
-  normalizeStringList,
-  parseOptionalNumber,
-  parsePositiveId,
-  parsePositiveInt,
-  readSearchCriteriaFromSearchParams,
-  readSearchModeFromSearchParams,
-  summarizeSearchCriteria,
-  type SearchCriteria,
-} from "~/lib/search-criteria";
-import {
-  SEARCH_ENTITY_LABELS,
   SEARCH_MODE_DESCRIPTIONS,
   SEARCH_MODE_LABELS,
-  getSearchEntityType,
   type SearchMode,
 } from "~/lib/search-modes";
-import {
-  getSearchPathForMode,
-  readSearchModeFromPathname,
-} from "~/lib/search-routes";
+import { getSearchPathForMode } from "~/lib/search-routes";
 import {
   Button,
   EmptyState,
   FilterField,
   SkeletonTable,
 } from "~/app/_components/ui";
-import { type RouterOutputs, api } from "~/trpc/react";
 
-type SearchResult = RouterOutputs["search"]["querySearchResults"];
-type SearchItem = SearchResult["items"][number];
+import { MultiSelectDropdown } from "./search/multi-select-dropdown";
+import { ResultsTable } from "./search/results-table";
+import {
+  ResultMatchSummary,
+  SourceMetaBanner,
+} from "./search/source-meta-banner";
+import { toSavePayload } from "./search/result-actions";
+import { formatCompactCurrency, formatDateTime } from "./search/search-format";
+import { entityLabelForMode } from "./search/search-types";
+import { useSearchPageState } from "./search/use-search-page-state";
 
-type FormState = {
-  keyword: string;
-  provinces: string[];
-  packageCategories: string[];
-  classifyIds: number[];
-  planFields: string[];
-  procurementMethods: string[];
-  projectGroups: string[];
-  budgetMin: string;
-  budgetMax: string;
-  publishedFrom: string;
-  publishedTo: string;
-  minMatchScore: number;
-};
-
-const LOCAL_REFINEMENT_LABELS = {
-  keyword: "từ khóa",
-  provinces: "tỉnh/thành",
-  packageCategories: "lĩnh vực gói",
-  classifyIds: "ngành nghề",
-  budget: "ngân sách",
-  publishedAt: "ngày",
-  minMatchScore: "match score",
-  planFields: "lĩnh vực KHLCNT",
-  procurementMethods: "HTLCNT",
-  projectGroups: "nhóm dự án",
-} as const;
-
-const smartViewFrequencyLabels = {
-  daily: "Hằng ngày",
-  weekly: "Hằng tuần",
-} as const;
-
-const DEFAULT_RESULT_OPTIONS: SearchResult["options"] = {
+const DEFAULT_RESULT_OPTIONS = {
   provinces: [...PROVINCE_OPTIONS],
   keywords: [...KEYWORD_OPTIONS],
   packageCategories: [...CATEGORY_OPTIONS],
-  planFields: [],
-  procurementMethods: [],
-  projectGroups: [],
-  classifies: [],
+  planFields: [] as string[],
+  procurementMethods: [] as string[],
+  projectGroups: [] as string[],
+  classifies: [] as Array<{ id: number; name: string; depth: number }>,
 };
-
-const EMPTY_SEARCH_ITEMS: SearchItem[] = [];
 
 const DEFAULT_BUDGET_SLIDER_MAX = 100_000_000_000;
 const BUDGET_SLIDER_STEP = 1_000_000;
@@ -122,822 +61,62 @@ const BUDGET_SLIDER_STEP = 1_000_000;
 const controlClass =
   "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
 
-const dateFormatter = new Intl.DateTimeFormat("vi-VN");
-const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
+const smartViewFrequencyLabels = {
+  daily: "Hằng ngày",
+  weekly: "Hằng tuần",
+} as const;
+
+export function SearchPageClient({
+  fixedMode,
+}: { fixedMode?: SearchMode } = {}) {
+  const state = useSearchPageState({ fixedMode });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const {
+    mode,
+    formState,
+    setFormState,
+    page,
+    setPage,
+    limit,
+    setLimit,
+    sortOrder,
+    setSortOrder,
+    setSavedFilterId,
+    saveError,
+    smartViewSuccess,
+    saveSelectedSuccess,
+    saveSelectedError,
+    smartViewName,
+    setSmartViewName,
+    smartViewFrequency,
+    setSmartViewFrequency,
+    selectedKeys,
+    setSelectedKeys,
+    resultQuery,
+    result,
+    items,
+    totalPages,
+    hasPendingSearchFilterChanges,
+    budgetRangeError,
+    publishedDateRangeError,
+    savedFilterQuery,
+    saveFilter,
+    updateSavedFilter,
+    addWatchlist,
+    saveSelectedResults,
+    selectedItems,
+    appliedChips,
+    persistSmartView,
+    applyDraftFilters,
+    resetFilters,
+    isEditingSmartView,
+  } = state;
 
-function formatCurrency(value: number) {
-  return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
-}
-
-function formatCompactCurrency(value: number) {
-  if (value >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toLocaleString("vi-VN", {
-      maximumFractionDigits: 1,
-    })} tỷ`;
-  }
-
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toLocaleString("vi-VN", {
-      maximumFractionDigits: 0,
-    })} triệu`;
-  }
-
-  return value.toLocaleString("vi-VN");
-}
-
-function formatDate(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return dateFormatter.format(parsed);
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return dateTimeFormatter.format(parsed);
-}
-
-function buildFormState(criteria: SearchCriteria): FormState {
-  return {
-    keyword: criteria.keyword,
-    provinces: criteria.provinces,
-    packageCategories: criteria.packageCategories,
-    classifyIds: criteria.classifyIds,
-    planFields: criteria.planFields,
-    procurementMethods: criteria.procurementMethods,
-    projectGroups: criteria.projectGroups,
-    budgetMin: criteria.budgetMin !== null ? String(criteria.budgetMin) : "",
-    budgetMax: criteria.budgetMax !== null ? String(criteria.budgetMax) : "",
-    publishedFrom: criteria.publishedFrom,
-    publishedTo: criteria.publishedTo,
-    minMatchScore: criteria.minMatchScore,
-  };
-}
-
-function buildCriteriaFromForm(formState: FormState): SearchCriteria {
-  return normalizeSearchCriteria({
-    keyword: formState.keyword,
-    provinces: formState.provinces,
-    packageCategories: formState.packageCategories,
-    classifyIds: formState.classifyIds,
-    planFields: formState.planFields,
-    procurementMethods: formState.procurementMethods,
-    projectGroups: formState.projectGroups,
-    budgetMin: parseOptionalNumber(formState.budgetMin),
-    budgetMax: parseOptionalNumber(formState.budgetMax),
-    publishedFrom: formState.publishedFrom,
-    publishedTo: formState.publishedTo,
-    minMatchScore: formState.minMatchScore,
-  });
-}
-
-function serializeCriteria(criteria: SearchCriteria) {
-  return JSON.stringify(normalizeSearchCriteria(criteria));
-}
-
-function readSortOrderFromSearchParams(
-  searchParams: ReadonlyURLSearchParams,
-): SortOrder {
-  return searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
-}
-
-function summarizeSelected(values: string[], fallback: string): string {
-  if (values.length === 0) {
-    return fallback;
-  }
-
-  if (values.length <= 2) {
-    return values.join(", ");
-  }
-
-  return `${values.slice(0, 2).join(", ")} +${values.length - 2}`;
-}
-
-type MultiSelectDropdownProps = {
-  id?: string;
-  ariaLabel?: string;
-  options: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  emptyLabel: string;
-};
-
-function MultiSelectDropdown({
-  id,
-  ariaLabel,
-  options,
-  selected,
-  onChange,
-  emptyLabel,
-}: MultiSelectDropdownProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const selectedSet = useMemo(() => new Set(selected), [selected]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onPointerDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-    };
-  }, [isOpen]);
-
-  const filteredOptions = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) {
-      return options;
-    }
-
-    return options.filter((item) => item.toLowerCase().includes(keyword));
-  }, [options, query]);
-
-  const toggleItem = (value: string) => {
-    if (selectedSet.has(value)) {
-      onChange(selected.filter((item) => item !== value));
-      return;
-    }
-
-    onChange(normalizeStringList([...selected, value]));
-  };
-
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        id={id}
-        type="button"
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-        onClick={() => setIsOpen((prev) => !prev)}
-      >
-        <span className="truncate">
-          {summarizeSelected(selected, emptyLabel)}
-        </span>
-        <span className="ml-2 shrink-0 text-xs text-slate-500">
-          {selected.length}
-        </span>
-      </button>
-
-      {isOpen ? (
-        <div className="absolute z-20 mt-2 w-full rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
-          <input
-            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-            name="multiselect-search"
-            aria-label="Tìm trong danh sách"
-            autoComplete="off"
-            placeholder="Tìm nhanh…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-
-          <div className="mt-2 flex items-center justify-between text-xs">
-            <button
-              type="button"
-              className="rounded text-sky-700 transition-colors hover:text-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-              onClick={() => onChange(options)}
-            >
-              Chọn tất cả
-            </button>
-            <button
-              type="button"
-              className="rounded text-slate-500 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-              onClick={() => onChange([])}
-            >
-              Bỏ chọn
-            </button>
-          </div>
-
-          <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
-            {filteredOptions.length === 0 ? (
-              <p className="text-xs text-slate-500">Không có mục phù hợp.</p>
-            ) : (
-              filteredOptions.map((item) => (
-                <label
-                  key={item}
-                  className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-slate-100"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSet.has(item)}
-                    onChange={() => toggleItem(item)}
-                  />
-                  <span className="text-sm text-slate-700">{item}</span>
-                </label>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function detailHrefForItem(item: SearchItem) {
-  if (item.entityType === "plan") {
-    return `/plan-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-  }
-
-  if (item.entityType === "project") {
-    return `/project-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-  }
-
-  return `/package-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-}
-
-function ownerTextForItem(item: SearchItem) {
-  return item.entityType === "package" ? item.inviter : item.owner;
-}
-
-function fieldTextForItem(item: SearchItem) {
-  if (item.entityType === "plan") {
-    return [item.field, item.procurementMethod].filter(Boolean).join(" / ");
-  }
-
-  if (item.entityType === "project") {
-    return item.projectGroup;
-  }
-
-  return item.category;
-}
-
-function idHeaderForEntity(entityType: SearchItem["entityType"]) {
-  if (entityType === "plan") {
-    return "Mã KHLCNT";
-  }
-
-  if (entityType === "project") {
-    return "Mã dự án";
-  }
-
-  return "Số TBMT";
-}
-
-function titleHeaderForEntity(entityType: SearchItem["entityType"]) {
-  if (entityType === "plan") {
-    return "Tên KHLCNT";
-  }
-
-  if (entityType === "project") {
-    return "Tên dự án";
-  }
-
-  return "Tên gói thầu";
-}
-
-function deadlineHeaderForEntity(entityType: SearchItem["entityType"]) {
-  if (entityType === "plan") {
-    return "Tiến độ";
-  }
-
-  if (entityType === "project") {
-    return "Phê duyệt";
-  }
-
-  return "Đóng thầu";
-}
-
-function budgetHeaderForEntity(entityType: SearchItem["entityType"]) {
-  if (entityType === "project") {
-    return "Tổng mức đầu tư";
-  }
-
-  return "Giá gói thầu";
-}
-
-function deadlineTextForItem(item: SearchItem) {
-  if (item.entityType === "package") {
-    return formatDate(item.closingAt);
-  }
-
-  if (item.entityType === "plan") {
-    return item.timeline ?? "-";
-  }
-
-  return formatDate(item.approvedAt);
-}
-
-function entityLabelForMode(mode: SearchMode) {
-  return SEARCH_ENTITY_LABELS[getSearchEntityType(mode)];
-}
-
-function selectedKey(item: SearchItem) {
-  return `${item.entityType}:${item.externalId}`;
-}
-
-function ResultActions({
-  item,
-  addWatchlist,
-}: {
-  item: SearchItem;
-  addWatchlist: ReturnType<typeof api.watchlist.addItem.useMutation>;
-}) {
-  return (
-    <div className="flex min-w-[180px] flex-wrap gap-1.5">
-      <Link
-        href={detailHrefForItem(item)}
-        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-      >
-        <Eye className="h-3.5 w-3.5" aria-hidden />
-        Chi tiết
-      </Link>
-      <a
-        href={item.sourceUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
-      >
-        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-        Nguồn
-      </a>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="px-1.5 py-1"
-        leftIcon={<BellPlus className="h-3.5 w-3.5" />}
-        onClick={() =>
-          addWatchlist.mutate({
-            type: item.entityType,
-            refKey: item.externalId,
-            label: item.title,
-          })
-        }
-      >
-        Theo dõi
-      </Button>
-    </div>
-  );
-}
-
-function toSavePayload(item: SearchItem) {
-  if (item.entityType === "plan") {
-    return {
-      entityType: "plan" as const,
-      externalId: item.externalId,
-      title: item.title,
-      owner: item.owner,
-      province: item.province,
-      field: item.field,
-      procurementMethod: item.procurementMethod,
-      budget: item.budget,
-      publishedAt: item.publishedAt,
-      timeline: item.timeline,
-      sourceUrl: item.sourceUrl,
-    };
-  }
-
-  if (item.entityType === "project") {
-    return {
-      entityType: "project" as const,
-      externalId: item.externalId,
-      title: item.title,
-      owner: item.owner,
-      province: item.province,
-      projectGroup: item.projectGroup,
-      budget: item.budget,
-      publishedAt: item.publishedAt,
-      approvedAt: item.approvedAt,
-      relatedPlanCount: item.relatedPlanCount,
-      sourceUrl: item.sourceUrl,
-    };
-  }
-
-  return {
-    entityType: "package" as const,
-    externalId: item.externalId,
-    title: item.title,
-    inviter: item.inviter,
-    province: item.province,
-    category: item.category,
-    budget: item.budget,
-    publishedAt: item.publishedAt,
-    closingAt: item.closingAt,
-    sourceUrl: item.sourceUrl,
-    matchScore: item.matchScore,
-  };
-}
-
-function SourceMetaBanner({ result }: { result: SearchResult }) {
-  const exactFields = result.sourceMeta.exactFields
-    .map((field) => LOCAL_REFINEMENT_LABELS[field])
-    .join(", ");
-  const localFields = result.localRefinement.fields
-    .map((field) => LOCAL_REFINEMENT_LABELS[field])
-    .join(", ");
-
-  return (
-    <div className="space-y-2">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-        <p>
-          Nguồn public:{" "}
-          <a
-            href={result.sourceMeta.pageUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="font-semibold text-sky-700 hover:underline"
-          >
-            {result.sourceMeta.pageUrl}
-          </a>
-        </p>
-        <p className="mt-1">
-          Chính xác từ nguồn:{" "}
-          {exactFields.length > 0 ? exactFields : "phân trang/tổng số cơ bản"}
-        </p>
-        <p className="mt-1">
-          Tinh lọc trong app:{" "}
-          {localFields.length > 0 ? localFields : "không có"}
-        </p>
-      </div>
-
-      {result.sourceMeta.notices.map((notice) => (
-        <div
-          key={notice}
-          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
-        >
-          {notice}
-        </div>
-      ))}
-
-      {result.warning ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          {result.warning}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ResultMatchSummary({ result }: { result: SearchResult }) {
-  const entityLabel =
-    SEARCH_ENTITY_LABELS[result.items[0]?.entityType ?? "package"];
-  const count = result.visibleCount.toLocaleString("vi-VN");
-
-  if ((result.items[0]?.entityType ?? "package") !== "package") {
-    return (
-      <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium text-sky-600">
-        Tìm thấy{" "}
-        <span className="text-emerald-600">
-          {count} {entityLabel.toLowerCase()}
-        </span>{" "}
-        phù hợp với bộ lọc đang áp dụng.
-      </div>
-    );
-  }
-
-  return (
-    <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium">
-      <span className="text-sky-600">Tìm thấy </span>
-      <span className="text-emerald-600">{count} gói thầu </span>
-      <span className="text-emerald-600">chưa đóng thầu </span>
-      <span className="text-sky-600">trong tên gói thầu | bên mời thầu </span>
-      <span className="text-emerald-600">tại các tỉnh thành phố </span>
-      <span className="text-sky-600">bạn lựa chọn</span>
-    </div>
-  );
-}
-
-function ResultsTable(props: {
-  items: SearchItem[];
-  selectedKeys: Set<string>;
-  setSelectedKeys: Dispatch<SetStateAction<Set<string>>>;
-  addWatchlist: ReturnType<typeof api.watchlist.addItem.useMutation>;
-}) {
-  const allSelected =
-    props.items.length > 0 &&
-    props.items.every((item) => props.selectedKeys.has(selectedKey(item)));
-
-  const toggleAll = (checked: boolean) => {
-    props.setSelectedKeys(
-      checked
-        ? new Set(props.items.map((item) => selectedKey(item)))
-        : new Set<string>(),
-    );
-  };
-
-  const toggleOne = (item: SearchItem, checked: boolean) => {
-    props.setSelectedKeys((previous) => {
-      const next = new Set(previous);
-      const key = selectedKey(item);
-
-      if (checked) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-
-      return next;
-    });
-  };
-
-  if (props.items.length === 0) {
-    return null;
-  }
-
-  const entityType = props.items[0]?.entityType ?? "package";
-
-  return (
-    <div className="space-y-3">
-      <div className="space-y-2 md:hidden">
-        {props.items.map((item) => (
-          <article
-            key={selectedKey(item)}
-            className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={props.selectedKeys.has(selectedKey(item))}
-                onChange={(event) => toggleOne(item, event.target.checked)}
-                aria-label={`Chọn ${item.externalId}`}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm leading-5 font-semibold [overflow-wrap:anywhere] text-slate-950">
-                  {item.title}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {item.externalId} • {item.province}
-                </p>
-              </div>
-            </div>
-
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                <dt className="text-slate-400">Đơn vị</dt>
-                <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
-                  {ownerTextForItem(item)}
-                </dd>
-              </div>
-              <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                <dt className="text-slate-400">Lĩnh vực</dt>
-                <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
-                  {fieldTextForItem(item)}
-                </dd>
-              </div>
-              <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                <dt className="text-slate-400">Ngân sách</dt>
-                <dd className="mt-0.5 font-mono font-semibold text-slate-800">
-                  {formatCurrency(item.budget)}
-                </dd>
-              </div>
-              <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                <dt className="text-slate-400">Ngày đăng</dt>
-                <dd className="mt-0.5 font-medium text-slate-700">
-                  {formatDate(item.publishedAt)}
-                </dd>
-              </div>
-              <div className="rounded-md bg-slate-50 px-2 py-1.5">
-                <dt className="text-slate-400">
-                  {deadlineHeaderForEntity(item.entityType)}
-                </dt>
-                <dd className="mt-0.5 font-medium text-slate-700">
-                  {deadlineTextForItem(item)}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="mt-3">
-              <ResultActions item={item} addWatchlist={props.addWatchlist} />
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div className="hidden overflow-hidden rounded-lg border border-slate-200 md:block">
-        <table className="w-full table-fixed divide-y divide-slate-200 bg-white text-sm break-words">
-          <thead className="bg-white text-left text-[13px] font-semibold text-slate-500">
-            <tr>
-              <th className="w-10 px-3 py-4">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={(event) => toggleAll(event.target.checked)}
-                  aria-label="Chọn tất cả"
-                />
-              </th>
-              <th className="w-28 px-3 py-4">
-                {idHeaderForEntity(entityType)}
-              </th>
-              <th className="px-3 py-4">
-                {titleHeaderForEntity(entityType)}
-              </th>
-              <th className="w-36 px-3 py-4">Địa điểm thực hiện</th>
-              <th className="w-44 px-3 py-4">
-                Bên mời thầu/Chủ đầu tư
-              </th>
-              <th className="w-28 px-3 py-4">
-                {deadlineHeaderForEntity(entityType)}
-              </th>
-              <th className="w-32 px-3 py-4 text-right">
-                {budgetHeaderForEntity(entityType)}
-              </th>
-              <th className="w-24 px-3 py-4">Đăng tải</th>
-              <th className="w-36 px-3 py-4">Hành động</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {props.items.map((item) => (
-              <tr key={selectedKey(item)} className="align-top">
-                <td className="px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={props.selectedKeys.has(selectedKey(item))}
-                    onChange={(event) => toggleOne(item, event.target.checked)}
-                    aria-label={`Chọn ${item.externalId}`}
-                  />
-                </td>
-                <td className="px-3 py-3">
-                  <Link
-                    href={detailHrefForItem(item)}
-                    className="inline-block text-sm leading-5 font-medium [overflow-wrap:anywhere] text-[#0091ff] hover:underline"
-                  >
-                    {item.externalId}
-                  </Link>
-                </td>
-                <td className="px-3 py-3">
-                  <div>
-                    <p className="font-semibold text-slate-900">{item.title}</p>
-                    {item.entityType === "package" ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {item.category} • Match {item.matchScore}%
-                      </p>
-                    ) : null}
-                    {item.entityType === "plan" ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {item.planName}
-                      </p>
-                    ) : null}
-                    {item.entityType === "project" &&
-                    item.relatedPlans.length > 0 ? (
-                      <div className="mt-1 space-y-1">
-                        <p className="text-xs text-slate-500">
-                          KHLCNT liên quan: {item.relatedPlanCount}
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {item.relatedPlans.slice(0, 2).map((plan) => (
-                            <a
-                              key={plan.externalId}
-                              href={plan.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
-                            >
-                              {plan.title}
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-3 py-3 text-xs text-slate-700">
-                  {item.province}
-                </td>
-                <td className="px-3 py-3 text-xs text-slate-700">
-                  {ownerTextForItem(item)}
-                </td>
-                <td className="px-3 py-3 text-xs text-slate-700">
-                  {deadlineTextForItem(item)}
-                </td>
-                <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-800">
-                  {formatCurrency(item.budget)}
-                </td>
-                <td className="px-3 py-3 text-xs text-slate-700">
-                  {formatDate(item.publishedAt)}
-                </td>
-                <td className="px-3 py-3">
-                  <ResultActions
-                    item={item}
-                    addWatchlist={props.addWatchlist}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {}) {
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const pathMode = readSearchModeFromPathname(pathname);
-  const resolvedMode = fixedMode ?? pathMode ?? readSearchModeFromSearchParams(searchParams);
-
-  const initialCriteria = readSearchCriteriaFromSearchParams(searchParams);
-  const initialSavedFilterId = parsePositiveId(
-    searchParams.get("savedFilterId"),
-  );
-  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
-  const initialLimit = parsePositiveInt(searchParams.get("limit"), 20);
-  const initialSortOrder = readSortOrderFromSearchParams(searchParams);
-
-  const [mode, setMode] = useState<SearchMode>(resolvedMode);
-  const [formState, setFormState] = useState<FormState>(
-    buildFormState(initialCriteria),
-  );
-  const [appliedCriteria, setAppliedCriteria] =
-    useState<SearchCriteria>(initialCriteria);
-  const [page, setPage] = useState(initialPage);
-  const [limit, setLimit] = useState(initialLimit);
-  const [sortOrder, setSortOrder] = useState<SortOrder>(initialSortOrder);
-  const [savedFilterId, setSavedFilterId] = useState<number | null>(
-    initialSavedFilterId,
-  );
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [smartViewSuccess, setSmartViewSuccess] = useState<string | null>(null);
-  const [saveSelectedSuccess, setSaveSelectedSuccess] = useState<string | null>(
-    null,
-  );
-  const [saveSelectedError, setSaveSelectedError] = useState<string | null>(
-    null,
-  );
-  const [smartViewName, setSmartViewName] = useState("");
-  const [smartViewFrequency, setSmartViewFrequency] = useState<
-    "daily" | "weekly"
-  >("daily");
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
-    () => new Set<string>(),
-  );
-  const hydratedSavedFilterKeyRef = useRef<string>("");
-  const lastParamsKeyRef = useRef<string>(searchParams.toString());
-
-  const draftCriteria = useMemo(
-    () => buildCriteriaFromForm(formState),
-    [formState],
-  );
-
-  const queryInput = useMemo(
-    () => ({
-      mode,
-      keyword: appliedCriteria.keyword,
-      provinces: appliedCriteria.provinces,
-      packageCategories: appliedCriteria.packageCategories,
-      classifyIds: appliedCriteria.classifyIds,
-      planFields: appliedCriteria.planFields,
-      procurementMethods: appliedCriteria.procurementMethods,
-      projectGroups: appliedCriteria.projectGroups,
-      budgetMin: appliedCriteria.budgetMin,
-      budgetMax: appliedCriteria.budgetMax,
-      publishedFrom: appliedCriteria.publishedFrom
-        ? appliedCriteria.publishedFrom
-        : undefined,
-      publishedTo: appliedCriteria.publishedTo
-        ? appliedCriteria.publishedTo
-        : undefined,
-      minMatchScore: appliedCriteria.minMatchScore,
-      sortOrder,
-      offset: (page - 1) * limit,
-      limit,
-    }),
-    [appliedCriteria, limit, mode, page, sortOrder],
-  );
-  const currentSearchParamsKey = searchParams.toString();
-
-  const resultQuery = api.search.querySearchResults.useQuery(queryInput, {
-    placeholderData: (previousData) =>
-      previousData?.mode === mode ? previousData : undefined,
-  });
-  const result = resultQuery.data;
-  const items = result?.items ?? EMPTY_SEARCH_ITEMS;
   const filterOptions = result?.options ?? DEFAULT_RESULT_OPTIONS;
-  const totalPages = result ? Math.max(1, Math.ceil(result.total / limit)) : 1;
   const entityLabel = entityLabelForMode(mode);
   const isInitialResultsLoading = resultQuery.isLoading && !result;
   const isShowingPreviousResults = Boolean(resultQuery.isPlaceholderData);
+
   const budgetMinNumber = parseOptionalNumber(formState.budgetMin) ?? 0;
   const budgetMaxNumber = parseOptionalNumber(formState.budgetMax);
   const budgetSliderMax = Math.max(
@@ -949,265 +128,12 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
   const budgetSliderMinValue = Math.min(budgetMinNumber, budgetSliderMax);
   const budgetSliderMaxValue =
     budgetMaxNumber !== null
-      ? Math.min(
-          Math.max(budgetMaxNumber, budgetSliderMinValue),
-          budgetSliderMax,
-        )
+      ? Math.min(Math.max(budgetMaxNumber, budgetSliderMinValue), budgetSliderMax)
       : budgetSliderMax;
   const budgetSliderMinPercent =
     budgetSliderMax > 0 ? (budgetSliderMinValue / budgetSliderMax) * 100 : 0;
   const budgetSliderMaxPercent =
     budgetSliderMax > 0 ? (budgetSliderMaxValue / budgetSliderMax) * 100 : 100;
-
-  const draftCriteriaKey = useMemo(
-    () => serializeCriteria(draftCriteria),
-    [draftCriteria],
-  );
-  const appliedCriteriaKey = useMemo(
-    () => serializeCriteria(appliedCriteria),
-    [appliedCriteria],
-  );
-  const hasPendingSearchFilterChanges =
-    mode !== resolvedMode ||
-    draftCriteriaKey !== appliedCriteriaKey;
-
-  const budgetRangeError =
-    draftCriteria.budgetMin !== null &&
-    draftCriteria.budgetMax !== null &&
-    draftCriteria.budgetMin > draftCriteria.budgetMax;
-  const publishedDateRangeError =
-    Boolean(draftCriteria.publishedFrom) &&
-    Boolean(draftCriteria.publishedTo) &&
-    draftCriteria.publishedFrom > draftCriteria.publishedTo;
-
-  const utils = api.useUtils();
-
-  const savedFilterQuery = api.search.getSavedFilter.useQuery(
-    { id: savedFilterId ?? 0 },
-    {
-      enabled: savedFilterId !== null,
-      retry: false,
-      refetchOnWindowFocus: false,
-    },
-  );
-
-  useEffect(() => {
-    if (result && page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [page, result, totalPages]);
-
-  useEffect(() => {
-    const params = buildSearchUrlParams({
-      mode,
-      criteria: appliedCriteria,
-      page,
-      limit,
-      sortOrder,
-      savedFilterId,
-    });
-
-    const query = params.toString();
-    if (query === currentSearchParamsKey) {
-      lastParamsKeyRef.current = currentSearchParamsKey;
-      return;
-    }
-
-    lastParamsKeyRef.current = query;
-    router.replace(query ? `${pathname}?${query}` : pathname, {
-      scroll: false,
-    });
-  }, [
-    appliedCriteria,
-    currentSearchParamsKey,
-    limit,
-    mode,
-    page,
-    pathname,
-    router,
-    savedFilterId,
-    sortOrder,
-  ]);
-
-  useEffect(() => {
-    const key = currentSearchParamsKey;
-    if (key === lastParamsKeyRef.current) {
-      return;
-    }
-    lastParamsKeyRef.current = key;
-
-    const nextMode =
-      readSearchModeFromPathname(pathname) ??
-      readSearchModeFromSearchParams(searchParams);
-    const nextCriteria = readSearchCriteriaFromSearchParams(searchParams);
-    setMode(nextMode);
-    setFormState(buildFormState(nextCriteria));
-    setAppliedCriteria(nextCriteria);
-    setPage(parsePositiveInt(searchParams.get("page"), 1));
-    setLimit(parsePositiveInt(searchParams.get("limit"), 20));
-    setSortOrder(readSortOrderFromSearchParams(searchParams));
-    setSavedFilterId(parsePositiveId(searchParams.get("savedFilterId")));
-  }, [currentSearchParamsKey, pathname, searchParams]);
-
-  const saveFilter = api.search.saveFilter.useMutation({
-    onSuccess: async (savedFilter) => {
-      setSaveError(null);
-      setSmartViewSuccess(`Đã lưu Smart View "${savedFilter.name}".`);
-      setSmartViewName(savedFilter.name);
-      setSavedFilterId(savedFilter.id);
-      setSmartViewFrequency(savedFilter.notificationFrequency);
-      await utils.search.listSavedFilters.invalidate();
-    },
-    onError: (error) => {
-      setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể lưu Smart View.");
-    },
-  });
-
-  const updateSavedFilter = api.search.updateSavedFilter.useMutation({
-    onSuccess: async (savedFilter) => {
-      setSaveError(null);
-      setSmartViewSuccess(`Đã cập nhật Smart View "${savedFilter.name}".`);
-      setSmartViewName(savedFilter.name);
-      setSmartViewFrequency(savedFilter.notificationFrequency);
-      hydratedSavedFilterKeyRef.current = `${savedFilter.id}:${savedFilter.updatedAt}`;
-      await Promise.all([
-        utils.search.listSavedFilters.invalidate(),
-        utils.search.getSavedFilter.invalidate({ id: savedFilter.id }),
-      ]);
-    },
-    onError: (error) => {
-      setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể cập nhật Smart View.");
-    },
-  });
-
-  const addWatchlist = api.watchlist.addItem.useMutation({
-    onSuccess: async () => {
-      await utils.watchlist.listItems.invalidate();
-    },
-  });
-
-  const saveSelectedResults = api.search.saveSelectedResults.useMutation({
-    onSuccess: async (saveResult) => {
-      setSaveSelectedError(null);
-      setSaveSelectedSuccess(
-        `Đã lưu ${saveResult.savedCount} mục, bỏ qua ${saveResult.skippedCount} mục trùng.`,
-      );
-      setSelectedKeys(new Set<string>());
-    },
-    onError: (error) => {
-      setSaveSelectedSuccess(null);
-      setSaveSelectedError(error.message ?? "Không thể lưu các mục đã chọn.");
-    },
-  });
-
-  useEffect(() => {
-    setSelectedKeys((previous) => {
-      const visible = new Set(items.map((item) => selectedKey(item)));
-      const next = new Set<string>();
-
-      previous.forEach((value) => {
-        if (visible.has(value)) {
-          next.add(value);
-        }
-      });
-
-      return next;
-    });
-  }, [items]);
-
-  useEffect(() => {
-    if (savedFilterId === null) {
-      hydratedSavedFilterKeyRef.current = "";
-      setSmartViewName("");
-      setSmartViewFrequency("daily");
-      setSaveError(null);
-      setSmartViewSuccess(null);
-      return;
-    }
-
-    if (!savedFilterQuery.data) {
-      return;
-    }
-
-    const hydratedKey = `${savedFilterQuery.data.id}:${savedFilterQuery.data.updatedAt}`;
-    if (hydratedSavedFilterKeyRef.current === hydratedKey) {
-      return;
-    }
-
-    hydratedSavedFilterKeyRef.current = hydratedKey;
-    const nextMode = savedFilterQuery.data.mode;
-    setMode(nextMode);
-    setFormState(buildFormState(savedFilterQuery.data.criteria));
-    setAppliedCriteria(savedFilterQuery.data.criteria);
-    setSmartViewName(savedFilterQuery.data.name);
-    setSmartViewFrequency(savedFilterQuery.data.notificationFrequency);
-    setPage(1);
-    const targetPath = getSearchPathForMode(nextMode);
-    if (pathname !== targetPath) {
-      router.replace(targetPath);
-    }
-  }, [pathname, router, savedFilterId, savedFilterQuery.data]);
-
-  const selectedItems = useMemo(
-    () => items.filter((item) => selectedKeys.has(selectedKey(item))),
-    [items, selectedKeys],
-  );
-  const appliedChips = summarizeSearchCriteria(mode, appliedCriteria);
-
-  const persistSmartView = () => {
-    if (budgetRangeError || publishedDateRangeError) {
-      return;
-    }
-
-    const payload = {
-      name:
-        smartViewName.trim() ||
-        `Smart View ${new Date().toLocaleTimeString("vi-VN")}`,
-      mode,
-      keyword: appliedCriteria.keyword,
-      provinces: appliedCriteria.provinces,
-      packageCategories: appliedCriteria.packageCategories,
-      classifyIds: appliedCriteria.classifyIds,
-      planFields: appliedCriteria.planFields,
-      procurementMethods: appliedCriteria.procurementMethods,
-      projectGroups: appliedCriteria.projectGroups,
-      budgetMin: appliedCriteria.budgetMin,
-      budgetMax: appliedCriteria.budgetMax,
-      publishedFrom: appliedCriteria.publishedFrom
-        ? appliedCriteria.publishedFrom
-        : undefined,
-      publishedTo: appliedCriteria.publishedTo
-        ? appliedCriteria.publishedTo
-        : undefined,
-      minMatchScore: appliedCriteria.minMatchScore,
-      notificationFrequency: smartViewFrequency,
-    };
-
-    if (savedFilterId !== null) {
-      updateSavedFilter.mutate({
-        id: savedFilterId,
-        ...payload,
-      });
-      return;
-    }
-
-    saveFilter.mutate(payload);
-  };
-
-  const applyDraftFilters = () => {
-    if (budgetRangeError || publishedDateRangeError) {
-      return;
-    }
-
-    setAppliedCriteria(draftCriteria);
-    setPage(1);
-    setSaveError(null);
-    setSmartViewSuccess(null);
-    setSaveSelectedSuccess(null);
-    setSaveSelectedError(null);
-  };
 
   const applyDraftFiltersOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) {
@@ -1218,151 +144,60 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
     applyDraftFilters();
   };
 
-  const resetFilters = () => {
-    setFormState(buildFormState(emptySearchCriteria));
-    setAppliedCriteria({ ...emptySearchCriteria });
-    setPage(1);
-    setSelectedKeys(new Set<string>());
-  };
-
-  const isEditingSmartView = savedFilterId !== null;
-
   return (
     <div className="space-y-4">
-      <section id="search-modes" className="panel scroll-mt-6 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">
-              Trung tâm tìm kiếm BidWinner public
-            </h2>
-            <p className="mt-1 max-w-3xl text-sm text-slate-500">
-              Một trang tìm kiếm cho đủ 5 chế độ: gói thầu, theo địa phương,
-              ngành nghề & địa phương, KHLCNT và dự án đầu tư phát triển.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/saved-items/smart-views"
-              className="inline-flex min-h-10 touch-manipulation items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
-              Smart Views & Watchlist
-            </Link>
-          </div>
-        </div>
+      <section id="search-modes" className="panel scroll-mt-6 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div
+            role="tablist"
+            aria-label="Chế độ tìm kiếm"
+            className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1 pb-1"
+          >
+            {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
+              const isActive = mode === tabMode;
+              const tabHref = getSearchPathForMode(tabMode);
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          {(Object.keys(SEARCH_MODE_LABELS) as SearchMode[]).map((tabMode) => {
-            const isActive = mode === tabMode;
-            const tabHref = getSearchPathForMode(tabMode);
-
-            return (
-              <Link
-                key={tabMode}
-                href={tabHref}
-                className={`rounded-lg border px-4 py-3 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
-                  isActive
-                    ? "border-sky-400 bg-sky-50"
-                    : "border-slate-200 bg-white hover:border-slate-300"
-                }`}
-              >
-                <p className="text-sm font-semibold text-slate-900">
+              return (
+                <Link
+                  key={tabMode}
+                  href={tabHref}
+                  role="tab"
+                  aria-selected={isActive}
+                  title={SEARCH_MODE_DESCRIPTIONS[tabMode]}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+                    isActive
+                      ? "border-sky-400 bg-sky-50 text-sky-900"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                  }`}
+                >
                   {SEARCH_MODE_LABELS[tabMode]}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {SEARCH_MODE_DESCRIPTIONS[tabMode]}
-                </p>
-              </Link>
-            );
-          })}
+                </Link>
+              );
+            })}
+          </div>
+          <Link
+            href="/saved-items/smart-views"
+            className="hidden shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:inline-flex"
+          >
+            <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
+            Smart Views
+          </Link>
         </div>
 
-        <div
-          id="search-filters"
-          className="mt-4 scroll-mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Bộ lọc đang áp dụng
-            </p>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900"
-              onClick={resetFilters}
-            >
-              <X className="h-3.5 w-3.5" aria-hidden />
-              Xóa tất cả
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {appliedChips.map((chip) => (
-              <span
-                key={chip}
-                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
-              >
-                {chip}
-              </span>
-            ))}
-          </div>
-        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          {SEARCH_MODE_DESCRIPTIONS[mode]}
+        </p>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr]">
-          <FilterField label="Tên Smart View" htmlFor="smart-view-name">
-            <input
-              id="smart-view-name"
-              className={controlClass}
-              placeholder="Đặt tên cho bộ lọc đã áp dụng"
-              value={smartViewName}
-              onChange={(event) => setSmartViewName(event.target.value)}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[12rem] flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+              aria-hidden
             />
-          </FilterField>
-          <FilterField
-            label="Tần suất thông báo"
-            htmlFor="smart-view-frequency"
-          >
-            <select
-              id="smart-view-frequency"
-              className={controlClass}
-              value={smartViewFrequency}
-              onChange={(event) =>
-                setSmartViewFrequency(event.target.value as "daily" | "weekly")
-              }
-            >
-              <option value="daily">Hằng ngày</option>
-              <option value="weekly">Hằng tuần</option>
-            </select>
-          </FilterField>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            disabled={
-              budgetRangeError ||
-              publishedDateRangeError ||
-              !hasPendingSearchFilterChanges
-            }
-            leftIcon={<SlidersHorizontal className="h-4 w-4" />}
-            onClick={applyDraftFilters}
-          >
-            Áp dụng bộ lọc
-          </Button>
-          <Button
-            variant="secondary"
-            isLoading={saveFilter.isPending || updateSavedFilter.isPending}
-            disabled={budgetRangeError || publishedDateRangeError}
-            leftIcon={<BookmarkCheck className="h-4 w-4" />}
-            onClick={persistSmartView}
-          >
-            {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
-          </Button>
-        </div>
-
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <FilterField label="Từ khóa" htmlFor="search-keyword">
             <input
               id="search-keyword"
-              className={controlClass}
+              aria-label="Từ khóa"
+              className={`${controlClass} pl-9`}
               value={formState.keyword}
               onChange={(event) =>
                 setFormState((previous) => ({
@@ -1371,10 +206,70 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
                 }))
               }
               onKeyDown={applyDraftFiltersOnEnter}
-              placeholder="Nhập nhiều cụm, phân tách bằng dấu phẩy"
+              placeholder="Từ khóa, phân tách bằng dấu phẩy"
             />
-          </FilterField>
+          </div>
+          <button
+            type="button"
+            aria-expanded={filtersOpen}
+            aria-controls="search-advanced-filters"
+            onClick={() => setFiltersOpen((previous) => !previous)}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+              filtersOpen || appliedChips.length > 0
+                ? "border-sky-300 bg-sky-50 text-sky-800"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4" aria-hidden />
+            Bộ lọc
+            {appliedChips.length > 0 ? (
+              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-xs font-bold text-white">
+                {appliedChips.length}
+              </span>
+            ) : null}
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform duration-150 ${filtersOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
+          <Button
+            variant="primary"
+            className="shrink-0"
+            disabled={budgetRangeError || publishedDateRangeError}
+            leftIcon={<Search className="h-4 w-4" />}
+            onClick={applyDraftFilters}
+          >
+            Tìm
+          </Button>
+        </div>
 
+        {appliedChips.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {appliedChips.map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
+              >
+                {chip}
+              </span>
+            ))}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+              onClick={resetFilters}
+            >
+              <X className="h-3 w-3" aria-hidden />
+              Xóa
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          id="search-advanced-filters"
+          hidden={!filtersOpen}
+          className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+        >
+        <div className="grid gap-3 lg:grid-cols-2">
           <FilterField label="Tỉnh / thành">
             {mode === "package_location" ? (
               <select
@@ -1513,10 +408,7 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
           >
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <label
-                  className="flex flex-col gap-1"
-                  htmlFor="search-budget-min"
-                >
+                <label className="flex flex-col gap-1" htmlFor="search-budget-min">
                   <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
                     Ngân sách từ
                   </span>
@@ -1535,10 +427,7 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
                   />
                 </label>
 
-                <label
-                  className="flex flex-col gap-1"
-                  htmlFor="search-budget-max"
-                >
+                <label className="flex flex-col gap-1" htmlFor="search-budget-max">
                   <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
                     Ngân sách đến
                   </span>
@@ -1582,9 +471,7 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
                     className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-sky-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
                     onChange={(event) => {
                       const next = Number(event.currentTarget.value);
-                      const currentMax = parseOptionalNumber(
-                        formState.budgetMax,
-                      );
+                      const currentMax = parseOptionalNumber(formState.budgetMax);
                       const bounded =
                         currentMax !== null ? Math.min(next, currentMax) : next;
 
@@ -1706,6 +593,50 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
           </div>
         ) : null}
 
+        <div className="mt-4 border-t border-slate-200 pt-3">
+          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
+            <FilterField label="Tên Smart View" htmlFor="smart-view-name">
+              <input
+                id="smart-view-name"
+                className={controlClass}
+                placeholder="Đặt tên cho bộ lọc đã áp dụng"
+                value={smartViewName}
+                onChange={(event) => setSmartViewName(event.target.value)}
+              />
+            </FilterField>
+            <FilterField
+              label="Tần suất thông báo"
+              htmlFor="smart-view-frequency"
+            >
+              <select
+                id="smart-view-frequency"
+                className={controlClass}
+                value={smartViewFrequency}
+                onChange={(event) =>
+                  setSmartViewFrequency(
+                    event.target.value as "daily" | "weekly",
+                  )
+                }
+              >
+                <option value="daily">Hằng ngày</option>
+                <option value="weekly">Hằng tuần</option>
+              </select>
+            </FilterField>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              isLoading={saveFilter.isPending || updateSavedFilter.isPending}
+              disabled={budgetRangeError || publishedDateRangeError}
+              leftIcon={<BookmarkCheck className="h-4 w-4" />}
+              onClick={persistSmartView}
+            >
+              {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
+            </Button>
+          </div>
+        </div>
+        </div>
+
         {isEditingSmartView ? (
           <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1777,8 +708,10 @@ export function SearchPageClient({ fixedMode }: { fixedMode?: SearchMode } = {})
             </p>
             {result ? (
               <p className="mt-1 text-xs text-slate-500">
-                Tổng nguồn: {result.total.toLocaleString("vi-VN")} • Hiển thị
-                cửa sổ này: {result.visibleCount} • Cập nhật:{" "}
+                {result.localRefinement.active
+                  ? `Phù hợp bộ lọc: ${result.total.toLocaleString("vi-VN")} • Đã quét ${result.scannedCount.toLocaleString("vi-VN")} mục nguồn`
+                  : `Tổng nguồn: ${result.total.toLocaleString("vi-VN")}`}{" "}
+                • Trang này: {result.items.length} • Cập nhật:{" "}
                 {formatDateTime(result.fetchedAt)}
               </p>
             ) : (

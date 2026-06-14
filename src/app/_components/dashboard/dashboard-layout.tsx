@@ -108,11 +108,6 @@ const navSections: NavSection[] = [
         icon: "documents",
       },
       {
-        href: "/import-mapping",
-        label: "Import & Mapping",
-        icon: "excel",
-      },
-      {
         href: "/materials",
         label: "Sản phẩm / vật tư",
         icon: "materials",
