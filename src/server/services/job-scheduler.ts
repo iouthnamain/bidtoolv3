@@ -202,7 +202,7 @@ async function runExcelResearchJob(jobId: string) {
         .where(eq(excelResearchJobs.id, jobId))
         .limit(1);
 
-      if (!job || job.status !== "running") {
+      if (job?.status !== "running") {
         break;
       }
 

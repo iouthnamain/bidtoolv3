@@ -284,9 +284,13 @@ export function ResearchEnrichClient() {
     approveRow.mutate(
       { jobId, rowNumber },
       {
-        onSuccess: async () => {
-          await Promise.all([listRowsQuery.refetch(), rowDetailQuery.refetch()]);
-          toast.success("Đã duyệt dòng.");
+        onSuccess: () => {
+          void Promise.all([
+            listRowsQuery.refetch(),
+            rowDetailQuery.refetch(),
+          ]).then(() => {
+            toast.success("Đã duyệt dòng.");
+          });
         },
         onError: (err: { message: string }) => toast.error(err.message || "Không duyệt được dòng."),
       },
@@ -298,9 +302,13 @@ export function ResearchEnrichClient() {
     rejectRow.mutate(
       { jobId, rowNumber },
       {
-        onSuccess: async () => {
-          await Promise.all([listRowsQuery.refetch(), rowDetailQuery.refetch()]);
-          toast.success("Đã từ chối dòng.");
+        onSuccess: () => {
+          void Promise.all([
+            listRowsQuery.refetch(),
+            rowDetailQuery.refetch(),
+          ]).then(() => {
+            toast.success("Đã từ chối dòng.");
+          });
         },
         onError: (err: { message: string }) => toast.error(err.message || "Không từ chối được dòng."),
       },

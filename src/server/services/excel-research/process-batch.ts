@@ -304,7 +304,7 @@ export async function processJobBatch(jobId: string): Promise<number> {
     .where(eq(excelResearchJobs.id, jobId))
     .limit(1);
 
-  if (!job || job.status !== "running") {
+  if (job?.status !== "running") {
     return countPendingRows(jobId);
   }
 

@@ -127,7 +127,11 @@ function parseMaterialIds(value: string | null) {
 
 function materialNameFromItem(item: EnrichmentItem) {
   const snapshot = item.originalSnapshot as Partial<MaterialEnrichmentInput>;
-  return snapshot.name?.trim() || `Vật tư #${item.materialId}`;
+  const trimmedName = snapshot.name?.trim();
+  if (!trimmedName) {
+    return `Vật tư #${item.materialId}`;
+  }
+  return trimmedName;
 }
 
 function itemNeedsReview(item: EnrichmentItem) {
@@ -240,7 +244,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     { jobId: focusedJobId ?? EMPTY_UUID },
     {
       enabled: focusedJobId !== null,
-      refetchInterval: (query) => {
+      refetchInterval: (_query) => {
         const job = jobQuery.data;
         return isJobActive(job) ? JOB_POLL_MS : false;
       },
@@ -1050,7 +1054,8 @@ function EnrichmentReviewDialog({
 
   const snapshot = (item?.originalSnapshot ?? {}) as Partial<MaterialEnrichmentInput>;
   const result = item?.result;
-  const materialName = snapshot.name?.trim() || "Vật tư";
+  const trimmedName = snapshot.name?.trim();
+  const materialName = trimmedName ?? "Vật tư";
 
   return (
     <dialog

@@ -229,7 +229,7 @@ async function saveWebCandidates(
       .set({
         catalogPdfUrls: [
           ...new Set([
-            ...((rows[0].catalogPdfUrls as string[]) ?? []),
+            ...(rows[0].catalogPdfUrls ?? []),
             ...extractedPdfUrls,
           ]),
         ],

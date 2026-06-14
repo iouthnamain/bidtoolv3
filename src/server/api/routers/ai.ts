@@ -111,12 +111,14 @@ export const aiRouter = createTRPCRouter({
         .optional(),
     )
     .mutation(async ({ input }) => {
+      const inputApiKey = input?.apiKey?.trim();
       const apiKey =
-        input?.apiKey?.trim() || (await resolveOpenRouterApiKey());
-      const model =
-        input?.model?.trim() ||
-        (await resolveOpenRouterDefaultModel()) ||
-        DEFAULT_OPENROUTER_MODEL;
+        inputApiKey && inputApiKey.length > 0
+          ? inputApiKey
+          : await resolveOpenRouterApiKey();
+      const inputModel = input?.model?.trim();
+      const resolvedModel = await resolveOpenRouterDefaultModel();
+      const model = inputModel ?? resolvedModel ?? DEFAULT_OPENROUTER_MODEL;
 
       try {
         return await testOpenRouterConnection({
@@ -137,8 +139,8 @@ export const aiRouter = createTRPCRouter({
 
   chat: publicProcedure.input(chatInputSchema).mutation(async ({ input }) => {
     const apiKey = requireOpenRouterApiKey(await resolveOpenRouterApiKey());
-    const model =
-      input.model?.trim() || (await resolveOpenRouterDefaultModel());
+    const inputModel = input.model?.trim();
+    const model = inputModel ?? (await resolveOpenRouterDefaultModel());
 
     try {
       const result = await createOpenRouterChatCompletion({

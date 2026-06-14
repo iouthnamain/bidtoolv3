@@ -2,7 +2,7 @@
 
 > **Status:** Phase 1 implemented (June 2026)  
 > **Route:** `/research-enrich`  
-> **Related:** Catalog-only fill at `/enrich` — see [excel-enrich-export-plan.md](./excel-enrich-export-plan.md)
+> **Related:** Catalog-only fill at `/enrich` — see [excel-enrich-export-plan.md](./excel-enrich-export-plan.md). **DB-backed catalog enrichment** at `/materials/enrich` — see [material-enrichment.md](./material-enrichment.md).
 
 ## What this feature does
 

@@ -124,7 +124,7 @@ export async function createJob(input: {
 
   await db.insert(excelResearchJobs).values({
     id: jobId,
-    name: input.name?.trim() || input.fileName,
+    name: input.name?.trim() ? input.name.trim() : input.fileName,
     status: "draft",
     sourceFileName: input.fileName,
     sheetName: sheet.name,
@@ -270,7 +270,7 @@ async function runResearchLoop(jobId: string, signal: AbortSignal) {
   try {
     while (!signal.aborted) {
       const job = await getJob(jobId);
-      if (!job || job.status !== "running") break;
+      if (job?.status !== "running") break;
 
       const remaining = await processJobBatch(jobId);
       if (remaining === 0) {
@@ -405,7 +405,7 @@ export async function approveRow(input: {
     throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy dòng.");
   }
 
-  const result = (row.resultJson ?? {}) as Record<string, unknown>;
+  const result = row.resultJson ?? {};
   const accepted =
     input.acceptedFields ??
     ((result.accepted_fields as FillableField[] | undefined) ?? []);

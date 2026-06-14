@@ -76,7 +76,8 @@ function buildExtractionUserPrompt(
 
 function extractJsonObject(content: string) {
   const trimmed = content.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const fencedPattern = /```(?:json)?\s*([\s\S]*?)```/i;
+  const fenced = fencedPattern.exec(trimmed);
   const candidate = fenced?.[1]?.trim() ?? trimmed;
   const start = candidate.indexOf("{");
   const end = candidate.lastIndexOf("}");

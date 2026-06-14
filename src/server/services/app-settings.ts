@@ -53,13 +53,17 @@ export async function resolveOpenRouterDefaultModel(): Promise<string> {
   }
 
   const dbModel = await getSetting(SETTING_KEYS.openrouterDefaultModel);
-  return dbModel?.trim() || DEFAULT_OPENROUTER_MODEL;
+  const trimmed = dbModel?.trim();
+  if (!trimmed) {
+    return DEFAULT_OPENROUTER_MODEL;
+  }
+  return trimmed;
 }
 
 export async function getOpenRouterConfig() {
   const envKey = env.OPENROUTER_API_KEY?.trim();
   const dbKey = await getSetting(SETTING_KEYS.openrouterApiKey);
-  const apiKey = envKey || dbKey || null;
+  const apiKey = envKey ?? dbKey ?? null;
   const defaultModel = await resolveOpenRouterDefaultModel();
   const source = envKey
     ? ("env" as const)
