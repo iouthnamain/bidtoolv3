@@ -7,6 +7,9 @@ export function parseOptionalNumber(value: string) {
 }
 
 export function parseNumberOrDefault(value: string, fallback: number) {
+  if (!value.trim()) {
+    return fallback;
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }

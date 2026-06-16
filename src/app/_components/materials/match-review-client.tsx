@@ -16,6 +16,14 @@ import { api, type RouterOutputs } from "~/trpc/react";
 type MatchDecisionRow =
   RouterOutputs["material"]["listPendingMatches"]["items"][number];
 
+function safeHostname(value: string): string {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return value;
+  }
+}
+
 export function MatchReviewClient() {
   const [minConfidence, setMinConfidence] = useState(0);
   const toast = useToast();
@@ -62,7 +70,7 @@ export function MatchReviewClient() {
     );
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && minConfidence === 0) {
     return (
       <div className="panel p-5">
         <EmptyState
@@ -77,10 +85,11 @@ export function MatchReviewClient() {
     <div className="space-y-4">
       <div className="panel flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm font-medium text-slate-700">
+          <label htmlFor="match-confidence-filter" className="text-sm font-medium text-slate-700">
             Lọc độ tin cậy ≥
           </label>
           <input
+            id="match-confidence-filter"
             type="range"
             min={0}
             max={100}
@@ -110,21 +119,28 @@ export function MatchReviewClient() {
       </div>
 
       <div className="panel divide-y divide-slate-100">
-        {items.map((item) => (
-          <MatchRow
-            key={item.id}
-            item={item}
-            onAccept={() =>
-              acceptMutation.mutate({
-                decisionId: item.id,
-                materialId: item.matchedMaterialId!,
-              })
-            }
-            onReject={() => rejectMutation.mutate({ decisionId: item.id })}
-            isAccepting={acceptMutation.isPending}
-            isRejecting={rejectMutation.isPending}
-          />
-        ))}
+        {items.length === 0 ? (
+          <div className="p-5 text-sm text-slate-500">
+            Không có mục nào đạt ngưỡng độ tin cậy đã chọn. Giảm bộ lọc để xem
+            thêm.
+          </div>
+        ) : (
+          items.map((item) => (
+            <MatchRow
+              key={item.id}
+              item={item}
+              onAccept={() =>
+                acceptMutation.mutate({
+                  decisionId: item.id,
+                  materialId: item.matchedMaterialId!,
+                })
+              }
+              onReject={() => rejectMutation.mutate({ decisionId: item.id })}
+              isAccepting={acceptMutation.isPending}
+              isRejecting={rejectMutation.isPending}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -176,7 +192,7 @@ function MatchRow({
             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline truncate max-w-xs"
           >
             <ExternalLink className="h-3 w-3 shrink-0" />
-            {new URL(item.scrapedSourceUrl).hostname}
+            {safeHostname(item.scrapedSourceUrl)}
           </a>
         )}
         {topCandidate && (

@@ -1131,6 +1131,8 @@ export function MaterialsListClient() {
       clearSelection();
       void utils.catalogDocument.list.invalidate();
       void utils.catalogDocument.listByMaterial.invalidate();
+      void utils.material.searchMaterials.invalidate();
+      void utils.material.getMaterialSummary.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });

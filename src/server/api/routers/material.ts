@@ -1514,15 +1514,13 @@ export const materialRouter = createTRPCRouter({
       const [updated] = await ctx.db
         .update(materials)
         .set({
-          metadataJson: {
-            ...material.metadataJson,
-            ...buildMaterialMetadata({
-              priceSources: metadata.priceSources,
-              shopScrape: metadata.shopScrape,
-              fieldLocks:
-                Object.keys(nextLocks).length > 0 ? nextLocks : undefined,
-            }),
-          },
+          metadataJson: buildMaterialMetadata({
+            priceSources: metadata.priceSources,
+            shopScrape: metadata.shopScrape,
+            webEnrichment: metadata.webEnrichment,
+            fieldLocks:
+              Object.keys(nextLocks).length > 0 ? nextLocks : undefined,
+          }),
           updatedAt: new Date().toISOString(),
         })
         .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))

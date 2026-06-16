@@ -96,8 +96,8 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
             {result.errors.length.toLocaleString("vi-VN")} lỗi chi tiết
           </summary>
           <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-            {result.errors.map((error) => (
-              <li key={error}>{error}</li>
+            {result.errors.map((error, index) => (
+              <li key={`error-${index}`}>{error}</li>
             ))}
           </ul>
         </details>
@@ -108,8 +108,8 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
             {(result.warnings?.length ?? 0).toLocaleString("vi-VN")} cảnh báo
           </summary>
           <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-            {result.warnings?.map((warning) => (
-              <li key={warning}>{warning}</li>
+            {result.warnings?.map((warning, index) => (
+              <li key={`warning-${index}`}>{warning}</li>
             ))}
           </ul>
         </details>

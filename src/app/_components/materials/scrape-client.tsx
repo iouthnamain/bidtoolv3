@@ -898,13 +898,15 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const toast = useToast();
 
   useEffect(() => {
-    const storedJobId = readStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY);
-    if (storedJobId) {
-      setFocusedJobId(storedJobId);
+    if (routeJobId == null) {
+      const storedJobId = readStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY);
+      if (storedJobId) {
+        setFocusedJobId(storedJobId);
+      }
     }
     writeStoredJobId("bidtool:shop-scrape-job:v1", null);
     writeStoredJobId("bidtool:shop-import-job:v1", null);
-  }, []);
+  }, [routeJobId]);
 
   useEffect(() => {
     writeStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY, focusedJobId);
