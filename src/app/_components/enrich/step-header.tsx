@@ -2,12 +2,13 @@
 
 import { Check } from "lucide-react";
 
-export type EnrichStep = 1 | 2 | 3;
+export type EnrichStep = 1 | 2 | 3 | 4;
 
 const STEPS: Array<{ id: EnrichStep; label: string }> = [
   { id: 1, label: "Tải lên & map cột" },
-  { id: 2, label: "Xét duyệt & chọn" },
-  { id: 3, label: "Xuất file" },
+  { id: 2, label: "Đối chiếu catalog" },
+  { id: 3, label: "Nghiên cứu web" },
+  { id: 4, label: "Xuất file" },
 ];
 
 export function StepHeader({
@@ -22,7 +23,7 @@ export function StepHeader({
 }) {
   return (
     <nav
-      aria-label="Các bước đối chiếu Excel"
+      aria-label="Các bước đối chiếu và nghiên cứu Excel"
       className="panel flex flex-wrap items-center gap-2 p-2 sm:gap-1 sm:p-3"
     >
       {STEPS.map((step, index) => {

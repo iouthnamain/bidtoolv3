@@ -802,6 +802,11 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                             <p className="text-xs text-slate-500">
                               #{item.materialId}
                             </p>
+                            {item.result.error ? (
+                              <p className="mt-1 text-xs text-amber-700">
+                                {item.result.error}
+                              </p>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2">
                             <Badge tone={itemStatusTone[status] ?? "neutral"}>

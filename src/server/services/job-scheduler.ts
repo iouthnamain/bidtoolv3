@@ -92,6 +92,10 @@ export function abortShopScrapeJob(jobId: string) {
   activeScrapeRuns.get(jobId)?.abort();
 }
 
+export function isShopScrapeJobActivelyRunning(jobId: string) {
+  return activeScrapeRuns.has(jobId);
+}
+
 export function abortShopImportJob(jobId: string) {
   activeImportRuns.get(jobId)?.abort();
 }

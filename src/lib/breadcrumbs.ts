@@ -55,7 +55,8 @@ const ROUTE_LABELS: Record<string, string> = {
 
   // Enrich
   "/enrich": "Đối chiếu & điền Excel",
-  "/research-enrich": "Nghiên cứu Excel",
+  "/enrich/jobs": "Job nghiên cứu",
+  "/enrich/jobs/:jobId": "Chi tiết job",
 
   // Catalog PDFs
   "/catalog-pdfs": "Catalog PDFs",

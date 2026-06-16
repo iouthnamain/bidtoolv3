@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const metadata = createPageMetadata({
   title: "Đối chiếu & điền Excel",
   description:
-    "Tải lên Excel còn thiếu trường, đối chiếu với catalog vật tư bằng độ tương tự (pg_trgm) và điền các ô trống rồi xuất lại file.",
+    "Tải lên Excel còn thiếu trường, đối chiếu catalog, nghiên cứu web (tùy chọn) và xuất file đã điền.",
   path: "/enrich",
   keywords: ["đối chiếu Excel", "điền vật tư", "enrich Excel", "ghép catalog"],
 });

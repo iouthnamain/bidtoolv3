@@ -9,11 +9,17 @@ export type OpenRouterChatMessage = {
   content: string;
 };
 
+type OpenRouterMessageContentPart = {
+  type?: string;
+  text?: string;
+};
+
 type OpenRouterChatResponse = {
   choices?: Array<{
     message?: {
       role?: string;
-      content?: string;
+      content?: string | OpenRouterMessageContentPart[] | null;
+      reasoning?: string | null;
     };
   }>;
   model?: string;
@@ -50,11 +56,46 @@ function formatOpenRouterError(status: number, body: string) {
   return `OpenRouter error (${status}): ${body.slice(0, 300)}`;
 }
 
+type OpenRouterAssistantMessage = {
+  role?: string;
+  content?: string | OpenRouterMessageContentPart[] | null;
+  reasoning?: string | null;
+};
+
+export function extractOpenRouterMessageContent(
+  message: OpenRouterAssistantMessage | null | undefined,
+) {
+  if (!message) {
+    return "";
+  }
+
+  const content = message.content;
+  if (typeof content === "string" && content.trim()) {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => (part?.type === "text" ? part.text?.trim() ?? "" : ""))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    if (text) {
+      return text;
+    }
+  }
+
+  const reasoning =
+    typeof message.reasoning === "string" ? message.reasoning.trim() : "";
+  return reasoning;
+}
+
 export async function createOpenRouterChatCompletion(input: {
   apiKey: string;
   model: string;
   messages: OpenRouterChatMessage[];
   signal?: AbortSignal;
+  responseFormat?: "json_object" | "text";
 }) {
   const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
@@ -62,6 +103,9 @@ export async function createOpenRouterChatCompletion(input: {
     body: JSON.stringify({
       model: input.model,
       messages: input.messages,
+      ...(input.responseFormat === "json_object"
+        ? { response_format: { type: "json_object" } }
+        : {}),
     }),
     signal: input.signal,
   });
@@ -73,7 +117,7 @@ export async function createOpenRouterChatCompletion(input: {
   }
 
   const data = JSON.parse(body) as OpenRouterChatResponse;
-  const content = data.choices?.[0]?.message?.content?.trim();
+  const content = extractOpenRouterMessageContent(data.choices?.[0]?.message);
 
   if (!content) {
     throw new Error("OpenRouter returned an empty response.");

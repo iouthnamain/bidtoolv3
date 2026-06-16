@@ -190,10 +190,18 @@ export const enrichSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/enrich",
     label: "Đối chiếu & điền",
-    description: "Tải Excel thiếu trường, ghép catalog và xuất file đã điền.",
+    description: "Tải Excel thiếu trường, ghép catalog, nghiên cứu web và xuất file đã điền.",
     icon: "sheet",
     tone: "emerald",
     match: "exact",
+  },
+  {
+    href: "/enrich/jobs",
+    label: "Job nghiên cứu",
+    description: "Xem và tiếp tục các job nghiên cứu web đã tạo.",
+    icon: "history",
+    tone: "violet",
+    match: "prefix",
   },
   {
     href: "/materials",

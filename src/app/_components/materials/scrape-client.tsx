@@ -372,8 +372,9 @@ function ScrapeProductDetailDialog({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {!canEdit ? (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Job đang chạy hoặc chưa sẵn sàng chỉnh sửa. Bạn có thể xem chi tiết;
-            lưu/xóa sản phẩm sau khi scrape dừng lại.
+            {job.status === "running" || job.status === "queued"
+              ? "Job đang scrape. Bạn có thể xem chi tiết; lưu/xóa sản phẩm sau khi job dừng lại hoặc gặp lỗi."
+              : "Job chưa sẵn sàng chỉnh sửa. Bạn có thể xem chi tiết sản phẩm."}
           </div>
         ) : null}
 
@@ -990,10 +991,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     canImportJob(activeJob) && selectedCount > 0 && !isImportActive;
   const canImportAll = canImportJob(activeJob) && !isImportActive;
   const canEditScrapeProducts =
-    !!activeJob &&
-    !activeJob.isExpired &&
-    !isJobActive(activeJob) &&
-    !isImportActive;
+    !!activeJob && activeJob.productsEditable && !isImportActive;
   const canDeleteSelected = canEditScrapeProducts && selectedCount > 0;
   const detailProductIndex =
     activeJob && detailProductKey

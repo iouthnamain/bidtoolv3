@@ -11,7 +11,7 @@ export function EnrichLayoutClient({
   return (
     <DashboardShell
       title="Đối chiếu & điền Excel"
-      description="Tải Excel còn thiếu trường, ghép với catalog vật tư bằng độ tương tự và điền các ô trống rồi xuất lại file."
+      description="Tải Excel còn thiếu trường, ghép catalog, nghiên cứu web (tùy chọn) và xuất file đã điền."
       sectionNavItems={enrichSectionNavItems}
       sectionNavTitle="Khu vực đối chiếu"
     >

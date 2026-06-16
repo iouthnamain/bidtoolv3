@@ -5,7 +5,10 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { env } from "~/env";
 import { db } from "~/server/db";
 import { shopScrapeJobs } from "~/server/db/schema";
-import { abortShopScrapeJob } from "~/server/services/job-scheduler";
+import {
+  abortShopScrapeJob,
+  isShopScrapeJobActivelyRunning,
+} from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import {
   sanitizeScrapedProductList,
@@ -53,6 +56,7 @@ export type ShopScrapeJobSnapshot = {
   expiresAt: string | null;
   error: string | null;
   isExpired: boolean;
+  productsEditable: boolean;
 };
 
 export type ShopScrapeJobListItem = Omit<ShopScrapeJobSnapshot, "products">;
@@ -189,17 +193,34 @@ const EDITABLE_SCRAPE_JOB_STATUSES: ShopScrapeJobStatus[] = [
   "cancelled",
 ];
 
-function assertScrapeJobProductsEditable(job: ShopScrapeJobSnapshot) {
+export function isScrapeJobProductsEditable(job: {
+  id: string;
+  status: ShopScrapeJobStatus;
+  products: ScrapedShopProduct[];
+  isExpired: boolean;
+}) {
   if (job.isExpired) {
-    throw new ShopJobServiceError("BAD_REQUEST", "Job scrape đã hết hạn.");
+    return false;
   }
-  if (ACTIVE_JOB_STATUSES.includes(job.status)) {
-    throw new ShopJobServiceError(
-      "BAD_REQUEST",
-      "Chỉ chỉnh sửa sản phẩm sau khi job scrape dừng lại.",
-    );
+  if (EDITABLE_SCRAPE_JOB_STATUSES.includes(job.status)) {
+    return true;
   }
-  if (!EDITABLE_SCRAPE_JOB_STATUSES.includes(job.status)) {
+  return (
+    job.products.length > 0 && !isShopScrapeJobActivelyRunning(job.id)
+  );
+}
+
+function assertScrapeJobProductsEditable(job: ShopScrapeJobSnapshot) {
+  if (!isScrapeJobProductsEditable(job)) {
+    if (job.isExpired) {
+      throw new ShopJobServiceError("BAD_REQUEST", "Job scrape đã hết hạn.");
+    }
+    if (isShopScrapeJobActivelyRunning(job.id)) {
+      throw new ShopJobServiceError(
+        "BAD_REQUEST",
+        "Chỉ chỉnh sửa sản phẩm sau khi job scrape dừng lại.",
+      );
+    }
     throw new ShopJobServiceError(
       "BAD_REQUEST",
       "Job scrape không thể chỉnh sửa sản phẩm.",
@@ -453,7 +474,7 @@ function toScrapeJobListItem(row: ShopScrapeJobRow): ShopScrapeJobListItem {
 function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
   const products = asScrapedProducts(row.products);
   const currentUrls = Array.isArray(row.currentUrls) ? row.currentUrls : [];
-  return {
+  const snapshot: ShopScrapeJobSnapshot = {
     id: row.id,
     status: row.status,
     url: row.url,
@@ -481,7 +502,10 @@ function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
     isExpired: row.expiresAt
       ? new Date(row.expiresAt).getTime() < Date.now()
       : false,
+    productsEditable: false,
   };
+  snapshot.productsEditable = isScrapeJobProductsEditable(snapshot);
+  return snapshot;
 }
 
 function asScrapedProducts(value: unknown): ScrapedShopProduct[] {

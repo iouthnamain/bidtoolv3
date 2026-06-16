@@ -126,11 +126,6 @@ const navSections: NavSection[] = [
         icon: "enrich",
       },
       {
-        href: "/research-enrich",
-        label: "Nghiên cứu Excel",
-        icon: "excel",
-      },
-      {
         href: "/catalog-pdfs",
         label: "Catalog PDFs",
         icon: "documents",

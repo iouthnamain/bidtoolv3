@@ -29,6 +29,7 @@
     "dev:kill": "bun run ./scripts/kill-local-dev.ts",
     "dev:run": "bun run ./scripts/local-dev.ts run",
     "dev:update": "bun run ./scripts/local-dev.ts update",
+    "db:clear": "bun run ./scripts/db-clear.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",

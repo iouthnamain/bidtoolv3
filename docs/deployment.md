@@ -45,7 +45,7 @@ builds validation is skipped with `SKIP_ENV_VALIDATION="1"`.
 | `EXCEL_RESEARCH_MAX_CONCURRENT_JOBS` | no | `1` | Excel research job concurrency — see [excel-product-research.md](./excel-product-research.md) |
 | `EXCEL_RESEARCH_BATCH_SIZE` | no | `10` | Rows per research batch |
 | `EXCEL_RESEARCH_JOB_TTL_DAYS` | no | `7` | Excel research job retention |
-| `SEARXNG_BASE_URL` | no | — | SearXNG base URL for `/research-enrich` web search |
+| `SEARXNG_BASE_URL` | no | — | SearXNG base URL for `/enrich` web research (step 3) |
 | `BIDTOOL_EXCEL_RESEARCH_DIR` | no | `data/excel-research` | On-disk storage for research job files |
 | `AI_MATCH_AUTO_THRESHOLD` | no | `0.85` | Auto-match confidence cutoff |
 | `AI_MATCH_CANDIDATE_THRESHOLD` | no | `0.4` | Candidate suggestion cutoff |

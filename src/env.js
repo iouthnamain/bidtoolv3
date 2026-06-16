@@ -37,6 +37,9 @@ export const env = createEnv({
     AI_MATCH_CANDIDATE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_DEFAULT_MODEL: z.string().optional(),
+    GEMINI_API_KEY: z.string().optional(),
+    OPENAI_COMPATIBLE_API_KEY: z.string().optional(),
+    OPENAI_COMPATIBLE_BASE_URL: z.string().url().optional(),
     EXCEL_RESEARCH_MAX_CONCURRENT_JOBS: z.coerce
       .number()
       .int()
@@ -90,6 +93,9 @@ export const env = createEnv({
     AI_MATCH_CANDIDATE_THRESHOLD: process.env.AI_MATCH_CANDIDATE_THRESHOLD,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENROUTER_DEFAULT_MODEL: process.env.OPENROUTER_DEFAULT_MODEL,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    OPENAI_COMPATIBLE_API_KEY: process.env.OPENAI_COMPATIBLE_API_KEY,
+    OPENAI_COMPATIBLE_BASE_URL: process.env.OPENAI_COMPATIBLE_BASE_URL,
     EXCEL_RESEARCH_MAX_CONCURRENT_JOBS:
       process.env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS,
     EXCEL_RESEARCH_BATCH_SIZE: process.env.EXCEL_RESEARCH_BATCH_SIZE,

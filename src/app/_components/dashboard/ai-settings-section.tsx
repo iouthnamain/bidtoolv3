@@ -11,6 +11,7 @@ import { useToast } from "~/app/_components/ui/toast";
 import { api } from "~/trpc/react";
 
 const POPULAR_MODELS = [
+  "openrouter/free",
   "openai/gpt-4o-mini",
   "openai/gpt-4o",
   "anthropic/claude-3.5-sonnet",
@@ -38,10 +39,10 @@ export function AiSettingsSection() {
   const [defaultModel, setDefaultModel] = useState("openai/gpt-4o-mini");
 
   useEffect(() => {
-    if (config?.defaultModel) {
-      setDefaultModel(config.defaultModel);
+    if (config?.openRouter?.defaultModel) {
+      setDefaultModel(config.openRouter.defaultModel);
     }
-  }, [config?.defaultModel]);
+  }, [config?.openRouter?.defaultModel]);
 
   const saveKeyMutation = api.ai.setOpenRouterApiKey.useMutation({
     onSuccess: async (nextConfig) => {
@@ -119,8 +120,8 @@ export function AiSettingsSection() {
         icon={Bot}
         iconClassName="bg-violet-600 text-white"
         badge={{
-          label: config?.configured ? "Đã cấu hình" : "Chưa cấu hình",
-          tone: config?.configured ? "success" : "warning",
+          label: config?.openRouter?.configured ? "Đã cấu hình" : "Chưa cấu hình",
+          tone: config?.openRouter?.configured ? "success" : "warning",
         }}
         action={
           <Link
@@ -162,9 +163,9 @@ export function AiSettingsSection() {
               label="OpenRouter API key"
               htmlFor="openrouter-api-key"
               helper={
-                config?.canEdit
-                  ? config.keySuffix
-                    ? `Key hiện tại kết thúc bằng …${config.keySuffix}. Nhập key mới để thay thế.`
+                config?.openRouter?.canEdit
+                  ? config.openRouter.keySuffix
+                    ? `Key hiện tại kết thúc bằng …${config.openRouter.keySuffix}. Nhập key mới để thay thế.`
                     : "Key được mã hóa lưu trong Postgres local."
                   : "Giá trị này đang bị khóa bởi OPENROUTER_API_KEY."
               }
@@ -174,10 +175,10 @@ export function AiSettingsSection() {
                 type="password"
                 autoComplete="off"
                 value={apiKey}
-                disabled={!config?.canEdit || isLoading}
+                disabled={config?.openRouter?.canEdit === false || isLoading}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={
-                  config?.configured ? "••••••••••••••••" : "sk-or-v1-..."
+                  config?.openRouter?.configured ? "••••••••••••••••" : "sk-or-v1-..."
                 }
                 className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
@@ -187,7 +188,7 @@ export function AiSettingsSection() {
               <Button
                 type="button"
                 onClick={handleSaveKey}
-                disabled={!config?.canEdit || isLoading}
+                disabled={config?.openRouter?.canEdit === false || isLoading}
                 isLoading={saveKeyMutation.isPending}
               >
                 Lưu key
@@ -207,7 +208,7 @@ export function AiSettingsSection() {
                 variant="ghost"
                 onClick={() => clearKeyMutation.mutate()}
                 disabled={
-                  !config?.canEdit || isLoading || !config?.configured
+                  config?.openRouter?.canEdit === false || isLoading || !config?.openRouter?.configured
                 }
                 isLoading={clearKeyMutation.isPending}
                 leftIcon={<Trash2 className="h-3.5 w-3.5" />}
@@ -221,7 +222,7 @@ export function AiSettingsSection() {
             <FilterField
               label="Model mặc định"
               htmlFor="openrouter-default-model"
-              helper="Dùng slug model từ OpenRouter, ví dụ openai/gpt-4o-mini."
+              helper="Dùng slug model từ OpenRouter, ví dụ openrouter/free hoặc openai/gpt-4o-mini."
             >
               <input
                 id="openrouter-default-model"
@@ -258,16 +259,16 @@ export function AiSettingsSection() {
             <div>
               <dt className="text-slate-400">Nguồn key</dt>
               <dd className="mt-1 font-semibold">
-                {config ? sourceLabel(config.source) : "—"}
+                {config?.openRouter ? sourceLabel(config.openRouter.source) : "—"}
               </dd>
             </div>
             <div>
               <dt className="text-slate-400">Key</dt>
               <dd className="mt-1">
-                <Badge tone={config?.configured ? "success" : "neutral"}>
-                  {config?.configured
-                    ? config.keySuffix
-                      ? `…${config.keySuffix}`
+                <Badge tone={config?.openRouter?.configured ? "success" : "neutral"}>
+                  {config?.openRouter?.configured
+                    ? config.openRouter.keySuffix
+                      ? `…${config.openRouter.keySuffix}`
                       : "Đã cấu hình"
                     : "Thiếu"}
                 </Badge>
@@ -276,14 +277,14 @@ export function AiSettingsSection() {
             <div>
               <dt className="text-slate-400">Model mặc định</dt>
               <dd className="mt-1 font-mono text-xs font-semibold break-all">
-                {config?.defaultModel ?? "—"}
+                {config?.openRouter?.defaultModel ?? "—"}
               </dd>
             </div>
             <div>
               <dt className="text-slate-400">Có thể sửa key</dt>
               <dd className="mt-1">
-                <Badge tone={config?.canEdit ? "success" : "neutral"}>
-                  {config?.canEdit ? "Có" : "Không"}
+                <Badge tone={config?.openRouter?.canEdit ? "success" : "neutral"}>
+                  {config?.openRouter?.canEdit ? "Có" : "Không"}
                 </Badge>
               </dd>
             </div>

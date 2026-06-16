@@ -7,6 +7,9 @@ import { appSettings } from "~/server/db/schema";
 export const SETTING_KEYS = {
   openrouterApiKey: "openrouter_api_key",
   openrouterDefaultModel: "openrouter_default_model",
+  geminiApiKey: "gemini_api_key",
+  openaiCompatibleApiKey: "openai_compatible_api_key",
+  openaiCompatibleBaseUrl: "openai_compatible_base_url",
 } as const;
 
 export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
@@ -79,3 +82,67 @@ export async function getOpenRouterConfig() {
     keySuffix: apiKey ? apiKey.slice(-4) : null,
   };
 }
+
+export async function resolveGeminiApiKey(): Promise<string | null> {
+  const envKey = env.GEMINI_API_KEY?.trim();
+  if (envKey) return envKey;
+  return await getSetting(SETTING_KEYS.geminiApiKey);
+}
+
+export async function getGeminiConfig() {
+  const envKey = env.GEMINI_API_KEY?.trim();
+  const dbKey = await getSetting(SETTING_KEYS.geminiApiKey);
+  const apiKey = envKey ?? dbKey ?? null;
+  const source = envKey
+    ? ("env" as const)
+    : dbKey
+      ? ("database" as const)
+      : ("none" as const);
+
+  return {
+    configured: Boolean(apiKey),
+    source,
+    canEdit: !envKey,
+    keySuffix: apiKey ? apiKey.slice(-4) : null,
+  };
+}
+
+export async function resolveOpenaiCompatibleApiKey(): Promise<string | null> {
+  const envKey = env.OPENAI_COMPATIBLE_API_KEY?.trim();
+  if (envKey) return envKey;
+  return await getSetting(SETTING_KEYS.openaiCompatibleApiKey);
+}
+
+export async function resolveOpenaiCompatibleBaseUrl(): Promise<string | null> {
+  const envUrl = env.OPENAI_COMPATIBLE_BASE_URL?.trim();
+  if (envUrl) return envUrl;
+  return await getSetting(SETTING_KEYS.openaiCompatibleBaseUrl);
+}
+
+export async function getOpenaiCompatibleConfig() {
+  const envKey = env.OPENAI_COMPATIBLE_API_KEY?.trim();
+  const dbKey = await getSetting(SETTING_KEYS.openaiCompatibleApiKey);
+  const apiKey = envKey ?? dbKey ?? null;
+  
+  const envUrl = env.OPENAI_COMPATIBLE_BASE_URL?.trim();
+  const dbUrl = await getSetting(SETTING_KEYS.openaiCompatibleBaseUrl);
+  const baseUrl = envUrl ?? dbUrl ?? null;
+  const baseUrlSource = envUrl ? ("env" as const) : dbUrl ? ("database" as const) : ("none" as const);
+
+  const source = envKey
+    ? ("env" as const)
+    : dbKey
+      ? ("database" as const)
+      : ("none" as const);
+
+  return {
+    configured: Boolean(apiKey),
+    source,
+    canEdit: !envKey,
+    keySuffix: apiKey ? apiKey.slice(-4) : null,
+    baseUrl,
+    baseUrlSource,
+    canEditBaseUrl: !envUrl,
+  };
+}
+

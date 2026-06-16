@@ -22,6 +22,7 @@ import {
   StepHeader,
   type EnrichStep,
 } from "~/app/_components/enrich/step-header";
+import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
 import {
   ProductCandidateCard,
   type EnrichCandidate,
@@ -111,6 +112,8 @@ function planForCandidate(
   return { plan, fillable };
 }
 
+const EMPTY_JOB_ID = "00000000-0000-0000-0000-000000000000";
+
 export function MaterialEnrichClient() {
   const toast = useToast();
 
@@ -132,6 +135,12 @@ export function MaterialEnrichClient() {
   );
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [confirmUnmatchedOpen, setConfirmUnmatchedOpen] = useState(false);
+  const [researchJobId, setResearchJobId] = useState<string | null>(null);
+  const [confirmResearchExportOpen, setConfirmResearchExportOpen] =
+    useState(false);
+  const [researchExportSummary, setResearchExportSummary] = useState<{
+    needsReview: number;
+  } | null>(null);
 
   const previewRequestRef = useRef(0);
 
@@ -141,6 +150,15 @@ export function MaterialEnrichClient() {
   const previewXlsx = api.material.enrichPreviewXlsx.useMutation();
   const matchRowsMutation = api.material.enrichMatchRows.useMutation();
   const exportXlsx = api.material.enrichExportXlsx.useMutation();
+  const exportResearchXlsx = api.excelResearch.exportExcel.useMutation();
+
+  const researchJobStatus = api.excelResearch.getJobStatus.useQuery(
+    { jobId: researchJobId ?? EMPTY_JOB_ID },
+    {
+      enabled: researchJobId != null && step >= 3,
+      refetchOnWindowFocus: false,
+    },
+  );
 
   const reach = (target: EnrichStep) => {
     setStep(target);
@@ -156,6 +174,7 @@ export function MaterialEnrichClient() {
     setMatchData(null);
     setDecisions(new Map());
     setSelectedRowIndex(null);
+    setResearchJobId(null);
     setError(null);
     setSheetName("");
     setStep(1);
@@ -283,6 +302,30 @@ export function MaterialEnrichClient() {
     runExport("preserve");
   };
 
+  const runResearchExport = () => {
+    if (!researchJobId) return;
+    exportResearchXlsx.mutate(
+      { jobId: researchJobId },
+      {
+        onSuccess: (result) => {
+          downloadBase64Xlsx(result.fileName, result.workbookBase64);
+          toast.success("Đã xuất file nghiên cứu web.");
+        },
+        onError: (err) =>
+          toast.error(err.message || "Không xuất được file nghiên cứu."),
+      },
+    );
+  };
+
+  const handleResearchExportClick = (needsReview: number) => {
+    if (needsReview > 0) {
+      setResearchExportSummary({ needsReview });
+      setConfirmResearchExportOpen(true);
+      return;
+    }
+    runResearchExport();
+  };
+
   return (
     <div className="space-y-4">
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
@@ -323,14 +366,39 @@ export function MaterialEnrichClient() {
         />
       ) : null}
 
-      {step === 3 && matchData ? (
+      {step === 3 && file && base64 && activeSheet ? (
+        <EnrichResearchStep
+          fileName={file.name}
+          workbookBase64={base64}
+          sheetName={activeSheet.name}
+          headerRowIndex={activeSheet.activeHeaderRowIndex}
+          mapping={
+            activeSheet.suggestedMapping as Record<string, string | null>
+          }
+          unmatchedCount={matchData?.summary.unmatched ?? 0}
+          jobId={researchJobId}
+          onJobIdChange={setResearchJobId}
+          onContinue={() => reach(4)}
+          onSkip={() => reach(4)}
+          onError={setError}
+        />
+      ) : null}
+
+      {step === 4 && matchData ? (
         <ExportStep
           matchData={matchData}
           fieldsToFill={fieldsToFill}
           isExporting={exportXlsx.isPending}
+          isResearchExporting={exportResearchXlsx.isPending}
+          hasResearchJob={researchJobId != null}
           onExport={handleExportClick}
           onExportClean={() => runExport("clean")}
-          onBack={() => setStep(2)}
+          onExportResearch={() =>
+            handleResearchExportClick(
+              researchJobStatus.data?.needsReviewRows ?? 0,
+            )
+          }
+          onBack={() => setStep(3)}
         />
       ) : null}
 
@@ -345,6 +413,19 @@ export function MaterialEnrichClient() {
           runExport("preserve");
         }}
         onCancel={() => setConfirmUnmatchedOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmResearchExportOpen}
+        title={`${researchExportSummary?.needsReview ?? 0} dòng nghiên cứu cần duyệt`}
+        description="Các dòng chưa duyệt sẽ được xuất theo trạng thái hiện tại. Tiếp tục?"
+        confirmLabel="Xuất file"
+        variant="primary"
+        onConfirm={() => {
+          setConfirmResearchExportOpen(false);
+          runResearchExport();
+        }}
+        onCancel={() => setConfirmResearchExportOpen(false)}
       />
     </div>
   );
@@ -916,15 +997,21 @@ function ExportStep({
   matchData,
   fieldsToFill,
   isExporting,
+  isResearchExporting,
+  hasResearchJob,
   onExport,
   onExportClean,
+  onExportResearch,
   onBack,
 }: {
   matchData: MatchResponse;
   fieldsToFill: number;
   isExporting: boolean;
+  isResearchExporting: boolean;
+  hasResearchJob: boolean;
   onExport: () => void;
   onExportClean: () => void;
+  onExportResearch: () => void;
   onBack: () => void;
 }) {
   const matched = matchData.summary.auto + matchData.summary.review;
@@ -940,7 +1027,8 @@ function ExportStep({
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
         <h3 className="text-sm font-bold text-slate-900">Xuất file</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Giữ nguyên file gốc và điền các ô trống, hoặc tải bản chuẩn hóa.
+          Xuất theo quyết định đối chiếu catalog, hoặc file đã nghiên cứu web nếu
+          đã chạy bước 3.
         </p>
       </div>
 
@@ -960,20 +1048,30 @@ function ExportStep({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {hasResearchJob ? (
+            <Button
+              variant="primary"
+              leftIcon={<Download className="h-4 w-4" />}
+              isLoading={isResearchExporting}
+              onClick={onExportResearch}
+            >
+              Xuất file nghiên cứu web (.xlsx)
+            </Button>
+          ) : null}
           <Button
-            variant="primary"
+            variant={hasResearchJob ? "secondary" : "primary"}
             leftIcon={<Download className="h-4 w-4" />}
             isLoading={isExporting}
             disabled={fieldsToFill === 0}
             onClick={onExport}
           >
-            Xuất file đã điền (.xlsx)
+            Xuất file đối chiếu catalog (.xlsx)
           </Button>
           <Button variant="secondary" disabled={isExporting} onClick={onExportClean}>
             Tải bản chuẩn
           </Button>
           <Button variant="ghost" onClick={onBack}>
-            Quay lại xét duyệt
+            Quay lại nghiên cứu web
           </Button>
         </div>
       </div>

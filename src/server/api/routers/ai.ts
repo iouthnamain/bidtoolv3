@@ -6,6 +6,8 @@ import {
   DEFAULT_OPENROUTER_MODEL,
   deleteSetting,
   getOpenRouterConfig,
+  getGeminiConfig,
+  getOpenaiCompatibleConfig,
   resolveOpenRouterApiKey,
   resolveOpenRouterDefaultModel,
   setSetting,
@@ -41,7 +43,12 @@ function requireOpenRouterApiKey(apiKey: string | null): string {
 
 export const aiRouter = createTRPCRouter({
   getConfig: publicProcedure.query(async () => {
-    return getOpenRouterConfig();
+    const [openRouter, gemini, openaiCompatible] = await Promise.all([
+      getOpenRouterConfig(),
+      getGeminiConfig(),
+      getOpenaiCompatibleConfig(),
+    ]);
+    return { openRouter, gemini, openaiCompatible };
   }),
 
   setOpenRouterApiKey: publicProcedure
@@ -77,6 +84,94 @@ export const aiRouter = createTRPCRouter({
     await deleteSetting(SETTING_KEYS.openrouterApiKey);
     return getOpenRouterConfig();
   }),
+
+  setGeminiApiKey: publicProcedure
+    .input(
+      z.object({
+        apiKey: z.string().trim().min(1).max(500),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const config = await getGeminiConfig();
+      if (!config.canEdit) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "API key đang bị khóa bởi biến môi trường GEMINI_API_KEY.",
+        });
+      }
+
+      await setSetting(SETTING_KEYS.geminiApiKey, input.apiKey.trim());
+      return getGeminiConfig();
+    }),
+
+  clearGeminiApiKey: publicProcedure.mutation(async () => {
+    const config = await getGeminiConfig();
+    if (!config.canEdit) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "API key đang bị khóa bởi biến môi trường GEMINI_API_KEY.",
+      });
+    }
+
+    await deleteSetting(SETTING_KEYS.geminiApiKey);
+    return getGeminiConfig();
+  }),
+
+  setOpenaiCompatibleApiKey: publicProcedure
+    .input(
+      z.object({
+        apiKey: z.string().trim().min(1).max(500),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const config = await getOpenaiCompatibleConfig();
+      if (!config.canEdit) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "API key đang bị khóa bởi biến môi trường OPENAI_COMPATIBLE_API_KEY.",
+        });
+      }
+
+      await setSetting(SETTING_KEYS.openaiCompatibleApiKey, input.apiKey.trim());
+      return getOpenaiCompatibleConfig();
+    }),
+
+  clearOpenaiCompatibleApiKey: publicProcedure.mutation(async () => {
+    const config = await getOpenaiCompatibleConfig();
+    if (!config.canEdit) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "API key đang bị khóa bởi biến môi trường OPENAI_COMPATIBLE_API_KEY.",
+      });
+    }
+
+    await deleteSetting(SETTING_KEYS.openaiCompatibleApiKey);
+    return getOpenaiCompatibleConfig();
+  }),
+
+  setOpenaiCompatibleBaseUrl: publicProcedure
+    .input(
+      z.object({
+        baseUrl: z.string().trim().url().max(500),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const config = await getOpenaiCompatibleConfig();
+      if (!config.canEditBaseUrl) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Base URL đang bị khóa bởi biến môi trường OPENAI_COMPATIBLE_BASE_URL.",
+        });
+      }
+
+      await setSetting(SETTING_KEYS.openaiCompatibleBaseUrl, input.baseUrl.trim());
+      return getOpenaiCompatibleConfig();
+    }),
 
   setDefaultModel: publicProcedure
     .input(

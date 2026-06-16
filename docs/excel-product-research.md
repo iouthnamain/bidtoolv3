@@ -1,8 +1,8 @@
 # Excel Product Research — Feature Documentation
 
 > **Status:** Phase 1 implemented (June 2026)  
-> **Route:** `/research-enrich`  
-> **Related:** Catalog-only fill at `/enrich` — see [excel-enrich-export-plan.md](./excel-enrich-export-plan.md). **DB-backed catalog enrichment** at `/materials/enrich` — see [material-enrichment.md](./material-enrichment.md).
+> **Route:** `/enrich` (step 3 — *Nghiên cứu web*). Legacy `/research-enrich` redirects here.  
+> **Related:** Catalog-only fill at `/enrich` steps 1–2 — see [excel-enrich-export-plan.md](./excel-enrich-export-plan.md). **DB-backed catalog enrichment** at `/materials/enrich` — see [material-enrichment.md](./material-enrichment.md).
 
 ## What this feature does
 
@@ -31,17 +31,19 @@ exportExcel ──▶ download enriched workbook
 
 ---
 
-## How this differs from `/enrich`
+## How this relates to `/enrich`
 
-| | `/enrich` | `/research-enrich` |
-|---|-----------|-------------------|
-| Data source | Internal `materials` catalog only | Catalog + optional web (SearXNG) |
+Web research is **step 3** of the unified `/enrich` wizard (after upload/map and catalog match). The backend still uses durable DB jobs and the same `excelResearch` API; only the UI entry point changed.
+
+| | Catalog match (step 2) | Web research (step 3) |
+|---|------------------------|------------------------|
+| Data source | Internal `materials` catalog | Catalog + optional web (SearXNG) |
 | Persistence | Ephemeral (base64 in browser session) | DB jobs + filesystem artifacts |
 | Processing | Single request (`enrichMatchRows`) | Batched, resumable job |
-| Review | 3-step wizard, inline | Job progress + row review queue |
+| Review | Inline in step 2 | Job progress + row review in step 3 |
 | Best for | Fast catalog backfill | Research + audit trail |
 
-Both features reuse `excel-workbook.ts` parsing, `excel-enrich.ts` fill/export logic, and `excel-enrich-fields.ts` thresholds.
+Both paths reuse `excel-workbook.ts` parsing, `excel-enrich.ts` fill/export logic, and `excel-enrich-fields.ts` thresholds. Step 4 export offers **catalog fill** and/or **research job** download when a job was started.
 
 ---
 
@@ -82,27 +84,32 @@ The client calls `GET {base}/search?q=…&format=json`. Without this, web eviden
 
 ## User guide
 
-### Step 1 — Upload & run
+### Step 3 — Web research (within `/enrich`)
 
-1. Open **Nghiên cứu Excel** (`/research-enrich`).
-2. Upload a `.xlsx` file.
-3. Pick the sheet and confirm detected columns (requires a **product name** column).
-4. Click **Bắt đầu nghiên cứu** — creates a job and starts processing.
+1. Open **Đối chiếu Excel** (`/enrich`) and complete steps 1–2 (upload + catalog match).
+2. On step **Nghiên cứu web**, click **Bắt đầu nghiên cứu** — creates a job from the same workbook and starts processing.
 
 Progress polls every 2s: processed/total rows, needs review, errors.
 
-### Step 2 — Review
+You can **Bỏ qua** this step and export catalog-only results from step 4.
+
+### Step 3 review (same step)
 
 - Filter rows by status: pending, matched, needs review, approved, skipped, error.
 - Select a row to see **evidence** (catalog + web hits) and the **fill plan** (what would be written).
-- **Duyệt** → `approved` (included in export).
-- **Từ chối** → `skipped` (excluded from export).
+- **Duyệt** → `approved` (included in research export).
+- **Từ chối** → `skipped` (excluded from research export).
 
 Rows with high catalog confidence (≥ 0.85) are auto-`matched`. Medium confidence and web-only hits are `needs_review`.
 
-### Step 3 — Export
+### Step 4 — Export
 
-Download the enriched workbook. Only rows in `matched` or `approved` with accepted fill fields are written. Original layout is preserved (`writeEnrichedWorkbook` preserve mode).
+From **Xuất file**, download either:
+
+- **Catalog match** export (step 2 decisions), or
+- **Research job** export when a job was started in step 3.
+
+Research export only writes rows in `matched` or `approved` with accepted fill fields. Original layout is preserved (`writeEnrichedWorkbook` preserve mode).
 
 ---
 
@@ -112,14 +119,14 @@ Download the enriched workbook. Only rows in `matched` or `approved` with accept
 
 | File | Role |
 |------|------|
-| `src/app/(dashboard)/research-enrich/page.tsx` | Route + metadata |
-| `src/app/(dashboard)/research-enrich/layout.tsx` | Suspense shell |
-| `src/app/_components/dashboard/research-enrich-layout-client.tsx` | Dashboard shell |
-| `src/app/_components/research-enrich/research-enrich-client.tsx` | 3-step wizard |
-| `src/app/_components/research-enrich/research-enrich-step-header.tsx` | Step navigation |
+| `src/app/(dashboard)/enrich/page.tsx` | Unified 4-step wizard route |
+| `src/app/_components/enrich/enrich-client.tsx` | Wizard orchestration (upload → catalog → research → export) |
+| `src/app/_components/enrich/enrich-research-step.tsx` | Step 3: job start, poll, row review |
+| `src/app/_components/enrich/step-header.tsx` | 4-step navigation |
 | `src/app/_components/research-enrich/excel-research-types.ts` | Shared status helpers |
+| `src/app/(dashboard)/research-enrich/page.tsx` | Redirect → `/enrich` |
 
-Navigation: sidebar **Nghiên cứu Excel**, breadcrumbs `/research-enrich`.
+Navigation: sidebar **Đối chiếu Excel** (`/enrich`).
 
 ### API (`excelResearch` tRPC router)
 
@@ -311,8 +318,9 @@ Migration `0018_material_enrichment.sql` adds `material_enrichment_jobs` for enr
 ## File index (quick reference)
 
 ```
-src/app/(dashboard)/research-enrich/
-src/app/_components/research-enrich/
+src/app/(dashboard)/enrich/
+src/app/_components/enrich/enrich-research-step.tsx
+src/app/_components/research-enrich/excel-research-types.ts
 src/server/api/routers/excel-research.ts
 src/server/services/excel-research/
 src/server/services/excel-research-jobs.ts

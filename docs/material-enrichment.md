@@ -2,7 +2,7 @@
 
 > **Status:** Implemented (June 2026)  
 > **Route:** `/materials/enrich`  
-> **Related:** Catalog-only Excel fill at [`/enrich`](./excel-enrich-export-plan.md) · Excel upload + web research at [`/research-enrich`](./excel-product-research.md)
+> **Related:** Excel fill + web research at [`/enrich`](./excel-product-research.md) (steps 1–4) · Catalog-only details in [`excel-enrich-export-plan.md`](./excel-enrich-export-plan.md)
 
 ## What this feature does
 
@@ -39,11 +39,11 @@ Updated materials + catalog PDF links + audit events
 
 ## How this differs from related features
 
-| | `/enrich` | `/research-enrich` | `/materials/enrich` |
-|---|-----------|-------------------|---------------------|
-| Input | Uploaded Excel | Uploaded Excel | **Saved `materials` rows** |
+| | `/enrich` (catalog steps) | `/enrich` (web research step) | `/materials/enrich` |
+|---|---------------------------|-------------------------------|---------------------|
+| Input | Uploaded Excel | Same workbook (step 3) | **Saved `materials` rows** |
 | Data source | Internal catalog only | Catalog + SearXNG web | **Web search (DuckDuckGo) + OpenRouter** |
-| Output | Enriched `.xlsx` download | Enriched `.xlsx` download | **DB updates** + optional report JSON |
+| Output | Enriched `.xlsx` download | Research job `.xlsx` | **DB updates** + optional report JSON |
 | Persistence | Ephemeral (browser session) | DB jobs + filesystem | DB jobs + events |
 | Best for | Fast spreadsheet backfill | Research + audit on Excel | **Catalog maintenance** |
 
@@ -88,6 +88,26 @@ Tables:
 Configure via **Settings → AI** (`/settings/ai`) or `OPENROUTER_API_KEY` env var. The enrichment runner calls `resolveOpenRouterApiKey()` and `resolveOpenRouterDefaultModel()` from `app-settings.ts`.
 
 Without a key, items fail with a clear error — no silent fallback.
+
+### 2b. Web search (SearXNG)
+
+Material enrichment **requires a working web search provider**. DuckDuckGo is often blocked or times out from server environments.
+
+**Local dev (recommended):**
+
+```bash
+docker compose up searxng -d
+```
+
+Set in `.env`:
+
+```bash
+SEARXNG_BASE_URL="http://localhost:8888"
+```
+
+The app also auto-probes `http://127.0.0.1:8888` when SearXNG is not configured. If web search still returns nothing, materials with a `sourceUrl` or price-source URL are fetched directly as fallback candidates.
+
+Items are marked **Bỏ qua** only when no web hits and no known URLs could be fetched — not when confidence is low (those go to **Cần duyệt**).
 
 ### 3. Job scheduler
 

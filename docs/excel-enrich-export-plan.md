@@ -1,6 +1,6 @@
 # Excel Enrich & Export — System Plan
 
-> **See also:** [Excel Product Research](./excel-product-research.md) — durable job-based research at `/research-enrich` (catalog + web search). [Material Web Enrichment](./material-enrichment.md) — enrich **saved catalog rows** at `/materials/enrich`. This document covers the faster catalog-only path at `/enrich`.
+> **See also:** [Excel Product Research](./excel-product-research.md) — web research as **step 3** of `/enrich` (durable job, catalog + SearXNG). [Material Web Enrichment](./material-enrichment.md) — enrich **saved catalog rows** at `/materials/enrich`. This document covers the catalog match path (steps 1–2, 4) at `/enrich`.
 
 > **Goal**: Upload a standardized Excel that uses the same fields as the Material (product) page but is often missing many of them. The page matches each row against the saved Material catalog, fills the blank fields from the matched product, lets me review/adjust, and exports a completed Excel I can download.
 

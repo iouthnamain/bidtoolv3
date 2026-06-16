@@ -12,6 +12,7 @@ import {
   type MaterialEnrichmentResult,
 } from "~/lib/materials/material-enrichment-types";
 import { findClosestOption } from "~/lib/materials/option-matcher";
+import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
 import { db } from "~/server/db";
 import {
   materialEnrichmentItems,
@@ -27,6 +28,7 @@ import { commitEnrichmentItem } from "~/server/services/material-enrichment-comm
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import {
   extractPdfUrlsFromResults,
+  fetchKnownSourceCandidates,
   rankSearchResults,
   searchWebForProduct,
   type WebSearchResult,
@@ -110,6 +112,7 @@ function parseFilterOptions(value: unknown): MaterialEnrichmentFilterOptions {
 }
 
 function materialToInput(material: typeof materials.$inferSelect): MaterialEnrichmentInput {
+  const metadata = normalizeMaterialMetadata(material.metadataJson);
   return {
     materialId: material.id,
     code: material.code,
@@ -120,9 +123,39 @@ function materialToInput(material: typeof materials.$inferSelect): MaterialEnric
     manufacturer: material.manufacturer,
     originCountry: material.originCountry,
     sourceUrl: material.sourceUrl,
-    sku: null,
-    model: null,
+    sku: metadata.shopScrape?.sku ?? null,
+    model: metadata.shopScrape?.model ?? null,
   };
+}
+
+function knownSourceUrls(
+  input: MaterialEnrichmentInput,
+  material: typeof materials.$inferSelect,
+) {
+  const metadata = normalizeMaterialMetadata(material.metadataJson);
+  const urls = [
+    input.sourceUrl,
+    ...metadata.priceSources.map((source) => source.url),
+  ];
+  return [...new Set(urls.map((url) => url?.trim()).filter(Boolean) as string[])];
+}
+
+function buildSkippedError(searchWarnings: string[]) {
+  const hint =
+    "Không tìm thấy nguồn web. Chạy `docker compose up searxng -d` và đặt SEARXNG_BASE_URL=http://localhost:8888, hoặc thêm sourceUrl cho vật tư.";
+  if (searchWarnings.length === 0) {
+    return hint;
+  }
+  return `${hint} Chi tiết: ${searchWarnings.slice(0, 3).join(" | ")}`;
+}
+
+function resolveItemStatus(
+  band: ReturnType<typeof classifyEnrichmentConfidence>,
+): MaterialEnrichmentResult["status"] {
+  if (band === "auto") {
+    return "auto";
+  }
+  return "review";
 }
 
 function buildSearchQueries(input: MaterialEnrichmentInput, maxQueries: number) {
@@ -266,7 +299,7 @@ function buildResultFromExtraction(
   };
   result.overallConfidence = overallConfidence(result, targetFields);
   const band = classifyEnrichmentConfidence(result.overallConfidence);
-  result.status = band === "auto" ? "auto" : band === "review" ? "review" : "skipped";
+  result.status = resolveItemStatus(band);
   return result;
 }
 
@@ -325,12 +358,46 @@ export async function processEnrichmentItem(
       input,
       options.maxQueries ?? DEFAULT_MAX_QUERIES,
     );
-    const rawResults = await searchWebForProduct(queries, signal);
-    const ranked = rankSearchResults(rawResults, {
+    const searchResponse = await searchWebForProduct(queries, signal);
+    let ranked = rankSearchResults(searchResponse.results, {
       manufacturer: input.manufacturer,
       name: input.name,
       sourceUrl: input.sourceUrl,
     }).slice(0, options.maxSearchResults ?? DEFAULT_MAX_SEARCH_RESULTS);
+
+    if (ranked.length === 0) {
+      const knownSources = await fetchKnownSourceCandidates(
+        knownSourceUrls(input, material),
+        signal,
+      );
+      if (knownSources.length > 0) {
+        ranked = rankSearchResults(knownSources, {
+          manufacturer: input.manufacturer,
+          name: input.name,
+          sourceUrl: input.sourceUrl,
+        });
+      }
+    }
+
+    if (ranked.length === 0) {
+      const skippedResult: MaterialEnrichmentResult = {
+        fields: {},
+        catalogPdfUrls: [],
+        overallConfidence: 0,
+        status: "skipped",
+        error: buildSkippedError(searchResponse.warnings),
+      };
+      await db
+        .update(materialEnrichmentItems)
+        .set({
+          status: skippedResult.status,
+          resultJson: skippedResult,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(materialEnrichmentItems.id, item.id));
+      return skippedResult;
+    }
+
     const pdfUrls = extractPdfUrlsFromResults(ranked);
     const candidates = await saveWebCandidates(item, ranked, pdfUrls);
 
@@ -351,7 +418,7 @@ export async function processEnrichmentItem(
     applyOptionMatching(result, filterOptions);
     result.overallConfidence = overallConfidence(result, targetFields);
     const band = classifyEnrichmentConfidence(result.overallConfidence);
-    result.status = band === "auto" ? "auto" : band === "review" ? "review" : "skipped";
+    result.status = resolveItemStatus(band);
     result.selectedCandidateId = candidates[0]?.id ?? null;
 
     await db

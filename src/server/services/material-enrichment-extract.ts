@@ -188,6 +188,7 @@ export async function extractProductFromSources(
     apiKey,
     model,
     signal,
+    responseFormat: "json_object",
     messages: [
       { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
       {
