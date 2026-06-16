@@ -316,6 +316,25 @@ async function installDependencies(): Promise<void> {
   );
 }
 
+async function installScrapeBrowser(): Promise<void> {
+  // The shop scraper launches Playwright's Chromium when no system
+  // Chrome/Edge is found. Install it so scraping works on a fresh machine.
+  // Non-fatal: if it fails (offline, etc.) the scraper can still use a
+  // system browser, so we only warn instead of aborting setup.
+  logStep("Installing Playwright Chromium for the shop scraper");
+  const result = await runCommand(
+    bunExecutable,
+    ["x", "playwright", "install", "chromium"],
+    { inheritStdio: true },
+  );
+
+  if (result.code !== 0) {
+    logStep(
+      "Could not install Playwright Chromium automatically. Scraping will rely on an installed Chrome/Edge, or run `bunx playwright install chromium` manually.",
+    );
+  }
+}
+
 async function prepareLocalDatabase(): Promise<void> {
   await ensureEnvFile();
   await ensureDockerIsReady();
@@ -326,11 +345,13 @@ async function prepareLocalDatabase(): Promise<void> {
 
 async function runInstallWorkflow(): Promise<void> {
   await installDependencies();
+  await installScrapeBrowser();
   await prepareLocalDatabase();
 }
 
 async function runUpdateWorkflow(): Promise<void> {
   await installDependencies();
+  await installScrapeBrowser();
   await prepareLocalDatabase();
 }
 

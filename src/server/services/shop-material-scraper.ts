@@ -914,6 +914,41 @@ function registerBrowser(browser: Browser) {
   return browser;
 }
 
+function windowsBrowserCandidates(): string[] {
+  // Common Windows install roots, resolved from env vars so per-user and
+  // non-default installs are covered (Chrome can install under LOCALAPPDATA
+  // without admin rights, and many machines only ship Microsoft Edge).
+  const roots = [
+    process.env.PROGRAMFILES,
+    process.env["PROGRAMFILES(X86)"],
+    process.env.LOCALAPPDATA,
+  ].filter((value): value is string => Boolean(value));
+
+  const relativePaths = [
+    "Google\\Chrome\\Application\\chrome.exe",
+    "Google\\Chrome Beta\\Application\\chrome.exe",
+    "Chromium\\Application\\chrome.exe",
+    "Microsoft\\Edge\\Application\\msedge.exe",
+  ];
+
+  const candidates: string[] = [];
+  for (const root of roots) {
+    for (const relativePath of relativePaths) {
+      candidates.push(`${root}\\${relativePath}`);
+    }
+  }
+
+  // Fallback absolute paths in case the env vars are missing.
+  candidates.push(
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+  );
+
+  return candidates;
+}
+
 function findSystemBrowserExecutable() {
   const candidates = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -922,8 +957,7 @@ function findSystemBrowserExecutable() {
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    ...windowsBrowserCandidates(),
   ].filter((value): value is string => Boolean(value));
 
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
