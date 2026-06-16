@@ -60,6 +60,7 @@ export type MaterialEnrichmentItemSnapshot = {
   materialId: number;
   status: string;
   originalSnapshot: Record<string, unknown>;
+  materialImageUrl: string | null;
   result: MaterialEnrichmentResult;
   committedAt: string | null;
   sortOrder: number;
@@ -83,6 +84,7 @@ export type MaterialWebCandidateSnapshot = {
   isSelected: boolean;
   fetchedAt: string;
   createdAt: string;
+  imageUrl: string | null;
 };
 
 type JobRow = typeof materialEnrichmentJobs.$inferSelect;
@@ -297,7 +299,17 @@ export async function getMaterialEnrichmentItem(itemId: number) {
     .where(eq(materialEnrichmentItems.id, itemId))
     .limit(1);
 
-  return item ? toItemSnapshot(item) : null;
+  if (!item) {
+    return null;
+  }
+
+  const [material] = await db
+    .select({ imageUrl: materials.imageUrl })
+    .from(materials)
+    .where(eq(materials.id, item.materialId))
+    .limit(1);
+
+  return toItemSnapshot(item, material?.imageUrl ?? null);
 }
 
 export async function listMaterialEnrichmentItems(
@@ -317,7 +329,7 @@ export async function listMaterialEnrichmentItems(
     .limit(limit)
     .offset(offset);
 
-  return rows.map(toItemSnapshot);
+  return rows.map((row) => toItemSnapshot(row));
 }
 
 export async function listMaterialWebCandidates(itemId: number) {
@@ -518,7 +530,10 @@ function toJobSnapshot(row: JobRow): MaterialEnrichmentJobSnapshot {
   };
 }
 
-function toItemSnapshot(row: ItemRow): MaterialEnrichmentItemSnapshot {
+function toItemSnapshot(
+  row: ItemRow,
+  materialImageUrl: string | null = null,
+): MaterialEnrichmentItemSnapshot {
   return {
     id: row.id,
     jobId: row.jobId,
@@ -528,6 +543,7 @@ function toItemSnapshot(row: ItemRow): MaterialEnrichmentItemSnapshot {
       row.originalSnapshotJson && typeof row.originalSnapshotJson === "object"
         ? row.originalSnapshotJson
         : {},
+    materialImageUrl,
     result:
       row.resultJson && typeof row.resultJson === "object"
         ? (row.resultJson as MaterialEnrichmentResult)
@@ -563,6 +579,7 @@ function toCandidateSnapshot(
     isSelected: row.isSelected,
     fetchedAt: row.fetchedAt,
     createdAt: row.createdAt,
+    imageUrl: row.imageUrl ?? null,
   };
 }
 

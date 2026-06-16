@@ -96,6 +96,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
   const startJob = api.excelResearch.startJob.useMutation();
   const approveRow = api.excelResearch.approveRow.useMutation();
   const rejectRow = api.excelResearch.rejectRow.useMutation();
+  const bulkApproveRows = api.excelResearch.bulkApproveRows.useMutation();
   const exportExcel = api.excelResearch.exportExcel.useMutation();
 
   const activeJob = jobStatusQuery.data;
@@ -208,6 +209,33 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
           ]).then(() => toast.success("Đã từ chối dòng."));
         },
         onError: (err) => toast.error(err.message || "Không từ chối được dòng."),
+      },
+    );
+  };
+
+  const handleBulkApprove = (args: {
+    rowIds?: string[];
+    minConfidence?: number;
+  }) => {
+    bulkApproveRows.mutate(
+      { jobId, rowIds: args.rowIds, minConfidence: args.minConfidence },
+      {
+        onSuccess: (result) => {
+          void Promise.all([
+            listRowsQuery.refetch(),
+            rowDetailQuery.refetch(),
+            jobStatusQuery.refetch(),
+          ]).then(() =>
+            toast.success(
+              `Đã duyệt ${result.approved.toLocaleString("vi-VN")} dòng.` +
+                (result.failed > 0
+                  ? ` (${result.failed.toLocaleString("vi-VN")} lỗi)`
+                  : ""),
+            ),
+          );
+        },
+        onError: (err) =>
+          toast.error(err.message || "Không duyệt hàng loạt được."),
       },
     );
   };
@@ -380,6 +408,8 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
         isRejecting={rejectRow.isPending}
         onApprove={handleApprove}
         onReject={handleReject}
+        onBulkApprove={handleBulkApprove}
+        isBulkApproving={bulkApproveRows.isPending}
         onPrimaryAction={handleExportClick}
         onSecondaryAction={() => router.push("/enrich/jobs")}
         primaryActionLabel="Xuất file (.xlsx)"

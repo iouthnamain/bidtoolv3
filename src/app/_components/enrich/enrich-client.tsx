@@ -23,6 +23,7 @@ import {
   type EnrichStep,
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
+import { EnrichJobsList } from "~/app/_components/enrich/enrich-jobs-list";
 import {
   ProductCandidateCard,
   type EnrichCandidate,
@@ -328,6 +329,12 @@ export function MaterialEnrichClient() {
 
   return (
     <div className="space-y-4">
+      {step === 1 && !file ? (
+        <section className="panel p-4 sm:p-5">
+          <EnrichJobsList limit={10} compact />
+        </section>
+      ) : null}
+
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
 
       {error ? (

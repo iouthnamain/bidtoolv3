@@ -99,14 +99,12 @@ const MATERIAL_DENSITY_KEY = "bidtool:material-catalog-density:v1";
 type TableDensity = "comfortable" | "compact";
 
 const defaultColumnVisibility: VisibilityState = {
-  code: false,
   updatedAt: false,
 };
 
 const materialColumnOptions: Array<{ id: string; label: string }> = [
-  { id: "code", label: "Mã vật tư" },
-  { id: "specText", label: "Thông số" },
-  { id: "details", label: "Chi tiết" },
+  { id: "code", label: "Mã VT" },
+  { id: "specText", label: "Thông số & Chi tiết" },
   { id: "catalog", label: "Catalog PDF" },
   { id: "updatedAt", label: "Cập nhật" },
 ];
@@ -273,11 +271,11 @@ function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
 
 const materialColumnWidthClass: Record<string, string> = {
   select: "w-12",
+  stt: "w-12",
   name: "w-[20%]",
   code: "w-28",
   unit: "w-20",
-  specText: "w-[16%]",
-  details: "w-[14%]",
+  specText: "w-[28%]",
   catalog: "w-24",
   manufacturer: "w-[12%]",
   originCountry: "w-32",
@@ -292,6 +290,9 @@ function materialTableHeaderClass(columnId: string, density: TableDensity) {
   if (columnId === "select") {
     return `${pad} text-center ${width}`;
   }
+  if (columnId === "stt") {
+    return `${pad} text-center ${width}`;
+  }
   if (columnId === "actions") {
     return `${pad} text-right ${width}`;
   }
@@ -302,11 +303,11 @@ function materialTableCellClass(columnId: string, density: TableDensity) {
   const pad = density === "compact" ? "px-3 py-1.5 text-[13px]" : "px-3 py-2.5";
   const classes: Record<string, string> = {
     select: `${pad} text-center align-top`,
+    stt: `${pad} text-center align-top text-slate-500 tabular-nums`,
     name: `${pad} align-top font-semibold text-slate-900`,
     code: `${pad} align-top font-mono text-xs text-slate-700 truncate`,
     unit: `${pad} align-top text-slate-700`,
     specText: `${pad} align-top text-slate-600`,
-    details: `${pad} align-top text-slate-600`,
     catalog: `${pad} align-top`,
     manufacturer: `${pad} align-top text-slate-600`,
     originCountry: `${pad} align-top text-slate-600`,
@@ -421,10 +422,12 @@ function SelectionCheckbox({
 
 function MaterialMobileCard({
   row,
+  rowNumber,
   isDeleting,
   onDelete,
 }: {
   row: Row<EnrichedMaterialListItem>;
+  rowNumber: number;
   isDeleting: boolean;
   onDelete: (material: EnrichedMaterialListItem) => void;
 }) {
@@ -446,12 +449,20 @@ function MaterialMobileCard({
           onChange={row.getToggleSelectedHandler()}
         />
         <div className="min-w-0 flex-1">
+          <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+            STT {rowNumber.toLocaleString("vi-VN")}
+          </span>
           <Link
             href={`/materials/${material.id}`}
             className="line-clamp-2 text-sm font-bold text-slate-950 hover:text-sky-700 hover:underline"
           >
             {material.name}
           </Link>
+          {material.code ? (
+            <span className="mt-0.5 block font-mono text-[11px] text-slate-400">
+              Mã VT: {material.code}
+            </span>
+          ) : null}
           <p className="mt-1 line-clamp-2 text-xs text-slate-500">
             {material.details || material.specText || "Chưa có thông tin phụ"}
           </p>
@@ -1216,6 +1227,20 @@ export function MaterialsListClient() {
         ),
       },
       {
+        id: "stt",
+        enableHiding: false,
+        header: () => <span className="text-slate-500">STT</span>,
+        cell: ({ row }) => (
+          <span>
+            {(
+              pagination.pageIndex * pagination.pageSize +
+              row.index +
+              1
+            ).toLocaleString("vi-VN")}
+          </span>
+        ),
+      },
+      {
         accessorKey: "name",
         header: () => (
           <MaterialSortableHeader
@@ -1227,17 +1252,24 @@ export function MaterialsListClient() {
           />
         ),
         cell: ({ row }) => (
-          <Link
-            href={`/materials/${row.original.id}`}
-            className="line-clamp-2 hover:text-sky-700 hover:underline"
-          >
-            {row.original.name}
-          </Link>
+          <div className="space-y-0.5">
+            <Link
+              href={`/materials/${row.original.id}`}
+              className="line-clamp-2 hover:text-sky-700 hover:underline"
+            >
+              {row.original.name}
+            </Link>
+            {row.original.code ? (
+              <span className="block font-mono text-[11px] font-normal text-slate-400">
+                Mã VT: {row.original.code}
+              </span>
+            ) : null}
+          </div>
         ),
       },
       {
         accessorKey: "code",
-        header: "Mã",
+        header: "Mã VT",
         cell: ({ row }) => (
           <span className="font-mono text-xs text-slate-700">
             {row.original.code ?? "-"}
@@ -1266,16 +1298,18 @@ export function MaterialsListClient() {
       },
       {
         accessorKey: "specText",
-        header: "Thông số",
+        header: "Thông số & Chi tiết",
         cell: ({ row }) => (
-          <span className="line-clamp-2">{row.original.specText || "-"}</span>
-        ),
-      },
-      {
-        accessorKey: "details",
-        header: "Chi tiết",
-        cell: ({ row }) => (
-          <span className="line-clamp-2">{row.original.details || "-"}</span>
+          <div className="space-y-0.5">
+            <span className="line-clamp-2 text-slate-700">
+              {row.original.specText || "-"}
+            </span>
+            {row.original.details ? (
+              <span className="line-clamp-2 text-xs text-slate-400">
+                {row.original.details}
+              </span>
+            ) : null}
+          </div>
         ),
       },
       {
@@ -1409,6 +1443,8 @@ export function MaterialsListClient() {
       duplicateMaterial.isPending,
       duplicateMaterialRow,
       duplicatingMaterialId,
+      pagination.pageIndex,
+      pagination.pageSize,
       sortBy,
       sortOrder,
       toggleColumnSort,
@@ -2415,6 +2451,11 @@ export function MaterialsListClient() {
                   <MaterialMobileCard
                     key={row.id}
                     row={row}
+                    rowNumber={
+                      pagination.pageIndex * pagination.pageSize +
+                      row.index +
+                      1
+                    }
                     isDeleting={deleteMaterial.isPending}
                     onDelete={openSingleDeleteDialog}
                   />

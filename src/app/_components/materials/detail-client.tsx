@@ -1618,7 +1618,7 @@ export function MaterialDetailClient({
             </h3>
             <dl className="mt-3 space-y-2">
               <DetailRow
-                label="Mã catalog"
+                label="Mã vật tư"
                 value={
                   material.code?.trim() ? material.code : `#${material.id}`
                 }

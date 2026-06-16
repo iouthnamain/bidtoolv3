@@ -79,6 +79,7 @@ export type ExcelResearchRowEvidence = {
   url: string | null;
   snippet: string | null;
   query: string | null;
+  imageUrl?: string | null;
 };
 
 export const ACTIVE_JOB_STATUSES: ExcelResearchJobStatus[] = [

@@ -5,6 +5,7 @@ import { FILLABLE_FIELDS } from "~/lib/materials/excel-enrich-fields";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import {
   approveRow,
+  bulkApproveRows,
   cancelJob,
   createJob,
   exportJobExcel,
@@ -234,6 +235,25 @@ export const excelResearchRouter = createTRPCRouter({
           rowNumber: input.rowNumber,
           materialId: input.materialId,
           acceptedFields: input.acceptedFields,
+        }),
+      ),
+    ),
+
+  bulkApproveRows: publicProcedure
+    .input(
+      jobIdInput.extend({
+        rowIds: z.array(z.string()).optional(),
+        minConfidence: z.number().min(0).max(1).optional(),
+        onlyStatus: z.array(z.string()).optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withExcelResearchErrors(() =>
+        bulkApproveRows({
+          jobId: input.jobId,
+          rowIds: input.rowIds,
+          minConfidence: input.minConfidence,
+          onlyStatus: input.onlyStatus,
         }),
       ),
     ),

@@ -1,296 +1,50 @@
 # BidTool v3
 
-BidTool v3 is a Next.js dashboard for tender discovery workflows, material catalog import, and BidWinner operations. The app uses the T3-style stack with Next.js App Router, tRPC, Drizzle, PostgreSQL, and Tailwind CSS.
+Single-user local dashboard for tender discovery, material catalog import, and BidWinner workflows. Built with Next.js App Router, tRPC, Drizzle, PostgreSQL, and Tailwind CSS.
 
 ## Requirements
 
-- Node.js `20+` and Bun
-- Docker Engine with the Docker Compose plugin
-
-The local workflow starts PostgreSQL through Docker Compose. PostgreSQL powers the app database.
-
-## Project Conventions
-
-BidTool is intentionally a single-user local tool. Do not add authentication,
-authorization, user/session tables, ownership columns, protected tRPC
-procedures, login pages, OAuth, or per-user rate limiting. Global safety limits
-are fine because they protect the local app from runaway client loops.
-
-Use `bun run db:migrate` for database migrations. Do not run `drizzle-kit
-migrate` directly. To add a migration, edit `src/server/db/schema.ts`, run `bun
-run db:generate`, review the generated SQL in `drizzle/`, then run `bun run
-db:migrate`.
-
-Keep server-only code under `src/server/`, client utilities under `src/lib/` or
-`src/app/_components/`, and reuse `src/lib/search-criteria.ts` for search
-criteria validation. User-facing copy should be Vietnamese (`vi-VN`).
+- Node.js `20+` and Bun `1.3+`
+- Docker Engine with the Docker Compose plugin (runs local PostgreSQL)
 
 ## Local Workflow
 
-Use these three commands on every machine:
+```bash
+bun run dev:install   # first-time setup: deps, .env, PostgreSQL, migrations
+bun run dev:update    # after git pull: refresh deps, PostgreSQL, migrations
+bun run dev:run       # daily startup, then open http://localhost:3000
+```
+
+Demo data is never seeded automatically. To load it, set `ENABLE_DEMO_SEED="true"` in `.env` and run `bun run db:seed`.
+
+## Conventions
+
+- Single-user tool: no auth, sessions, ownership columns, or per-user limits.
+- Migrations: edit `src/server/db/schema.ts`, run `bun run db:generate`, review SQL in `drizzle/`, then `bun run db:migrate`. Don't call `drizzle-kit migrate` directly.
+- Server-only code under `src/server/`, client utilities under `src/lib/` or `src/app/_components/`.
+- User-facing copy is Vietnamese (`vi-VN`).
+
+## Common Scripts
 
 ```bash
-bun run dev:install
-bun run dev:update
-bun run dev:run
+bun run dev           # Next.js only, no stack checks
+bun run check         # ESLint + TypeScript
+bun run test          # Vitest
+bun run db:migrate    # apply migrations
+bun run db:studio     # Drizzle Studio
 ```
 
-### `bun run dev:install`
+## Deployment
 
-Use this once on a new machine or fresh clone.
+- **Vercel (web):** promoted by the release workflow on `v*` tags. Served at `https://bidtoolv3.vercel.app`. Requires a non-empty `DATABASE_URL`; apply production migrations with `node scripts/db-migrate-runtime.mjs` after schema changes.
+- **On-prem (B2B):** isolated Docker stack (Caddy + app + PostgreSQL). Manage with `bun run onprem:install` / `onprem:update` / `onprem:backup` / `onprem:restore` / `onprem:bundle`.
+- **Desktop (Electron):** `bun run desktop:dev` for development, `desktop:pack` / `desktop:build` to package. Set `BIDTOOL_SERVER_URL` to connect to an on-prem server, otherwise it runs the local server.
 
-```bash
-bun run dev:install
-```
-
-It installs dependencies, creates `.env` from `.env.example` only if missing, starts the local PostgreSQL container, waits for readiness, and applies migrations. It does not seed demo data and it does not overwrite an existing `.env`.
-
-### `bun run dev:update`
-
-Use this after you already ran `git pull`.
-
-```bash
-git pull
-bun run dev:update
-```
-
-It refreshes dependencies, preserves your local `.env`, ensures PostgreSQL is running, and applies any new migrations. It does not run `git pull` for you.
-
-### `bun run dev:run`
-
-Use this for normal daily startup.
-
-```bash
-bun run dev:run
-```
-
-It ensures `.env` exists, starts PostgreSQL if needed, waits for readiness, applies migrations, and then starts the Next.js dev server. After it boots, open `http://localhost:3000`.
-
-### Optional Demo Data
-
-Install, update, and run never seed automatically. If you want demo data:
-
-1. Set `ENABLE_DEMO_SEED="true"` in `.env`.
-2. Run `bun run db:seed`.
-
-### Compatibility Aliases
-
-Older aliases `bun run setup`, `bun run start:dev`, and `bun run update` point to the primary local workflow for compatibility.
-
-## On-Prem Single-Tenant Package
-
-For B2B customers, BidTool can run as one isolated customer deployment with the
-production Docker stack:
-
-- Caddy reverse proxy
-- BidTool Next.js app container
-- PostgreSQL
-
-Create or update the customer stack:
-
-```bash
-bun run onprem:install
-bun run onprem:update
-```
-
-Back up and restore the customer database:
-
-```bash
-bun run onprem:backup
-bun run onprem:restore -- backups/onprem/bidtool-YYYYMMDD-HHMMSS.dump
-```
-
-Create a distributable customer bundle:
-
-```bash
-bun run onprem:bundle
-```
-
-Customer configuration lives in `deploy/onprem/.env.customer`, created from
-`deploy/onprem/.env.customer.example` on first install.
-
-## Desktop App
-
-Electron is an additional desktop entrypoint. It can either run the bundled local
-server or connect to a customer on-prem server.
-
-Use this during development:
-
-```bash
-bun run desktop:dev
-```
-
-Build an unpacked desktop app for a quick local smoke test:
-
-```bash
-bun run desktop:pack
-```
-
-Build an installer/package:
-
-```bash
-bun run desktop:build
-```
-
-For on-prem customers, set `BIDTOOL_SERVER_URL` next to the desktop executable
-or open `/settings#desktop-client` inside the desktop app and save the customer
-server URL. When `BIDTOOL_SERVER_URL` is set by an admin, the in-app setting is
-read-only.
-
-When no server URL is configured, the desktop app runs the same Next.js
-application in a local Electron window. PostgreSQL still runs through the
-existing Docker workflow.
-
-### GitHub Releases
-
-Desktop releases, on-prem bundles, and the on-prem Docker image are built by
-GitHub Actions. Full update-system docs live in [`docs/updates/README.md`](docs/updates/README.md).
-
-- [Operating guide](docs/updates/operating-guide.md) — day-to-day releases
-- [Release CLI](docs/updates/release-cli.md) — incremental tagging
-- [CI/CD review](docs/updates/ci-cd.md) — workflows and secrets
-
-To publish a release:
-
-```bash
-bun run release status
-bun run release patch
-```
-
-Or manually:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The `Release` workflow (`/.github/workflows/release.yml`) builds and publishes:
-
-- Vercel production (`vercel build` + `vercel deploy --prebuilt`)
-- On-prem Docker image on GHCR
-- On-prem bundle tarball
-- Windows and Linux desktop artifacts
-- GitHub Release `manifest.json`
-- Committed artifact pins in `releases/pins.json`
-
-You can also run the workflow manually and provide a release tag.
-
-Packaged desktop builds use semver + build metadata, check GitHub Releases in the
-background, and show a sidebar update pill plus Settings → About controls.
-On-prem instances show a dismissible admin banner with a copy-paste update command.
-
-## Local PostgreSQL
-
-New `.env` files use a non-default Postgres host port to avoid common local conflicts:
-
-- `POSTGRES_HOST_PORT="55432"`
-- `DATABASE_URL="postgresql://bidtool:bidtool@localhost:55432/bidtoolv3"`
-
-If your `.env` was created before these defaults existed, update those values manually.
-
-## Scrape Queue Settings
-
-Shop scrape/import jobs are stored in Postgres and processed by the in-process
-Next.js scheduler. Defaults are conservative for local and desktop installs:
-
-```env
-SCRAPE_MAX_CONCURRENT_JOBS="2"
-SCRAPE_MAX_CONCURRENT_PAGES="2"
-IMPORT_MAX_CONCURRENT_JOBS="2"
-SCRAPE_JOB_TTL_DAYS="7"
-```
-
-## Vercel Production
-
-Production web deploys are promoted by the release workflow when you push a `v*`
-tag. Do not rely on automatic production deploys from `main`.
-
-The app is served at `https://bidtoolv3.vercel.app`.
-Vercel Web Analytics is enabled in the app through `@vercel/analytics`.
-
-Production server routes require a real PostgreSQL connection string:
-
-- `DATABASE_URL` must be a non-empty Postgres URL for the production database.
-- `APP_BASE_URL` should be `https://bidtoolv3.vercel.app`.
-- Keep `ENABLE_DEMO_SEED="false"` unless intentionally loading demo data.
-
-After pushing schema changes, apply production migrations before testing write
-flows such as material create/import/delete. Use the runtime migration script so
-it reads only process environment variables and does not load local `.env`:
-
-```bash
-node scripts/db-migrate-runtime.mjs
-```
-
-When running through Vercel CLI, avoid running the migration from a directory
-that contains a local `.env`, because `vercel env run` can merge local env values
-into the child process. A safe pattern is:
-
-```bash
-repo_dir="$(pwd)"
-tmp_dir="$(mktemp -d)"
-cp -R .vercel "$tmp_dir/.vercel"
-(
-  cd "$tmp_dir"
-  vercel env run --environment production -- node "$repo_dir/scripts/db-migrate-runtime.mjs"
-)
-rm -rf "$tmp_dir"
-```
-
-Before running migrations, verify the production env is actually present without
-printing secrets:
-
-```bash
-tmp_dir="$(mktemp -d)"
-cp -R .vercel "$tmp_dir/.vercel"
-(
-  cd "$tmp_dir"
-  vercel env run --environment production -- node -e "console.log(process.env.DATABASE_URL ? 'DATABASE_URL set' : 'DATABASE_URL missing')"
-)
-rm -rf "$tmp_dir"
-```
-
-If `DATABASE_URL` is missing or empty, production pages may still render, but
-tRPC write functions that touch the database will fail.
+Releases (desktop, on-prem bundle, on-prem image) are built by GitHub Actions. Tag with `bun run release patch` or `git tag v0.1.0 && git push origin v0.1.0`. See [`docs/updates/README.md`](docs/updates/README.md).
 
 ## Troubleshooting
 
-- If Docker commands fail, make sure Docker Desktop or the Docker daemon is running before `dev:install`, `dev:update`, or `dev:run`.
-- If PostgreSQL is not running, make sure Docker Desktop is open and rerun `bun run dev:run`.
-- If PostgreSQL is still starting, rerun `bun run dev:run` or `bun run db:migrate` after a few seconds.
-- If you see a Smart View schema warning after pulling new code, run `bun run dev:update` or `bun run db:migrate`, then reload the page.
-- If startup fails with env validation, refresh `.env` from the latest `.env.example` and re-apply your local changes.
-- If `bun run db:seed` says demo seed was skipped, set `ENABLE_DEMO_SEED="true"` in `.env` first.
-- If Vercel material create/import/delete fails with a raw database query error,
-  confirm production `DATABASE_URL` is non-empty and production migrations have
-  been applied.
-
-
-
-- `bun run dev:install` - first-time machine setup: deps, `.env`, PostgreSQL, and migrations.
-- `bun run dev:update` - post-pull sync: deps, PostgreSQL, and migrations.
-- `bun run dev:run` - daily startup with env, PostgreSQL, and migration checks before Next.js.
-- `bun run dev:kill` - stop Docker Compose services and BidTool local dev processes when ports are stuck; it uses stop-only Docker commands and does not delete containers or volumes.
-- `bun run dev` - start Next.js only, without local stack checks.
-- `bun run desktop:dev` - start the local stack and open the app in Electron for development.
-- `bun run desktop:pack` - build Next standalone output and create an unpacked Electron app.
-- `bun run desktop:build` - build Next standalone output and package the Electron app.
-- `bun run onprem:install` - create customer env if needed and start the production on-prem stack.
-- `bun run onprem:update` - back up, pull images, recreate containers, and run migrations.
-- `bun run onprem:backup` - create a PostgreSQL custom-format backup.
-- `bun run onprem:restore -- <backup>` - restore a backup and restart the app.
-- `bun run onprem:bundle` - create a distributable on-prem archive.
-- `bun run build` - create a production build.
-- `bun run start` - run the production server after `bun run build`.
-- `bun run preview` - build and start production locally in one command.
-- `bun run check` - run ESLint and TypeScript.
-- `bun run format:check` - verify Prettier formatting.
-- `bun run format:write` - format project files.
-- `bun run db:migrate` - apply Drizzle migrations.
-- `bun run db:seed` - seed demo data only when `ENABLE_DEMO_SEED=true`.
-- `bun run db:studio` - open Drizzle Studio.
-- `bun run release` / `bun run release:status` - show current and next release versions.
-- `bun run release patch` / `bun run release:minor` / `bun run release:major` - tag and push a release (interactive).
-- `bun run release:patch` / `bun run release:minor` / `bun run release:major` - tag and push non-interactively.
-- `bun run release:manifest` - generate `manifest.json` locally.
-- `bun run release:pins` - update `releases/pins.json` locally.
+- Docker errors: ensure the Docker daemon is running before `dev:*` commands.
+- PostgreSQL still starting: rerun `bun run dev:run` or `bun run db:migrate` after a few seconds.
+- Env validation failures: refresh `.env` from `.env.example` and reapply local changes.
+- New `.env` files use `POSTGRES_HOST_PORT="55432"` to avoid local conflicts.

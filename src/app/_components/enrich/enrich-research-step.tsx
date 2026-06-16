@@ -61,6 +61,7 @@ export function EnrichResearchStep({
   const startJob = api.excelResearch.startJob.useMutation();
   const approveRow = api.excelResearch.approveRow.useMutation();
   const rejectRow = api.excelResearch.rejectRow.useMutation();
+  const bulkApproveRows = api.excelResearch.bulkApproveRows.useMutation();
 
   const jobStatusQuery = api.excelResearch.getJobStatus.useQuery(
     { jobId: jobId ?? EMPTY_JOB_ID },
@@ -200,6 +201,34 @@ export function EnrichResearchStep({
     );
   };
 
+  const handleBulkApprove = (args: {
+    rowIds?: string[];
+    minConfidence?: number;
+  }) => {
+    if (!jobId) return;
+    bulkApproveRows.mutate(
+      { jobId, rowIds: args.rowIds, minConfidence: args.minConfidence },
+      {
+        onSuccess: (result) => {
+          void Promise.all([
+            listRowsQuery.refetch(),
+            rowDetailQuery.refetch(),
+            jobStatusQuery.refetch(),
+          ]).then(() =>
+            toast.success(
+              `Đã duyệt ${result.approved.toLocaleString("vi-VN")} dòng.` +
+                (result.failed > 0
+                  ? ` (${result.failed.toLocaleString("vi-VN")} lỗi)`
+                  : ""),
+            ),
+          );
+        },
+        onError: (err) =>
+          toast.error(err.message || "Không duyệt hàng loạt được."),
+      },
+    );
+  };
+
   if (!jobId || !reviewReady) {
     const progressPct =
       activeJob && activeJob.totalRows > 0
@@ -302,6 +331,8 @@ export function EnrichResearchStep({
       isRejecting={rejectRow.isPending}
       onApprove={handleApprove}
       onReject={handleReject}
+      onBulkApprove={handleBulkApprove}
+      isBulkApproving={bulkApproveRows.isPending}
       onPrimaryAction={onContinue}
       onSecondaryAction={onSkip}
     />

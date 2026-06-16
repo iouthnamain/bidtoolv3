@@ -10,6 +10,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  ImageOff,
   Loader2,
   RotateCcw,
   Sparkles,
@@ -186,6 +187,7 @@ type WebCandidate = {
   isSelected: boolean;
   catalogPdfUrls: string[];
   matchReasons: string[];
+  imageUrl?: string | null;
 };
 
 export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } = {}) {
@@ -1117,6 +1119,31 @@ function EnrichmentReviewDialog({
           <div className="space-y-5">
             <div>
               <h4 className="text-sm font-bold text-slate-900">Trước / sau</h4>
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                  {item.materialImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.materialImageUrl}
+                      alt=""
+                      className="h-full w-full object-contain"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-slate-300">
+                      <ImageOff className="h-6 w-6" aria-hidden />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-500">
+                    Ảnh vật tư hiện tại
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    So sánh trực quan với ảnh ứng viên web bên dưới.
+                  </p>
+                </div>
+              </div>
               <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
@@ -1223,6 +1250,21 @@ function EnrichmentReviewDialog({
                         disabled={isSelecting}
                         onChange={() => onSelectCandidate(candidate.id)}
                       />
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                        {candidate.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={candidate.imageUrl}
+                            alt=""
+                            className="h-full w-full object-contain"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-slate-300">
+                            <ImageOff className="h-5 w-5" aria-hidden />
+                          </div>
+                        )}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-slate-900">
                           {candidate.title}

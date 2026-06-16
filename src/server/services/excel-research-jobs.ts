@@ -439,6 +439,100 @@ export async function approveRow(input: {
   return getRowResult(input.jobId, input.rowNumber);
 }
 
+const BULK_APPROVABLE_STATUSES: ExcelResearchRowStatus[] = [
+  "needs_review",
+  "matched",
+];
+
+export async function bulkApproveRows(input: {
+  jobId: string;
+  rowIds?: string[];
+  minConfidence?: number;
+  onlyStatus?: string[];
+}) {
+  // Resolve which rows to approve: either an explicit id list, or all rows in
+  // an approvable state (optionally narrowed by status / confidence).
+  const explicitIds = (input.rowIds ?? [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id));
+
+  const conditions = [eq(excelResearchJobRows.jobId, input.jobId)];
+  if (explicitIds.length > 0) {
+    conditions.push(inArray(excelResearchJobRows.id, explicitIds));
+  } else {
+    const statuses = (
+      input.onlyStatus && input.onlyStatus.length > 0
+        ? input.onlyStatus
+        : BULK_APPROVABLE_STATUSES
+    ) as ExcelResearchRowStatus[];
+    conditions.push(inArray(excelResearchJobRows.status, statuses));
+  }
+
+  const candidateRows = await db
+    .select()
+    .from(excelResearchJobRows)
+    .where(and(...conditions));
+
+  const now = new Date().toISOString();
+  let approved = 0;
+  let failed = 0;
+
+  for (const row of candidateRows) {
+    // When approving by explicit id we still skip rows that are not in an
+    // approvable state to avoid re-approving skipped/error rows by accident.
+    if (
+      explicitIds.length > 0 &&
+      !BULK_APPROVABLE_STATUSES.includes(row.status as ExcelResearchRowStatus)
+    ) {
+      continue;
+    }
+
+    if (input.minConfidence != null) {
+      const score = row.confidenceScore != null ? Number(row.confidenceScore) : null;
+      if (score == null || score < input.minConfidence) {
+        continue;
+      }
+    }
+
+    const result = row.resultJson ?? {};
+    const accepted =
+      (result.accepted_fields as FillableField[] | undefined) ?? [];
+
+    try {
+      await db
+        .update(excelResearchJobRows)
+        .set({
+          status: "approved",
+          reviewedAt: now,
+          updatedAt: now,
+          resultJson: {
+            ...result,
+            accepted_fields: accepted,
+            needs_review: false,
+          },
+        })
+        .where(eq(excelResearchJobRows.id, row.id));
+
+      await appendChangeLog({
+        jobId: input.jobId,
+        jobRowId: row.id,
+        rowNumber: row.rowNumber,
+        event: "row_approved",
+        actor: "user",
+        payload: { bulk: true, acceptedFields: accepted },
+      });
+      approved += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  // Recompute counters once at the end rather than per row.
+  await recomputeJobCounters(input.jobId);
+
+  return { approved, failed };
+}
+
 export async function rejectRow(input: {
   jobId: string;
   rowNumber: number;
