@@ -400,7 +400,7 @@ export function CatalogPdfLibraryClient({
                 <input
                   type="search"
                   className={`${inputClass} w-full pl-9`}
-                  placeholder="Tìm theo tên, NCC, URL hoặc ghi chú..."
+                  placeholder="Tìm theo tên, NCC, URL hoặc ghi chú…"
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
                 />
@@ -450,7 +450,7 @@ export function CatalogPdfLibraryClient({
               {(sourceFilter !== "all" ||
                 storageFilter !== "all" ||
                 sortKey !== "recent" ||
-                keyword.trim()) && (
+                keyword.trim()) ? (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -464,7 +464,7 @@ export function CatalogPdfLibraryClient({
                 >
                   Xóa lọc
                 </Button>
-              )}
+              ) : null}
             </div>
 
             {selectedIds.size > 0 ? (
@@ -486,7 +486,7 @@ export function CatalogPdfLibraryClient({
             ) : null}
 
             {listQuery.isLoading ? (
-              <p className="mt-4 text-sm text-slate-500">Đang tải...</p>
+              <p className="mt-4 text-sm text-slate-500">Đang tải…</p>
             ) : documents.length === 0 ? (
               <EmptyState
                 className="mt-4"
@@ -765,7 +765,7 @@ function NewDocumentView({
             <input
               type="url"
               className={inputClass}
-              placeholder="https://... (.pdf)"
+              placeholder="https://… (.pdf)"
               value={newUrl}
               onChange={(event) => setNewUrl(event.target.value)}
               required
@@ -1080,7 +1080,7 @@ function CatalogPdfDetailPanel({
 
       {detailQuery.isLoading || !document || !editForm ? (
         <div className="panel p-5">
-          <p className="text-sm text-slate-500">Đang tải...</p>
+          <p className="text-sm text-slate-500">Đang tải…</p>
         </div>
       ) : (
         <>
@@ -1226,7 +1226,7 @@ function CatalogPdfDetailPanel({
                 <input
                   type="search"
                   className={`${inputClass} w-full pl-9`}
-                  placeholder="Tìm vật tư để gắn thêm..."
+                  placeholder="Tìm vật tư để gắn thêm…"
                   value={materialKeyword}
                   onChange={(event) => setMaterialKeyword(event.target.value)}
                 />
@@ -1235,7 +1235,7 @@ function CatalogPdfDetailPanel({
                 <ul className="mt-2 space-y-1">
                   {materialSearch.isLoading ? (
                     <li className="px-2 py-1 text-xs text-slate-500">
-                      Đang tìm...
+                      Đang tìm…
                     </li>
                   ) : materialCandidates.length === 0 ? (
                     <li className="px-2 py-1 text-xs text-slate-500">

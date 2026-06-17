@@ -188,12 +188,12 @@ export function ExcelResearchReviewPanel({
     <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-900">
+          <h3 className="text-sm font-bold text-slate-900 text-balance">
             Xét duyệt kết quả nghiên cứu web
           </h3>
           <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
-            <span>{summary.total.toLocaleString("vi-VN")} dòng</span>
-            <span>
+            <span className="tabular-nums">{summary.total.toLocaleString("vi-VN")} dòng</span>
+            <span className="tabular-nums">
               {summary.needsReview.toLocaleString("vi-VN")} cần duyệt
             </span>
           </p>

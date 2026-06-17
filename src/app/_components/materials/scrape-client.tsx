@@ -410,6 +410,7 @@ function ScrapeProductDetailDialog({
             <input
               className={scrapeFieldClass}
               type="url"
+              spellCheck={false}
               value={product.sourceUrl}
               disabled={!canEdit || isSaving}
               onChange={(event) =>
@@ -507,6 +508,7 @@ function ScrapeProductDetailDialog({
             <span className="text-xs font-bold text-slate-700">SKU</span>
             <input
               className={scrapeFieldClass}
+              spellCheck={false}
               value={product.sku ?? ""}
               disabled={!canEdit || isSaving}
               onChange={(event) =>
@@ -518,6 +520,7 @@ function ScrapeProductDetailDialog({
             <span className="text-xs font-bold text-slate-700">Model</span>
             <input
               className={scrapeFieldClass}
+              spellCheck={false}
               value={product.model ?? ""}
               disabled={!canEdit || isSaving}
               onChange={(event) =>
@@ -1567,6 +1570,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               <input
                 className="min-h-10 w-full rounded-lg border border-slate-300 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                 placeholder="https://shop.example.com/category"
+                spellCheck={false}
                 value={shopUrl}
                 disabled={isStartingScrape}
                 onChange={(event) => setShopUrl(event.target.value)}

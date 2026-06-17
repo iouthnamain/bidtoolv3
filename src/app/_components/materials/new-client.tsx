@@ -190,7 +190,7 @@ export function MaterialCreateClient() {
               Quay lại danh mục
             </Link>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-950">
+              <h2 className="text-xl font-bold text-balance text-slate-950">
                 Thêm sản phẩm / vật tư
               </h2>
               <Badge tone="info">Manual</Badge>
@@ -250,6 +250,7 @@ export function MaterialCreateClient() {
             <input
               name="code"
               autoComplete="off"
+              spellCheck={false}
               className={inputClass}
               value={form.code}
               onChange={(event) =>
@@ -322,6 +323,7 @@ export function MaterialCreateClient() {
             <input
               name="currency"
               autoComplete="off"
+              spellCheck={false}
               className={inputClass}
               value={form.currency}
               onChange={(event) =>
@@ -334,6 +336,7 @@ export function MaterialCreateClient() {
               name="sourceUrl"
               type="url"
               autoComplete="url"
+              spellCheck={false}
               className={inputClass}
               placeholder="https://example.com/bao-gia…"
               value={form.sourceUrl}

@@ -97,7 +97,7 @@ export function EnrichJobsList({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="section-title">Danh sách job</p>
-          <h2 className="mt-1 text-base font-bold text-slate-950">
+          <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
             {compact ? "Job nghiên cứu Excel" : "Lịch sử nghiên cứu"}
           </h2>
         </div>
@@ -168,7 +168,7 @@ function JobListRow({
             <div className="flex justify-between text-[11px] font-semibold text-violet-800">
               <span>Đang chạy</span>
               <span className="tabular-nums">
-                {job.processedRows}/{job.totalRows}
+                {job.processedRows.toLocaleString("vi-VN")}/{job.totalRows.toLocaleString("vi-VN")}
               </span>
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-violet-100">
@@ -179,7 +179,7 @@ function JobListRow({
             </div>
           </div>
         ) : (
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-[11px] text-slate-500 tabular-nums">
             {job.processedRows.toLocaleString("vi-VN")}/
             {job.totalRows.toLocaleString("vi-VN")} dòng
             {job.needsReviewRows > 0
@@ -194,6 +194,7 @@ function JobListRow({
         ) : null}
         {JOB_STATUS_LABEL[job.status]}
       </Badge>
+
     </div>
   );
 }

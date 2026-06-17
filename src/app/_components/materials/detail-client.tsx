@@ -985,7 +985,7 @@ export function MaterialDetailClient({
                 ) : null}
                 <Badge tone="success">{material.currency}</Badge>
               </div>
-              <h2 className="mt-2 max-w-4xl text-2xl leading-tight font-bold [overflow-wrap:anywhere] text-slate-950">
+              <h2 className="mt-2 max-w-4xl text-2xl leading-tight font-bold text-balance [overflow-wrap:anywhere] text-slate-950">
                 {material.name}
               </h2>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1267,6 +1267,7 @@ export function MaterialDetailClient({
                   autoComplete="url"
                   className={inputClass}
                   placeholder="https://example.com/bao-gia…"
+                  spellCheck={false}
                   value={priceSourceForm.url}
                   onChange={(event) =>
                     setPriceSourceForm({
@@ -1456,6 +1457,7 @@ export function MaterialDetailClient({
               <input
                 name="code"
                 autoComplete="off"
+                spellCheck={false}
                 className={inputClass}
                 value={form.code}
                 onChange={(event) =>
@@ -1570,6 +1572,7 @@ export function MaterialDetailClient({
               <input
                 name="currency"
                 autoComplete="off"
+                spellCheck={false}
                 className={inputClass}
                 value={form.currency}
                 onChange={(event) =>
@@ -1588,6 +1591,7 @@ export function MaterialDetailClient({
                 name="sourceUrl"
                 type="url"
                 autoComplete="url"
+                spellCheck={false}
                 className={inputClass}
                 value={form.sourceUrl}
                 onChange={(event) =>

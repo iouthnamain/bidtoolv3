@@ -68,7 +68,7 @@ export function StepHeader({
                 >
                   {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
                 </span>
-                <span className="hidden sm:inline">{step.label}</span>
+                <span className="hidden sm:inline text-balance">{step.label}</span>
               </button>
               {index < STEPS.length - 1 ? (
                 <span className="h-px w-3 bg-slate-300 sm:w-6" aria-hidden />

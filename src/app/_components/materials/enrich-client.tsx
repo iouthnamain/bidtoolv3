@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
+  Bot,
   Check,
   CheckSquare,
   Download,
@@ -194,6 +195,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
   const router = useRouter();
   const searchParams = useSearchParams();
   const isJobPage = routeJobId != null;
+  const { data: activeProviders } = api.ai.getActiveProviders.useQuery();
   const materialIdsFromUrl = useMemo(
     () => parseMaterialIds(searchParams.get("ids")),
     [searchParams],
@@ -441,7 +443,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-title">Làm giàu vật tư</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
+              <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
                 Tìm kiếm web và bổ sung catalog
               </h2>
               <p className="mt-1 text-xs text-slate-500">
@@ -453,6 +455,16 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
               <Sparkles className="h-3 w-3" aria-hidden />
               Web enrichment
             </Badge>
+            {activeProviders?.enrichment ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                <Bot className="h-3 w-3" aria-hidden />
+                {activeProviders.enrichment === "openrouter"
+                  ? "OpenRouter"
+                  : activeProviders.enrichment === "gemini"
+                    ? "Gemini"
+                    : "Custom"}
+              </span>
+            ) : null}
           </div>
 
           <form className="mt-4 space-y-4" onSubmit={submitStart}>
@@ -562,7 +574,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-title">Danh sách job</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
+              <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
                 Lịch sử enrichment
               </h2>
             </div>
@@ -663,7 +675,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="section-title">Tiến độ job</p>
-                <h2 className="mt-1 text-base font-bold text-slate-950">
+                <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
                   Job {shortJobId(activeJob.id)}
                 </h2>
                 {activeJob.currentMaterialName ? (
@@ -756,14 +768,14 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
 
           <section className="panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3">
-              <h3 className="text-sm font-bold text-slate-900">
+              <h3 className="text-sm font-bold text-slate-900 text-balance">
                 Chi tiết từng vật tư
               </h3>
             </div>
 
             {itemsQuery.isLoading ? (
               <div className="p-4 text-sm text-slate-600">
-                <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" aria-hidden />
                 Đang tải danh sách…
               </div>
             ) : items.length === 0 ? (
@@ -880,7 +892,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
         </>
       ) : isJobPage && jobQuery.isLoading ? (
         <div className="panel p-5 text-sm text-slate-600">
-          <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" />
+          <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" aria-hidden />
           Đang tải job…
         </div>
       ) : isJobPage && jobQuery.isError ? (
@@ -1098,11 +1110,11 @@ function EnrichmentReviewDialog({
           </div>
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={onClose}
             aria-label="Đóng"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden />
           </button>
         </div>
       </div>
@@ -1110,7 +1122,7 @@ function EnrichmentReviewDialog({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Đang tải chi tiết…
           </div>
         ) : !item || !result ? (
@@ -1209,7 +1221,7 @@ function EnrichmentReviewDialog({
                           rel="noopener noreferrer"
                           className="mt-1.5 inline-flex items-center gap-1 text-sky-700 hover:underline"
                         >
-                          <ExternalLink className="h-3 w-3" />
+                          <ExternalLink className="h-3 w-3" aria-hidden />
                           {tryHostname(evidence.sourceUrl)}
                         </a>
                       ) : null}
@@ -1226,7 +1238,7 @@ function EnrichmentReviewDialog({
               <h4 className="text-sm font-bold text-slate-900">Ứng viên web</h4>
               {loadingCandidates ? (
                 <div className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   Đang tải ứng viên…
                 </div>
               ) : candidates.length === 0 ? (
@@ -1275,7 +1287,7 @@ function EnrichmentReviewDialog({
                           rel="noopener noreferrer"
                           className="mt-0.5 inline-flex items-center gap-1 text-xs text-sky-700 hover:underline"
                         >
-                          <ExternalLink className="h-3 w-3" />
+                          <ExternalLink className="h-3 w-3" aria-hidden />
                           {candidate.domain}
                         </a>
                         {candidate.snippet ? (

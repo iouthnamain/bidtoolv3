@@ -2408,7 +2408,7 @@ export function MaterialsListClient() {
               <input
                 type="search"
                 className={`${materialControlClass} mt-2 w-full max-w-md`}
-                placeholder="Tìm tài liệu theo tên, NCC hoặc URL..."
+                placeholder="Tìm tài liệu theo tên, NCC hoặc URL…"
                 aria-label="Tìm tài liệu catalog PDF"
                 value={attachPdfKeyword}
                 onChange={(event) => setAttachPdfKeyword(event.target.value)}
@@ -2416,7 +2416,7 @@ export function MaterialsListClient() {
               <ul className="mt-2 grid gap-1.5 md:grid-cols-2">
                 {attachPdfDocuments.isLoading ? (
                   <li className="px-2 py-1 text-xs text-slate-500">
-                    Đang tải tài liệu...
+                    Đang tải tài liệu…
                   </li>
                 ) : (attachPdfDocuments.data ?? []).length === 0 ? (
                   <li className="px-2 py-1 text-xs text-slate-500">

@@ -91,7 +91,7 @@ export function MatchCompareDrawer({
                 </Badge>
               ) : null}
             </div>
-            <h2 className="mt-1 truncate text-base font-bold text-slate-950">
+            <h2 className="mt-1 truncate text-base font-bold text-balance text-slate-950">
               {product.name}
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
@@ -110,7 +110,7 @@ export function MatchCompareDrawer({
             className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Đóng"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </header>
 
@@ -218,7 +218,7 @@ export function MatchCompareDrawer({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-xs text-sky-700 hover:underline"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               Xem trang nguồn
             </a>
           </footer>

@@ -31,7 +31,7 @@ export function EnrichJobsClient({ jobId }: { jobId?: string }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="section-title">Nghiên cứu web</p>
-            <h2 className="mt-1 text-base font-bold text-slate-950">
+            <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
               Job nghiên cứu Excel
             </h2>
             <p className="mt-1 text-xs text-slate-500">

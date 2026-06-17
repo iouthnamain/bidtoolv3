@@ -274,10 +274,10 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
       <>
         <section className="panel overflow-hidden">
           <div className="border-b border-violet-200 bg-violet-50 px-4 py-3">
-            <h3 className="text-sm font-bold text-violet-950">
+            <h3 className="text-sm font-bold text-violet-950 text-balance">
               Job {shortJobId(jobId)}
             </h3>
-            <p className="mt-1 text-xs text-violet-800">{job.sourceFileName}</p>
+            <p className="mt-1 text-xs text-violet-800 truncate">{job.sourceFileName}</p>
           </div>
           <div className="space-y-4 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -379,11 +379,11 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
             <p className="text-xs font-semibold text-slate-500">
               Job {shortJobId(jobId)}
             </p>
-            <h2 className="mt-0.5 text-base font-bold text-slate-950">
+            <h2 className="mt-0.5 text-base font-bold text-slate-950 text-balance">
               {job.sourceFileName}
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Sheet {job.sheetName} · {job.totalRows.toLocaleString("vi-VN")} dòng
+              Sheet {job.sheetName} · <span className="tabular-nums">{job.totalRows.toLocaleString("vi-VN")}</span> dòng
             </p>
           </div>
           <Badge tone={JOB_STATUS_TONE[status]}>

@@ -178,24 +178,24 @@ function MatchRow({
           <span className="font-medium text-slate-800">
             {item.scrapedName || "(không có tên)"}
           </span>
-          {item.scrapedUnit && (
+          {item.scrapedUnit ? (
             <span className="ml-1.5 text-slate-500">
               ({item.scrapedUnit})
             </span>
-          )}
+          ) : null}
         </div>
-        {item.scrapedSourceUrl && (
+        {item.scrapedSourceUrl ? (
           <a
             href={item.scrapedSourceUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline truncate max-w-xs"
           >
-            <ExternalLink className="h-3 w-3 shrink-0" />
+            <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
             {safeHostname(item.scrapedSourceUrl)}
           </a>
-        )}
-        {topCandidate && (
+        ) : null}
+        {topCandidate ? (
           <div className="mt-2 pl-3 border-l-2 border-slate-200">
             <div className="text-xs text-slate-500 mb-0.5">
               Ứng viên ghép:
@@ -207,8 +207,8 @@ function MatchRow({
               </span>
             </div>
           </div>
-        )}
-        {item.reasoning && (
+        ) : null}
+        {item.reasoning ? (
           <div className="mt-1.5 flex flex-wrap gap-1">
             {item.reasoning
               .split(",")
@@ -223,7 +223,7 @@ function MatchRow({
                 </span>
               ))}
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2 shrink-0 pt-1">
@@ -232,9 +232,10 @@ function MatchRow({
           onClick={onAccept}
           disabled={isAccepting || !item.matchedMaterialId}
           title="Chấp nhận ghép"
+          aria-label="Chấp nhận ghép"
           className="bg-green-600 text-white hover:bg-green-700"
         >
-          <Check className="h-4 w-4" />
+          <Check className="h-4 w-4" aria-hidden="true" />
         </Button>
         <Button
           size="sm"
@@ -242,8 +243,9 @@ function MatchRow({
           onClick={onReject}
           disabled={isRejecting}
           title="Từ chối, tạo vật tư mới"
+          aria-label="Từ chối, tạo vật tư mới"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
     </div>

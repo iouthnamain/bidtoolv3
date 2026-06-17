@@ -466,7 +466,7 @@ function UploadStep({
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sky-700 text-white">
             <FileSpreadsheet className="h-4 w-4" aria-hidden />
           </span>
-          <h3 className="text-sm font-extrabold text-slate-900">
+          <h3 className="text-sm font-extrabold text-slate-900 text-balance">
             Tải lên & map cột
           </h3>
         </div>
@@ -525,7 +525,7 @@ function UploadStep({
                   Đang đọc file…
                 </span>
               ) : (
-                "Chọn file để xem cột nhận diện được."
+                "Chọn file để xem cột nhận diện được…"
               )}
             </div>
           )}
@@ -663,14 +663,14 @@ function ReviewStep({
     <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-900">
+          <h3 className="text-sm font-bold text-slate-900 text-balance">
             Xét duyệt & chọn sản phẩm
           </h3>
           <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
-            <span>{matchData.matchedRows.toLocaleString("vi-VN")} dòng</span>
-            <span>{matched.toLocaleString("vi-VN")} khớp</span>
-            <span>{fieldsToFill.toLocaleString("vi-VN")} ô sẽ điền</span>
-            <span>
+            <span className="tabular-nums">{matchData.matchedRows.toLocaleString("vi-VN")} dòng</span>
+            <span className="tabular-nums">{matched.toLocaleString("vi-VN")} khớp</span>
+            <span className="tabular-nums">{fieldsToFill.toLocaleString("vi-VN")} ô sẽ điền</span>
+            <span className="tabular-nums">
               {matchData.summary.unmatched.toLocaleString("vi-VN")} chưa khớp
             </span>
           </p>
@@ -888,7 +888,8 @@ function MatchChooser({
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
           placeholder="Tìm sản phẩm khác trong catalog…"
-          className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+          spellCheck={false}
+          className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
         />
       </div>
 
@@ -1027,7 +1028,7 @@ function ExportStep({
   return (
     <section className="panel overflow-hidden">
       <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-        <h3 className="text-sm font-bold text-slate-900">Xuất file</h3>
+        <h3 className="text-sm font-bold text-slate-900 text-balance">Xuất file</h3>
         <p className="mt-1 text-xs text-slate-500">
           Xuất theo quyết định đối chiếu catalog, hoặc file đã nghiên cứu web nếu
           đã chạy bước 3.

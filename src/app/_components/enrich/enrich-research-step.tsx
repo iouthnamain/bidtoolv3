@@ -238,7 +238,7 @@ export function EnrichResearchStep({
     return (
       <section className="panel overflow-hidden">
         <div className="border-b border-violet-200 bg-violet-50 px-4 py-3">
-          <h3 className="text-sm font-bold text-violet-950">
+          <h3 className="text-sm font-bold text-violet-950 text-balance">
             Nghiên cứu sản phẩm trên web
           </h3>
           <p className="mt-1 text-xs text-violet-800">
@@ -277,9 +277,11 @@ export function EnrichResearchStep({
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
-              <p className="mt-2 text-[11px] text-violet-700">
-                {activeJob.message}
-              </p>
+              {activeJob.message ? (
+                <p className="mt-2 text-[11px] text-violet-700">
+                  {activeJob.message}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
