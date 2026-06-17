@@ -473,10 +473,12 @@ function MaterialMobileCard({
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Đơn giá</dt>
-          <dd className="mt-0.5 font-bold text-slate-950 tabular-nums">
-            {formatMoney(material.defaultUnitPrice, material.currency)}
+        <div className="col-span-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+          <dt className="text-[11px] font-bold text-emerald-700 uppercase">Đơn giá</dt>
+          <dd className="mt-0.5 stat-value text-xl font-extrabold text-emerald-800 tabular-nums">
+            {material.defaultUnitPrice
+              ? formatMoney(material.defaultUnitPrice, material.currency)
+              : <span className="text-sm font-semibold text-slate-400 italic">Chưa có giá</span>}
           </dd>
         </div>
         <div className="rounded-md bg-slate-50 px-2 py-1.5">
