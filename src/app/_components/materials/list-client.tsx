@@ -435,7 +435,7 @@ function MaterialMobileCard({
 
   return (
     <article
-      className={`rounded-lg border p-3 shadow-sm transition-colors ${
+      className={`rounded-xl border p-4 shadow-[var(--shadow-raised)] transition-all duration-200 ${
         row.getIsSelected()
           ? "border-sky-200 bg-sky-50/80"
           : "border-slate-200 bg-white"
@@ -454,7 +454,7 @@ function MaterialMobileCard({
           </span>
           <Link
             href={`/materials/${material.id}`}
-            className="line-clamp-2 text-sm font-bold text-slate-950 hover:text-sky-700 hover:underline"
+            className="line-clamp-2 text-[15px] font-extrabold text-slate-950 hover:text-sky-700 hover:underline"
           >
             {material.name}
           </Link>
@@ -464,7 +464,7 @@ function MaterialMobileCard({
             </span>
           ) : null}
           <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-            {material.details || material.specText || "Chưa có thông tin phụ"}
+            {material.details || material.specText || ""}
           </p>
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
@@ -472,7 +472,7 @@ function MaterialMobileCard({
         </span>
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <dl className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
         <div className="rounded-md bg-slate-50 px-2 py-1.5">
           <dt className="font-semibold text-slate-500">Đơn giá</dt>
           <dd className="mt-0.5 font-bold text-slate-950 tabular-nums">
@@ -1257,15 +1257,22 @@ export function MaterialsListClient() {
           <div className="space-y-0.5">
             <Link
               href={`/materials/${row.original.id}`}
-              className="line-clamp-2 hover:text-sky-700 hover:underline"
+              className="line-clamp-2 font-semibold hover:text-sky-700 hover:underline"
             >
               {row.original.name}
             </Link>
-            {row.original.code ? (
-              <span className="block font-mono text-[11px] font-normal text-slate-400">
-                Mã VT: {row.original.code}
-              </span>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {row.original.code ? (
+                <span className="font-mono text-[11px] font-normal text-slate-400">
+                  {row.original.code}
+                </span>
+              ) : null}
+              {row.original.sourceCount > 0 ? (
+                <span className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
+                  {row.original.sourceCount} nguồn
+                </span>
+              ) : null}
+            </div>
           </div>
         ),
       },
@@ -1375,8 +1382,10 @@ export function MaterialsListClient() {
           />
         ),
         cell: ({ row }) => (
-          <span className="font-semibold text-slate-900 tabular-nums">
-            {formatMoney(row.original.defaultUnitPrice, row.original.currency)}
+          <span className={`stat-value font-bold tabular-nums ${row.original.defaultUnitPrice ? "text-emerald-700" : "text-slate-400 italic"}`}>
+            {row.original.defaultUnitPrice
+              ? formatMoney(row.original.defaultUnitPrice, row.original.currency)
+              : "Chưa có giá"}
           </span>
         ),
       },
@@ -1522,7 +1531,7 @@ export function MaterialsListClient() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="animate-rise space-y-4">
       <ConfirmDialog
         open={confirmDelete}
         title={`Xóa ${selectedCount} vật tư?`}
@@ -1551,16 +1560,18 @@ export function MaterialsListClient() {
         onCancel={() => setSingleDeleteTarget(null)}
       />
 
-      <section className="panel p-4">
+      <section className="panel-raised p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-slate-950">
-              Quản lý sản phẩm / vật tư
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Danh mục catalog, đơn giá và link nguồn dùng cho nhập liệu và
-              chuẩn hóa vật tư.
-            </p>
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-bold text-slate-950">
+                Catalog vật tư
+              </h2>
+              <span className="stat-value text-2xl font-extrabold text-slate-900">
+                {showSummaryLoading ? "—" : summary.total.toLocaleString("vi-VN")}
+              </span>
+              <span className="text-xs text-slate-500">sản phẩm</span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -1598,10 +1609,10 @@ export function MaterialsListClient() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-3">
@@ -1617,7 +1628,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
+            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
             onClick={() =>
               setPriceStatus((current) =>
                 current === "priced" ? "all" : "priced",
@@ -1630,7 +1641,7 @@ export function MaterialsListClient() {
               </p>
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
+            <p className="mt-1 stat-value text-3xl font-extrabold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
@@ -1654,7 +1665,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
               <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
+            <p className="mt-1 stat-value text-3xl font-extrabold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
@@ -1665,7 +1676,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
+            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
             onClick={() =>
               setSourceStatus((current) => (current === "with" ? "all" : "with"))
             }
@@ -1674,7 +1685,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-sky-950">
+            <p className="mt-1 stat-value text-3xl font-extrabold text-sky-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
@@ -1687,7 +1698,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
+            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
             onClick={() =>
               setCatalogStatus((current) =>
                 current === "with" ? "all" : "with",
@@ -1700,7 +1711,7 @@ export function MaterialsListClient() {
               </p>
               <FileText className="h-4 w-4 text-violet-600" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-violet-950">
+            <p className="mt-1 stat-value text-3xl font-extrabold text-violet-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withCatalog.toLocaleString("vi-VN")}
@@ -1713,7 +1724,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-3">
@@ -1733,7 +1744,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-3">
@@ -1911,7 +1922,7 @@ export function MaterialsListClient() {
 
           <div
             id="material-catalog-filters"
-            className="mt-3 overflow-hidden rounded-lg border border-slate-200"
+            className="mt-3 overflow-hidden rounded-xl border border-slate-200"
           >
             <button
               type="button"
@@ -2517,7 +2528,7 @@ export function MaterialsListClient() {
               aria-label="Danh mục vật tư"
               className="w-full table-fixed divide-y divide-slate-200 text-sm break-words"
             >
-              <thead className="sticky top-0 z-10 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
+              <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-slate-100/50 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
                 {materialTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -2563,10 +2574,10 @@ export function MaterialsListClient() {
                   ? visibleRows.map((row) => (
                       <tr
                         key={row.id}
-                        className={`cursor-pointer transition-colors ${
+                        className={`cursor-pointer transition-colors duration-100 ${
                           row.getIsSelected()
                             ? "bg-sky-50/60"
-                            : "hover:bg-slate-50/80"
+                            : "hover:bg-sky-50/40"
                         }`}
                         onClick={(event) =>
                           handleMaterialRowClick(event, row.original.id)
@@ -2641,7 +2652,7 @@ export function MaterialsListClient() {
             </table>
           </div>
 
-          <div className="mt-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div
               className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
               aria-live="polite"

@@ -213,8 +213,8 @@ function MaterialImagePreview({ material }: { material: Material }) {
         Ảnh sản phẩm
       </span>
       {showPlaceholder ? (
-        <div className="flex h-40 w-full items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-center sm:h-48">
-          <div className="flex flex-col items-center gap-2 px-3 text-slate-500">
+        <div className="flex h-40 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white text-center sm:h-48">
+          <div className="flex flex-col items-center gap-2 px-3 text-slate-400">
             <Package className="h-8 w-8" aria-hidden />
             <span className="text-xs font-medium">Chưa có ảnh</span>
           </div>
@@ -225,7 +225,7 @@ function MaterialImagePreview({ material }: { material: Material }) {
           alt=""
           referrerPolicy="no-referrer"
           loading="lazy"
-          className="h-40 w-full rounded-md border border-slate-200 object-contain sm:h-48 sm:max-w-xs"
+          className="h-40 w-full rounded-xl border border-slate-200 object-contain shadow-[var(--shadow-flat)] sm:h-48 sm:max-w-xs"
           onError={() => setFailed(true)}
         />
       )}
@@ -248,29 +248,48 @@ function SummaryTile({
 }) {
   const toneClass = {
     neutral: "border-slate-200 bg-white text-slate-500",
-    sky: "border-sky-200 bg-sky-50 text-sky-700",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
+    sky: "border-sky-200 bg-sky-50/80 text-sky-700",
+    emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-700",
+    amber: "border-amber-200 bg-amber-50/80 text-amber-700",
+  }[tone];
+
+  const valueToneClass = {
+    neutral: "text-slate-950",
+    sky: "text-sky-950",
+    emerald: "text-emerald-800",
+    amber: "text-amber-800",
   }[tone];
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 shadow-[var(--shadow-flat)] transition-shadow hover:shadow-[var(--shadow-raised)]">
+      {/* Top accent line */}
+      <div
+        className={`absolute inset-x-0 top-0 h-[3px] ${
+          tone === "emerald"
+            ? "bg-emerald-500"
+            : tone === "sky"
+              ? "bg-sky-500"
+              : tone === "amber"
+                ? "bg-amber-400"
+                : "bg-slate-200"
+        }`}
+      />
       <div className="flex items-start gap-3">
         <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${toneClass}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}
           aria-hidden
         >
           {icon}
         </span>
         <div className="min-w-0">
-          <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+          <p className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
             {label}
           </p>
-          <div className="mt-1 text-base leading-snug font-bold [overflow-wrap:anywhere] text-slate-950">
+          <div className={`stat-value mt-1.5 text-lg leading-snug font-extrabold [overflow-wrap:anywhere] ${valueToneClass}`}>
             {value}
           </div>
           {helper ? (
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
               {helper}
             </p>
           ) : null}
@@ -293,7 +312,7 @@ function DetailRow({
     value === null || value === undefined || value === "" ? "-" : value;
 
   return (
-    <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+    <div className="flex items-start gap-2.5 rounded-xl border border-slate-100 bg-white px-3.5 py-2.5 shadow-[var(--shadow-flat)]">
       <span className="mt-0.5 text-slate-400" aria-hidden>
         {icon}
       </span>
