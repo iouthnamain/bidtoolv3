@@ -157,24 +157,57 @@ function resolveItemStatus(
   return "review";
 }
 
+function textOverlap(a: string, b: string): number {
+  const tokensA = new Set(a.toLowerCase().split(/\s+/).filter((t) => t.length > 2));
+  const tokensB = new Set(b.toLowerCase().split(/\s+/).filter((t) => t.length > 2));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  let overlap = 0;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) overlap++;
+  }
+  return overlap / Math.min(tokensA.size, tokensB.size);
+}
+
 function buildSearchQueries(input: MaterialEnrichmentInput, maxQueries: number) {
   const queries: string[] = [];
   const push = (value: string | null | undefined) => {
     const trimmed = value?.trim();
-    if (!trimmed) {
+    if (!trimmed || trimmed.length < 3) {
       return;
+    }
+    // Deduplicate: skip if the new query largely overlaps with an existing one
+    for (const existing of queries) {
+      if (textOverlap(trimmed, existing) > 0.75) return;
     }
     if (!queries.includes(trimmed)) {
       queries.push(trimmed);
     }
   };
 
-  push(`${input.name} ${input.manufacturer ?? ""} datasheet`.trim());
-  push(`${input.name} catalog pdf`);
-  push(input.manufacturer ? `${input.manufacturer} ${input.name}` : null);
-  push(input.sku ? `${input.sku} ${input.name}` : null);
-  push(input.model ? `${input.model} ${input.name}` : null);
-  push(input.specText ? `${input.name} ${input.specText.slice(0, 120)}` : null);
+  // 1. Name + manufacturer (no "datasheet" — fails for Vietnamese product names)
+  push(
+    input.manufacturer
+      ? `${input.name} ${input.manufacturer}`.trim()
+      : input.name,
+  );
+
+  // 2. Product code/model/SKU alone (short, precise)
+  push(input.sku ?? input.model ?? null);
+
+  // 3. SKU/model + manufacturer (when different from query 2)
+  if (input.manufacturer && (input.sku || input.model)) {
+    push(`${input.sku ?? input.model} ${input.manufacturer}`);
+  }
+
+  // 4. Name + short specText (max 60 chars, skip if high overlap with name)
+  if (input.specText) {
+    const shortSpec = input.specText.slice(0, 60).trim();
+    if (textOverlap(shortSpec, input.name) < 0.6) {
+      push(`${input.name} ${shortSpec}`);
+    }
+  }
+
+  // 5. Name alone as final fallback
   push(input.name);
 
   return queries.slice(0, maxQueries);

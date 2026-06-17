@@ -160,14 +160,11 @@ function searchTimeoutSignal(signal?: AbortSignal) {
 
 function searxngBaseUrls(): string[] {
   const configured = env.SEARXNG_BASE_URL?.trim();
-  const defaults = [
-    "http://127.0.0.1:8888",
-    "http://localhost:8888",
-    "http://127.0.0.1:18080",
-    "http://localhost:18080",
-  ];
-  const bases = configured ? [configured, ...defaults] : defaults;
-  return [...new Set(bases.map((base) => base.replace(/\/$/, "")))];
+  if (configured) {
+    return [configured.replace(/\/$/, "")];
+  }
+  // Fallback: try common local ports
+  return ["http://localhost:8888", "http://127.0.0.1:8888"];
 }
 
 async function searchSearxngQuery(
@@ -182,6 +179,7 @@ async function searchSearxngQuery(
       url.searchParams.set("q", query);
       url.searchParams.set("format", "json");
       url.searchParams.set("language", "vi-VN");
+      url.searchParams.set("engines", "google,bing");
 
       const response = await fetch(url.toString(), {
         headers: { Accept: "application/json" },
