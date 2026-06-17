@@ -20,9 +20,7 @@ import {
 } from "~/server/services/app-settings";
 import { callAiProvider } from "~/server/services/ai-dispatch";
 import {
-  createOpenRouterChatCompletion,
   testOpenRouterConnection,
-  type OpenRouterChatMessage,
 } from "~/server/services/openrouter";
 
 const chatMessageSchema = z.object({
@@ -56,6 +54,55 @@ export const aiRouter = createTRPCRouter({
     ]);
     return { openRouter, gemini, openaiCompatible };
   }),
+
+  getActiveProviders: publicProcedure.query(async () => {
+    const [chat, enrichment] = await Promise.all([
+      getActiveProvider("chat"),
+      getActiveProvider("enrichment"),
+    ]);
+    return { chat, enrichment };
+  }),
+
+  setActiveProvider: publicProcedure
+    .input(
+      z.object({
+        feature: z.enum(["chat", "enrichment"]),
+        provider: z.enum(["openrouter", "gemini", "openai_compatible"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      // Make sure the chosen provider actually has a key configured.
+      const [openRouter, gemini, openaiCompatible] = await Promise.all([
+        getOpenRouterConfig(),
+        getGeminiConfig(),
+        getOpenaiCompatibleConfig(),
+      ]);
+
+      const configured: Record<AiProvider, boolean> = {
+        openrouter: openRouter.configured,
+        gemini: gemini.configured,
+        openai_compatible: openaiCompatible.configured,
+      };
+
+      if (!configured[input.provider as AiProvider]) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Provider chưa được cấu hình API key. Nhập key trước khi chọn.",
+        });
+      }
+
+      await setActiveProvider(
+        input.feature as AiFeature,
+        input.provider as AiProvider,
+      );
+
+      const [chat, enrichment] = await Promise.all([
+        getActiveProvider("chat"),
+        getActiveProvider("enrichment"),
+      ]);
+      return { chat, enrichment };
+    }),
 
   setOpenRouterApiKey: publicProcedure
     .input(
