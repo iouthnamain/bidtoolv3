@@ -35,6 +35,7 @@ import {
   FileSpreadsheet,
   FileText,
   Filter,
+  LayoutGrid,
   Link as LinkIcon,
   MapPin,
   PackagePlus,
@@ -47,6 +48,7 @@ import {
   SquareCheckBig,
   Sparkles,
   SquarePen,
+  Table2,
   Trash2,
   WalletCards,
   X,
@@ -95,10 +97,14 @@ const MATERIAL_SEARCH_STALE_MS = 10_000;
 const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
 const MATERIAL_COLUMN_VISIBILITY_KEY = "bidtool:material-catalog-columns:v1";
 const MATERIAL_DENSITY_KEY = "bidtool:material-catalog-density:v1";
+const MATERIAL_VIEW_MODE_KEY = "bidtool:material-catalog-view-mode:v1";
 
 type TableDensity = "comfortable" | "compact";
+type ViewMode = "table" | "grid";
 
 const defaultColumnVisibility: VisibilityState = {
+  unit: false,
+  catalog: false,
   updatedAt: false,
 };
 
@@ -223,6 +229,16 @@ function loadDensity(): TableDensity {
     : "comfortable";
 }
 
+function loadViewMode(): ViewMode {
+  if (typeof window === "undefined") {
+    return "table";
+  }
+
+  return localStorage.getItem(MATERIAL_VIEW_MODE_KEY) === "grid"
+    ? "grid"
+    : "table";
+}
+
 function updateUrlParam(
   params: URLSearchParams,
   name: string,
@@ -272,10 +288,10 @@ function enrichMaterialRow(item: MaterialListItem): EnrichedMaterialListItem {
 const materialColumnWidthClass: Record<string, string> = {
   select: "w-12",
   stt: "w-12",
-  name: "w-[20%]",
+  name: "w-[34%]",
   code: "w-28",
   unit: "w-20",
-  specText: "w-[28%]",
+  specText: "w-[26%]",
   catalog: "w-24",
   manufacturer: "w-[12%]",
   originCountry: "w-32",
@@ -587,6 +603,7 @@ export function MaterialsListClient() {
     defaultColumnVisibility,
   );
   const [density, setDensity] = useState<TableDensity>("comfortable");
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [pageJumpValue, setPageJumpValue] = useState("1");
@@ -700,6 +717,7 @@ export function MaterialsListClient() {
     setHasMounted(true);
     setColumnVisibility(loadColumnVisibility());
     setDensity(loadDensity());
+    setViewMode(loadViewMode());
   }, []);
 
   useEffect(() => {
@@ -720,6 +738,14 @@ export function MaterialsListClient() {
 
     localStorage.setItem(MATERIAL_DENSITY_KEY, density);
   }, [density, hasMounted]);
+
+  useEffect(() => {
+    if (!hasMounted || typeof window === "undefined") {
+      return;
+    }
+
+    localStorage.setItem(MATERIAL_VIEW_MODE_KEY, viewMode);
+  }, [viewMode, hasMounted]);
 
   useEffect(() => {
     if (!showColumnPicker) {
@@ -1256,26 +1282,12 @@ export function MaterialsListClient() {
           />
         ),
         cell: ({ row }) => (
-          <div className="space-y-0.5">
-            <Link
-              href={`/materials/${row.original.id}`}
-              className="line-clamp-2 font-semibold hover:text-sky-700 hover:underline"
-            >
-              {row.original.name}
-            </Link>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {row.original.code ? (
-                <span className="font-mono text-[11px] font-normal text-slate-400">
-                  {row.original.code}
-                </span>
-              ) : null}
-              {row.original.sourceCount > 0 ? (
-                <span className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
-                  {row.original.sourceCount} nguồn
-                </span>
-              ) : null}
-            </div>
-          </div>
+          <Link
+            href={`/materials/${row.original.id}`}
+            className="line-clamp-2 font-semibold hover:text-sky-700 hover:underline"
+          >
+            {row.original.name}
+          </Link>
         ),
       },
       {
@@ -1532,6 +1544,112 @@ export function MaterialsListClient() {
     bulkUpdateMaterials.mutate({ ids: selectedIds, patch });
   };
 
+  const renderPaginationBar = (placement: "top" | "bottom") => (
+    <div
+      className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
+        placement === "top" ? "mt-3" : "mt-3"
+      }`}
+    >
+      <div
+        className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
+        aria-live="polite"
+      >
+        <span className="font-semibold text-slate-900">
+          {pageStart.toLocaleString("vi-VN")}-
+          {pageEnd.toLocaleString("vi-VN")}
+        </span>
+        <span>/ {summary.total.toLocaleString("vi-VN")} vật tư</span>
+        <span className="text-slate-300" aria-hidden>
+          |
+        </span>
+        <label className="inline-flex items-center gap-2">
+          <span>Số dòng</span>
+          <select
+            className="h-10 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            aria-label="Số dòng mỗi trang"
+            value={pagination.pageSize}
+            onChange={(event) => {
+              const pageSize = Number(event.target.value);
+              setPagination({
+                pageIndex: 0,
+                pageSize,
+              });
+            }}
+          >
+            {MATERIAL_PAGE_SIZE_OPTIONS.map((pageSize) => (
+              <option key={pageSize} value={pageSize}>
+                {pageSize === MATERIAL_VIEW_ALL_PAGE_SIZE
+                  ? "Tất cả"
+                  : pageSize.toLocaleString("vi-VN")}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-24 text-center text-xs font-semibold text-slate-600">
+          Trang {currentPage.toLocaleString("vi-VN")} /{" "}
+          {totalPages.toLocaleString("vi-VN")}
+        </span>
+        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+          <span className="sr-only">Nhảy tới trang</span>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={pageJumpValue}
+            aria-label="Nhảy tới trang"
+            className="h-10 w-14 rounded-md border border-slate-300 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            onChange={(event) => setPageJumpValue(event.target.value)}
+            onBlur={submitPageJump}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                submitPageJump();
+              }
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          aria-label="Trang đầu"
+          disabled={!canGoToPreviousPage || isFetching}
+          onClick={() => goToPage(0)}
+        >
+          <ChevronsLeft className="h-4 w-4" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          aria-label="Trang trước"
+          disabled={!canGoToPreviousPage || isFetching}
+          onClick={() => goToPage(pagination.pageIndex - 1)}
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          aria-label="Trang sau"
+          disabled={!canGoToNextPage || isFetching}
+          onClick={() => goToPage(pagination.pageIndex + 1)}
+        >
+          <ChevronRight className="h-4 w-4" aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          aria-label="Trang cuối"
+          disabled={!canGoToNextPage || isFetching}
+          onClick={() => goToPage(totalPages - 1)}
+        >
+          <ChevronsRight className="h-4 w-4" aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="animate-rise space-y-4">
       <ConfirmDialog
@@ -1611,44 +1729,44 @@ export function MaterialsListClient() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="mt-4 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <button
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-slate-500">Tổng vật tư</p>
-              <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
+              <PackagePlus className="h-3.5 w-3.5 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-xl font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
+            <p className="mt-0.5 text-base font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
               {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
               Bấm để xem danh mục
             </p>
           </button>
           <button
             type="button"
-            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
+            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
             onClick={() =>
               setPriceStatus((current) =>
                 current === "priced" ? "all" : "priced",
               )
             }
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-emerald-700">
                 Có giá
               </p>
-              <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
+              <WalletCards className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-xl font-bold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
+            <p className="mt-0.5 stat-value text-base font-bold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-emerald-700">
+            <p className="mt-0.5 text-[11px] font-medium text-emerald-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.priced, summary.total)} — lọc có giá`}
@@ -1656,43 +1774,43 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
+            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
             onClick={() =>
               setPriceStatus((current) =>
                 current === "missing" ? "all" : "missing",
               )
             }
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
-              <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
+              <WalletCards className="h-3.5 w-3.5 text-amber-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-xl font-bold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
+            <p className="mt-0.5 stat-value text-base font-bold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-amber-700">
+            <p className="mt-0.5 text-[11px] font-medium text-amber-700">
               Bấm để lọc thiếu giá
             </p>
           </button>
           <button
             type="button"
-            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
+            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
             onClick={() =>
               setSourceStatus((current) => (current === "with" ? "all" : "with"))
             }
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
-              <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
+              <LinkIcon className="h-3.5 w-3.5 text-sky-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-xl font-bold text-sky-950">
+            <p className="mt-0.5 stat-value text-base font-bold text-sky-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-sky-700">
+            <p className="mt-0.5 text-[11px] font-medium text-sky-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.withSources, summary.total)} — lọc có nguồn`}
@@ -1700,25 +1818,25 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-xl border px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
+            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
             onClick={() =>
               setCatalogStatus((current) =>
                 current === "with" ? "all" : "with",
               )
             }
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-violet-700">
                 Có catalog PDF
               </p>
-              <FileText className="h-4 w-4 text-violet-600" aria-hidden />
+              <FileText className="h-3.5 w-3.5 text-violet-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-xl font-bold text-violet-950">
+            <p className="mt-0.5 stat-value text-base font-bold text-violet-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withCatalog.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-violet-700">
+            <p className="mt-0.5 text-[11px] font-medium text-violet-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.withCatalog, summary.total)} — lọc có catalog`}
@@ -1726,19 +1844,19 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-slate-500">Có NCC</p>
-              <Factory className="h-4 w-4 text-slate-400" aria-hidden />
+              <Factory className="h-3.5 w-3.5 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-xl font-bold text-slate-950">
+            <p className="mt-0.5 text-base font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withManufacturer.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
               {showSummaryLoading
                 ? "-"
                 : `${summary.uniqueManufacturers.toLocaleString("vi-VN")} NCC khác nhau`}
@@ -1746,19 +1864,19 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-slate-500">Có xuất xứ</p>
-              <MapPin className="h-4 w-4 text-slate-400" aria-hidden />
+              <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-xl font-bold text-slate-950">
+            <p className="mt-0.5 text-base font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withOrigin.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
               {showSummaryLoading
                 ? "-"
                 : `${summary.uniqueOrigins.toLocaleString("vi-VN")} xuất xứ khác nhau`}
@@ -1817,9 +1935,44 @@ export function MaterialsListClient() {
               >
                 Đặt lại
               </Button>
+              <div
+                className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-[var(--shadow-flat)]"
+                role="group"
+                aria-label="Kiểu hiển thị"
+              >
+                <button
+                  type="button"
+                  aria-pressed={viewMode === "table"}
+                  title="Xem dạng bảng"
+                  onClick={() => setViewMode("table")}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                    viewMode === "table"
+                      ? "bg-sky-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <Table2 className="h-3.5 w-3.5" aria-hidden />
+                  Bảng
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={viewMode === "grid"}
+                  title="Xem dạng lưới"
+                  onClick={() => setViewMode("grid")}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                    viewMode === "grid"
+                      ? "bg-sky-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+                  Lưới
+                </button>
+              </div>
               <Button
                 variant="secondary"
                 size="sm"
+                disabled={viewMode === "grid"}
                 leftIcon={
                   density === "compact" ? (
                     <Rows3 className="h-3.5 w-3.5" />
@@ -2451,7 +2604,11 @@ export function MaterialsListClient() {
           ) : null}
 
           <div
-            className="mt-3 grid gap-2 md:hidden"
+            className={`mt-3 grid gap-2 ${
+              viewMode === "grid"
+                ? "md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                : "md:hidden"
+            }`}
             aria-label="Danh sách vật tư dạng thẻ"
           >
             {showInitialLoading ? (
@@ -2517,8 +2674,12 @@ export function MaterialsListClient() {
             ) : null}
           </div>
 
+          <div className="hidden md:block">{renderPaginationBar("top")}</div>
+
           <div
-            className="relative mt-3 hidden overflow-hidden rounded-lg border border-slate-200 md:block"
+            className={`relative mt-3 hidden overflow-hidden rounded-lg border border-slate-200 ${
+              viewMode === "table" ? "md:block" : ""
+            }`}
             aria-busy={isCatalogBusy}
           >
             {isRefreshing ? (
@@ -2588,6 +2749,25 @@ export function MaterialsListClient() {
                         {row.getVisibleCells().map((cell) => (
                           <td
                             key={cell.id}
+                            data-col={cell.column.id}
+                            onClick={
+                              cell.column.id === "select"
+                                ? (event) => {
+                                    event.stopPropagation();
+                                    const target = event.target as HTMLElement;
+                                    // Let the checkbox handle its own toggle;
+                                    // only toggle when the surrounding padding
+                                    // was clicked so a near-miss still works
+                                    // without double-toggling.
+                                    if (target.closest("input, label")) {
+                                      return;
+                                    }
+                                    if (row.getCanSelect()) {
+                                      row.toggleSelected();
+                                    }
+                                  }
+                                : undefined
+                            }
                             className={materialTableCellClass(cell.column.id, density)}
                           >
                             {flexRender(
@@ -2654,105 +2834,7 @@ export function MaterialsListClient() {
             </table>
           </div>
 
-          <div className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div
-              className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
-              aria-live="polite"
-            >
-              <span className="font-semibold text-slate-900">
-                {pageStart.toLocaleString("vi-VN")}-
-                {pageEnd.toLocaleString("vi-VN")}
-              </span>
-              <span>/ {summary.total.toLocaleString("vi-VN")} vật tư</span>
-              <span className="text-slate-300" aria-hidden>
-                |
-              </span>
-              <label className="inline-flex items-center gap-2">
-                <span>Số dòng</span>
-                <select
-                  className="h-10 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
-                  aria-label="Số dòng mỗi trang"
-                  value={pagination.pageSize}
-                  onChange={(event) => {
-                    const pageSize = Number(event.target.value);
-                    setPagination({
-                      pageIndex: 0,
-                      pageSize,
-                    });
-                  }}
-                >
-                  {MATERIAL_PAGE_SIZE_OPTIONS.map((pageSize) => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize === MATERIAL_VIEW_ALL_PAGE_SIZE
-                        ? "Tất cả"
-                        : pageSize.toLocaleString("vi-VN")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="min-w-24 text-center text-xs font-semibold text-slate-600">
-                Trang {currentPage.toLocaleString("vi-VN")} /{" "}
-                {totalPages.toLocaleString("vi-VN")}
-              </span>
-              <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-                <span className="sr-only">Nhảy tới trang</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={totalPages}
-                  value={pageJumpValue}
-                  aria-label="Nhảy tới trang"
-                  className="h-10 w-14 rounded-md border border-slate-300 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
-                  onChange={(event) => setPageJumpValue(event.target.value)}
-                  onBlur={submitPageJump}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      submitPageJump();
-                    }
-                  }}
-                />
-              </label>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
-                aria-label="Trang đầu"
-                disabled={!canGoToPreviousPage || isFetching}
-                onClick={() => goToPage(0)}
-              >
-                <ChevronsLeft className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
-                aria-label="Trang trước"
-                disabled={!canGoToPreviousPage || isFetching}
-                onClick={() => goToPage(pagination.pageIndex - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
-                aria-label="Trang sau"
-                disabled={!canGoToNextPage || isFetching}
-                onClick={() => goToPage(pagination.pageIndex + 1)}
-              >
-                <ChevronRight className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
-                aria-label="Trang cuối"
-                disabled={!canGoToNextPage || isFetching}
-                onClick={() => goToPage(totalPages - 1)}
-              >
-                <ChevronsRight className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-          </div>
+          {renderPaginationBar("bottom")}
       </section>
     </div>
   );
