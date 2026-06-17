@@ -6,7 +6,8 @@ import {
   type MaterialEnrichmentEvidence,
   type MaterialEnrichmentInput,
 } from "~/lib/materials/material-enrichment-types";
-import { createOpenRouterChatCompletion } from "~/server/services/openrouter";
+import { callAiProvider } from "~/server/services/ai-dispatch";
+import type { ResolvedAiProvider } from "~/server/services/app-settings";
 import type { WebSearchResult } from "~/server/services/material-web-search";
 
 export type ExtractedProductFields = Partial<
@@ -176,27 +177,21 @@ export function parseExtractionResponse(content: string): ExtractedProductFields
 export async function extractProductFromSources(
   input: MaterialEnrichmentInput,
   candidates: WebSearchResult[],
-  apiKey: string,
-  model: string,
+  provider: ResolvedAiProvider,
   signal?: AbortSignal,
 ): Promise<ExtractedProductFields> {
   if (candidates.length === 0) {
     return { catalogPdfUrls: [] };
   }
 
-  const completion = await createOpenRouterChatCompletion({
-    apiKey,
-    model,
-    signal,
-    responseFormat: "json_object",
-    messages: [
+  const completion = await callAiProvider(
+    provider,
+    [
       { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: buildExtractionUserPrompt(input, candidates),
-      },
+      { role: "user", content: buildExtractionUserPrompt(input, candidates) },
     ],
-  });
+    { signal, responseFormat: "json_object" },
+  );
 
   return parseExtractionResponse(completion.content);
 }

@@ -21,8 +21,7 @@ import {
   materials,
 } from "~/server/db/schema";
 import {
-  resolveOpenRouterApiKey,
-  resolveOpenRouterDefaultModel,
+  resolveAiProvider,
 } from "~/server/services/app-settings";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
@@ -401,16 +400,11 @@ export async function processEnrichmentItem(
     const pdfUrls = extractPdfUrlsFromResults(ranked);
     const candidates = await saveWebCandidates(item, ranked, pdfUrls);
 
-    const apiKey = await resolveOpenRouterApiKey();
-    if (!apiKey) {
-      throw new Error("Chưa cấu hình OpenRouter API key.");
-    }
-    const model = options.model ?? (await resolveOpenRouterDefaultModel());
+    const provider = await resolveAiProvider("enrichment", options.model);
     const extracted = await extractProductFromSources(
       input,
       ranked,
-      apiKey,
-      model,
+      provider,
       signal,
     );
 

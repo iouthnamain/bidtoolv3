@@ -8,11 +8,117 @@ export const SETTING_KEYS = {
   openrouterApiKey: "openrouter_api_key",
   openrouterDefaultModel: "openrouter_default_model",
   geminiApiKey: "gemini_api_key",
+  geminiDefaultModel: "gemini_default_model",
   openaiCompatibleApiKey: "openai_compatible_api_key",
   openaiCompatibleBaseUrl: "openai_compatible_base_url",
+  openaiCompatibleDefaultModel: "openai_compatible_default_model",
+  // which provider is used for each feature
+  activeProviderChat: "active_provider_chat",
+  activeProviderEnrichment: "active_provider_enrichment",
 } as const;
 
 export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
+export const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+
+export type AiProvider = "openrouter" | "gemini" | "openai_compatible";
+export const AI_PROVIDERS: AiProvider[] = [
+  "openrouter",
+  "gemini",
+  "openai_compatible",
+];
+
+export type AiFeature = "chat" | "enrichment";
+
+function isAiProvider(value: unknown): value is AiProvider {
+  return (
+    value === "openrouter" ||
+    value === "gemini" ||
+    value === "openai_compatible"
+  );
+}
+
+export async function getActiveProvider(
+  feature: AiFeature,
+): Promise<AiProvider> {
+  const key =
+    feature === "chat"
+      ? SETTING_KEYS.activeProviderChat
+      : SETTING_KEYS.activeProviderEnrichment;
+  const stored = await getSetting(key);
+  return isAiProvider(stored) ? stored : "openrouter";
+}
+
+export async function setActiveProvider(
+  feature: AiFeature,
+  provider: AiProvider,
+): Promise<void> {
+  const key =
+    feature === "chat"
+      ? SETTING_KEYS.activeProviderChat
+      : SETTING_KEYS.activeProviderEnrichment;
+  await setSetting(key, provider);
+}
+
+export type ResolvedAiProvider =
+  | { provider: "openrouter"; apiKey: string; model: string }
+  | { provider: "gemini"; apiKey: string; model: string }
+  | {
+      provider: "openai_compatible";
+      apiKey: string;
+      baseUrl: string;
+      model: string;
+    };
+
+export async function resolveAiProvider(
+  feature: AiFeature,
+  overrideModel?: string,
+): Promise<ResolvedAiProvider> {
+  const active = await getActiveProvider(feature);
+
+  if (active === "gemini") {
+    const apiKey = await resolveGeminiApiKey();
+    if (!apiKey) {
+      throw new Error(
+        "Gemini API key chưa được cấu hình. Vào Cài đặt → AI Providers.",
+      );
+    }
+    const model =
+      overrideModel ??
+      (await getSetting(SETTING_KEYS.geminiDefaultModel)) ??
+      DEFAULT_GEMINI_MODEL;
+    return { provider: "gemini", apiKey, model };
+  }
+
+  if (active === "openai_compatible") {
+    const apiKey = await resolveOpenaiCompatibleApiKey();
+    if (!apiKey) {
+      throw new Error(
+        "OpenAI Compatible API key chưa được cấu hình. Vào Cài đặt → AI Providers.",
+      );
+    }
+    const baseUrl = await resolveOpenaiCompatibleBaseUrl();
+    if (!baseUrl) {
+      throw new Error(
+        "OpenAI Compatible Base URL chưa được cấu hình. Vào Cài đặt → AI Providers.",
+      );
+    }
+    const model =
+      overrideModel ??
+      (await getSetting(SETTING_KEYS.openaiCompatibleDefaultModel)) ??
+      "gpt-4o-mini";
+    return { provider: "openai_compatible", apiKey, baseUrl, model };
+  }
+
+  // default: openrouter
+  const apiKey = await resolveOpenRouterApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "OpenRouter API key chưa được cấu hình. Vào Cài đặt → AI Providers.",
+    );
+  }
+  const model = overrideModel ?? (await resolveOpenRouterDefaultModel());
+  return { provider: "openrouter", apiKey, model };
+}
 
 export async function getSetting(key: string): Promise<string | null> {
   const [row] = await db

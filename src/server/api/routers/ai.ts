@@ -5,14 +5,20 @@ import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import {
   DEFAULT_OPENROUTER_MODEL,
   deleteSetting,
+  getActiveProvider,
   getOpenRouterConfig,
   getGeminiConfig,
   getOpenaiCompatibleConfig,
+  resolveAiProvider,
   resolveOpenRouterApiKey,
   resolveOpenRouterDefaultModel,
+  setActiveProvider,
   setSetting,
   SETTING_KEYS,
+  type AiFeature,
+  type AiProvider,
 } from "~/server/services/app-settings";
+import { callAiProvider } from "~/server/services/ai-dispatch";
 import {
   createOpenRouterChatCompletion,
   testOpenRouterConnection,
@@ -233,16 +239,9 @@ export const aiRouter = createTRPCRouter({
     }),
 
   chat: publicProcedure.input(chatInputSchema).mutation(async ({ input }) => {
-    const apiKey = requireOpenRouterApiKey(await resolveOpenRouterApiKey());
-    const inputModel = input.model?.trim();
-    const model = inputModel ?? (await resolveOpenRouterDefaultModel());
-
     try {
-      const result = await createOpenRouterChatCompletion({
-        apiKey,
-        model,
-        messages: input.messages as OpenRouterChatMessage[],
-      });
+      const provider = await resolveAiProvider("chat", input.model);
+      const result = await callAiProvider(provider, input.messages);
 
       return {
         role: "assistant" as const,
