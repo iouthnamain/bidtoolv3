@@ -1621,7 +1621,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-slate-500">Tổng vật tư</p>
               <PackagePlus className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
+            <p className="mt-1 text-xl font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
               {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
             <p className="mt-1 text-[11px] font-medium text-slate-500">
@@ -1643,7 +1643,7 @@ export function MaterialsListClient() {
               </p>
               <WalletCards className="h-4 w-4 text-emerald-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-3xl font-extrabold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
+            <p className="mt-1 stat-value text-xl font-bold text-emerald-900" aria-label="Vật tư có giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
@@ -1667,7 +1667,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-amber-700">Thiếu giá</p>
               <WalletCards className="h-4 w-4 text-amber-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-3xl font-extrabold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
+            <p className="mt-1 stat-value text-xl font-bold text-amber-900" aria-label="Vật tư thiếu giá theo bộ lọc">
               {showSummaryLoading
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
@@ -1687,7 +1687,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
               <LinkIcon className="h-4 w-4 text-sky-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-3xl font-extrabold text-sky-950">
+            <p className="mt-1 stat-value text-xl font-bold text-sky-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
@@ -1713,7 +1713,7 @@ export function MaterialsListClient() {
               </p>
               <FileText className="h-4 w-4 text-violet-600" aria-hidden />
             </div>
-            <p className="mt-1 stat-value text-3xl font-extrabold text-violet-950">
+            <p className="mt-1 stat-value text-xl font-bold text-violet-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withCatalog.toLocaleString("vi-VN")}
@@ -1733,7 +1733,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-slate-500">Có NCC</p>
               <Factory className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
+            <p className="mt-1 text-xl font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withManufacturer.toLocaleString("vi-VN")}
@@ -1753,7 +1753,7 @@ export function MaterialsListClient() {
               <p className="text-xs font-semibold text-slate-500">Có xuất xứ</p>
               <MapPin className="h-4 w-4 text-slate-400" aria-hidden />
             </div>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
+            <p className="mt-1 text-xl font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withOrigin.toLocaleString("vi-VN")}
