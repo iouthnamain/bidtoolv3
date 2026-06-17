@@ -126,6 +126,7 @@ export function SavedFiltersSection() {
   };
 
   return (
+    <div className="animate-rise">
     <section className="panel p-5">
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -147,7 +148,7 @@ export function SavedFiltersSection() {
             workflow cảnh báo mới.
           </p>
         </div>
-        <Badge count={savedFilters.length} />
+        <Badge count={savedFilters.length} className="stat-value font-extrabold" />
       </div>
 
       <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-xs text-sky-800">
@@ -221,7 +222,7 @@ export function SavedFiltersSection() {
             return (
               <li
                 key={filter.id}
-                className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition-colors duration-150 hover:bg-slate-100"
+                className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors duration-150 hover:bg-slate-100/80 hover:shadow-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -307,5 +308,6 @@ export function SavedFiltersSection() {
         </ul>
       )}
     </section>
+    </div>
   );
 }

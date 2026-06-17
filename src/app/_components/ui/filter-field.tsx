@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type ReactNode, type ReactElement } from "react";
 
 interface FilterFieldProps {
   label: string;
@@ -46,11 +46,19 @@ export function FilterField({
     </span>
   ) : null;
 
+  // Inject aria-describedby onto the first child input element
+  const enhancedChildren =
+    hasMessage && isValidElement(children)
+      ? cloneElement(children as ReactElement<{ "aria-describedby"?: string }>, {
+          "aria-describedby": messageId,
+        })
+      : children;
+
   if (htmlFor) {
     return (
       <div className={`flex flex-col gap-1 ${className ?? ""}`}>
         <label htmlFor={htmlFor}>{labelEl}</label>
-        {children}
+        {enhancedChildren}
         {messageEl}
       </div>
     );
@@ -59,10 +67,9 @@ export function FilterField({
   return (
     <label
       className={`flex flex-col gap-1 ${className ?? ""}`}
-      aria-describedby={hasMessage ? messageId : undefined}
     >
       {labelEl}
-      {children}
+      {enhancedChildren}
       {messageEl}
     </label>
   );

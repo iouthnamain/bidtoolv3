@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore, useState } from "react";
 import {
   ArrowUpCircle,
   Copy,
@@ -42,6 +42,14 @@ function formatBuildLabel(
   return buildMetadata ? `${version} (${buildMetadata})` : version;
 }
 
+// window.bidtoolDesktop is set once at startup and never changes during a session,
+// so the store never needs to notify subscribers.
+function subscribeNoop() {
+  return () => {
+    // no-op: desktop bridge presence is static for the session
+  };
+}
+
 function formatSurfaceLabel(surface: string) {
   switch (surface) {
     case "web":
@@ -66,7 +74,11 @@ type PendingConfirmAction = "run-onprem" | "desktop-install";
 export function AboutVersionSection() {
   const { error, success, info } = useToast();
   const queryClient = useQueryClient();
-  const [isDesktop, setIsDesktop] = useState(false);
+  const isDesktop = useSyncExternalStore(
+    subscribeNoop,
+    () => !!window.bidtoolDesktop?.isDesktop,
+    () => false,
+  );
   const [pendingConfirm, setPendingConfirm] =
     useState<PendingConfirmAction | null>(null);
   const utils = api.useUtils();
@@ -89,10 +101,6 @@ export function AboutVersionSection() {
       error(mutationError.message);
     },
   });
-
-  useEffect(() => {
-    setIsDesktop(!!window.bidtoolDesktop?.isDesktop);
-  }, []);
 
   const desktopAction = resolveDesktopUpdateButtonAction(
     desktopUpdateState ?? null,

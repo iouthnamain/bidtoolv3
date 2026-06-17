@@ -328,7 +328,7 @@ export function MaterialEnrichClient() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="animate-rise space-y-4">
       {step === 1 && !file ? (
         <section className="panel p-4 sm:p-5">
           <EnrichJobsList limit={10} compact />
@@ -460,20 +460,15 @@ function UploadStep({
   const hasNameColumn = Boolean(activeSheet?.suggestedMapping.materialName);
 
   return (
-    <section className="panel overflow-hidden">
+    <section className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]">
       <div className="border-b border-sky-200 bg-sky-50 px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-700 text-white">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sky-700 text-white">
             <FileSpreadsheet className="h-4 w-4" aria-hidden />
           </span>
-          <div>
-            <h3 className="text-sm font-bold text-sky-950">
-              Tải lên & map cột
-            </h3>
-            <p className="text-xs text-sky-800">
-              Upload `.xlsx` còn thiếu trường; hệ thống tự dò header và map cột.
-            </p>
-          </div>
+          <h3 className="text-sm font-extrabold text-slate-900">
+            Tải lên & map cột
+          </h3>
         </div>
       </div>
 
@@ -511,7 +506,7 @@ function UploadStep({
                 Sheet
               </span>
               <select
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 value={activeSheet?.name ?? ""}
                 onChange={(event) => onSheetChange(event.target.value)}
               >
@@ -523,7 +518,7 @@ function UploadStep({
               </select>
             </label>
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500 shadow-[var(--shadow-flat)]">
               {isPreviewLoading ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -536,8 +531,8 @@ function UploadStep({
           )}
 
           {activeSheet ? (
-            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-              <p className="font-bold text-slate-800">Cột nhận diện</p>
+            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-[var(--shadow-flat)]">
+              <p className="font-extrabold text-slate-900">Cột nhận diện</p>
               <div className="flex flex-wrap gap-1.5">
                 {(
                   [

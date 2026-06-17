@@ -1,14 +1,54 @@
+import { AlertTriangle, Info, XCircle } from "lucide-react";
+
 interface AlertCardProps {
   title: string;
   body: string;
   severity: "high" | "medium" | "low";
 }
 
-const severityClass: Record<AlertCardProps["severity"], string> = {
-  high: "border-rose-300 bg-rose-50/90 text-rose-800 border-l-4 border-l-rose-600",
-  medium:
-    "border-amber-300 bg-amber-50/90 text-amber-800 border-l-4 border-l-amber-600",
-  low: "border-sky-300 bg-sky-50/90 text-sky-800 border-l-4 border-l-sky-600",
+const severityConfig: Record<
+  AlertCardProps["severity"],
+  {
+    bar: string;
+    bg: string;
+    border: string;
+    title: string;
+    body: string;
+    label: string;
+    labelBg: string;
+    icon: typeof XCircle;
+  }
+> = {
+  high: {
+    bar: "bg-rose-600",
+    bg: "bg-rose-50",
+    border: "border-rose-200",
+    title: "text-rose-950",
+    body: "text-rose-800",
+    label: "text-rose-700",
+    labelBg: "bg-rose-100 border-rose-200",
+    icon: XCircle,
+  },
+  medium: {
+    bar: "bg-amber-500",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    title: "text-amber-950",
+    body: "text-amber-800",
+    label: "text-amber-700",
+    labelBg: "bg-amber-100 border-amber-200",
+    icon: AlertTriangle,
+  },
+  low: {
+    bar: "bg-sky-500",
+    bg: "bg-sky-50",
+    border: "border-sky-200",
+    title: "text-sky-950",
+    body: "text-sky-800",
+    label: "text-sky-700",
+    labelBg: "bg-sky-100 border-sky-200",
+    icon: Info,
+  },
 };
 
 const severityLabel: Record<AlertCardProps["severity"], string> = {
@@ -18,19 +58,35 @@ const severityLabel: Record<AlertCardProps["severity"], string> = {
 };
 
 export function AlertCard({ title, body, severity }: AlertCardProps) {
+  const cfg = severityConfig[severity];
+  const Icon = cfg.icon;
+
   return (
     <article
-      className={`rounded-lg border p-3 shadow-sm backdrop-blur ${severityClass[severity]}`}
+      className={`relative overflow-hidden rounded-xl border ${cfg.bg} ${cfg.border} p-3.5`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere]">
-          {title}
-        </p>
-        <span className="shrink-0 rounded bg-white/60 px-1.5 py-0.5 text-xs font-semibold">
+      {/* Left severity bar */}
+      <div className={`absolute inset-y-0 left-0 w-1 ${cfg.bar}`} />
+
+      <div className="ml-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <Icon
+            className={`mt-0.5 h-4 w-4 shrink-0 ${cfg.label}`}
+            aria-hidden
+          />
+          <p className={`min-w-0 text-sm font-semibold [overflow-wrap:anywhere] ${cfg.title}`}>
+            {title}
+          </p>
+        </div>
+        <span
+          className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${cfg.labelBg} ${cfg.label}`}
+        >
           {severityLabel[severity]}
         </span>
       </div>
-      <p className="mt-1 text-xs leading-relaxed opacity-95">{body}</p>
+      <p className={`ml-3 mt-1.5 pl-6 text-xs leading-relaxed ${cfg.body}`}>
+        {body}
+      </p>
     </article>
   );
 }

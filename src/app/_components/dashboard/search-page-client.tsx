@@ -145,7 +145,7 @@ export function SearchPageClient({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="animate-rise space-y-4">
       <section id="search-modes" className="panel scroll-mt-6 p-3 sm:p-4">
         <div className="flex items-center justify-between gap-2">
           <div
@@ -188,7 +188,7 @@ export function SearchPageClient({
           {SEARCH_MODE_DESCRIPTIONS[mode]}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-gradient-to-b from-white to-slate-50/50 p-2">
           <div className="relative min-w-[12rem] flex-1">
             <Search
               className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -698,12 +698,12 @@ export function SearchPageClient({
 
       <section
         id="search-results"
-        className="panel p-4 sm:p-5"
+        className="panel rounded-xl p-4 sm:p-5"
         aria-busy={resultQuery.isFetching ? true : undefined}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-slate-900">
+            <p className="text-sm font-bold text-slate-900">
               Kết quả {SEARCH_MODE_LABELS[mode]}
             </p>
             {result ? (

@@ -84,11 +84,23 @@ export function WorkflowCard({
   onRunNow,
   onToggleActive,
 }: WorkflowCardProps) {
+  const statusDotColor = (() => {
+    if (isActive && latestRun?.status === "success") return "bg-emerald-500";
+    if (latestRun?.status === "failed") return "bg-rose-500";
+    if (latestRun?.status === "running") return "bg-amber-500";
+    return "bg-slate-300";
+  })();
+
   return (
-    <article className="panel rounded-xl p-4 transition-colors hover:border-slate-300">
+    <article
+      className={`rounded-xl border border-slate-200/80 bg-white shadow-[var(--shadow-flat)] hover:shadow-[var(--shadow-raised)] transition-shadow duration-200 p-4 ${
+        isActive ? "border-l-2 border-l-emerald-500" : "border-l-2 border-l-slate-200"
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${statusDotColor}`} />
             <p className="text-sm leading-tight font-semibold [overflow-wrap:anywhere] text-slate-900">
               {name}
             </p>
@@ -101,7 +113,7 @@ export function WorkflowCard({
           </div>
 
           <p className="mt-1 text-xs text-slate-500">
-            Trigger: {formatTriggerLabel(triggerLabel)} • {runCount} lần chạy
+            {formatTriggerLabel(triggerLabel)} • <span className="font-extrabold stat-value text-slate-900">{runCount}</span> lần chạy
           </p>
 
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -128,9 +140,6 @@ export function WorkflowCard({
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
         <p className="font-medium text-slate-800">Lần chạy gần nhất</p>
         <p className="mt-1">{formatDateTime(latestRun?.startedAt ?? null)}</p>
-        <p className="mt-1 text-slate-500">
-          {latestRun?.message ?? "Workflow chưa có lịch sử chạy."}
-        </p>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">

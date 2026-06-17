@@ -54,6 +54,7 @@ export function SettingsStatusStrip() {
         id="settings-overview"
         className="scroll-mt-6 grid gap-3 sm:grid-cols-3"
         aria-label="Đang tải trạng thái cài đặt"
+        aria-busy="true"
       >
         <SkeletonKpi />
         <SkeletonKpi />
@@ -84,7 +85,8 @@ export function SettingsStatusStrip() {
         <p className="mt-2 text-lg font-bold tracking-tight text-slate-950 tabular-nums">
           {versionStatus.current}
         </p>
-        {versionStatus.buildMetadata ? (
+        {versionStatus.buildMetadata !== null &&
+        versionStatus.buildMetadata !== undefined ? (
           <p className="mt-1 text-xs text-slate-500">
             {versionStatus.buildMetadata}
           </p>

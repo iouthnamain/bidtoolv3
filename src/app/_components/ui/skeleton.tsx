@@ -6,7 +6,7 @@ export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
       aria-hidden
-      className={`animate-pulse rounded-lg bg-slate-200/70 ${className ?? ""}`}
+      className={`relative overflow-hidden rounded-lg bg-slate-100 after:absolute after:inset-0 after:-translate-x-full after:animate-[shimmer_1.6s_infinite] after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent ${className ?? ""}`}
     />
   );
 }
@@ -34,10 +34,10 @@ export function SkeletonCard({ className }: SkeletonProps) {
   return (
     <div
       aria-hidden
-      className={`rounded-lg border border-slate-200/70 bg-white p-4 ${className ?? ""}`}
+      className={`rounded-xl border border-slate-100 bg-white p-4 ${className ?? ""}`}
     >
       <div className="flex items-center gap-3">
-        <Skeleton className="h-9 w-9 rounded-lg" />
+        <Skeleton className="h-10 w-10 rounded-xl" />
         <div className="flex-1 space-y-1.5">
           <Skeleton className="h-3.5 w-1/3" />
           <Skeleton className="h-3 w-2/3" />
@@ -55,11 +55,11 @@ export function SkeletonKpi() {
   return (
     <div
       aria-hidden
-      className="rounded-lg border border-slate-200/70 bg-white p-4"
+      className="rounded-xl border border-slate-100 bg-white p-4"
     >
-      <Skeleton className="mb-2 h-3 w-20" />
-      <Skeleton className="h-8 w-16" />
-      <Skeleton className="mt-2 h-3 w-24" />
+      <Skeleton className="mb-3 h-3 w-20" />
+      <Skeleton className="h-8 w-20" />
+      <Skeleton className="mt-2.5 h-3 w-24" />
     </div>
   );
 }
@@ -76,18 +76,18 @@ export function SkeletonTable({
   return (
     <div
       aria-hidden
-      className={`overflow-hidden rounded-lg border border-slate-200/70 bg-white ${className ?? ""}`}
+      className={`overflow-hidden rounded-xl border border-slate-100 bg-white ${className ?? ""}`}
     >
-      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
         <div className="flex gap-4">
           {Array.from({ length: cols }).map((_, i) => (
             <Skeleton key={i} className="h-3 flex-1" />
           ))}
         </div>
       </div>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-slate-50">
         {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className="flex gap-4 px-4 py-3">
+          <div key={i} className="flex gap-4 px-4 py-3.5">
             {Array.from({ length: cols }).map((_, j) => (
               <Skeleton
                 key={j}
@@ -106,7 +106,7 @@ export function PageSkeleton() {
     <div className="space-y-4" aria-label="Đang tải…" role="status">
       <div className="flex items-center gap-3">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-8 w-24 rounded-lg" />
+        <Skeleton className="h-8 w-24 rounded-xl" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SkeletonKpi />

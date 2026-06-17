@@ -221,6 +221,7 @@ export function DesktopSettingsSection() {
             >
               <input
                 id="desktop-server-url"
+                spellCheck={false}
                 value={serverUrl}
                 disabled={!config.canEdit || isLoading}
                 onChange={(event) => {

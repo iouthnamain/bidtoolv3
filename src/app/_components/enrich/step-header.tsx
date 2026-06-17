@@ -21,50 +21,62 @@ export function StepHeader({
   maxReached: EnrichStep;
   onJump: (step: EnrichStep) => void;
 }) {
+  const progressPercent = ((current - 1) / (STEPS.length - 1)) * 100;
+
   return (
     <nav
       aria-label="Các bước đối chiếu và nghiên cứu Excel"
-      className="panel flex flex-wrap items-center gap-2 p-2 sm:gap-1 sm:p-3"
+      className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]"
     >
-      {STEPS.map((step, index) => {
-        const isCurrent = step.id === current;
-        const isDone = step.id < current;
-        const isReachable = step.id <= maxReached;
+      {/* Brand gradient progress bar */}
+      <div className="h-1.5 w-full bg-slate-100">
+        <div
+          className="brand-rule h-full transition-all duration-500 ease-out"
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
 
-        return (
-          <div key={step.id} className="flex items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              disabled={!isReachable}
-              onClick={() => isReachable && onJump(step.id)}
-              aria-current={isCurrent ? "step" : undefined}
-              className={`inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors disabled:cursor-not-allowed sm:text-sm ${
-                isCurrent
-                  ? "bg-sky-700 text-white"
-                  : isReachable
-                    ? "text-slate-700 hover:bg-slate-100"
-                    : "text-slate-400"
-              }`}
-            >
-              <span
-                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] tabular-nums ${
+      <div className="flex flex-wrap items-center gap-2 p-2 sm:gap-1 sm:p-3">
+        {STEPS.map((step, index) => {
+          const isCurrent = step.id === current;
+          const isDone = step.id < current;
+          const isReachable = step.id <= maxReached;
+
+          return (
+            <div key={step.id} className="flex items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                disabled={!isReachable}
+                onClick={() => isReachable && onJump(step.id)}
+                aria-current={isCurrent ? "step" : undefined}
+                className={`inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed sm:text-sm ${
                   isCurrent
-                    ? "bg-white/20 text-white"
-                    : isDone
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-200 text-slate-600"
+                    ? "bg-sky-700 text-white"
+                    : isReachable
+                      ? "text-slate-900 hover:bg-slate-100"
+                      : "text-slate-400"
                 }`}
               >
-                {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
-              </span>
-              <span className="hidden sm:inline">{step.label}</span>
-            </button>
-            {index < STEPS.length - 1 ? (
-              <span className="h-px w-3 bg-slate-300 sm:w-6" aria-hidden />
-            ) : null}
-          </div>
-        );
-      })}
+                <span
+                  className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold tabular-nums ${
+                    isCurrent
+                      ? "bg-white/20 text-white"
+                      : isDone
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-200 text-slate-900"
+                  }`}
+                >
+                  {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
+                </span>
+                <span className="hidden sm:inline">{step.label}</span>
+              </button>
+              {index < STEPS.length - 1 ? (
+                <span className="h-px w-3 bg-slate-300 sm:w-6" aria-hidden />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </nav>
   );
 }

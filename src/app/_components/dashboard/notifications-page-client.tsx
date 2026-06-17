@@ -80,7 +80,8 @@ export function NotificationsPageClient() {
   });
 
   return (
-    <section id="notification-list" className="panel scroll-mt-6 p-4">
+    <div className="animate-rise">
+      <section id="notification-list" className="panel scroll-mt-6 p-4">
       <ConfirmDialog
         open={confirmDelete}
         title={`Xóa ${sel.selectedCount} thông báo?`}
@@ -160,12 +161,12 @@ export function NotificationsPageClient() {
           {notifications.map((item) => (
             <li
               key={item.id}
-              className={`rounded-xl border px-4 py-3 transition-colors ${
+              className={`rounded-xl border border-l-2 px-4 py-3 transition-colors duration-150 ${
                 sel.selected.has(item.id)
-                  ? "border-sky-300 bg-sky-50 ring-1 ring-sky-200"
+                  ? "border-sky-300 border-l-sky-400 bg-sky-50 ring-1 ring-sky-200"
                   : item.isRead
-                    ? "border-slate-200 bg-slate-50"
-                    : "border-sky-200 bg-sky-50/70"
+                    ? "border-slate-200 border-l-slate-300 bg-slate-50 hover:bg-slate-100/60"
+                    : "border-sky-200 border-l-sky-400 bg-sky-50/30 hover:bg-sky-50/60"
               }`}
             >
               <div className="flex items-start gap-2">
@@ -201,7 +202,7 @@ export function NotificationsPageClient() {
                     </Badge>
                     {!item.isRead ? <Badge tone="info">Mới</Badge> : null}
                   </div>
-                  <p className="mt-1 text-sm text-slate-700">{item.body}</p>
+                  <p className="mt-1 line-clamp-1 text-sm text-slate-700">{item.body}</p>
                   <p className="mt-2 text-xs text-slate-500">
                     {formatDateTime(item.createdAt)}
                   </p>
@@ -227,5 +228,6 @@ export function NotificationsPageClient() {
         </ul>
       )}
     </section>
+    </div>
   );
 }

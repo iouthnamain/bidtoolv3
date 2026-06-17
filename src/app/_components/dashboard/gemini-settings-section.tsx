@@ -112,11 +112,12 @@ export function GeminiSettingsSection() {
                 id="gemini-api-key"
                 type="password"
                 autoComplete="off"
+                spellCheck={false}
                 value={apiKey}
                 disabled={config?.gemini?.canEdit === false || isLoading}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={
-                  config?.gemini?.configured ? "••••••••••••••••" : "AIzaSy..."
+                  config?.gemini?.configured ? "••••••••••••••••" : "AIzaSy…"
                 }
                 className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />

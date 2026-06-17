@@ -267,7 +267,7 @@ function NavLink({
       <div
         className={`group relative flex items-center rounded-md text-sm font-medium transition-colors duration-150 ${
           isActive
-            ? "bg-sky-50 text-sky-900 ring-1 ring-sky-200"
+            ? "bg-gradient-to-r from-sky-50 to-transparent border-r-2 border-r-sky-600 text-sky-900 font-bold"
             : "text-slate-700 hover:bg-slate-100"
         } ${collapsed ? "justify-center" : ""}`}
       >
@@ -292,7 +292,7 @@ function NavLink({
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
                 className={`absolute -top-1.5 -right-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 py-0.5 text-xs leading-none font-bold ${
-                  isActive ? "bg-sky-700 text-white" : "bg-rose-600 text-white"
+                  isActive ? "bg-sky-700 text-white" : "bg-rose-500 text-white font-bold"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
               >

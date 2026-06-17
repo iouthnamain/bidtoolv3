@@ -106,14 +106,13 @@ export function WorkflowsListClient() {
   );
 
   return (
-    <section className="panel p-4">
+    <div className="animate-rise">
+    <section className="panel-raised p-5">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
-        <div>
+        <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-bold">Danh sách workflow</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Tạo mới, tạm dừng, chạy thử và mở trang quản lý chi tiết cho từng
-            workflow.
-          </p>
+          <span className="text-2xl font-extrabold stat-value text-slate-900">{workflows.length}</span>
+          <span className="text-xs text-slate-500 ml-1">workflow</span>
         </div>
 
         <Button
@@ -143,9 +142,10 @@ export function WorkflowsListClient() {
             onClick={() => setActiveFilter(filterKey)}
             className={`inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 ${
               activeFilter === filterKey
-                ? "border-sky-700 bg-sky-700 text-white"
+                ? "border-transparent text-white"
                 : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
             }`}
+            style={activeFilter === filterKey ? { background: 'linear-gradient(135deg, #0e7490, #0369a1)' } : undefined}
           >
             <span>{filterLabels[filterKey]}</span>
             <span
@@ -194,5 +194,6 @@ export function WorkflowsListClient() {
         )}
       </div>
     </section>
+    </div>
   );
 }

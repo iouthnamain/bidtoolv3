@@ -38,11 +38,12 @@ export function AiSettingsSection() {
   const [apiKey, setApiKey] = useState("");
   const [defaultModel, setDefaultModel] = useState("openai/gpt-4o-mini");
 
+  const configDefaultModel = config?.openRouter?.defaultModel;
   useEffect(() => {
-    if (config?.openRouter?.defaultModel) {
-      setDefaultModel(config.openRouter.defaultModel);
+    if (configDefaultModel) {
+      setDefaultModel(configDefaultModel);
     }
-  }, [config?.openRouter?.defaultModel]);
+  }, [configDefaultModel]);
 
   const saveKeyMutation = api.ai.setOpenRouterApiKey.useMutation({
     onSuccess: async (nextConfig) => {
@@ -174,11 +175,12 @@ export function AiSettingsSection() {
                 id="openrouter-api-key"
                 type="password"
                 autoComplete="off"
+                spellCheck={false}
                 value={apiKey}
                 disabled={config?.openRouter?.canEdit === false || isLoading}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={
-                  config?.openRouter?.configured ? "••••••••••••••••" : "sk-or-v1-..."
+                  config?.openRouter?.configured ? "••••••••••••••••" : "sk-or-v1-…"
                 }
                 className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
@@ -227,6 +229,7 @@ export function AiSettingsSection() {
               <input
                 id="openrouter-default-model"
                 list="openrouter-model-suggestions"
+                spellCheck={false}
                 value={defaultModel}
                 disabled={isLoading}
                 onChange={(event) => setDefaultModel(event.target.value)}

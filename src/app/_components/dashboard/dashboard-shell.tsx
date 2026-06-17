@@ -18,20 +18,25 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex min-h-full flex-col space-y-4">
-      <header className="border-b border-slate-200 pb-3">
+    <section className="animate-rise flex min-h-full flex-col space-y-4">
+      <header className="border-b border-slate-200 pb-3.5">
         <Breadcrumbs />
-        <div className="mt-1.5 flex flex-wrap items-end justify-between gap-3">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="section-title">BidTool workspace</p>
-            <h1 className="mt-1 text-2xl leading-tight font-bold tracking-tight text-balance text-slate-950">
-              {title}
-            </h1>
-            <p className="mt-1 max-w-4xl text-sm leading-6 text-pretty text-slate-600">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="h-7 w-1 rounded-full bg-gradient-to-b from-[var(--brand-from)] via-[var(--brand-via)] to-[var(--brand-to)]"
+                aria-hidden
+              />
+              <h1 className="text-2xl leading-tight font-extrabold tracking-tight text-balance text-slate-950">
+                {title}
+              </h1>
+            </div>
+            <p className="mt-1.5 max-w-4xl pl-3.5 text-sm leading-6 text-pretty text-slate-600">
               {description}
             </p>
           </div>
-          <div className="hidden rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 sm:block">
+          <div className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold tracking-wide text-slate-500 shadow-[var(--shadow-flat)] sm:block">
             BidTool v3
           </div>
         </div>
