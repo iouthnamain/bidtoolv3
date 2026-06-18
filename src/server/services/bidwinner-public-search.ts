@@ -4,7 +4,6 @@ import {
   PROVINCE_OPTIONS,
   type SortOrder,
 } from "~/constants/search-options";
-import { env } from "~/env";
 import {
   normalizeSearchCriteria,
   type SearchCriteria,
@@ -19,6 +18,7 @@ import {
   searchBidWinnerLive,
   type LivePackageItem,
 } from "~/server/services/bidwinner-search";
+import { resolveBidwinnerBaseUrl, resolveBidwinnerTimeoutMs } from "~/server/services/app-settings";
 import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
 
 const DEFAULT_HEADERS = {
@@ -29,8 +29,11 @@ const DEFAULT_HEADERS = {
   "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
   "Cache-Control": "no-cache",
   Pragma: "no-cache",
-  Referer: env.BIDWINNER_BASE_URL,
 };
+
+function buildHeaders(referer: string) {
+  return { ...DEFAULT_HEADERS, Referer: referer };
+}
 
 const MAX_FETCH_ATTEMPTS = 3;
 const BIDWINNER_PER_PAGE = 20;
@@ -334,7 +337,9 @@ async function fetchBidWinnerHtml(
   pathname: string,
   params: URLSearchParams,
 ): Promise<string> {
-  const url = new URL(pathname, env.BIDWINNER_BASE_URL);
+  const baseUrl = await resolveBidwinnerBaseUrl();
+  const timeoutMs = await resolveBidwinnerTimeoutMs();
+  const url = new URL(pathname, baseUrl);
   params.forEach((value, key) => {
     url.searchParams.set(key, value);
   });
@@ -346,12 +351,12 @@ async function fetchBidWinnerHtml(
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
-        env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
+        timeoutMs + (attempt - 1) * 5_000,
       );
 
       try {
         const response = await fetch(url, {
-          headers: DEFAULT_HEADERS,
+          headers: buildHeaders(baseUrl),
           signal: controller.signal,
           cache: "no-store",
           redirect: "follow",
@@ -494,23 +499,24 @@ function humanizeProcurementMethod(value?: string | null): string {
   );
 }
 
-function buildPlanSourceUrl(externalId: string): string {
+function buildPlanSourceUrl(externalId: string, baseUrl: string): string {
   return new URL(
     `/4.0/ke-hoach-lua-chon-nha-thau/${encodeURIComponent(externalId)}`,
-    env.BIDWINNER_BASE_URL,
+    baseUrl,
   ).toString();
 }
 
-function buildProjectSourceUrl(externalId: string): string {
+function buildProjectSourceUrl(externalId: string, baseUrl: string): string {
   return new URL(
     `/4.0/du-an-dau-tu-phat-trien/${encodeURIComponent(externalId)}`,
-    env.BIDWINNER_BASE_URL,
+    baseUrl,
   ).toString();
 }
 
 function toPlanItem(
   raw: BidWinnerPlanRawItem,
   provinceMap: ProvinceMap,
+  baseUrl: string,
 ): PlanSearchResultItem | null {
   if (!raw.id) {
     return null;
@@ -559,12 +565,13 @@ function toPlanItem(
     budget: Number.isFinite(budgetValue) ? budgetValue : 0,
     publishedAt: raw.thoi_diem_dang_tai ?? new Date().toISOString(),
     timeline: timelineText && timelineText.length > 0 ? timelineText : null,
-    sourceUrl: buildPlanSourceUrl(String(raw.id)),
+    sourceUrl: buildPlanSourceUrl(String(raw.id), baseUrl),
   };
 }
 
 function toProjectPlanLink(
   raw: BidWinnerProjectPlanRawItem,
+  baseUrl: string,
 ): ProjectPlanLink | null {
   if (!raw.id) {
     return null;
@@ -576,7 +583,7 @@ function toProjectPlanLink(
   return {
     externalId: String(raw.id),
     title,
-    sourceUrl: buildPlanSourceUrl(String(raw.id)),
+    sourceUrl: buildPlanSourceUrl(String(raw.id), baseUrl),
   };
 }
 
@@ -584,6 +591,7 @@ function toProjectItem(
   raw: BidWinnerProjectRawItem,
   relatedPlans: ProjectPlanLink[],
   provinceMap: ProvinceMap,
+  baseUrl: string,
 ): ProjectSearchResultItem | null {
   if (!raw.id) {
     return null;
@@ -627,7 +635,7 @@ function toProjectItem(
         : null,
     relatedPlans,
     relatedPlanCount: relatedPlans.length,
-    sourceUrl: buildProjectSourceUrl(String(raw.id)),
+    sourceUrl: buildProjectSourceUrl(String(raw.id), baseUrl),
   };
 }
 
@@ -940,11 +948,11 @@ async function searchPackageModes(input: {
         input.mode === "package_area_location"
           ? new URL(
               "/4.0/goi-thau-theo-linh-vuc-dia-phuong",
-              env.BIDWINNER_BASE_URL,
+              await resolveBidwinnerBaseUrl(),
             ).toString()
           : new URL(
               "/4.0/tim-kiem-goi-thau",
-              env.BIDWINNER_BASE_URL,
+              await resolveBidwinnerBaseUrl(),
             ).toString(),
       exactFields,
       localOnlyFields: localFields,
@@ -954,6 +962,7 @@ async function searchPackageModes(input: {
 }
 
 async function fetchPlanPage(page: number) {
+  const baseUrl = await resolveBidwinnerBaseUrl();
   const html = await fetchBidWinnerHtml(
     "/4.0/tim-kiem-khlcnt",
     new URLSearchParams({ page: String(page) }),
@@ -964,7 +973,7 @@ async function fetchPlanPage(page: number) {
   );
   const provinceMap = parseProvincePayload(html);
   const items = payload.data
-    .map((item) => toPlanItem(item, provinceMap))
+    .map((item) => toPlanItem(item, provinceMap, baseUrl))
     .filter((item): item is PlanSearchResultItem => item !== null);
 
   return {
@@ -975,6 +984,7 @@ async function fetchPlanPage(page: number) {
 }
 
 async function fetchProjectPage(page: number) {
+  const baseUrl = await resolveBidwinnerBaseUrl();
   const html = await fetchBidWinnerHtml(
     "/4.0/du-an-dau-tu-phat-trien",
     new URLSearchParams({ page: String(page) }),
@@ -992,7 +1002,7 @@ async function fetchProjectPage(page: number) {
 
   for (const row of relatedPlanRaw) {
     const projectId = row.project_id ?? 0;
-    const link = toProjectPlanLink(row);
+    const link = toProjectPlanLink(row, baseUrl);
     if (!projectId || !link) {
       continue;
     }
@@ -1008,6 +1018,7 @@ async function fetchProjectPage(page: number) {
         item,
         relatedByProjectId.get(item.id ?? 0) ?? [],
         provinceMap,
+        baseUrl,
       ),
     )
     .filter((item): item is ProjectSearchResultItem => item !== null);
@@ -1201,7 +1212,7 @@ async function searchPlanMode(input: {
       modeLabel: SEARCH_MODE_LABELS.plan,
       pageUrl: new URL(
         "/4.0/tim-kiem-khlcnt",
-        env.BIDWINNER_BASE_URL,
+        await resolveBidwinnerBaseUrl(),
       ).toString(),
       exactFields: [],
       localOnlyFields: localFields,
@@ -1307,7 +1318,7 @@ async function searchProjectMode(input: {
       modeLabel: SEARCH_MODE_LABELS.project,
       pageUrl: new URL(
         "/4.0/du-an-dau-tu-phat-trien",
-        env.BIDWINNER_BASE_URL,
+        await resolveBidwinnerBaseUrl(),
       ).toString(),
       exactFields: [],
       localOnlyFields: localFields,

@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { env } from "~/env";
 import { db } from "~/server/db";
+import {
+  tenantConditionForValue,
+  type TenantScopeValue,
+} from "~/server/api/tenant-scope";
 import { shopImportJobs, shopScrapeJobs } from "~/server/db/schema";
+import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortShopImportJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
@@ -60,18 +64,27 @@ const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
 
-export async function startShopImportJob(input: {
-  scrapeJobId: string;
-  productSourceUrls?: string[];
-}) {
+export async function startShopImportJob(
+  input: {
+    scrapeJobId: string;
+    productSourceUrls?: string[];
+  },
+  scope?: TenantScopeValue,
+) {
   const [scrapeJob] = await db
     .select({
       id: shopScrapeJobs.id,
       status: shopScrapeJobs.status,
       products: shopScrapeJobs.products,
+      tenantId: shopScrapeJobs.tenantId,
     })
     .from(shopScrapeJobs)
-    .where(eq(shopScrapeJobs.id, input.scrapeJobId))
+    .where(
+      and(
+        eq(shopScrapeJobs.id, input.scrapeJobId),
+        tenantConditionForValue(scope, shopScrapeJobs.tenantId),
+      ),
+    )
     .limit(1);
 
   if (!scrapeJob) {
@@ -107,6 +120,9 @@ export async function startShopImportJob(input: {
       status: "queued",
       productSourceUrls: normalizeProductSourceUrls(input.productSourceUrls),
       total: products.length,
+      // Inherit the parent scrape job's tenant so the import job is owned by
+      // the same tenant.
+      tenantId: scrapeJob.tenantId ?? null,
       startedAt: now,
       updatedAt: now,
     })
@@ -121,15 +137,19 @@ export async function listShopImportJobs(
     limit?: number;
     offset?: number;
   } = {},
+  scope?: TenantScopeValue,
 ) {
   const limit = clampListLimit(input.limit);
   const rows = await db
     .select()
     .from(shopImportJobs)
     .where(
-      input.scrapeJobId
-        ? eq(shopImportJobs.scrapeJobId, input.scrapeJobId)
-        : undefined,
+      and(
+        input.scrapeJobId
+          ? eq(shopImportJobs.scrapeJobId, input.scrapeJobId)
+          : undefined,
+        tenantConditionForValue(scope, shopImportJobs.tenantId),
+      ),
     )
     .orderBy(
       sql`case when ${shopImportJobs.status} in ('queued', 'running') then 0 else 1 end`,
@@ -141,17 +161,33 @@ export async function listShopImportJobs(
   return rows.map(toImportJobListItem);
 }
 
-export async function getShopImportJob(jobId: string) {
+export async function getShopImportJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(shopImportJobs)
-    .where(eq(shopImportJobs.id, jobId))
+    .where(
+      and(
+        eq(shopImportJobs.id, jobId),
+        tenantConditionForValue(scope, shopImportJobs.tenantId),
+      ),
+    )
     .limit(1);
 
   return job ? toImportJobSnapshot(job) : null;
 }
 
-export async function cancelShopImportJob(jobId: string) {
+export async function cancelShopImportJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  // Fail closed: a customer cancelling another tenant's import gets NOT_FOUND.
+  const inScope = await getShopImportJob(jobId, scope);
+  if (!inScope) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job nhập catalog.",
+    );
+  }
   const now = new Date().toISOString();
   const [cancelled] = await db
     .update(shopImportJobs)
@@ -161,7 +197,7 @@ export async function cancelShopImportJob(jobId: string) {
       currentSourceUrl: null,
       finishedAt: now,
       lastProgressAt: now,
-      expiresAt: expiresAt(now),
+      expiresAt: await expiresAt(now),
       durationMs: sql<number>`greatest(0, floor(extract(epoch from (${now}::timestamptz - ${shopImportJobs.startedAt})) * 1000))::int`,
       updatedAt: now,
     })
@@ -241,9 +277,10 @@ function asImportItems(value: unknown): ShopImportJobItem[] {
   return Array.isArray(value) ? (value as ShopImportJobItem[]) : [];
 }
 
-function expiresAt(finishedAtIso: string) {
+async function expiresAt(finishedAtIso: string) {
+  const ttlDays = await resolveScrapeJobTtlDays();
   return new Date(
-    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+    new Date(finishedAtIso).getTime() + ttlDays * 86_400_000,
   ).toISOString();
 }
 

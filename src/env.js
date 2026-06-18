@@ -53,6 +53,11 @@ export const env = createEnv({
       .default(7),
     SEARXNG_BASE_URL: z.string().url().optional(),
     BIDTOOL_EXCEL_RESEARCH_DIR: z.string().optional(),
+    BETTER_AUTH_SECRET: z.string().optional(),
+    BETTER_AUTH_URL: z.string().url().optional(),
+    AUTH_ENABLED: z.enum(["true", "false"]).default("false"),
+    AUTH_BOOTSTRAP_TOKEN: z.string().optional(),
+    AUTH_DESKTOP_AUTO_ADMIN: z.enum(["true", "false"]).default("true"),
   },
 
   /**
@@ -102,6 +107,11 @@ export const env = createEnv({
     EXCEL_RESEARCH_JOB_TTL_DAYS: process.env.EXCEL_RESEARCH_JOB_TTL_DAYS,
     SEARXNG_BASE_URL: process.env.SEARXNG_BASE_URL,
     BIDTOOL_EXCEL_RESEARCH_DIR: process.env.BIDTOOL_EXCEL_RESEARCH_DIR,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    AUTH_ENABLED: process.env.AUTH_ENABLED,
+    AUTH_BOOTSTRAP_TOKEN: process.env.AUTH_BOOTSTRAP_TOKEN,
+    AUTH_DESKTOP_AUTO_ADMIN: process.env.AUTH_DESKTOP_AUTO_ADMIN,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

@@ -2,11 +2,16 @@ import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import { stampTenant, withTenant } from "~/server/api/tenant-scope";
 import { watchlistItems } from "~/server/db/schema";
 
 export const watchlistRouter = createTRPCRouter({
-  addItem: publicProcedure
+  addItem: requirePermission("watchlist:write")
     .input(
       z.object({
         type: z.enum([
@@ -22,6 +27,8 @@ export const watchlistRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Look for an existing item within the caller's tenant scope only, so a
+      // customer never returns (and thus reveals) another tenant's row.
       const [existing] = await ctx.db
         .select()
         .from(watchlistItems)
@@ -29,6 +36,7 @@ export const watchlistRouter = createTRPCRouter({
           and(
             eq(watchlistItems.type, input.type),
             eq(watchlistItems.refKey, input.refKey),
+            withTenant(ctx, watchlistItems.tenantId),
           ),
         )
         .limit(1);
@@ -39,22 +47,31 @@ export const watchlistRouter = createTRPCRouter({
 
       const [newItem] = await ctx.db
         .insert(watchlistItems)
-        .values({
-          type: input.type,
-          refKey: input.refKey,
-          label: input.label,
-        })
+        .values(
+          stampTenant(ctx, {
+            type: input.type,
+            refKey: input.refKey,
+            label: input.label,
+          }),
+        )
         .returning();
 
       return newItem;
     }),
 
-  removeItem: publicProcedure
+  removeItem: requirePermission("watchlist:write")
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
+      // Scope the delete by tenant so a customer cannot remove another tenant's
+      // item; out-of-scope ids simply match nothing and yield NOT_FOUND.
       const deleted = await ctx.db
         .delete(watchlistItems)
-        .where(eq(watchlistItems.id, input.id))
+        .where(
+          and(
+            eq(watchlistItems.id, input.id),
+            withTenant(ctx, watchlistItems.tenantId),
+          ),
+        )
         .returning({ id: watchlistItems.id });
 
       if (deleted.length === 0) {
@@ -85,25 +102,31 @@ export const watchlistRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const baseQuery = ctx.db.select().from(watchlistItems);
-
-      if (!input?.type) {
-        return baseQuery.orderBy(desc(watchlistItems.createdAt));
-      }
-
-      return baseQuery
-        .where(eq(watchlistItems.type, input.type))
+      return ctx.db
+        .select()
+        .from(watchlistItems)
+        .where(
+          and(
+            input?.type ? eq(watchlistItems.type, input.type) : undefined,
+            withTenant(ctx, watchlistItems.tenantId),
+          ),
+        )
         .orderBy(desc(watchlistItems.createdAt));
     }),
 
-  removeMany: publicProcedure
+  removeMany: requirePermission("watchlist:write")
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
     )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(watchlistItems)
-        .where(inArray(watchlistItems.id, input.ids))
+        .where(
+          and(
+            inArray(watchlistItems.id, input.ids),
+            withTenant(ctx, watchlistItems.tenantId),
+          ),
+        )
         .returning({ id: watchlistItems.id });
       return { count: deleted.length };
     }),

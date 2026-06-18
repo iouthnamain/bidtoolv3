@@ -6,7 +6,7 @@ import {
   catalogPdfFileNameFromUrl,
   normalizeCatalogPdfUrl,
 } from "~/lib/materials/catalog-pdf";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { createTRPCRouter, publicProcedure, requirePermission } from "~/server/api/trpc";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
@@ -169,7 +169,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       }));
     }),
 
-  create: publicProcedure
+  create: requirePermission("catalog:write")
     .input(
       documentMetadataInput.extend({
         materialIds: z.array(z.number().int().positive()).max(500).optional(),
@@ -212,7 +212,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return document;
     }),
 
-  update: publicProcedure
+  update: requirePermission("catalog:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -255,7 +255,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return document;
     }),
 
-  delete: publicProcedure
+  delete: requirePermission("catalog:write")
     .input(documentIdInput)
     .mutation(async ({ ctx, input }) => {
       await getActiveDocumentById(ctx.db, input.id);
@@ -270,7 +270,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return { id: input.id };
     }),
 
-  bulkDelete: publicProcedure
+  bulkDelete: requirePermission("catalog:write")
     .input(
       z.object({
         ids: z.array(z.number().int().positive()).min(1).max(500),
@@ -303,7 +303,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return { deleted: activeIds.length };
     }),
 
-  reuploadPdf: publicProcedure
+  reuploadPdf: requirePermission("catalog:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -351,7 +351,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return updated ?? document;
     }),
 
-  uploadPdf: publicProcedure
+  uploadPdf: requirePermission("catalog:write")
     .input(
       documentMetadataInput.extend({
         fileName: z.string().trim().min(1),
@@ -427,7 +427,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return updated ?? document;
     }),
 
-  downloadToLocal: publicProcedure
+  downloadToLocal: requirePermission("catalog:write")
     .input(documentIdInput)
     .mutation(async ({ ctx, input }) => {
       const document = await getActiveDocumentById(ctx.db, input.id);
@@ -466,7 +466,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return updated;
     }),
 
-  attachToMaterials: publicProcedure
+  attachToMaterials: requirePermission("catalog:write")
     .input(
       z.object({
         documentId: z.number().int().positive(),
@@ -497,7 +497,7 @@ export const catalogDocumentRouter = createTRPCRouter({
       return { linked, requested: input.materialIds.length };
     }),
 
-  detachFromMaterial: publicProcedure
+  detachFromMaterial: requirePermission("catalog:write")
     .input(
       z.object({
         documentId: z.number().int().positive(),

@@ -10,8 +10,11 @@ import {
   type MaterialEnrichmentJobOptions,
   type MaterialEnrichmentResult,
 } from "~/lib/materials/material-enrichment-types";
-import { env } from "~/env";
 import { db } from "~/server/db";
+import {
+  tenantConditionForValue,
+  type TenantScopeValue,
+} from "~/server/api/tenant-scope";
 import {
   materialEnrichmentItems,
   materialEnrichmentJobs,
@@ -19,6 +22,7 @@ import {
   materials,
 } from "~/server/db/schema";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
+import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 
 export type MaterialEnrichmentJobStatus =
@@ -168,6 +172,9 @@ export async function startMaterialEnrichmentJob(input: {
   materialIds: number[];
   options?: MaterialEnrichmentJobOptions;
   filterOptions?: MaterialEnrichmentFilterOptions;
+  // Tenant attribution for the created job (creator's tenant; null for internal
+  // users). Threaded down from the router so the row is correctly owned.
+  tenantId?: string | null;
 }) {
   const materialIds = [...new Set(input.materialIds.map((id) => Math.trunc(id)).filter((id) => id > 0))];
   if (materialIds.length === 0) {
@@ -201,6 +208,7 @@ export async function startMaterialEnrichmentJob(input: {
       filterSnapshotJson: filterSnapshot,
       total: existingMaterials.length,
       message: "Đang xếp hàng chờ enrichment.",
+      tenantId: input.tenantId ?? null,
       startedAt: now,
       updatedAt: now,
     })
@@ -222,11 +230,13 @@ export async function startMaterialEnrichmentJob(input: {
 
 export async function listMaterialEnrichmentJobs(
   input: { limit?: number; offset?: number } = {},
+  scope?: TenantScopeValue,
 ) {
   const limit = clampListLimit(input.limit);
   const rows = await db
     .select()
     .from(materialEnrichmentJobs)
+    .where(tenantConditionForValue(scope, materialEnrichmentJobs.tenantId))
     .orderBy(
       sql`case when ${materialEnrichmentJobs.status} in ('queued', 'running') then 0 else 1 end`,
       desc(materialEnrichmentJobs.startedAt),
@@ -237,17 +247,65 @@ export async function listMaterialEnrichmentJobs(
   return rows.map(toJobListItem);
 }
 
-export async function getMaterialEnrichmentJob(jobId: string) {
+export async function getMaterialEnrichmentJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
   const [job] = await db
     .select()
     .from(materialEnrichmentJobs)
-    .where(eq(materialEnrichmentJobs.id, jobId))
+    .where(
+      and(
+        eq(materialEnrichmentJobs.id, jobId),
+        tenantConditionForValue(scope, materialEnrichmentJobs.tenantId),
+      ),
+    )
     .limit(1);
 
   return job ? toJobSnapshot(job) : null;
 }
 
-export async function cancelMaterialEnrichmentJob(jobId: string) {
+/**
+ * Fail-closed guard: ensure the job is within the caller's tenant scope before
+ * acting on it (or on its child items / web candidates, which have no tenantId
+ * column and are scoped via their parent job).
+ */
+async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
+  const job = await getMaterialEnrichmentJob(jobId, scope);
+  if (!job) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job enrichment vật liệu.",
+    );
+  }
+  return job;
+}
+
+/**
+ * Resolve the parent job id for an enrichment item, then confirm it is in the
+ * caller's tenant scope. Item-level mutations (select candidate, commit,
+ * reject) call this so a customer can never touch another tenant's item.
+ */
+async function assertItemInScope(itemId: number, scope: TenantScopeValue) {
+  const [item] = await db
+    .select({ jobId: materialEnrichmentItems.jobId })
+    .from(materialEnrichmentItems)
+    .where(eq(materialEnrichmentItems.id, itemId))
+    .limit(1);
+  if (!item) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng enrichment.",
+    );
+  }
+  await assertJobInScope(item.jobId, scope);
+}
+
+export async function cancelMaterialEnrichmentJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  await assertJobInScope(jobId, scope);
   const now = new Date().toISOString();
   const [cancelled] = await db
     .update(materialEnrichmentJobs)
@@ -257,7 +315,7 @@ export async function cancelMaterialEnrichmentJob(jobId: string) {
       currentMaterialName: null,
       finishedAt: now,
       lastProgressAt: now,
-      expiresAt: expiresAt(now),
+      expiresAt: await expiresAt(now),
       message: "Job enrichment đã bị hủy.",
       updatedAt: now,
     })
@@ -272,8 +330,11 @@ export async function cancelMaterialEnrichmentJob(jobId: string) {
   return cancelled ? toJobSnapshot(cancelled) : getMaterialEnrichmentJob(jobId);
 }
 
-export async function deleteMaterialEnrichmentJob(jobId: string) {
-  const existing = await getMaterialEnrichmentJob(jobId);
+export async function deleteMaterialEnrichmentJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const existing = await getMaterialEnrichmentJob(jobId, scope);
   if (!existing) {
     return null;
   }
@@ -292,7 +353,10 @@ export async function deleteMaterialEnrichmentJob(jobId: string) {
   return deleted ? toJobSnapshot(deleted) : existing;
 }
 
-export async function getMaterialEnrichmentItem(itemId: number) {
+export async function getMaterialEnrichmentItem(
+  itemId: number,
+  scope?: TenantScopeValue,
+) {
   const [item] = await db
     .select()
     .from(materialEnrichmentItems)
@@ -301,6 +365,15 @@ export async function getMaterialEnrichmentItem(itemId: number) {
 
   if (!item) {
     return null;
+  }
+
+  // The item carries no tenantId; confirm its parent job is in scope so a
+  // customer cannot read another tenant's enrichment item.
+  if (scope !== undefined) {
+    const parent = await getMaterialEnrichmentJob(item.jobId, scope);
+    if (!parent) {
+      return null;
+    }
   }
 
   const [material] = await db
@@ -314,8 +387,11 @@ export async function getMaterialEnrichmentItem(itemId: number) {
 
 export async function listMaterialEnrichmentItems(
   input: string | { jobId: string; limit?: number; offset?: number },
+  scope?: TenantScopeValue,
 ) {
   const jobId = typeof input === "string" ? input : input.jobId;
+  // Confirm the parent job is in-tenant before returning its items.
+  await assertJobInScope(jobId, scope);
   const limit =
     typeof input === "string"
       ? 500
@@ -342,7 +418,12 @@ export async function listMaterialWebCandidates(itemId: number) {
   return rows.map(toCandidateSnapshot);
 }
 
-export async function selectWebCandidate(itemId: number, candidateId: number) {
+export async function selectWebCandidate(
+  itemId: number,
+  candidateId: number,
+  scope?: TenantScopeValue,
+) {
+  await assertItemInScope(itemId, scope);
   const [item] = await db
     .select()
     .from(materialEnrichmentItems)
@@ -399,8 +480,11 @@ export async function selectWebCandidate(itemId: number, candidateId: number) {
   };
 }
 
-export async function commitMaterialEnrichmentItem(itemId: number) {
-  const item = await getMaterialEnrichmentItem(itemId);
+export async function commitMaterialEnrichmentItem(
+  itemId: number,
+  scope?: TenantScopeValue,
+) {
+  const item = await getMaterialEnrichmentItem(itemId, scope);
   if (!item) {
     throw new ShopJobServiceError("NOT_FOUND", "Không tìm thấy dòng enrichment.");
   }
@@ -418,12 +502,15 @@ export async function commitMaterialEnrichmentItem(itemId: number) {
   return toItemSnapshot(requireItemRow(committed));
 }
 
-export async function bulkCommitMaterialEnrichment(input: {
-  jobId: string;
-  itemIds?: number[];
-  minConfidence?: number;
-}) {
-  const items = await listMaterialEnrichmentItems(input);
+export async function bulkCommitMaterialEnrichment(
+  input: {
+    jobId: string;
+    itemIds?: number[];
+    minConfidence?: number;
+  },
+  scope?: TenantScopeValue,
+) {
+  const items = await listMaterialEnrichmentItems(input, scope);
   const minConfidence = input.minConfidence ?? 0;
   const itemIdSet =
     input.itemIds && input.itemIds.length > 0
@@ -445,6 +532,7 @@ export async function bulkCommitMaterialEnrichment(input: {
 
   for (const item of eligible) {
     try {
+      // Items already confirmed in-scope by listMaterialEnrichmentItems above.
       results.push(await commitMaterialEnrichmentItem(item.id));
       committed += 1;
     } catch {
@@ -455,7 +543,11 @@ export async function bulkCommitMaterialEnrichment(input: {
   return { committed, failed, items: results };
 }
 
-export async function rejectMaterialEnrichmentItem(itemId: number) {
+export async function rejectMaterialEnrichmentItem(
+  itemId: number,
+  scope?: TenantScopeValue,
+) {
+  await assertItemInScope(itemId, scope);
   const [updated] = await db
     .update(materialEnrichmentItems)
     .set({
@@ -472,13 +564,16 @@ export async function rejectMaterialEnrichmentItem(itemId: number) {
   return toItemSnapshot(updated);
 }
 
-export async function exportMaterialEnrichmentReport(jobId: string) {
-  const job = await getMaterialEnrichmentJob(jobId);
+export async function exportMaterialEnrichmentReport(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const job = await getMaterialEnrichmentJob(jobId, scope);
   if (!job) {
     throw new ShopJobServiceError("NOT_FOUND", "Không tìm thấy job enrichment.");
   }
 
-  const items = await listMaterialEnrichmentItems({ jobId });
+  const items = await listMaterialEnrichmentItems({ jobId }, scope);
   const candidatesByItem = await Promise.all(
     items.map(async (item) => ({
       itemId: item.id,
@@ -583,9 +678,10 @@ function toCandidateSnapshot(
   };
 }
 
-function expiresAt(finishedAtIso: string) {
+async function expiresAt(finishedAtIso: string) {
+  const ttlDays = await resolveScrapeJobTtlDays();
   return new Date(
-    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+    new Date(finishedAtIso).getTime() + ttlDays * 86_400_000,
   ).toISOString();
 }
 

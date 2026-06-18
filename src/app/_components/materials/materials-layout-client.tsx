@@ -57,6 +57,7 @@ export function MaterialsLayoutClient({
       description={meta.description}
       sectionNavItems={materialsSectionNavItems}
       sectionNavTitle="Khu vực vật tư"
+      sectionNavVariant="compact"
     >
       {children}
     </DashboardShell>

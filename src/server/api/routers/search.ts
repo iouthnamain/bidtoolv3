@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -18,7 +18,12 @@ import {
   SEARCH_MODE_VALUES,
   type SearchMode,
 } from "~/lib/search-modes";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import { stampTenant, withTenant } from "~/server/api/tenant-scope";
 import { type db as appDb } from "~/server/db";
 import {
   investmentProjects,
@@ -611,7 +616,7 @@ export const searchRouter = createTRPCRouter({
       ),
     ),
 
-  saveFilter: publicProcedure
+  saveFilter: requirePermission("workflow:write")
     .input(savedFilterInputSchema)
     .mutation(async ({ ctx, input }) => {
       const normalized = normalizeSavedFilterInput(input);
@@ -620,19 +625,21 @@ export const searchRouter = createTRPCRouter({
       try {
         const [created] = await ctx.db
           .insert(savedFilters)
-          .values({
-            name: normalized.name,
-            mode: normalized.mode,
-            criteriaJson: normalized.criteria,
-            keyword: normalized.criteria.keyword,
-            provinces: normalized.criteria.provinces,
-            categories: normalized.criteria.packageCategories,
-            budgetMin: normalized.criteria.budgetMin,
-            budgetMax: normalized.criteria.budgetMax,
-            minMatchScore: normalized.criteria.minMatchScore,
-            notificationFrequency: normalized.notificationFrequency,
-            updatedAt: now,
-          })
+          .values(
+            stampTenant(ctx, {
+              name: normalized.name,
+              mode: normalized.mode,
+              criteriaJson: normalized.criteria,
+              keyword: normalized.criteria.keyword,
+              provinces: normalized.criteria.provinces,
+              categories: normalized.criteria.packageCategories,
+              budgetMin: normalized.criteria.budgetMin,
+              budgetMax: normalized.criteria.budgetMax,
+              minMatchScore: normalized.criteria.minMatchScore,
+              notificationFrequency: normalized.notificationFrequency,
+              updatedAt: now,
+            }),
+          )
           .returning();
 
         if (!created) {
@@ -664,7 +671,12 @@ export const searchRouter = createTRPCRouter({
         const [row] = await ctx.db
           .select()
           .from(savedFilters)
-          .where(eq(savedFilters.id, input.id))
+          .where(
+            and(
+              eq(savedFilters.id, input.id),
+              withTenant(ctx, savedFilters.tenantId),
+            ),
+          )
           .limit(1);
 
         if (!row) {
@@ -689,6 +701,7 @@ export const searchRouter = createTRPCRouter({
       const rows = await ctx.db
         .select()
         .from(savedFilters)
+        .where(withTenant(ctx, savedFilters.tenantId))
         .orderBy(desc(savedFilters.updatedAt), desc(savedFilters.createdAt));
 
       return rows.map(normalizeSavedFilterRow);
@@ -701,7 +714,7 @@ export const searchRouter = createTRPCRouter({
     }
   }),
 
-  updateSavedFilter: publicProcedure
+  updateSavedFilter: requirePermission("workflow:write")
     .input(savedFilterUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const normalized = normalizeSavedFilterInput(input);
@@ -722,7 +735,12 @@ export const searchRouter = createTRPCRouter({
             notificationFrequency: normalized.notificationFrequency,
             updatedAt: new Date().toISOString(),
           })
-          .where(eq(savedFilters.id, input.id))
+          .where(
+            and(
+              eq(savedFilters.id, input.id),
+              withTenant(ctx, savedFilters.tenantId),
+            ),
+          )
           .returning();
 
         if (!updated) {
@@ -747,13 +765,18 @@ export const searchRouter = createTRPCRouter({
       }
     }),
 
-  deleteSavedFilter: publicProcedure
+  deleteSavedFilter: requirePermission("workflow:write")
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       try {
         const deleted = await ctx.db
           .delete(savedFilters)
-          .where(eq(savedFilters.id, input.id))
+          .where(
+            and(
+              eq(savedFilters.id, input.id),
+              withTenant(ctx, savedFilters.tenantId),
+            ),
+          )
           .returning({ id: savedFilters.id });
 
         if (deleted.length === 0) {
@@ -773,14 +796,19 @@ export const searchRouter = createTRPCRouter({
       }
     }),
 
-  deleteSavedFilters: publicProcedure
+  deleteSavedFilters: requirePermission("workflow:write")
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(50) }),
     )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(savedFilters)
-        .where(inArray(savedFilters.id, input.ids))
+        .where(
+          and(
+            inArray(savedFilters.id, input.ids),
+            withTenant(ctx, savedFilters.tenantId),
+          ),
+        )
         .returning({ id: savedFilters.id });
       return { count: deleted.length };
     }),

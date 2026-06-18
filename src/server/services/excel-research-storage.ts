@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { resolveExcelResearchDir } from "~/server/services/app-settings";
+
 export class ExcelResearchStorageError extends Error {}
 
 export type ExcelResearchStorageKind =
@@ -26,19 +28,19 @@ const MIME_BY_KIND: Record<ExcelResearchStorageKind, string> = {
   report: "application/json",
 };
 
-function storageRoot() {
-  const configured = process.env.BIDTOOL_EXCEL_RESEARCH_DIR?.trim();
+async function storageRoot() {
+  const configured = (await resolveExcelResearchDir())?.trim();
   return configured && configured.length > 0
     ? path.resolve(configured)
     : path.join(process.cwd(), "data", "excel-research");
 }
 
-export function excelResearchJobRoot(jobId: string) {
-  return path.join(storageRoot(), jobId);
+export async function excelResearchJobRoot(jobId: string) {
+  return path.join(await storageRoot(), jobId);
 }
 
-function artifactDir(jobId: string, kind: ExcelResearchStorageKind) {
-  return path.join(excelResearchJobRoot(jobId), ARTIFACT_SUBDIRS[kind]);
+async function artifactDir(jobId: string, kind: ExcelResearchStorageKind) {
+  return path.join(await excelResearchJobRoot(jobId), ARTIFACT_SUBDIRS[kind]);
 }
 
 export function sanitizeExcelResearchFileName(fileName: string) {
@@ -71,8 +73,8 @@ export function decodeExcelResearchBase64(value: string) {
   return buffer;
 }
 
-function resolveArtifactPath(localFilePath: string) {
-  const root = storageRoot();
+async function resolveArtifactPath(localFilePath: string) {
+  const root = await storageRoot();
   const absolute = path.resolve(root, localFilePath);
   if (!absolute.startsWith(root + path.sep) && absolute !== root) {
     throw new ExcelResearchStorageError("Đường dẫn tệp không hợp lệ.");
@@ -107,7 +109,7 @@ export async function saveExcelResearchFile(
 ): Promise<StoredExcelResearchArtifact> {
   const safeFileName = defaultFileName(kind, fileName);
   const relativePath = path.join(jobId, ARTIFACT_SUBDIRS[kind], safeFileName);
-  const absoluteDir = artifactDir(jobId, kind);
+  const absoluteDir = await artifactDir(jobId, kind);
   await mkdir(absoluteDir, { recursive: true });
   await writeFile(path.join(absoluteDir, safeFileName), buffer);
 
@@ -121,7 +123,7 @@ export async function saveExcelResearchFile(
 }
 
 export async function readExcelResearchFile(localFilePath: string) {
-  return readFile(resolveArtifactPath(localFilePath));
+  return readFile(await resolveArtifactPath(localFilePath));
 }
 
 export async function readExcelResearchArtifact(localFilePath: string) {
@@ -166,6 +168,6 @@ export async function saveResearchReport(
 }
 
 export async function deleteExcelResearchJobFiles(jobId: string) {
-  const absoluteDir = excelResearchJobRoot(jobId);
+  const absoluteDir = await excelResearchJobRoot(jobId);
   await rm(absoluteDir, { recursive: true, force: true });
 }

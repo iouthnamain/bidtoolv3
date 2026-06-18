@@ -128,7 +128,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     label: "Danh mục",
     description: "Tìm, chọn, mở chi tiết và xóa vật tư.",
     icon: "boxes",
-    tone: "slate",
+    tone: "sky",
   },
   {
     href: "/materials/new",
@@ -136,6 +136,13 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     description: "Tạo một vật tư chuẩn cho catalog.",
     icon: "plus",
     tone: "emerald",
+  },
+  {
+    href: "/materials/import",
+    label: "Nhập sheet",
+    description: "Upload Excel hoặc dán CSV để tạo catalog hàng loạt.",
+    icon: "sheet",
+    tone: "amber",
   },
   {
     href: "/materials/scrape",
@@ -149,14 +156,14 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     label: "Làm giàu",
     description: "Tìm web, bổ sung thông số và catalog PDF cho vật tư.",
     icon: "sparkles",
-    tone: "emerald",
+    tone: "rose",
   },
   {
     href: "/catalog-pdfs",
     label: "Catalog PDFs",
     description: "Thư viện tài liệu catalog gắn với vật tư.",
     icon: "file",
-    tone: "violet",
+    tone: "slate",
   },
 ];
 

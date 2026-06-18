@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { env } from "~/env";
 import { db } from "~/server/db";
 import {
   excelResearchChangeLog,
@@ -13,6 +12,7 @@ import {
   excelResearchRowEvidence,
 } from "~/server/db/schema";
 import { processSingleRow } from "~/server/services/excel-research/row-research";
+import { resolveExcelResearchBatchSize } from "~/server/services/app-settings";
 import {
   DEFAULT_EXCEL_RESEARCH_CONFIG,
   excelResearchJobConfigSchema,
@@ -311,7 +311,7 @@ export async function processJobBatch(jobId: string): Promise<number> {
   const config = resolveConfig(job.configJson);
   const batchSize = Math.min(
     config.batchSize,
-    env.EXCEL_RESEARCH_BATCH_SIZE,
+    await resolveExcelResearchBatchSize(),
   );
   const batchId = randomUUID();
   const claimed = await claimPendingRows(jobId, batchSize);

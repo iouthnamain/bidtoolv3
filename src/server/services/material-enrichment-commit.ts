@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, isNull } from "drizzle-orm";
 
-import { buildFillPlan } from "~/lib/materials/excel-enrich-fields";
+import { buildFillPlan, type FillableField } from "~/lib/materials/excel-enrich-fields";
 import {
   ENRICHABLE_FIELDS,
   type EnrichableField,
@@ -40,11 +40,49 @@ const FIELD_TO_LOCK_KEY: Record<EnrichableField, MaterialFieldLockKey> = {
   manufacturer: "manufacturer",
   originCountry: "originCountry",
   unit: "unit",
+  price: "defaultUnitPrice",
+  sourceUrl: "sourceUrl",
+};
+
+/**
+ * The fill-plan model (FillableField) names the price column `defaultUnitPrice`
+ * while the enrichment model uses `price`. Keep a single source of truth for
+ * translating between the two when reusing buildFillPlan.
+ */
+const ENRICHABLE_TO_FILLABLE: Record<EnrichableField, FillableField> = {
+  category: "category",
+  specText: "specText",
+  manufacturer: "manufacturer",
+  originCountry: "originCountry",
+  unit: "unit",
+  price: "defaultUnitPrice",
   sourceUrl: "sourceUrl",
 };
 
 function trimmedOrEmpty(value: string | null | undefined) {
   return value?.trim() ?? "";
+}
+
+/**
+ * Parse an LLM/string price into a positive integer value. Strips currency
+ * symbols and thousands separators. Returns null when no sensible positive
+ * number can be derived, so commit never zeroes out an existing price.
+ */
+export function parseEnrichmentPrice(value: string | null | undefined): number | null {
+  if (value == null) {
+    return null;
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return null;
+  }
+  const numericText = trimmed.replace(/[^\d.,]/g, "");
+  if (!numericText) {
+    return null;
+  }
+  const digitsOnly = numericText.replace(/[.,]/g, "");
+  const parsed = Number(digitsOnly);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
 function materialFieldValue(material: MaterialRow, field: EnrichableField) {
@@ -59,6 +97,10 @@ function materialFieldValue(material: MaterialRow, field: EnrichableField) {
       return material.originCountry;
     case "unit":
       return material.unit;
+    case "price":
+      return material.defaultUnitPrice != null
+        ? String(material.defaultUnitPrice)
+        : null;
     case "sourceUrl":
       return material.sourceUrl;
     default:
@@ -98,17 +140,20 @@ export function buildMaterialUpdatePlan(
 ): MaterialUpdatePlanCell[] {
   const currentFields = Object.fromEntries(
     ENRICHABLE_FIELDS.map((field) => [
-      field,
+      ENRICHABLE_TO_FILLABLE[field],
       trimmedOrEmpty(materialFieldValue(material, field)),
     ]),
-  ) as Partial<Record<EnrichableField, string>>;
+  ) as Partial<Record<FillableField, string>>;
 
   const proposedFields = Object.fromEntries(
     ENRICHABLE_FIELDS.map((field) => {
       const extracted = result.fields[field];
-      return [field, trimmedOrEmpty(extracted?.matchedOption ?? extracted?.value)];
+      return [
+        ENRICHABLE_TO_FILLABLE[field],
+        trimmedOrEmpty(extracted?.matchedOption ?? extracted?.value),
+      ];
     }),
-  ) as Partial<Record<EnrichableField, string>>;
+  ) as Partial<Record<FillableField, string>>;
 
   const fillPlan = buildFillPlan(currentFields, proposedFields);
   const planByField = new Map(fillPlan.map((cell) => [cell.field, cell]));
@@ -131,7 +176,7 @@ export function buildMaterialUpdatePlan(
       ];
     }
 
-    const cell = planByField.get(field);
+    const cell = planByField.get(ENRICHABLE_TO_FILLABLE[field]);
     if (!cell) {
       return [];
     }
@@ -253,6 +298,16 @@ export async function commitEnrichmentItem(
       case "unit":
         update.unit = after || material.unit;
         break;
+      case "price": {
+        const parsedPrice = parseEnrichmentPrice(after);
+        if (parsedPrice == null) {
+          // Could not parse a sane number — skip the write and event log so we
+          // never zero out or corrupt an existing price.
+          continue;
+        }
+        update.defaultUnitPrice = parsedPrice;
+        break;
+      }
       case "sourceUrl":
         update.sourceUrl = after || null;
         break;

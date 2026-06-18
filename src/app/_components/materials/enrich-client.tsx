@@ -47,6 +47,7 @@ const fieldLabel: Record<EnrichableField, string> = {
   manufacturer: "NCC",
   originCountry: "Xuất xứ",
   unit: "Đơn vị",
+  price: "Đơn giá",
   sourceUrl: "URL nguồn",
 };
 
@@ -207,6 +208,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     autoCommitHighConfidence: false,
   });
   const [reviewItemId, setReviewItemId] = useState<number | null>(null);
+  const [hideCommitted, setHideCommitted] = useState(false);
   const [cancelJobOpen, setCancelJobOpen] = useState(false);
   const [deleteJobTarget, setDeleteJobTarget] = useState<EnrichmentJobListItem | null>(
     null,
@@ -424,6 +426,12 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
   const processedPercent = activeJob
     ? progressPercent(activeJob.processed, activeJob.total)
     : 0;
+
+  const committedCount = items.filter(
+    (item) => item.status === "committed",
+  ).length;
+  const visibleItems =
+    hideCommitted ? items.filter((item) => item.status !== "committed") : items;
 
   return (
     <div className="space-y-4">
@@ -767,10 +775,22 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
           </section>
 
           <section className="panel overflow-hidden">
-            <div className="border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <h3 className="text-sm font-bold text-slate-900 text-balance">
                 Chi tiết từng vật tư
               </h3>
+              {committedCount > 0 ? (
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={hideCommitted}
+                    onChange={(event) => setHideCommitted(event.target.checked)}
+                  />
+                  <span>
+                    Ẩn mục đã commit ({committedCount.toLocaleString("vi-VN")})
+                  </span>
+                </label>
+              ) : null}
             </div>
 
             {itemsQuery.isLoading ? (
@@ -783,6 +803,13 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                 <EmptyState
                   title="Chưa có mục nào"
                   description="Job đang khởi tạo hoặc chưa có vật tư."
+                />
+              </div>
+            ) : visibleItems.length === 0 ? (
+              <div className="p-4">
+                <EmptyState
+                  title="Đã commit tất cả"
+                  description="Tất cả mục đã được commit. Bỏ chọn “Ẩn mục đã commit” để xem lại."
                 />
               </div>
             ) : (
@@ -798,7 +825,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {items.map((item) => {
+                    {visibleItems.map((item) => {
                       const status = item.status as MaterialEnrichmentItemStatus;
                       const canCommit = ["auto", "review"].includes(item.status);
                       const canReview = !["pending", "processing"].includes(
@@ -1169,8 +1196,8 @@ function EnrichmentReviewDialog({
                     {ENRICHABLE_FIELDS.map((field) => {
                       const before = readSnapshotField(snapshot, field);
                       const proposed = result.fields[field];
-                      const after = proposed?.value ?? null;
-                      const changed = before !== after && after != null && after !== "";
+                      const after = formatFieldValue(field, proposed?.value ?? null);
+                      const changed = before !== after && after !== "";
                       return (
                         <tr key={field} className={changed ? "bg-sky-50/50" : undefined}>
                           <td className="px-3 py-2 font-medium text-slate-700">
@@ -1194,6 +1221,33 @@ function EnrichmentReviewDialog({
                         </tr>
                       );
                     })}
+                    {(() => {
+                      const proposedPdfCount = result.catalogPdfUrls.length;
+                      return (
+                        <tr
+                          className={
+                            proposedPdfCount > 0 ? "bg-sky-50/50" : undefined
+                          }
+                        >
+                          <td className="px-3 py-2 font-medium text-slate-700">
+                            Catalog PDF
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            <span className="text-slate-400">—</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {proposedPdfCount > 0 ? (
+                              <span className="font-medium text-slate-900">
+                                {proposedPdfCount.toLocaleString("vi-VN")} catalog
+                                PDF
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -1371,8 +1425,35 @@ function readSnapshotField(
   snapshot: Partial<MaterialEnrichmentInput>,
   field: EnrichableField,
 ) {
+  if (field === "price") {
+    return formatFieldValue(field, readRawSnapshotPrice(snapshot));
+  }
   const value = snapshot[field];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readRawSnapshotPrice(snapshot: Partial<MaterialEnrichmentInput>) {
+  const price = snapshot.defaultUnitPrice;
+  return typeof price === "number" && Number.isFinite(price)
+    ? String(price)
+    : null;
+}
+
+/**
+ * Format a proposed/extracted field value for display. Price values arrive as
+ * raw numeric strings (e.g. "1250000") and are shown with VN grouping.
+ */
+function formatFieldValue(field: EnrichableField, value: string | null) {
+  if (value == null || value === "") {
+    return "";
+  }
+  if (field === "price") {
+    const numeric = Number(value.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(numeric) && numeric > 0
+      ? numeric.toLocaleString("vi-VN")
+      : value.trim();
+  }
+  return value.trim();
 }
 
 function collectEvidence(

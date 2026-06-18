@@ -188,6 +188,9 @@ export const savedFilters = pgTable(
     notificationFrequency: notificationFrequencyEnum("notification_frequency")
       .notNull()
       .default("daily"),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -200,6 +203,9 @@ export const savedFilters = pgTable(
     savedFiltersUpdatedAtIdx: index("saved_filters_updated_at_idx").on(
       table.updatedAt,
     ),
+    savedFiltersTenantIdx: index("saved_filters_tenant_id_idx").on(
+      table.tenantId,
+    ),
   }),
 );
 
@@ -210,6 +216,9 @@ export const watchlistItems = pgTable(
     type: watchlistTypeEnum("type").notNull(),
     refKey: text("ref_key").notNull(),
     label: text("label").notNull(),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -219,6 +228,9 @@ export const watchlistItems = pgTable(
     watchlistItemsTypeRefKeyIdx: index("watchlist_items_type_ref_key_idx").on(
       table.type,
       table.refKey,
+    ),
+    watchlistItemsTenantIdx: index("watchlist_items_tenant_id_idx").on(
+      table.tenantId,
     ),
   }),
 );
@@ -239,6 +251,9 @@ export const workflows = pgTable(
       .notNull()
       .default({}),
     isActive: boolean("is_active").notNull().default(true),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -251,6 +266,7 @@ export const workflows = pgTable(
     workflowsTriggerTypeIdx: index("workflows_trigger_type_idx").on(
       table.triggerType,
     ),
+    workflowsTenantIdx: index("workflows_tenant_id_idx").on(table.tenantId),
   }),
 );
 
@@ -287,6 +303,9 @@ export const notifications = pgTable(
     body: text("body").notNull(),
     severity: notificationSeverityEnum("severity").notNull(),
     isRead: boolean("is_read").notNull().default(false),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -295,6 +314,9 @@ export const notifications = pgTable(
     notificationsIsReadCreatedIdx: index(
       "notifications_is_read_created_idx",
     ).on(table.isRead, table.createdAt),
+    notificationsTenantIdx: index("notifications_tenant_id_idx").on(
+      table.tenantId,
+    ),
   }),
 );
 
@@ -771,6 +793,9 @@ export const shopScrapeJobs = pgTable(
     updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     statusStartedAtIdx: index("shop_scrape_jobs_status_started_at_idx").on(
@@ -780,6 +805,9 @@ export const shopScrapeJobs = pgTable(
     activeUrlUnique: uniqueIndex("shop_scrape_jobs_active_url_unique")
       .on(table.normalizedUrl)
       .where(sql`${table.status} in ('queued', 'running')`),
+    shopScrapeJobsTenantIdx: index("shop_scrape_jobs_tenant_id_idx").on(
+      table.tenantId,
+    ),
   }),
 );
 
@@ -818,6 +846,9 @@ export const shopImportJobs = pgTable(
     updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     scrapeJobIdx: index("shop_import_jobs_scrape_job_id_idx").on(
@@ -826,6 +857,9 @@ export const shopImportJobs = pgTable(
     statusStartedAtIdx: index("shop_import_jobs_status_started_at_idx").on(
       table.status,
       table.startedAt,
+    ),
+    shopImportJobsTenantIdx: index("shop_import_jobs_tenant_id_idx").on(
+      table.tenantId,
     ),
   }),
 );
@@ -952,6 +986,9 @@ export const excelResearchJobs = pgTable(
     updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     statusStartedAtIdx: index("excel_research_jobs_status_started_at_idx").on(
@@ -960,6 +997,9 @@ export const excelResearchJobs = pgTable(
     ),
     updatedAtIdx: index("excel_research_jobs_updated_at_idx").on(
       table.updatedAt,
+    ),
+    excelResearchJobsTenantIdx: index("excel_research_jobs_tenant_id_idx").on(
+      table.tenantId,
     ),
   }),
 );
@@ -1221,11 +1261,17 @@ export const materialEnrichmentJobs = pgTable(
     updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
+    tenantId: text("tenant_id").references((): AnyPgColumn => tenant.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => ({
     statusStartedAtIdx: index(
       "material_enrichment_jobs_status_started_at_idx",
     ).on(table.status, table.startedAt),
+    materialEnrichmentJobsTenantIdx: index(
+      "material_enrichment_jobs_tenant_id_idx",
+    ).on(table.tenantId),
   }),
 );
 
@@ -1353,5 +1399,125 @@ export const materialEnrichmentEvents = pgTable(
       table.createdAt,
     ),
     itemIdx: index("material_enrichment_events_item_idx").on(table.itemId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Auth + multi-tenancy foundation
+//
+// Tables below are managed by Better Auth (the drizzle adapter maps each model
+// field to the matching property key on these tables). Column shapes mirror
+// Better Auth 1.6.x `getAuthTables()` core schema plus the `admin` plugin
+// fields (role/banned/banReason/banExpires on user, impersonatedBy on session).
+// Better Auth generates string ids, so primary keys are text, not serial.
+// ---------------------------------------------------------------------------
+
+export const roleEnum = pgEnum("user_role", [
+  "admin",
+  "manager",
+  "staff",
+  "customer",
+]);
+
+// A tenant is a customer organization. Internal staff/manager/admin users have
+// a null tenantId; customer users belong to exactly one tenant. Owned-data
+// tables carry a nullable tenantId so this additive migration never locks out
+// existing single-tenant rows (a later backfill assigns a host tenant).
+export const tenant = pgTable(
+  "tenant",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()::text`),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantSlugUnique: uniqueIndex("tenant_slug_unique").on(table.slug),
+  }),
+);
+
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
+  role: roleEnum("role").notNull().default("customer"),
+  banned: boolean("banned").default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { mode: "date" }),
+  tenantId: text("tenant_id").references(() => tenant.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+});
+
+export const session = pgTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    token: text("token").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    impersonatedBy: text("impersonated_by"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    sessionTokenUnique: uniqueIndex("session_token_unique").on(table.token),
+    sessionUserIdx: index("session_user_id_idx").on(table.userId),
+  }),
+);
+
+export const account = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", {
+      mode: "date",
+    }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+      mode: "date",
+    }),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    accountUserIdx: index("account_user_id_idx").on(table.userId),
+  }),
+);
+
+export const verification = pgTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    verificationIdentifierIdx: index("verification_identifier_idx").on(
+      table.identifier,
+    ),
   }),
 );

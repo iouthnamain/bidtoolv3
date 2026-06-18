@@ -1,4 +1,4 @@
-import { env } from "~/env";
+import { resolveSearxngBaseUrl } from "~/server/services/app-settings";
 
 export type RawSearchHit = {
   provider: string;
@@ -32,7 +32,7 @@ export async function searchWeb(
   query: string,
   limit = 8,
 ): Promise<{ hits: RawSearchHit[]; warning?: string }> {
-  const baseUrl = env.SEARXNG_BASE_URL?.trim();
+  const baseUrl = (await resolveSearxngBaseUrl())?.trim();
   if (!baseUrl) {
     return {
       hits: [],

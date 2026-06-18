@@ -1,0 +1,346 @@
+"use client";
+
+import { Bell, BookmarkCheck, FileSpreadsheet, Layers } from "lucide-react";
+
+import { Badge } from "~/app/_components/ui";
+import { api } from "~/trpc/react";
+
+const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
+function formatDateTime(value: string | Date | null | undefined) {
+  if (!value) return "Chưa có";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Chưa có";
+  return dateTimeFormatter.format(date);
+}
+
+type JobStatus =
+  | "draft"
+  | "queued"
+  | "paused"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+function jobStatusLabel(status: string | null | undefined) {
+  switch (status) {
+    case "completed":
+      return "Hoàn tất";
+    case "failed":
+      return "Thất bại";
+    case "running":
+      return "Đang chạy";
+    case "queued":
+      return "Trong hàng đợi";
+    case "paused":
+      return "Tạm dừng";
+    case "cancelled":
+      return "Đã hủy";
+    case "draft":
+      return "Nháp";
+    default:
+      return "Không rõ";
+  }
+}
+
+function jobStatusTone(
+  status: string | null | undefined,
+): "neutral" | "success" | "warning" | "critical" | "info" {
+  switch (status) {
+    case "completed":
+      return "success";
+    case "failed":
+    case "cancelled":
+      return "critical";
+    case "running":
+    case "queued":
+      return "info";
+    case "paused":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function SectionCard({
+  icon,
+  title,
+  action,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+            {icon}
+          </span>
+          <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+        </div>
+        {action}
+      </div>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function EmptyRow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-4 text-center text-xs text-slate-500">
+      {children}
+    </p>
+  );
+}
+
+function NotificationsSection() {
+  const unreadQuery = api.notification.unreadCount.useQuery();
+  const listQuery = api.notification.list.useQuery({ limit: 5 });
+  const items = listQuery.data ?? [];
+  const unread = unreadQuery.data ?? 0;
+
+  return (
+    <SectionCard
+      icon={<Bell className="h-4 w-4" aria-hidden="true" />}
+      title="Thông báo"
+      action={
+        unread > 0 ? (
+          <Badge tone="warning">{unread} chưa đọc</Badge>
+        ) : (
+          <Badge tone="neutral">Đã đọc hết</Badge>
+        )
+      }
+    >
+      {listQuery.isPending ? (
+        <EmptyRow>Đang tải…</EmptyRow>
+      ) : items.length === 0 ? (
+        <EmptyRow>Chưa có thông báo nào.</EmptyRow>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li
+              key={item.id}
+              className={`rounded-lg border px-3 py-2.5 ${
+                item.isRead
+                  ? "border-slate-200 bg-white"
+                  : "border-sky-200 bg-sky-50/50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere] text-slate-900">
+                  {item.title}
+                </p>
+                {!item.isRead ? <Badge tone="info">Mới</Badge> : null}
+              </div>
+              {item.body ? (
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  {item.body}
+                </p>
+              ) : null}
+              <p className="mt-1 text-[11px] text-slate-400">
+                {formatDateTime(item.createdAt)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function ResearchJobsSection() {
+  const query = api.excelResearch.listJobs.useQuery({ limit: 5 });
+  const items = query.data ?? [];
+
+  return (
+    <SectionCard
+      icon={<FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
+      title="Kết quả nghiên cứu"
+    >
+      {query.isPending ? (
+        <EmptyRow>Đang tải…</EmptyRow>
+      ) : items.length === 0 ? (
+        <EmptyRow>Chưa có công việc nghiên cứu nào.</EmptyRow>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((job) => (
+            <li
+              key={job.id}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere] text-slate-900">
+                  {job.name || job.sourceFileName || "Không có tên"}
+                </p>
+                <Badge tone={jobStatusTone(job.status)}>
+                  {jobStatusLabel(job.status)}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {job.processedRows}/{job.totalRows} dòng đã xử lý
+                {job.matchedRows > 0 ? ` · ${job.matchedRows} khớp` : ""}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                {formatDateTime(job.createdAt)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function EnrichmentJobsSection() {
+  const query =
+    api.materialEnrichment.listMaterialEnrichmentJobs.useQuery({ limit: 5 });
+  const items = query.data ?? [];
+
+  return (
+    <SectionCard
+      icon={<Layers className="h-4 w-4" aria-hidden="true" />}
+      title="Làm giàu dữ liệu vật tư"
+    >
+      {query.isPending ? (
+        <EmptyRow>Đang tải…</EmptyRow>
+      ) : items.length === 0 ? (
+        <EmptyRow>Chưa có công việc làm giàu nào.</EmptyRow>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((job) => (
+            <li
+              key={job.id}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+                  {job.currentMaterialName ?? `Công việc ${job.id.slice(0, 8)}`}
+                </p>
+                <Badge tone={jobStatusTone(job.status)}>
+                  {jobStatusLabel(job.status)}
+                </Badge>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {job.processed}/{job.total} mục đã xử lý
+                {job.matched > 0 ? ` · ${job.matched} khớp` : ""}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                {formatDateTime(job.startedAt)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function WatchlistSection() {
+  const query = api.watchlist.listItems.useQuery({});
+  const items = query.data ?? [];
+
+  return (
+    <SectionCard
+      icon={<BookmarkCheck className="h-4 w-4" aria-hidden="true" />}
+      title="Danh sách theo dõi"
+      action={
+        items.length > 0 ? (
+          <Badge tone="neutral">{items.length} mục</Badge>
+        ) : null
+      }
+    >
+      {query.isPending ? (
+        <EmptyRow>Đang tải…</EmptyRow>
+      ) : items.length === 0 ? (
+        <EmptyRow>Chưa có mục theo dõi nào.</EmptyRow>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.slice(0, 8).map((item) => (
+            <li
+              key={item.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+                {item.label}
+              </span>
+              <span className="shrink-0 text-[11px] text-slate-400">
+                {formatDateTime(item.createdAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function SavedFiltersSection() {
+  const query = api.search.listSavedFilters.useQuery();
+  const items = query.data ?? [];
+
+  return (
+    <SectionCard
+      icon={<BookmarkCheck className="h-4 w-4" aria-hidden="true" />}
+      title="Bộ lọc đã lưu"
+      action={
+        items.length > 0 ? (
+          <Badge tone="neutral">{items.length} bộ lọc</Badge>
+        ) : null
+      }
+    >
+      {query.isPending ? (
+        <EmptyRow>Đang tải…</EmptyRow>
+      ) : items.length === 0 ? (
+        <EmptyRow>Chưa có bộ lọc nào được lưu.</EmptyRow>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.slice(0, 8).map((filter) => (
+            <li
+              key={filter.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+                {filter.name}
+              </span>
+              {filter.keyword ? (
+                <span className="shrink-0 truncate text-[11px] text-slate-400">
+                  {filter.keyword}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+/**
+ * Read-only customer portal home. Every query here is tenant-scoped on the
+ * server, so the customer only ever sees their own tenant's data. No mutations
+ * are called — customers have an empty permission set and gated mutations would
+ * return FORBIDDEN.
+ */
+export function PortalHomeClient() {
+  return (
+    <div className="space-y-4">
+      <NotificationsSection />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ResearchJobsSection />
+        <EnrichmentJobsSection />
+        <WatchlistSection />
+        <SavedFiltersSection />
+      </div>
+    </div>
+  );
+}
+
+export type { JobStatus };

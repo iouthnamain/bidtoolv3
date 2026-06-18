@@ -14,6 +14,7 @@ export const ENRICHABLE_FIELDS = [
   "manufacturer",
   "originCountry",
   "unit",
+  "price",
   "sourceUrl",
 ] as const;
 
@@ -38,6 +39,8 @@ export type MaterialEnrichmentInput = {
   specText: string;
   manufacturer: string | null;
   originCountry: string | null;
+  defaultUnitPrice: number | null;
+  currency: string;
   sourceUrl: string | null;
   sku?: string | null;
   model?: string | null;

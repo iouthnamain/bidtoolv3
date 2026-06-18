@@ -121,6 +121,8 @@ function materialToInput(material: typeof materials.$inferSelect): MaterialEnric
     specText: material.specText,
     manufacturer: material.manufacturer,
     originCountry: material.originCountry,
+    defaultUnitPrice: material.defaultUnitPrice,
+    currency: material.currency,
     sourceUrl: material.sourceUrl,
     sku: metadata.shopScrape?.sku ?? null,
     model: metadata.shopScrape?.model ?? null,

@@ -2,7 +2,15 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { FILLABLE_FIELDS } from "~/lib/materials/excel-enrich-fields";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import {
+  creatorTenantId,
+  tenantScopeValue,
+} from "~/server/api/tenant-scope";
 import {
   approveRow,
   bulkApproveRows,
@@ -121,7 +129,7 @@ export const excelResearchRouter = createTRPCRouter({
       };
     }),
 
-  createJob: publicProcedure
+  createJob: requirePermission("excelResearch:run")
     .input(
       z.object({
         fileName: z.string().min(1),
@@ -133,15 +141,17 @@ export const excelResearchRouter = createTRPCRouter({
         config: excelResearchJobConfigSchema.partial().optional(),
       }),
     )
-    .mutation(({ input }) =>
-      withExcelResearchErrors(() => createJob(input)),
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        createJob({ ...input, tenantId: creatorTenantId(ctx) }),
+      ),
     ),
 
   getJob: publicProcedure
     .input(jobIdInput)
-    .query(({ input }) =>
+    .query(({ ctx, input }) =>
       withExcelResearchErrors(async () => {
-        const job = await getJob(input.jobId);
+        const job = await getJob(input.jobId, tenantScopeValue(ctx));
         if (!job) {
           throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
         }
@@ -151,8 +161,10 @@ export const excelResearchRouter = createTRPCRouter({
 
   getJobStatus: publicProcedure
     .input(jobIdInput)
-    .query(({ input }) =>
-      withExcelResearchErrors(() => getJobStatus(input.jobId)),
+    .query(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        getJobStatus(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 
   listJobs: publicProcedure
@@ -163,26 +175,34 @@ export const excelResearchRouter = createTRPCRouter({
         })
         .optional(),
     )
-    .query(({ input }) =>
-      withExcelResearchErrors(() => listJobs(input?.limit)),
+    .query(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        listJobs(input?.limit, tenantScopeValue(ctx)),
+      ),
     ),
 
-  startJob: publicProcedure
+  startJob: requirePermission("excelResearch:run")
     .input(jobIdInput)
-    .mutation(({ input }) =>
-      withExcelResearchErrors(() => startJob(input.jobId)),
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        startJob(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 
-  pauseJob: publicProcedure
+  pauseJob: requirePermission("excelResearch:run")
     .input(jobIdInput)
-    .mutation(({ input }) =>
-      withExcelResearchErrors(() => pauseJob(input.jobId)),
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        pauseJob(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 
-  cancelJob: publicProcedure
+  cancelJob: requirePermission("excelResearch:run")
     .input(jobIdInput)
-    .mutation(({ input }) =>
-      withExcelResearchErrors(() => cancelJob(input.jobId)),
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        cancelJob(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 
   listRowResults: publicProcedure
@@ -203,43 +223,48 @@ export const excelResearchRouter = createTRPCRouter({
         offset: z.number().int().min(0).optional(),
       }),
     )
-    .query(({ input }) =>
+    .query(({ ctx, input }) =>
       withExcelResearchErrors(() =>
-        listRowResults(input.jobId, {
-          status: input.status,
-          limit: input.limit,
-          offset: input.offset,
-        }),
+        listRowResults(
+          input.jobId,
+          {
+            status: input.status,
+            limit: input.limit,
+            offset: input.offset,
+          },
+          tenantScopeValue(ctx),
+        ),
       ),
     ),
 
   getRowResult: publicProcedure
     .input(rowNumberInput)
-    .query(({ input }) =>
+    .query(({ ctx, input }) =>
       withExcelResearchErrors(() =>
-        getRowResult(input.jobId, input.rowNumber),
+        getRowResult(input.jobId, input.rowNumber, tenantScopeValue(ctx)),
       ),
     ),
 
-  approveRow: publicProcedure
+  approveRow: requirePermission("excelResearch:run")
     .input(
       rowNumberInput.extend({
         materialId: z.number().int().positive().optional(),
         acceptedFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
       }),
     )
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withExcelResearchErrors(() =>
         approveRow({
           jobId: input.jobId,
           rowNumber: input.rowNumber,
           materialId: input.materialId,
           acceptedFields: input.acceptedFields,
+          scope: tenantScopeValue(ctx),
         }),
       ),
     ),
 
-  bulkApproveRows: publicProcedure
+  bulkApproveRows: requirePermission("excelResearch:run")
     .input(
       jobIdInput.extend({
         rowIds: z.array(z.string()).optional(),
@@ -247,40 +272,44 @@ export const excelResearchRouter = createTRPCRouter({
         onlyStatus: z.array(z.string()).optional(),
       }),
     )
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withExcelResearchErrors(() =>
         bulkApproveRows({
           jobId: input.jobId,
           rowIds: input.rowIds,
           minConfidence: input.minConfidence,
           onlyStatus: input.onlyStatus,
+          scope: tenantScopeValue(ctx),
         }),
       ),
     ),
 
-  rejectRow: publicProcedure
+  rejectRow: requirePermission("excelResearch:run")
     .input(
       rowNumberInput.extend({
         reason: z.string().optional(),
       }),
     )
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withExcelResearchErrors(() =>
         rejectRow({
           jobId: input.jobId,
           rowNumber: input.rowNumber,
           reason: input.reason,
+          scope: tenantScopeValue(ctx),
         }),
       ),
     ),
 
   exportExcel: publicProcedure
     .input(jobIdInput)
-    .mutation(({ input }) =>
-      withExcelResearchErrors(() => exportJobExcel(input.jobId)),
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        exportJobExcel(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 
-  processBatch: publicProcedure
+  processBatch: requirePermission("excelResearch:run")
     .input(
       jobIdInput.extend({
         batchId: z.string().uuid().optional(),

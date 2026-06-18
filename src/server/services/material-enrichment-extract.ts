@@ -30,6 +30,7 @@ Rules:
 - Never invent values. If uncertain, set value to null and confidence to 0.
 - Each non-null field must include at least one evidence item with field, value, sourceUrl, snippet copied from the snippets.
 - confidence is 0..1 reflecting how directly the snippet supports the value.
+- For "price": extract the unit selling price as a plain number string with NO currency symbol or thousands separators (e.g. "1250000", not "1.250.000₫"). Prefer the listed/selling price for a single unit. If only a price range or unclear price appears, set value to null.
 - catalogPdfUrls may only include PDF URLs present in the snippets.
 
 JSON shape:
@@ -40,6 +41,7 @@ JSON shape:
     "manufacturer": { ... },
     "originCountry": { ... },
     "unit": { ... },
+    "price": { ... },
     "sourceUrl": { ... }
   },
   "catalogPdfUrls": string[]
@@ -58,6 +60,9 @@ function buildExtractionUserPrompt(
     input.specText ? `specText: ${input.specText}` : null,
     input.sku ? `sku: ${input.sku}` : null,
     input.model ? `model: ${input.model}` : null,
+    input.defaultUnitPrice != null
+      ? `currentPrice: ${input.defaultUnitPrice} ${input.currency}`
+      : null,
     "",
     "Search snippets:",
   ]
