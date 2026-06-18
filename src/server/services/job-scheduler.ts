@@ -3,7 +3,6 @@ import "server-only";
 import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
-import { env } from "~/env";
 import { db } from "~/server/db";
 import { shopImportJobs, shopScrapeJobs, excelResearchJobs, materialEnrichmentJobs } from "~/server/db/schema";
 import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
@@ -15,6 +14,14 @@ import {
 } from "~/server/services/shop-material-scraper";
 import type { ShopImportJobProgress } from "~/server/services/shop-import-jobs";
 import { importScrapedProducts } from "~/server/services/shop-product-importer";
+import {
+  resolveScrapeMaxConcurrentJobs,
+  resolveScrapeMaxConcurrentPages,
+  resolveImportMaxConcurrentJobs,
+  resolveEnrichmentMaxConcurrentJobs,
+  resolveExcelResearchMaxConcurrentJobs,
+  resolveScrapeJobTtlDays,
+} from "~/server/services/app-settings";
 import {
   processJobBatch,
   resetStaleExcelResearchRows,
@@ -140,7 +147,8 @@ async function pollScheduler() {
 }
 
 async function fillScrapeSlots() {
-  while (activeScrapeRuns.size < env.SCRAPE_MAX_CONCURRENT_JOBS) {
+  const limit = await resolveScrapeMaxConcurrentJobs();
+  while (activeScrapeRuns.size < limit) {
     const job = await claimNextScrapeJob();
     if (!job) {
       return;
@@ -150,7 +158,8 @@ async function fillScrapeSlots() {
 }
 
 async function fillImportSlots() {
-  while (activeImportRuns.size < env.IMPORT_MAX_CONCURRENT_JOBS) {
+  const limit = await resolveImportMaxConcurrentJobs();
+  while (activeImportRuns.size < limit) {
     const job = await claimNextImportJob();
     if (!job) {
       return;
@@ -160,7 +169,8 @@ async function fillImportSlots() {
 }
 
 async function fillEnrichmentSlots() {
-  while (activeEnrichmentRuns.size < env.ENRICHMENT_MAX_CONCURRENT_JOBS) {
+  const limit = await resolveEnrichmentMaxConcurrentJobs();
+  while (activeEnrichmentRuns.size < limit) {
     const job = await claimNextEnrichmentJob();
     if (!job) {
       return;
@@ -170,9 +180,8 @@ async function fillEnrichmentSlots() {
 }
 
 async function fillExcelResearchSlots() {
-  while (
-    activeExcelResearchRuns.size < env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS
-  ) {
+  const limit = await resolveExcelResearchMaxConcurrentJobs();
+  while (activeExcelResearchRuns.size < limit) {
     const jobId = await claimNextExcelResearchJob();
     if (!jobId) {
       return;
@@ -372,6 +381,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
   const controller = new AbortController();
   activeScrapeRuns.set(job.id, controller);
   const progressWriter = createScrapeProgressWriter(job.id);
+  const concurrentPages = await resolveScrapeMaxConcurrentPages();
 
   try {
     const result = await scrapeShopMaterialsFromUrl({
@@ -384,7 +394,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
           : "auto",
       detailEnrichment:
         job.detailEnrichment === "missing_fields" ? "missing_fields" : "none",
-      concurrentPages: env.SCRAPE_MAX_CONCURRENT_PAGES,
+      concurrentPages,
       signal: controller.signal,
       onProgress: (progress) => {
         progressWriter.queue(progress);
@@ -413,7 +423,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
         error: null,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         updatedAt: finishedAt,
       })
       .where(
@@ -440,7 +450,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
         error: message,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         durationMs: elapsedSql(finishedAt, shopScrapeJobs.startedAt),
         updatedAt: finishedAt,
       })
@@ -491,7 +501,7 @@ async function runImportJob(job: ShopImportJobRow) {
         error: null,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
         updatedAt: finishedAt,
       })
@@ -518,7 +528,7 @@ async function runImportJob(job: ShopImportJobRow) {
         error: message,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
         updatedAt: finishedAt,
       })
@@ -565,7 +575,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
         error: null,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         updatedAt: finishedAt,
       })
       .where(
@@ -595,7 +605,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
         error: message,
         finishedAt,
         lastProgressAt: finishedAt,
-        expiresAt: expiresAt(finishedAt),
+        expiresAt: await expiresAt(finishedAt),
         updatedAt: finishedAt,
       })
       .where(
@@ -934,9 +944,10 @@ async function cleanupExpiredJobs() {
     );
 }
 
-function expiresAt(finishedAtIso: string) {
+async function expiresAt(finishedAtIso: string) {
+  const ttlDays = await resolveScrapeJobTtlDays();
   return new Date(
-    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+    new Date(finishedAtIso).getTime() + ttlDays * 86_400_000,
   ).toISOString();
 }
 

@@ -2,7 +2,15 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { ENRICHABLE_FIELDS } from "~/lib/materials/material-enrichment-types";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import {
+  creatorTenantId,
+  tenantScopeValue,
+} from "~/server/api/tenant-scope";
 import {
   bulkCommitMaterialEnrichment,
   cancelMaterialEnrichmentJob,
@@ -79,34 +87,29 @@ const bulkCommitMaterialEnrichmentInput = z.object({
 });
 
 export const materialEnrichmentRouter = createTRPCRouter({
-  startMaterialEnrichmentJob: publicProcedure
+  startMaterialEnrichmentJob: requirePermission("enrichment:run")
     .input(startMaterialEnrichmentJobInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => startMaterialEnrichmentJob(input)),
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        startMaterialEnrichmentJob({
+          ...input,
+          tenantId: creatorTenantId(ctx),
+        }),
+      ),
     ),
 
   listMaterialEnrichmentJobs: publicProcedure
     .input(listMaterialEnrichmentJobsInput)
-    .query(({ input }) => listMaterialEnrichmentJobs(input)),
+    .query(({ ctx, input }) =>
+      listMaterialEnrichmentJobs(input, tenantScopeValue(ctx)),
+    ),
 
   getMaterialEnrichmentJob: publicProcedure
     .input(materialEnrichmentJobInput)
-    .query(async ({ input }) => {
-      const job = await getMaterialEnrichmentJob(input.jobId);
-      if (!job) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy job enrichment vật liệu.",
-        });
-      }
-      return job;
-    }),
-
-  cancelMaterialEnrichmentJob: publicProcedure
-    .input(materialEnrichmentJobInput)
-    .mutation(async ({ input }) => {
-      const job = await withShopJobErrors(() =>
-        cancelMaterialEnrichmentJob(input.jobId),
+    .query(async ({ ctx, input }) => {
+      const job = await getMaterialEnrichmentJob(
+        input.jobId,
+        tenantScopeValue(ctx),
       );
       if (!job) {
         throw new TRPCError({
@@ -117,11 +120,26 @@ export const materialEnrichmentRouter = createTRPCRouter({
       return job;
     }),
 
-  deleteMaterialEnrichmentJob: publicProcedure
+  cancelMaterialEnrichmentJob: requirePermission("enrichment:run")
     .input(materialEnrichmentJobInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const job = await withShopJobErrors(() =>
-        deleteMaterialEnrichmentJob(input.jobId),
+        cancelMaterialEnrichmentJob(input.jobId, tenantScopeValue(ctx)),
+      );
+      if (!job) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy job enrichment vật liệu.",
+        });
+      }
+      return job;
+    }),
+
+  deleteMaterialEnrichmentJob: requirePermission("enrichment:run")
+    .input(materialEnrichmentJobInput)
+    .mutation(async ({ ctx, input }) => {
+      const job = await withShopJobErrors(() =>
+        deleteMaterialEnrichmentJob(input.jobId, tenantScopeValue(ctx)),
       );
       if (!job) {
         throw new TRPCError({
@@ -134,12 +152,19 @@ export const materialEnrichmentRouter = createTRPCRouter({
 
   listMaterialEnrichmentItems: publicProcedure
     .input(listMaterialEnrichmentItemsInput)
-    .query(({ input }) => listMaterialEnrichmentItems(input)),
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        listMaterialEnrichmentItems(input, tenantScopeValue(ctx)),
+      ),
+    ),
 
   getMaterialEnrichmentItem: publicProcedure
     .input(materialEnrichmentItemInput)
-    .query(async ({ input }) => {
-      const item = await getMaterialEnrichmentItem(input.itemId);
+    .query(async ({ ctx, input }) => {
+      const item = await getMaterialEnrichmentItem(
+        input.itemId,
+        tenantScopeValue(ctx),
+      );
       if (!item) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -149,35 +174,47 @@ export const materialEnrichmentRouter = createTRPCRouter({
       return item;
     }),
 
-  selectWebCandidate: publicProcedure
+  selectWebCandidate: requirePermission("enrichment:run")
     .input(selectWebCandidateInput)
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withShopJobErrors(() =>
-        selectWebCandidate(input.itemId, input.candidateId),
+        selectWebCandidate(
+          input.itemId,
+          input.candidateId,
+          tenantScopeValue(ctx),
+        ),
       ),
     ),
 
-  commitMaterialEnrichmentItem: publicProcedure
+  commitMaterialEnrichmentItem: requirePermission("enrichment:run")
     .input(materialEnrichmentItemInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => commitMaterialEnrichmentItem(input.itemId)),
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        commitMaterialEnrichmentItem(input.itemId, tenantScopeValue(ctx)),
+      ),
     ),
 
-  bulkCommitMaterialEnrichment: publicProcedure
+  bulkCommitMaterialEnrichment: requirePermission("enrichment:run")
     .input(bulkCommitMaterialEnrichmentInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => bulkCommitMaterialEnrichment(input)),
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        bulkCommitMaterialEnrichment(input, tenantScopeValue(ctx)),
+      ),
     ),
 
-  rejectMaterialEnrichmentItem: publicProcedure
+  rejectMaterialEnrichmentItem: requirePermission("enrichment:run")
     .input(materialEnrichmentItemInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => rejectMaterialEnrichmentItem(input.itemId)),
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        rejectMaterialEnrichmentItem(input.itemId, tenantScopeValue(ctx)),
+      ),
     ),
 
   exportMaterialEnrichmentReport: publicProcedure
     .input(materialEnrichmentJobInput)
-    .query(({ input }) =>
-      withShopJobErrors(() => exportMaterialEnrichmentReport(input.jobId)),
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        exportMaterialEnrichmentReport(input.jobId, tenantScopeValue(ctx)),
+      ),
     ),
 });

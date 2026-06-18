@@ -5,7 +5,7 @@ import { WorkflowDetailRunsClient } from "~/app/_components/dashboard/workflow-d
 import {
   loadWorkflowOrNotFound,
   parseWorkflowId,
-} from "~/app/(dashboard)/workflows/[id]/layout";
+} from "~/app/(dashboard)/workflows/[id]/workflow-detail-shared";
 import { HydrateClient, api } from "~/trpc/server";
 
 type WorkflowRunsPageProps = {

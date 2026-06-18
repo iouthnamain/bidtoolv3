@@ -17,7 +17,11 @@ import {
 import Papa from "papaparse";
 import { z } from "zod";
 
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { createTRPCRouter, publicProcedure, requirePermission } from "~/server/api/trpc";
+import {
+  creatorTenantId,
+  tenantScopeValue,
+} from "~/server/api/tenant-scope";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
@@ -766,7 +770,7 @@ export const materialRouter = createTRPCRouter({
       return getActiveMaterialById(ctx.db, input.id);
     }),
 
-  addPriceSource: publicProcedure
+  addPriceSource: requirePermission("material:write")
     .input(
       z.object({
         materialId: z.number().int().positive(),
@@ -822,7 +826,7 @@ export const materialRouter = createTRPCRouter({
       return { material: requireUpdatedMaterial(updated), source };
     }),
 
-  updatePriceSource: publicProcedure
+  updatePriceSource: requirePermission("material:write")
     .input(
       z.object({
         materialId: z.number().int().positive(),
@@ -887,7 +891,7 @@ export const materialRouter = createTRPCRouter({
       return { material: requireUpdatedMaterial(updated), source: nextSource };
     }),
 
-  deletePriceSource: publicProcedure
+  deletePriceSource: requirePermission("material:write")
     .input(
       z.object({
         materialId: z.number().int().positive(),
@@ -950,7 +954,7 @@ export const materialRouter = createTRPCRouter({
       return requireUpdatedMaterial(updated);
     }),
 
-  refreshPriceSource: publicProcedure
+  refreshPriceSource: requirePermission("material:write")
     .input(
       z.object({
         materialId: z.number().int().positive(),
@@ -1023,7 +1027,7 @@ export const materialRouter = createTRPCRouter({
       return { material: requireUpdatedMaterial(updated), source: nextSource };
     }),
 
-  applyPriceSourcePrice: publicProcedure
+  applyPriceSourcePrice: requirePermission("material:write")
     .input(
       z.object({
         materialId: z.number().int().positive(),
@@ -1068,20 +1072,24 @@ export const materialRouter = createTRPCRouter({
       return requireUpdatedMaterial(updated);
     }),
 
-  startShopScrapeJob: publicProcedure
+  startShopScrapeJob: requirePermission("scrape:run")
     .input(shopScrapeInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => startShopScrapeJob(input)),
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        startShopScrapeJob({ ...input, tenantId: creatorTenantId(ctx) }),
+      ),
     ),
 
   listShopScrapeJobs: publicProcedure
     .input(listShopJobsInput)
-    .query(({ input }) => listShopScrapeJobs(input)),
+    .query(({ ctx, input }) =>
+      listShopScrapeJobs(input, tenantScopeValue(ctx)),
+    ),
 
   getShopScrapeJob: publicProcedure
     .input(shopScrapeJobInput)
-    .query(async ({ input }) => {
-      const job = await getShopScrapeJob(input.jobId);
+    .query(async ({ ctx, input }) => {
+      const job = await getShopScrapeJob(input.jobId, tenantScopeValue(ctx));
       if (!job) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -1091,11 +1099,11 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  cancelShopScrapeJob: publicProcedure
+  cancelShopScrapeJob: requirePermission("scrape:run")
     .input(shopScrapeJobInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const job = await withShopJobErrors(() =>
-        cancelShopScrapeJob(input.jobId),
+        cancelShopScrapeJob(input.jobId, tenantScopeValue(ctx)),
       );
       if (!job) {
         throw new TRPCError({
@@ -1106,11 +1114,11 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  deleteShopScrapeJob: publicProcedure
+  deleteShopScrapeJob: requirePermission("scrape:run")
     .input(shopScrapeJobInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const job = await withShopJobErrors(() =>
-        deleteShopScrapeJob(input.jobId),
+        deleteShopScrapeJob(input.jobId, tenantScopeValue(ctx)),
       );
       if (!job) {
         throw new TRPCError({
@@ -1121,49 +1129,62 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  updateShopScrapeJobProduct: publicProcedure
+  updateShopScrapeJobProduct: requirePermission("scrape:run")
     .input(updateShopScrapeJobProductInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => updateShopScrapeJobProduct(input)),
-    ),
-
-  deleteShopScrapeJobProduct: publicProcedure
-    .input(deleteShopScrapeJobProductInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => deleteShopScrapeJobProduct(input)),
-    ),
-
-  deleteShopScrapeJobProducts: publicProcedure
-    .input(deleteShopScrapeJobProductsInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => deleteShopScrapeJobProducts(input)),
-    ),
-
-  addShopScrapeJobProduct: publicProcedure
-    .input(addShopScrapeJobProductInput)
-    .mutation(({ input }) =>
-      withShopJobErrors(() => addShopScrapeJobProduct(input)),
-    ),
-
-  startShopImportJob: publicProcedure
-    .input(startShopImportJobInput)
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withShopJobErrors(() =>
-        startShopImportJob({
-          scrapeJobId: input.scrapeJobId,
-          productSourceUrls: input.productSourceUrls,
-        }),
+        updateShopScrapeJobProduct(input, tenantScopeValue(ctx)),
+      ),
+    ),
+
+  deleteShopScrapeJobProduct: requirePermission("scrape:run")
+    .input(deleteShopScrapeJobProductInput)
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        deleteShopScrapeJobProduct(input, tenantScopeValue(ctx)),
+      ),
+    ),
+
+  deleteShopScrapeJobProducts: requirePermission("scrape:run")
+    .input(deleteShopScrapeJobProductsInput)
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        deleteShopScrapeJobProducts(input, tenantScopeValue(ctx)),
+      ),
+    ),
+
+  addShopScrapeJobProduct: requirePermission("scrape:run")
+    .input(addShopScrapeJobProductInput)
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        addShopScrapeJobProduct(input, tenantScopeValue(ctx)),
+      ),
+    ),
+
+  startShopImportJob: requirePermission("scrape:run")
+    .input(startShopImportJobInput)
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        startShopImportJob(
+          {
+            scrapeJobId: input.scrapeJobId,
+            productSourceUrls: input.productSourceUrls,
+          },
+          tenantScopeValue(ctx),
+        ),
       ),
     ),
 
   listShopImportJobs: publicProcedure
     .input(listShopImportJobsInput)
-    .query(({ input }) => listShopImportJobs(input)),
+    .query(({ ctx, input }) =>
+      listShopImportJobs(input, tenantScopeValue(ctx)),
+    ),
 
   getShopImportJob: publicProcedure
     .input(shopImportJobInput)
-    .query(async ({ input }) => {
-      const job = await getShopImportJob(input.jobId);
+    .query(async ({ ctx, input }) => {
+      const job = await getShopImportJob(input.jobId, tenantScopeValue(ctx));
       if (!job) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -1173,11 +1194,11 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  cancelShopImportJob: publicProcedure
+  cancelShopImportJob: requirePermission("scrape:run")
     .input(shopImportJobInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const job = await withShopJobErrors(() =>
-        cancelShopImportJob(input.jobId),
+        cancelShopImportJob(input.jobId, tenantScopeValue(ctx)),
       );
       if (!job) {
         throw new TRPCError({
@@ -1404,7 +1425,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  createMaterial: publicProcedure
+  createMaterial: requirePermission("material:write")
     .input(materialInput)
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
@@ -1417,7 +1438,7 @@ export const materialRouter = createTRPCRouter({
       return created;
     }),
 
-  upsertMaterial: publicProcedure
+  upsertMaterial: requirePermission("material:write")
     .input(
       z.object({
         id: z.number().int().positive().optional(),
@@ -1450,7 +1471,7 @@ export const materialRouter = createTRPCRouter({
       return created;
     }),
 
-  updateMaterial: publicProcedure
+  updateMaterial: requirePermission("material:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -1489,7 +1510,7 @@ export const materialRouter = createTRPCRouter({
       return updated;
     }),
 
-  setMaterialFieldLocks: publicProcedure
+  setMaterialFieldLocks: requirePermission("material:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -1536,7 +1557,7 @@ export const materialRouter = createTRPCRouter({
       return updated;
     }),
 
-  deleteMaterial: publicProcedure
+  deleteMaterial: requirePermission("material:delete")
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
@@ -1558,7 +1579,7 @@ export const materialRouter = createTRPCRouter({
       return { success: true };
     }),
 
-  duplicateMaterial: publicProcedure
+  duplicateMaterial: requirePermission("material:write")
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const source = await getActiveMaterialById(ctx.db, input.id);
@@ -1593,7 +1614,7 @@ export const materialRouter = createTRPCRouter({
       return requireUpdatedMaterial(created);
     }),
 
-  bulkUpdateMaterials: publicProcedure
+  bulkUpdateMaterials: requirePermission("material:write")
     .input(
       z.object({
         ids: z.array(z.number().int().positive()).min(1).max(100),
@@ -1639,7 +1660,7 @@ export const materialRouter = createTRPCRouter({
       return { count: updated.length };
     }),
 
-  importMaterialsCsv: publicProcedure
+  importMaterialsCsv: requirePermission("material:write")
     .input(z.object({ csv: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const { rows, errors } = parseMaterialsCsv(input.csv);
@@ -1730,7 +1751,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  importMaterialsXlsx: publicProcedure
+  importMaterialsXlsx: requirePermission("material:write")
     .input(
       z.object({
         fileName: z.string().min(1).default("materials.xlsx"),
@@ -1787,7 +1808,7 @@ export const materialRouter = createTRPCRouter({
       return { inserted, skipped, errors, warnings: workbook.warnings };
     }),
 
-  deleteMany: publicProcedure
+  deleteMany: requirePermission("material:delete")
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
     )
@@ -1866,7 +1887,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  acceptMatch: publicProcedure
+  acceptMatch: requirePermission("material:write")
     .input(
       z.object({
         decisionId: z.number().int().positive(),
@@ -1900,7 +1921,7 @@ export const materialRouter = createTRPCRouter({
       return { success: true, decisionId: updated.id };
     }),
 
-  rejectMatch: publicProcedure
+  rejectMatch: requirePermission("material:write")
     .input(z.object({ decisionId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
@@ -1925,7 +1946,7 @@ export const materialRouter = createTRPCRouter({
       return { success: true, decisionId: updated.id };
     }),
 
-  bulkAcceptMatches: publicProcedure
+  bulkAcceptMatches: requirePermission("material:write")
     .input(
       z.object({
         minConfidence: z.number().min(0).max(1).default(0.85),
@@ -2122,7 +2143,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  enrichExportXlsx: publicProcedure
+  enrichExportXlsx: requirePermission("material:write")
     .input(
       z.object({
         fileName: z.string().min(1).default("materials.xlsx"),

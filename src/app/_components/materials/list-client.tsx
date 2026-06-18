@@ -2612,7 +2612,7 @@ export function MaterialsListClient() {
             aria-label="Danh sách vật tư dạng thẻ"
           >
             {showInitialLoading ? (
-              <div className="grid gap-2" aria-hidden>
+              <div className="grid gap-2 sm:col-span-2 lg:col-span-3 xl:col-span-4" aria-hidden>
                 {Array.from({ length: 4 }).map((_, index) => (
                   <SkeletonCard key={index} />
                 ))}
@@ -2634,7 +2634,7 @@ export function MaterialsListClient() {
                 ))
               : null}
             {!showInitialLoading && catalogError && visibleRows.length === 0 ? (
-              <div className="rounded-lg border border-rose-200 bg-white px-3 py-6">
+              <div className="rounded-lg border border-rose-200 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <EmptyState
                   title="Không tải được danh mục vật tư."
                   description={catalogError}
@@ -2649,7 +2649,7 @@ export function MaterialsListClient() {
             {!showInitialLoading &&
             !catalogError &&
             visibleRows.length === 0 ? (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-6">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <EmptyState
                   title="Chưa có sản phẩm / vật tư."
                   description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."

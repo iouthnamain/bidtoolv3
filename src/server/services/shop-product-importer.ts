@@ -13,6 +13,10 @@ import {
 } from "~/server/services/ai-product-matcher";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
+  resolveAiMatchAutoThreshold,
+  resolveAiMatchCandidateThreshold,
+} from "~/server/services/app-settings";
+import {
   buildMaterialMetadata,
   normalizeMaterialMetadata,
   type MaterialFieldLockKey,
@@ -766,13 +770,6 @@ function importMessageForUpdated(
     : `Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.${lockedSuffix}`;
 }
 
-const AI_MATCH_AUTO_THRESHOLD = parseFloat(
-  process.env.AI_MATCH_AUTO_THRESHOLD ?? "0.85",
-);
-const AI_MATCH_CANDIDATE_THRESHOLD = parseFloat(
-  process.env.AI_MATCH_CANDIDATE_THRESHOLD ?? "0.40",
-);
-
 async function tryFuzzyMatch(
   db: AppDb,
   product: ScrapedShopProduct,
@@ -821,8 +818,8 @@ async function tryFuzzyMatch(
   if (candidates.length === 0) return null;
 
   const decision = await saveMatchDecision(db, product, candidates, {
-    autoThreshold: AI_MATCH_AUTO_THRESHOLD,
-    candidateThreshold: AI_MATCH_CANDIDATE_THRESHOLD,
+    autoThreshold: await resolveAiMatchAutoThreshold(),
+    candidateThreshold: await resolveAiMatchCandidateThreshold(),
   });
 
   if (decision.action === "auto_matched" && decision.matchedMaterialId) {

@@ -56,11 +56,29 @@ builds validation is skipped with `SKIP_ENV_VALIDATION="1"`.
 | `BIDTOOL_MIGRATION_RETRY_MS` | no | `2000` | Delay between migration retries |
 | `BIDTOOL_SERVER_URL` | no | — | Desktop: point client at a remote on-prem server |
 
-> The app does not have authentication by design — it is a single-user / single-tenant
-> tool. On-prem isolation is per-customer (one stack per customer), and network
-> exposure is controlled by Caddy and host ports, not in-app auth. Do not expose
-> an on-prem instance to the public internet without a trusted network boundary
-> or external access control in front of Caddy.
+> **Authentication & RBAC.** The app supports email + password authentication
+> with role-based access control (Better Auth, self-hosted). Roles are
+> `admin` / `manager` / `staff` / `customer`, and the build is multi-tenant: a
+> `customer` is an external, tenant-isolated user confined to the `/portal`
+> surface, while `admin` / `manager` / `staff` use the internal dashboard. Auth
+> is **surface-aware** and gated behind `AUTH_ENABLED` (default `false`).
+>
+> - **web / on-prem** — set `AUTH_ENABLED=true` and provide `BETTER_AUTH_SECRET`
+>   (min 32 chars). Create the first admin via the one-time `/setup` page gated
+>   by `AUTH_BOOTSTRAP_TOKEN`, then run `bun run auth:backfill` to attribute
+>   existing data to the host tenant. **Sequence each release as: ship
+>   migrations → run backfill → flip `AUTH_ENABLED=true`.** Flipping the flag
+>   before the auth tables migrate will lock out the deployment.
+> - **desktop-bundled** — auth stays on but `AUTH_DESKTOP_AUTO_ADMIN=true`
+>   (default) bootstraps and signs in a local admin on first run, so the solo
+>   user is never blocked. Secure cookies are relaxed for `http://localhost`.
+>
+> With `AUTH_ENABLED=false` the app behaves exactly as before (no login gate,
+> no per-user scoping) — the single-user / single-tenant mode below still
+> applies. On-prem network exposure is controlled by Caddy and host ports; do
+> not expose an on-prem instance to the public internet without a trusted
+> network boundary or external access control in front of Caddy, regardless of
+> in-app auth. See `docs/auth-and-rbac.md` for the full design.
 
 ---
 

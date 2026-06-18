@@ -1,7 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
 import {
   DEFAULT_OPENROUTER_MODEL,
   deleteSetting,
@@ -63,7 +67,7 @@ export const aiRouter = createTRPCRouter({
     return { chat, enrichment };
   }),
 
-  setActiveProvider: publicProcedure
+  setActiveProvider: requirePermission("ai:run")
     .input(
       z.object({
         feature: z.enum(["chat", "enrichment"]),
@@ -104,7 +108,7 @@ export const aiRouter = createTRPCRouter({
       return { chat, enrichment };
     }),
 
-  setOpenRouterApiKey: publicProcedure
+  setOpenRouterApiKey: requirePermission("settings:manage")
     .input(
       z.object({
         apiKey: z.string().trim().min(1).max(500),
@@ -124,7 +128,7 @@ export const aiRouter = createTRPCRouter({
       return getOpenRouterConfig();
     }),
 
-  clearOpenRouterApiKey: publicProcedure.mutation(async () => {
+  clearOpenRouterApiKey: requirePermission("settings:manage").mutation(async () => {
     const config = await getOpenRouterConfig();
     if (!config.canEdit) {
       throw new TRPCError({
@@ -138,7 +142,7 @@ export const aiRouter = createTRPCRouter({
     return getOpenRouterConfig();
   }),
 
-  setGeminiApiKey: publicProcedure
+  setGeminiApiKey: requirePermission("settings:manage")
     .input(
       z.object({
         apiKey: z.string().trim().min(1).max(500),
@@ -158,7 +162,7 @@ export const aiRouter = createTRPCRouter({
       return getGeminiConfig();
     }),
 
-  clearGeminiApiKey: publicProcedure.mutation(async () => {
+  clearGeminiApiKey: requirePermission("settings:manage").mutation(async () => {
     const config = await getGeminiConfig();
     if (!config.canEdit) {
       throw new TRPCError({
@@ -172,7 +176,7 @@ export const aiRouter = createTRPCRouter({
     return getGeminiConfig();
   }),
 
-  setOpenaiCompatibleApiKey: publicProcedure
+  setOpenaiCompatibleApiKey: requirePermission("settings:manage")
     .input(
       z.object({
         apiKey: z.string().trim().min(1).max(500),
@@ -192,7 +196,7 @@ export const aiRouter = createTRPCRouter({
       return getOpenaiCompatibleConfig();
     }),
 
-  clearOpenaiCompatibleApiKey: publicProcedure.mutation(async () => {
+  clearOpenaiCompatibleApiKey: requirePermission("settings:manage").mutation(async () => {
     const config = await getOpenaiCompatibleConfig();
     if (!config.canEdit) {
       throw new TRPCError({
@@ -206,7 +210,7 @@ export const aiRouter = createTRPCRouter({
     return getOpenaiCompatibleConfig();
   }),
 
-  setOpenaiCompatibleBaseUrl: publicProcedure
+  setOpenaiCompatibleBaseUrl: requirePermission("settings:manage")
     .input(
       z.object({
         baseUrl: z.string().trim().url().max(500),
@@ -226,7 +230,7 @@ export const aiRouter = createTRPCRouter({
       return getOpenaiCompatibleConfig();
     }),
 
-  setDefaultModel: publicProcedure
+  setDefaultModel: requirePermission("settings:manage")
     .input(
       z.object({
         model: z.string().trim().min(1).max(200),
@@ -249,7 +253,7 @@ export const aiRouter = createTRPCRouter({
       return getOpenRouterConfig();
     }),
 
-  testConnection: publicProcedure
+  testConnection: requirePermission("ai:run")
     .input(
       z
         .object({
@@ -285,7 +289,7 @@ export const aiRouter = createTRPCRouter({
       }
     }),
 
-  chat: publicProcedure.input(chatInputSchema).mutation(async ({ input }) => {
+  chat: requirePermission("ai:run").input(chatInputSchema).mutation(async ({ input }) => {
     try {
       const provider = await resolveAiProvider("chat", input.model);
       const result = await callAiProvider(provider, input.messages);

@@ -1,5 +1,6 @@
 import { catalogDocumentRouter } from "~/server/api/routers/catalog-document";
 import { aiRouter } from "~/server/api/routers/ai";
+import { appConfigRouter } from "~/server/api/routers/app-config";
 import { excelResearchRouter } from "~/server/api/routers/excel-research";
 import { materialEnrichmentRouter } from "~/server/api/routers/material-enrichment";
 import { materialRouter } from "~/server/api/routers/material";
@@ -17,6 +18,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  */
 export const appRouter = createTRPCRouter({
   ai: aiRouter,
+  appConfig: appConfigRouter,
   catalogDocument: catalogDocumentRouter,
   excelResearch: excelResearchRouter,
   material: materialRouter,

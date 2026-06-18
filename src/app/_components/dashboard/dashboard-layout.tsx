@@ -27,6 +27,7 @@ import { AdminUpdateBanner } from "~/app/_components/dashboard/admin-update-bann
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
 import { SidebarUpdatePill } from "~/app/_components/dashboard/sidebar-update-pill";
+import { UserControl } from "~/app/_components/dashboard/user-control";
 import { STORAGE_KEYS } from "~/lib/storage-keys";
 import { api } from "~/trpc/react";
 
@@ -193,6 +194,7 @@ const navSections: NavSection[] = [
         icon: "settings",
         subItems: [
           { href: "/settings/ai", label: "OpenRouter" },
+          { href: "/settings/users", label: "Người dùng" },
           { href: "/settings/desktop", label: "Desktop client" },
           { href: "/settings/updates", label: "Cập nhật" },
         ],
@@ -515,6 +517,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="shrink-0 space-y-2 border-t border-slate-200/70 px-2 py-2">
+          <UserControl collapsed={sidebarCollapsed} />
           <SidebarUpdatePill collapsed={sidebarCollapsed} />
           {!sidebarCollapsed ? (
             <span className="block px-1 text-[11px] text-slate-400">

@@ -9,12 +9,14 @@ export function DashboardShell({
   description,
   sectionNavItems,
   sectionNavTitle,
+  sectionNavVariant,
   children,
 }: {
   title: string;
   description: string;
   sectionNavItems?: PageSectionNavItem[];
   sectionNavTitle?: string;
+  sectionNavVariant?: "detailed" | "compact";
   children: React.ReactNode;
 }) {
   return (
@@ -43,7 +45,11 @@ export function DashboardShell({
       </header>
 
       {sectionNavItems && sectionNavItems.length > 0 ? (
-        <PageSectionNav title={sectionNavTitle} items={sectionNavItems} />
+        <PageSectionNav
+          title={sectionNavTitle}
+          items={sectionNavItems}
+          variant={sectionNavVariant}
+        />
       ) : null}
 
       <div className="flex-1">{children}</div>

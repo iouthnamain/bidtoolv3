@@ -7,9 +7,11 @@ import {
   workflowRuns,
   workflows,
 } from "~/server/db/schema";
+import { resolveOperationalBoolean } from "~/server/services/app-settings";
 
 async function seed() {
-  if (process.env.ENABLE_DEMO_SEED !== "true") {
+  const demoSeedEnabled = await resolveOperationalBoolean("enableDemoSeed");
+  if (!demoSeedEnabled) {
     console.log(
       "Bo qua seed du lieu demo. Dat ENABLE_DEMO_SEED=true neu can seed mau.",
     );

@@ -3,8 +3,11 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { FillPlanCell } from "~/lib/materials/excel-enrich-fields";
-import { env } from "~/env";
 import { db } from "~/server/db";
+import {
+  tenantConditionForValue,
+  type TenantScopeValue,
+} from "~/server/api/tenant-scope";
 import {
   excelResearchFileArtifacts,
   excelResearchJobRows,
@@ -32,6 +35,10 @@ import {
   excelResearchJobConfigSchema,
 } from "~/server/services/excel-research/types";
 import { extractRowFields } from "~/server/services/excel-enrich";
+import {
+  resolveExcelResearchJobTtlDays,
+  resolveExcelResearchMaxConcurrentJobs,
+} from "~/server/services/app-settings";
 import {
   parseWorkbookBase64,
   rebuildSheetWithHeaderRow,
@@ -69,8 +76,8 @@ function selectWorkbookSheet(workbook: ParsedWorkbook, sheetName: string) {
   return sheet;
 }
 
-function ttlExpiresAt() {
-  const days = env.EXCEL_RESEARCH_JOB_TTL_DAYS;
+async function ttlExpiresAt() {
+  const days = await resolveExcelResearchJobTtlDays();
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -82,6 +89,9 @@ export async function createJob(input: {
   mapping: Record<string, string | null>;
   name?: string;
   config?: Partial<ExcelResearchJobConfig>;
+  // Tenant attribution for the created job (creator's tenant; null for internal
+  // users). Threaded down from the router so the row is correctly owned.
+  tenantId?: string | null;
 }) {
   const config = excelResearchJobConfigSchema.parse({
     ...DEFAULT_EXCEL_RESEARCH_CONFIG,
@@ -133,7 +143,8 @@ export async function createJob(input: {
     configJson: config,
     totalRows: rows.length,
     message: "Đã tải lên — sẵn sàng nghiên cứu.",
-    expiresAt: ttlExpiresAt(),
+    expiresAt: await ttlExpiresAt(),
+    tenantId: input.tenantId ?? null,
     createdAt: now,
     updatedAt: now,
   });
@@ -178,17 +189,35 @@ export async function createJob(input: {
   return { jobId, totalRows: rows.length, artifactId: artifact?.id ?? null };
 }
 
-export async function getJob(jobId: string) {
+export async function getJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(excelResearchJobs)
-    .where(eq(excelResearchJobs.id, jobId))
+    .where(
+      and(
+        eq(excelResearchJobs.id, jobId),
+        tenantConditionForValue(scope, excelResearchJobs.tenantId),
+      ),
+    )
     .limit(1);
   return job ? toJobSnapshot(job) : null;
 }
 
-export async function getJobStatus(jobId: string) {
-  const job = await getJob(jobId);
+/**
+ * Fail-closed guard: throw NOT_FOUND if the job is not within the caller's
+ * tenant scope. Used by row-level and mutation functions to ensure a customer
+ * can never touch another tenant's job (or its child rows/evidence).
+ */
+async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
+  const job = await getJob(jobId, scope);
+  if (!job) {
+    throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
+  }
+  return job;
+}
+
+export async function getJobStatus(jobId: string, scope?: TenantScopeValue) {
+  const job = await getJob(jobId, scope);
   if (!job) {
     throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
   }
@@ -207,16 +236,18 @@ export async function getJobStatus(jobId: string) {
   };
 }
 
-export async function listJobs(limit = 25) {
+export async function listJobs(limit = 25, scope?: TenantScopeValue) {
   const rows = await db
     .select()
     .from(excelResearchJobs)
+    .where(tenantConditionForValue(scope, excelResearchJobs.tenantId))
     .orderBy(desc(excelResearchJobs.updatedAt))
     .limit(limit);
   return rows.map(toJobSnapshot);
 }
 
-export async function startJob(jobId: string) {
+export async function startJob(jobId: string, scope?: TenantScopeValue) {
+  await assertJobInScope(jobId, scope);
   const [job] = await db
     .select()
     .from(excelResearchJobs)
@@ -240,10 +271,11 @@ export async function startJob(jobId: string) {
         sql`${excelResearchJobs.id} <> ${jobId}`,
       ),
     );
-  if ((activeCount?.count ?? 0) >= env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS) {
+  const maxConcurrent = await resolveExcelResearchMaxConcurrentJobs();
+  if ((activeCount?.count ?? 0) >= maxConcurrent) {
     throw new ExcelResearchJobError(
       "CONFLICT",
-      `Đã đạt giới hạn ${env.EXCEL_RESEARCH_MAX_CONCURRENT_JOBS} job nghiên cứu chạy đồng thời.`,
+      `Đã đạt giới hạn ${maxConcurrent} job nghiên cứu chạy đồng thời.`,
     );
   }
 
@@ -310,7 +342,8 @@ async function runResearchLoop(jobId: string, signal: AbortSignal) {
   }
 }
 
-export async function pauseJob(jobId: string) {
+export async function pauseJob(jobId: string, scope?: TenantScopeValue) {
+  await assertJobInScope(jobId, scope);
   activeResearchRuns.get(jobId)?.abort();
   const now = new Date().toISOString();
   await db
@@ -320,7 +353,8 @@ export async function pauseJob(jobId: string) {
   return getJob(jobId);
 }
 
-export async function cancelJob(jobId: string) {
+export async function cancelJob(jobId: string, scope?: TenantScopeValue) {
+  await assertJobInScope(jobId, scope);
   activeResearchRuns.get(jobId)?.abort();
   const now = new Date().toISOString();
   await db
@@ -338,7 +372,11 @@ export async function cancelJob(jobId: string) {
 export async function listRowResults(
   jobId: string,
   opts: { status?: ExcelResearchRowStatus; limit?: number; offset?: number } = {},
+  scope?: TenantScopeValue,
 ) {
+  // Confirm the parent job is in-tenant before returning its rows; the rows
+  // table has no tenantId column, so it is scoped via the parent.
+  await assertJobInScope(jobId, scope);
   const limit = opts.limit ?? 50;
   const offset = opts.offset ?? 0;
   const conditions = [eq(excelResearchJobRows.jobId, jobId)];
@@ -362,7 +400,12 @@ export async function listRowResults(
   return { items: rows.map(toRowSummary), total: totalRow?.count ?? 0 };
 }
 
-export async function getRowResult(jobId: string, rowNumber: number) {
+export async function getRowResult(
+  jobId: string,
+  rowNumber: number,
+  scope?: TenantScopeValue,
+) {
+  await assertJobInScope(jobId, scope);
   const [row] = await db
     .select()
     .from(excelResearchJobRows)
@@ -390,7 +433,9 @@ export async function approveRow(input: {
   rowNumber: number;
   materialId?: number;
   acceptedFields?: FillableField[];
+  scope?: TenantScopeValue;
 }) {
+  await assertJobInScope(input.jobId, input.scope);
   const [row] = await db
     .select()
     .from(excelResearchJobRows)
@@ -449,7 +494,9 @@ export async function bulkApproveRows(input: {
   rowIds?: string[];
   minConfidence?: number;
   onlyStatus?: string[];
+  scope?: TenantScopeValue;
 }) {
+  await assertJobInScope(input.jobId, input.scope);
   // Resolve which rows to approve: either an explicit id list, or all rows in
   // an approvable state (optionally narrowed by status / confidence).
   const explicitIds = (input.rowIds ?? [])
@@ -537,7 +584,9 @@ export async function rejectRow(input: {
   jobId: string;
   rowNumber: number;
   reason?: string;
+  scope?: TenantScopeValue;
 }) {
+  await assertJobInScope(input.jobId, input.scope);
   const [row] = await db
     .select()
     .from(excelResearchJobRows)
@@ -575,8 +624,8 @@ export async function rejectRow(input: {
   return getRowResult(input.jobId, input.rowNumber);
 }
 
-export async function exportJobExcel(jobId: string) {
-  const job = requireRow(await getJob(jobId));
+export async function exportJobExcel(jobId: string, scope?: TenantScopeValue) {
+  const job = requireRow(await getJob(jobId, scope));
   const [artifact] = await db
     .select()
     .from(excelResearchFileArtifacts)

@@ -131,9 +131,10 @@ Defined in `src/lib/materials/material-enrichment-types.ts`:
 - `manufacturer`
 - `originCountry`
 - `unit`
+- `price` (writes `defaultUnitPrice`; parsed to a positive integer, currency left unchanged)
 - `sourceUrl`
 
-Not enriched automatically: `code`, `name`, `defaultUnitPrice`, `currency`, `imageUrl` (protected / out of scope for web fill).
+Not enriched automatically: `code`, `name`, `currency`, `imageUrl` (protected / out of scope for web fill).
 
 SKU and model are read from `metadata_json.shopScrape` when present to improve search queries.
 

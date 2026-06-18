@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -12,7 +12,16 @@ import {
   summarizeWorkflowFilterConfig,
 } from "~/lib/workflow-config";
 import { type db as appDb } from "~/server/db";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import {
+  stampTenant,
+  withTenant,
+  type TenantScopeContext,
+} from "~/server/api/tenant-scope";
 import {
   notifications,
   savedFilters,
@@ -129,11 +138,16 @@ function normalizeSavedFilterForWorkflow(
   };
 }
 
-async function getWorkflowOrThrow(db: Pick<AppDb, "select">, id: number) {
-  const [workflow] = await db
+async function getWorkflowOrThrow(
+  ctx: { db: Pick<AppDb, "select"> } & TenantScopeContext,
+  id: number,
+) {
+  // Tenant-scope the lookup: a customer requesting another tenant's workflow
+  // gets NOT_FOUND, never the row (and never its runs via getRuns).
+  const [workflow] = await ctx.db
     .select()
     .from(workflows)
-    .where(eq(workflows.id, id))
+    .where(and(eq(workflows.id, id), withTenant(ctx, workflows.tenantId)))
     .limit(1);
 
   if (!workflow) {
@@ -189,7 +203,7 @@ async function attachWorkflowSummaries(
 }
 
 export const workflowRouter = createTRPCRouter({
-  create: publicProcedure
+  create: requirePermission("workflow:write")
     .input(
       z.object({
         name: z.string().min(1),
@@ -206,16 +220,18 @@ export const workflowRouter = createTRPCRouter({
       const now = new Date().toISOString();
       const [newWorkflow] = await ctx.db
         .insert(workflows)
-        .values({
-          name: input.name,
-          triggerType: input.triggerType,
-          triggerConfig,
-          actionType: input.actionType,
-          actionConfig: input.actionConfig,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(
+          stampTenant(ctx, {
+            name: input.name,
+            triggerType: input.triggerType,
+            triggerConfig,
+            actionType: input.actionType,
+            actionConfig: input.actionConfig,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
         .returning();
 
       if (!newWorkflow) {
@@ -229,7 +245,7 @@ export const workflowRouter = createTRPCRouter({
       return workflow;
     }),
 
-  createFromSavedFilter: publicProcedure
+  createFromSavedFilter: requirePermission("workflow:write")
     .input(
       z.object({
         savedFilterId: z.number().int().positive(),
@@ -243,7 +259,12 @@ export const workflowRouter = createTRPCRouter({
         [savedFilter] = await ctx.db
           .select()
           .from(savedFilters)
-          .where(eq(savedFilters.id, input.savedFilterId))
+          .where(
+            and(
+              eq(savedFilters.id, input.savedFilterId),
+              withTenant(ctx, savedFilters.tenantId),
+            ),
+          )
           .limit(1);
       } catch (error) {
         if (isSavedFilterSchemaDriftError(error)) {
@@ -277,19 +298,21 @@ export const workflowRouter = createTRPCRouter({
 
       const [created] = await ctx.db
         .insert(workflows)
-        .values({
-          name: normalizedRequestedName ?? `Workflow • ${savedFilterName}`,
-          triggerType: "new_search_result",
-          triggerConfig,
-          actionType: "in_app",
-          actionConfig: {
-            source: "saved_filter",
-            savedFilterId: normalizedSavedFilter.id,
-          },
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-        })
+        .values(
+          stampTenant(ctx, {
+            name: normalizedRequestedName ?? `Workflow • ${savedFilterName}`,
+            triggerType: "new_search_result",
+            triggerConfig,
+            actionType: "in_app",
+            actionConfig: {
+              source: "saved_filter",
+              savedFilterId: normalizedSavedFilter.id,
+            },
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
         .returning();
 
       if (!created) {
@@ -303,7 +326,7 @@ export const workflowRouter = createTRPCRouter({
       return workflow;
     }),
 
-  update: publicProcedure
+  update: requirePermission("workflow:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -330,7 +353,7 @@ export const workflowRouter = createTRPCRouter({
         });
       }
 
-      await getWorkflowOrThrow(ctx.db, input.id);
+      await getWorkflowOrThrow(ctx, input.id);
 
       const updateData: {
         name?: string;
@@ -368,7 +391,9 @@ export const workflowRouter = createTRPCRouter({
       const [workflow] = await ctx.db
         .update(workflows)
         .set(updateData)
-        .where(eq(workflows.id, input.id))
+        .where(
+          and(eq(workflows.id, input.id), withTenant(ctx, workflows.tenantId)),
+        )
         .returning();
 
       if (!workflow) {
@@ -384,7 +409,7 @@ export const workflowRouter = createTRPCRouter({
       return workflowWithSummary;
     }),
 
-  setActive: publicProcedure
+  setActive: requirePermission("workflow:write")
     .input(
       z.object({
         id: z.number().int().positive(),
@@ -398,7 +423,9 @@ export const workflowRouter = createTRPCRouter({
           isActive: input.isActive,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(workflows.id, input.id))
+        .where(
+          and(eq(workflows.id, input.id), withTenant(ctx, workflows.tenantId)),
+        )
         .returning();
 
       if (!workflow) {
@@ -418,6 +445,7 @@ export const workflowRouter = createTRPCRouter({
     const workflowRows = await ctx.db
       .select()
       .from(workflows)
+      .where(withTenant(ctx, workflows.tenantId))
       .orderBy(desc(workflows.updatedAt));
 
     return attachWorkflowSummaries(ctx.db, workflowRows);
@@ -426,7 +454,7 @@ export const workflowRouter = createTRPCRouter({
   getById: publicProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const workflow = await getWorkflowOrThrow(ctx.db, input.id);
+      const workflow = await getWorkflowOrThrow(ctx, input.id);
       const [workflowWithSummary] = await attachWorkflowSummaries(ctx.db, [
         workflow,
       ]);
@@ -436,7 +464,9 @@ export const workflowRouter = createTRPCRouter({
   getRuns: publicProcedure
     .input(z.object({ workflowId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      await getWorkflowOrThrow(ctx.db, input.workflowId);
+      // Confirm the parent workflow is in-tenant before returning its runs;
+      // workflowRuns has no tenantId column, so it is scoped via its parent.
+      await getWorkflowOrThrow(ctx, input.workflowId);
 
       return ctx.db
         .select()
@@ -445,10 +475,10 @@ export const workflowRouter = createTRPCRouter({
         .orderBy(desc(workflowRuns.startedAt));
     }),
 
-  runNow: publicProcedure
+  runNow: requirePermission("workflow:write")
     .input(z.object({ workflowId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const workflow = await getWorkflowOrThrow(ctx.db, input.workflowId);
+      const workflow = await getWorkflowOrThrow(ctx, input.workflowId);
 
       if (!workflow.isActive) {
         throw new TRPCError({
@@ -489,6 +519,9 @@ export const workflowRouter = createTRPCRouter({
           body: message,
           severity: "medium",
           isRead: false,
+          // Attribute the notification to the workflow's own tenant so it
+          // appears in the correct tenant's feed (null for internal workflows).
+          tenantId: workflow.tenantId ?? null,
           createdAt: finishedAt,
         });
 

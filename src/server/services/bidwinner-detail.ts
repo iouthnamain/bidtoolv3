@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { eq, lt } from "drizzle-orm";
 
-import { env } from "~/env";
 import { db } from "~/server/db";
 import {
   packageDetailsCache,
   planDetailsCache,
   projectDetailsCache,
 } from "~/server/db/schema";
+import {
+  resolveBidwinnerBaseUrl,
+  resolveBidwinnerTimeoutMs,
+} from "~/server/services/app-settings";
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -17,8 +20,11 @@ const DEFAULT_HEADERS = {
   "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
   "Cache-Control": "no-cache",
   Pragma: "no-cache",
-  Referer: env.BIDWINNER_BASE_URL,
 };
+
+function buildHeaders(referer: string) {
+  return { ...DEFAULT_HEADERS, Referer: referer };
+}
 
 const PRODUCT_HINTS = [
   "san pham",
@@ -881,14 +887,15 @@ function hydrateDetailResult(
 
 async function fetchDetailHtml(sourceUrl: string): Promise<string> {
   const controller = new AbortController();
+  const baseUrl = await resolveBidwinnerBaseUrl();
   const timeout = setTimeout(
     () => controller.abort(),
-    env.BIDWINNER_TIMEOUT_MS,
+    await resolveBidwinnerTimeoutMs(),
   );
 
   try {
     const response = await fetch(sourceUrl, {
-      headers: DEFAULT_HEADERS,
+      headers: buildHeaders(baseUrl),
       signal: controller.signal,
       cache: "no-store",
       redirect: "follow",

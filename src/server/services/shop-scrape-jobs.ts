@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { env } from "~/env";
 import { db } from "~/server/db";
+import {
+  tenantConditionForValue,
+  type TenantScopeValue,
+} from "~/server/api/tenant-scope";
 import { shopScrapeJobs } from "~/server/db/schema";
+import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import {
   abortShopScrapeJob,
   isShopScrapeJobActivelyRunning,
@@ -74,6 +78,8 @@ export async function startShopScrapeJob(input: {
   maxProducts: number | null;
   method: ShopScrapeMethod;
   detailEnrichment: ShopDetailEnrichmentMode;
+  // Tenant attribution for the created job (creator's tenant; null for internal).
+  tenantId?: string | null;
 }) {
   const normalizedUrl = normalizeShopScrapeUrl(input.url);
   const [duplicate] = await db
@@ -109,6 +115,7 @@ export async function startShopScrapeJob(input: {
         method: input.method,
         detailEnrichment: input.detailEnrichment,
         message: "Đang xếp hàng chờ scrape.",
+        tenantId: input.tenantId ?? null,
         startedAt: now,
         updatedAt: now,
       })
@@ -131,11 +138,13 @@ export async function listShopScrapeJobs(
     limit?: number;
     offset?: number;
   } = {},
+  scope?: TenantScopeValue,
 ) {
   const limit = clampListLimit(input.limit);
   const rows = await db
     .select()
     .from(shopScrapeJobs)
+    .where(tenantConditionForValue(scope, shopScrapeJobs.tenantId))
     .orderBy(
       sql`case when ${shopScrapeJobs.status} in ('queued', 'running') then 0 else 1 end`,
       desc(shopScrapeJobs.startedAt),
@@ -146,17 +155,33 @@ export async function listShopScrapeJobs(
   return rows.map(toScrapeJobListItem);
 }
 
-export async function getShopScrapeJob(jobId: string) {
+export async function getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(shopScrapeJobs)
-    .where(eq(shopScrapeJobs.id, jobId))
+    .where(
+      and(
+        eq(shopScrapeJobs.id, jobId),
+        tenantConditionForValue(scope, shopScrapeJobs.tenantId),
+      ),
+    )
     .limit(1);
 
   return job ? toScrapeJobSnapshot(job) : null;
 }
 
-export async function cancelShopScrapeJob(jobId: string) {
+export async function cancelShopScrapeJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  // Fail closed: a customer cancelling another tenant's job gets NOT_FOUND.
+  const inScope = await getShopScrapeJob(jobId, scope);
+  if (!inScope) {
+    throw new ShopJobServiceError(
+      "NOT_FOUND",
+      "Không tìm thấy job scrape shop.",
+    );
+  }
   const now = new Date().toISOString();
   const [cancelled] = await db
     .update(shopScrapeJobs)
@@ -165,7 +190,7 @@ export async function cancelShopScrapeJob(jobId: string) {
       currentUrls: [],
       finishedAt: now,
       lastProgressAt: now,
-      expiresAt: expiresAt(now),
+      expiresAt: await expiresAt(now),
       stopReason: "cancelled",
       message: "Job scrape đã bị hủy.",
       durationMs: sql<number>`greatest(0, floor(extract(epoch from (${now}::timestamptz - ${shopScrapeJobs.startedAt})) * 1000))::int`,
@@ -275,12 +300,15 @@ async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProd
   return toScrapeJobSnapshot(requireRow(updated));
 }
 
-export async function updateShopScrapeJobProduct(input: {
-  jobId: string;
-  sourceUrl: string;
-  product: ScrapedShopProduct;
-}) {
-  const job = await getShopScrapeJob(input.jobId);
+export async function updateShopScrapeJobProduct(
+  input: {
+    jobId: string;
+    sourceUrl: string;
+    product: ScrapedShopProduct;
+  },
+  scope?: TenantScopeValue,
+) {
+  const job = await getShopScrapeJob(input.jobId, scope);
   if (!job) {
     throw new ShopJobServiceError(
       "NOT_FOUND",
@@ -321,11 +349,14 @@ export async function updateShopScrapeJobProduct(input: {
   return persistScrapeJobProducts(input.jobId, products);
 }
 
-export async function deleteShopScrapeJobProduct(input: {
-  jobId: string;
-  sourceUrl: string;
-}) {
-  const job = await getShopScrapeJob(input.jobId);
+export async function deleteShopScrapeJobProduct(
+  input: {
+    jobId: string;
+    sourceUrl: string;
+  },
+  scope?: TenantScopeValue,
+) {
+  const job = await getShopScrapeJob(input.jobId, scope);
   if (!job) {
     throw new ShopJobServiceError(
       "NOT_FOUND",
@@ -347,11 +378,14 @@ export async function deleteShopScrapeJobProduct(input: {
   return persistScrapeJobProducts(input.jobId, products);
 }
 
-export async function deleteShopScrapeJobProducts(input: {
-  jobId: string;
-  sourceUrls: string[];
-}) {
-  const job = await getShopScrapeJob(input.jobId);
+export async function deleteShopScrapeJobProducts(
+  input: {
+    jobId: string;
+    sourceUrls: string[];
+  },
+  scope?: TenantScopeValue,
+) {
+  const job = await getShopScrapeJob(input.jobId, scope);
   if (!job) {
     throw new ShopJobServiceError(
       "NOT_FOUND",
@@ -386,11 +420,14 @@ export async function deleteShopScrapeJobProducts(input: {
   return { job: snapshot, removedCount };
 }
 
-export async function addShopScrapeJobProduct(input: {
-  jobId: string;
-  product: ScrapedShopProduct;
-}) {
-  const job = await getShopScrapeJob(input.jobId);
+export async function addShopScrapeJobProduct(
+  input: {
+    jobId: string;
+    product: ScrapedShopProduct;
+  },
+  scope?: TenantScopeValue,
+) {
+  const job = await getShopScrapeJob(input.jobId, scope);
   if (!job) {
     throw new ShopJobServiceError(
       "NOT_FOUND",
@@ -416,8 +453,11 @@ export async function addShopScrapeJobProduct(input: {
   return persistScrapeJobProducts(input.jobId, [...job.products, nextProduct]);
 }
 
-export async function deleteShopScrapeJob(jobId: string) {
-  const existing = await getShopScrapeJob(jobId);
+export async function deleteShopScrapeJob(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const existing = await getShopScrapeJob(jobId, scope);
   if (!existing) {
     return null;
   }
@@ -540,9 +580,10 @@ function asStopReason(
   return null;
 }
 
-function expiresAt(finishedAtIso: string) {
+async function expiresAt(finishedAtIso: string) {
+  const ttlDays = await resolveScrapeJobTtlDays();
   return new Date(
-    new Date(finishedAtIso).getTime() + env.SCRAPE_JOB_TTL_DAYS * 86_400_000,
+    new Date(finishedAtIso).getTime() + ttlDays * 86_400_000,
   ).toISOString();
 }
 

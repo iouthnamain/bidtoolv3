@@ -5,11 +5,14 @@ import {
   type SortBy,
   type SortOrder,
 } from "~/constants/search-options";
-import { env } from "~/env";
 import {
   normalizeProvinceKey,
   normalizeSearchSelections,
 } from "~/lib/search-filter-utils";
+import {
+  resolveBidwinnerBaseUrl,
+  resolveBidwinnerTimeoutMs,
+} from "~/server/services/app-settings";
 import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
 
 type SearchOptions = {
@@ -150,8 +153,11 @@ const DEFAULT_HEADERS = {
   "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
   "Cache-Control": "no-cache",
   Pragma: "no-cache",
-  Referer: env.BIDWINNER_BASE_URL,
 };
+
+function buildHeaders(baseUrl: string) {
+  return { ...DEFAULT_HEADERS, Referer: baseUrl };
+}
 
 const SEARCH_PAYLOAD_REGEX = /<bid-search[^>]*:hsmts="([^"]+)"/i;
 const PROVINCE_PAYLOAD_REGEX = /<bid-search[^>]*:ttp="([^"]+)"/i;
@@ -394,25 +400,28 @@ function resolveProvinceSelection(
   };
 }
 
-function buildBidWinnerSourceUrl(raw: BidWinnerRawItem): string {
+function buildBidWinnerSourceUrl(raw: BidWinnerRawItem, baseUrl: string): string {
   if (raw.id) {
     return new URL(
       `/4.0/chi-tiet-goi-thau/${raw.id}`,
-      env.BIDWINNER_BASE_URL,
+      baseUrl,
     ).toString();
   }
 
   const soTbmt = String(raw.so_tbmt ?? "").trim();
   if (soTbmt) {
-    const url = new URL("/4.0/search-tbmt/", env.BIDWINNER_BASE_URL);
+    const url = new URL("/4.0/search-tbmt/", baseUrl);
     url.searchParams.set("so_tbmt", soTbmt);
     return url.toString();
   }
 
-  return new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL).toString();
+  return new URL("/4.0/tim-kiem-goi-thau", baseUrl).toString();
 }
 
-function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
+function toLivePackageItem(
+  raw: BidWinnerRawItem,
+  baseUrl: string,
+): LivePackageItem | null {
   if (!raw.id || !raw.ten_goi_thau) {
     return null;
   }
@@ -438,7 +447,7 @@ function toLivePackageItem(raw: BidWinnerRawItem): LivePackageItem | null {
     matchScore: Number.isFinite(matchScore)
       ? Math.max(0, Math.min(100, matchScore))
       : 0,
-    sourceUrl: buildBidWinnerSourceUrl(raw),
+    sourceUrl: buildBidWinnerSourceUrl(raw, baseUrl),
   };
 }
 
@@ -621,7 +630,9 @@ async function fetchBidWinnerPage(
   page: number,
   provinceCode?: string,
 ): Promise<string> {
-  const url = new URL("/4.0/tim-kiem-goi-thau", env.BIDWINNER_BASE_URL);
+  const baseUrl = await resolveBidwinnerBaseUrl();
+  const timeoutMs = await resolveBidwinnerTimeoutMs();
+  const url = new URL("/4.0/tim-kiem-goi-thau", baseUrl);
   url.searchParams.set("page", String(page));
   if (provinceCode) {
     url.searchParams.set("matp", provinceCode);
@@ -634,12 +645,12 @@ async function fetchBidWinnerPage(
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
-        env.BIDWINNER_TIMEOUT_MS + (attempt - 1) * 5_000,
+        timeoutMs + (attempt - 1) * 5_000,
       );
 
       try {
         const response = await fetch(url, {
-          headers: DEFAULT_HEADERS,
+          headers: buildHeaders(baseUrl),
           signal: controller.signal,
           cache: "no-store",
           redirect: "follow",
@@ -682,11 +693,12 @@ async function fetchParsedBidWinnerPage(
   page: number,
   provinceCode?: string,
 ): Promise<ParsedBidWinnerPage> {
+  const baseUrl = await resolveBidwinnerBaseUrl();
   const html = await fetchBidWinnerPage(page, provinceCode);
   const payload = parseBidSearchPayload(html);
   const provinceCodeMap = parseProvincePayload(html);
   const items = payload.data
-    .map((item) => toLivePackageItem(item))
+    .map((item) => toLivePackageItem(item, baseUrl))
     .filter((item): item is LivePackageItem => item !== null)
     .sort(comparePackagesByPublishedAtDesc);
 

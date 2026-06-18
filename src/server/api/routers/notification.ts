@@ -1,16 +1,22 @@
 import { z } from "zod";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { withTenant } from "~/server/api/tenant-scope";
 import { notifications } from "~/server/db/schema";
 
 export const notificationRouter = createTRPCRouter({
-  unreadCount: publicProcedure.query(async ({ ctx }) => {
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
     try {
       const result = await ctx.db
         .select({ value: sql<number>`count(*)::int`.as("value") })
         .from(notifications)
-        .where(eq(notifications.isRead, false));
+        .where(
+          and(
+            eq(notifications.isRead, false),
+            withTenant(ctx, notifications.tenantId),
+          ),
+        );
 
       return result[0]?.value ?? 0;
     } catch {
@@ -18,7 +24,7 @@ export const notificationRouter = createTRPCRouter({
     }
   }),
 
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z
         .object({
@@ -35,7 +41,12 @@ export const notificationRouter = createTRPCRouter({
         return await ctx.db
           .select()
           .from(notifications)
-          .where(unreadOnly ? eq(notifications.isRead, false) : undefined)
+          .where(
+            and(
+              unreadOnly ? eq(notifications.isRead, false) : undefined,
+              withTenant(ctx, notifications.tenantId),
+            ),
+          )
           .orderBy(desc(notifications.createdAt))
           .limit(limit);
       } catch {
@@ -43,27 +54,37 @@ export const notificationRouter = createTRPCRouter({
       }
     }),
 
-  markAsRead: publicProcedure
+  markAsRead: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const updated = await ctx.db
         .update(notifications)
         .set({ isRead: true })
-        .where(eq(notifications.id, input.id))
+        .where(
+          and(
+            eq(notifications.id, input.id),
+            withTenant(ctx, notifications.tenantId),
+          ),
+        )
         .returning({ id: notifications.id });
 
       return { success: updated.length > 0 };
     }),
 
-  markAllAsRead: publicProcedure.mutation(async ({ ctx }) => {
+  markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
     await ctx.db
       .update(notifications)
       .set({ isRead: true })
-      .where(eq(notifications.isRead, false));
+      .where(
+        and(
+          eq(notifications.isRead, false),
+          withTenant(ctx, notifications.tenantId),
+        ),
+      );
     return { success: true };
   }),
 
-  markSelectedAsRead: publicProcedure
+  markSelectedAsRead: protectedProcedure
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
     )
@@ -71,19 +92,29 @@ export const notificationRouter = createTRPCRouter({
       const updated = await ctx.db
         .update(notifications)
         .set({ isRead: true })
-        .where(inArray(notifications.id, input.ids))
+        .where(
+          and(
+            inArray(notifications.id, input.ids),
+            withTenant(ctx, notifications.tenantId),
+          ),
+        )
         .returning({ id: notifications.id });
       return { count: updated.length };
     }),
 
-  deleteMany: publicProcedure
+  deleteMany: protectedProcedure
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
     )
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
         .delete(notifications)
-        .where(inArray(notifications.id, input.ids))
+        .where(
+          and(
+            inArray(notifications.id, input.ids),
+            withTenant(ctx, notifications.tenantId),
+          ),
+        )
         .returning({ id: notifications.id });
       return { count: deleted.length };
     }),

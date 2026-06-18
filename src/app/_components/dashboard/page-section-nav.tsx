@@ -218,14 +218,61 @@ function isItemActive(pathname: string, item: PageSectionNavItem): boolean {
 export function PageSectionNav({
   title = "Khu vực trong trang",
   items,
+  variant = "detailed",
 }: {
   title?: string;
   items: PageSectionNavItem[];
+  variant?: "detailed" | "compact";
 }) {
   const pathname = usePathname();
 
   if (items.length === 0) {
     return null;
+  }
+
+  if (variant === "compact") {
+    return (
+      <nav aria-label={title} className="space-y-2.5">
+        <p className="section-title">
+          {title}
+          <span className="ml-1.5 font-medium tracking-normal text-slate-400 normal-case">
+            · {items.length} mục
+          </span>
+        </p>
+
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 md:grid-cols-4 xl:grid-cols-6">
+          {items.map((item) => {
+            const Icon = iconMap[item.icon];
+            const active = isItemActive(pathname, item);
+            const tone = item.tone ? toneStyles[item.tone] : defaultToneStyles;
+            const inactive = toneStyles.slate;
+
+            return (
+              <Link
+                key={`${item.href}-${item.label}`}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                title={item.description}
+                className={`group flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-center transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-w-0 sm:shrink ${
+                  active ? tone.linkActive : inactive.linkInactive
+                }`}
+              >
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+                    active ? tone.iconActive : inactive.iconInactive
+                  }`}
+                >
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="block truncate text-xs font-bold">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+    );
   }
 
   return (

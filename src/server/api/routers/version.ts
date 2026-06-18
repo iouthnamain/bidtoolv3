@@ -2,7 +2,11 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { isUpdateAvailable } from "~/lib/release-manifest";
-import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import {
+  createTRPCRouter,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
 import { applyOnPremUpdate } from "~/server/services/onprem-update";
 import { getVersionStatus } from "~/server/services/version-info";
 
@@ -11,7 +15,7 @@ export const versionRouter = createTRPCRouter({
     return getVersionStatus();
   }),
 
-  applyOnPremUpdate: publicProcedure
+  applyOnPremUpdate: requirePermission("onprem:admin")
     .input(
       z.object({
         version: z.string().min(1).optional(),

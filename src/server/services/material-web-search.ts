@@ -1,6 +1,6 @@
 import "server-only";
 
-import { env } from "~/env";
+import { resolveSearxngBaseUrl } from "~/server/services/app-settings";
 
 export type WebSearchResult = {
   title: string;
@@ -158,8 +158,8 @@ function searchTimeoutSignal(signal?: AbortSignal) {
   return AbortSignal.any([signal, timeout]);
 }
 
-function searxngBaseUrls(): string[] {
-  const configured = env.SEARXNG_BASE_URL?.trim();
+async function searxngBaseUrls(): Promise<string[]> {
+  const configured = (await resolveSearxngBaseUrl())?.trim();
   if (configured) {
     return [configured.replace(/\/$/, "")];
   }
@@ -173,7 +173,7 @@ async function searchSearxngQuery(
 ): Promise<WebSearchResult[]> {
   const warnings: string[] = [];
 
-  for (const base of searxngBaseUrls()) {
+  for (const base of await searxngBaseUrls()) {
     try {
       const url = new URL("/search", `${base}/`);
       url.searchParams.set("q", query);
