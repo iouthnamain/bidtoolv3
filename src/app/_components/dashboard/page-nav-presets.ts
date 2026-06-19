@@ -329,6 +329,18 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
     icon: "settings",
   },
   {
+    href: "/settings/users",
+    label: "Người dùng",
+    description: "Tài khoản, quyền truy cập và trạng thái.",
+    icon: "settings",
+  },
+  {
+    href: "/settings/tenants",
+    label: "Tổ chức",
+    description: "Tổ chức khách hàng (tenant) và thành viên.",
+    icon: "settings",
+  },
+  {
     href: "/settings/desktop",
     label: "Desktop",
     description: "Cấu hình server URL cho Electron.",

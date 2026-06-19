@@ -195,6 +195,7 @@ const navSections: NavSection[] = [
         subItems: [
           { href: "/settings/ai", label: "OpenRouter" },
           { href: "/settings/users", label: "Người dùng" },
+          { href: "/settings/tenants", label: "Tổ chức" },
           { href: "/settings/desktop", label: "Desktop client" },
           { href: "/settings/updates", label: "Cập nhật" },
         ],

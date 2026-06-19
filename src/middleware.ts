@@ -30,6 +30,7 @@ const PUBLIC_PATHS = ["/login", "/setup"];
 
 const PUBLIC_PATH_PREFIXES = [
   "/api/auth", // Better Auth's own endpoints (sign-in/out, callbacks).
+  "/api/setup", // One-time first-admin bootstrap; enforces its own token + one-time guard.
   "/api/health",
   "/api/version",
   // tRPC enforces its own auth and returns JSON 401s; never issue an HTML
