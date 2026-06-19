@@ -72,6 +72,22 @@ if errorlevel 1 (
 )
 echo.
 
+REM --- Ensure .env exists -------------------------------------
+REM     Several steps below read .env (auth setup) and the dev workflow
+REM     expects it to exist. Create it from the template on first run so a
+REM     fresh checkout starts cleanly.
+if not exist ".env" (
+    if exist ".env.example" (
+        copy /y ".env.example" ".env" >nul
+        echo       Created .env from .env.example. Review it and add any
+        echo       required secrets ^(e.g. AUTH_BOOTSTRAP_TOKEN^) if needed.
+    ) else (
+        echo [WARNING] No .env and no .env.example found. The app may fail to
+        echo           start until a .env file is provided.
+    )
+    echo.
+)
+
 REM --- 2. Make sure Docker is running -------------------------
 echo [2/5] Checking Docker...
 docker info >nul 2>&1
