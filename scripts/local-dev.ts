@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, readFile } from "node:fs/promises";
+import { access, copyFile, readdir, readFile } from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,7 @@ type CommandResult = {
   code: number;
   stderr: string;
   stdout: string;
+  timedOut?: boolean;
 };
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +72,11 @@ async function runCommand(
   options?: {
     cwd?: string;
     inheritStdio?: boolean;
+    // When set, the child is killed after this many ms and the result is
+    // returned with `timedOut: true`. Used for non-essential steps (e.g. the
+    // Playwright Chromium install) that can hang on some platforms and must
+    // never block startup.
+    timeoutMs?: number;
   },
 ): Promise<CommandResult> {
   return await new Promise<CommandResult>((resolve, reject) => {
@@ -82,6 +89,20 @@ async function runCommand(
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (options?.timeoutMs && options.timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        // SIGTERM first; force-kill shortly after if it ignores it. On Windows
+        // child.kill() maps to TerminateProcess, which is sufficient here.
+        child.kill("SIGTERM");
+        setTimeout(() => child.kill("SIGKILL"), 2_000).unref?.();
+      }, options.timeoutMs);
+      timer.unref?.();
+    }
 
     if (!options?.inheritStdio) {
       child.stdout?.setEncoding("utf8");
@@ -96,6 +117,13 @@ async function runCommand(
     }
 
     child.once("error", (error: NodeJS.ErrnoException) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
       if (error.code === "ENOENT") {
         reject(
           new Error(
@@ -109,10 +137,18 @@ async function runCommand(
     });
 
     child.once("close", (code) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
       resolve({
         code: code ?? 1,
         stderr,
         stdout,
+        timedOut,
       });
     });
   });
@@ -316,17 +352,75 @@ async function installDependencies(): Promise<void> {
   );
 }
 
+function playwrightBrowsersCacheDir(): string {
+  const override = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (override && override !== "0") {
+    return override;
+  }
+
+  // Default cache locations Playwright uses per platform.
+  if (process.platform === "win32") {
+    const localAppData =
+      process.env.LOCALAPPDATA ??
+      path.join(os.homedir(), "AppData", "Local");
+    return path.join(localAppData, "ms-playwright");
+  }
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Caches", "ms-playwright");
+  }
+  return path.join(os.homedir(), ".cache", "ms-playwright");
+}
+
+async function isPlaywrightChromiumInstalled(): Promise<boolean> {
+  // A real install leaves a `chromium-<rev>` folder in the cache dir. Treat any
+  // such folder as "already installed" so we skip the slow/hang-prone download.
+  try {
+    const entries = await readdir(playwrightBrowsersCacheDir());
+    return entries.some((entry) => entry.startsWith("chromium"));
+  } catch {
+    return false;
+  }
+}
+
 async function installScrapeBrowser(): Promise<void> {
   // The shop scraper launches Playwright's Chromium when no system
   // Chrome/Edge is found. Install it so scraping works on a fresh machine.
-  // Non-fatal: if it fails (offline, etc.) the scraper can still use a
-  // system browser, so we only warn instead of aborting setup.
+  //
+  // This step is best-effort and must NEVER block startup:
+  //   - Skip entirely when Chromium is already cached (the common case on a
+  //     machine that has run this before).
+  //   - Guard the install with a timeout. On Windows, `bun x playwright install`
+  //     can finish the download but never return control, which previously
+  //     hung run.bat forever at this step.
+  // The scraper still falls back to a system Chrome/Edge if Chromium is absent,
+  // so warning instead of aborting is safe.
+  if (await isPlaywrightChromiumInstalled()) {
+    logStep("Playwright Chromium already installed — skipping download");
+    return;
+  }
+
   logStep("Installing Playwright Chromium for the shop scraper");
+  const installTimeoutMs = 5 * 60 * 1_000;
   const result = await runCommand(
     bunExecutable,
     ["x", "playwright", "install", "chromium"],
-    { inheritStdio: true },
+    { inheritStdio: true, timeoutMs: installTimeoutMs },
   );
+
+  if (result.timedOut) {
+    // The browser binary is usually already extracted by the time the process
+    // hangs, so re-check the cache before deciding how loudly to warn.
+    if (await isPlaywrightChromiumInstalled()) {
+      logStep(
+        "Playwright Chromium downloaded; the installer process did not exit cleanly but the browser is in place. Continuing.",
+      );
+    } else {
+      logStep(
+        "Playwright Chromium install timed out. Scraping will rely on an installed Chrome/Edge, or run `bunx playwright install chromium` manually.",
+      );
+    }
+    return;
+  }
 
   if (result.code !== 0) {
     logStep(
