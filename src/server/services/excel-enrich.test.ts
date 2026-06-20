@@ -355,6 +355,205 @@ describe("writeEnrichedWorkbook (force-overwrite)", () => {
   });
 });
 
+describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
+  it("writes a valueOverride that no material carries", async () => {
+    const headers = ["Tên vật tư", "ĐVT", "Nhà sản xuất"];
+    const base64 = await makeWorkbookBase64(headers, [["Cáp CV", "", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: 9,
+          fields: ["unit", "manufacturer"],
+          // material has unit "m"; override manufacturer with an edited value.
+          valueOverrides: { manufacturer: "CADIVI (đã sửa)" },
+        },
+      ],
+      materialsById: new Map([
+        [9, material({ id: 9, name: "Cáp CV", unit: "m" })],
+      ]),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    // Unit from the material; manufacturer from the override (not on material).
+    expect(cellText(dataRow.getCell(2).value)).toBe("m");
+    expect(cellText(dataRow.getCell(3).value)).toBe("CADIVI (đã sửa)");
+  });
+
+  it("exports a web-only row (materialId null) from overrides alone", async () => {
+    const headers = ["Tên vật tư", "ĐVT", "Nhà sản xuất"];
+    const base64 = await makeWorkbookBase64(headers, [["Van bi", "", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: null,
+          fields: ["unit", "manufacturer"],
+          valueOverrides: { unit: "cái", manufacturer: "Kitz" },
+        },
+      ],
+      materialsById: new Map(),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    expect(cellText(dataRow.getCell(2).value)).toBe("cái");
+    expect(cellText(dataRow.getCell(3).value)).toBe("Kitz");
+  });
+
+  it("coerces a numeric override (price) to a number", async () => {
+    const headers = ["Tên vật tư", "Đơn giá"];
+    const base64 = await makeWorkbookBase64(headers, [["Cáp CV", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: null,
+          fields: ["defaultUnitPrice"],
+          valueOverrides: { defaultUnitPrice: "25000" },
+        },
+      ],
+      materialsById: new Map(),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    expect(sheet.getRow(2).getCell(2).value).toBe(25000);
+  });
+
+  it("exports a web-only override row in clean mode (materialId null)", async () => {
+    const headers = ["Tên vật tư", "ĐVT", "Nhà sản xuất"];
+    const base64 = await makeWorkbookBase64(headers, [["Van bi", "", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: null,
+          fields: ["unit", "manufacturer"],
+          valueOverrides: { unit: "cái", manufacturer: "Kitz" },
+        },
+      ],
+      materialsById: new Map(),
+      mode: "clean",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    // Clean mode uses the fixed CLEAN_COLUMN_ORDER: name, code, unit, category,
+    // specText, manufacturer, ... — so unit is col 3 and manufacturer is col 6.
+    expect(cellText(dataRow.getCell(3).value)).toBe("cái");
+    expect(cellText(dataRow.getCell(6).value)).toBe("Kitz");
+  });
+
+  it("round-trips router-shaped decisions with valueOverrides and null materialId", async () => {
+    const headers = [
+      "Tên vật tư",
+      "Mã vật tư",
+      "ĐVT",
+      "Nhóm",
+      "Thông số",
+      "Nhà sản xuất",
+      "Xuất xứ",
+      "Đơn giá",
+      "Nguồn",
+    ];
+    const base64 = await makeWorkbookBase64(headers, [["Van bi", "", "", "", "", "", "", "", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    // Mirrors enrichExportXlsx input → writeEnrichedWorkbook decision mapping.
+    const routerDecisions = [
+      {
+        originalRowIndex: 2,
+        materialId: null as number | null,
+        fields: [
+          "code",
+          "unit",
+          "category",
+          "specText",
+          "manufacturer",
+          "originCountry",
+          "defaultUnitPrice",
+          "sourceUrl",
+        ] as const,
+        valueOverrides: {
+          code: "VB-50",
+          unit: "cái",
+          category: "Van",
+          specText: "DN50",
+          manufacturer: "Kitz",
+          originCountry: "Nhật",
+          defaultUnitPrice: "250000",
+          sourceUrl: "https://example.com/van",
+        },
+      },
+    ];
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: routerDecisions.map((decision) => ({
+        originalRowIndex: decision.originalRowIndex,
+        materialId: decision.materialId,
+        fields: [...decision.fields],
+        overwriteFields: undefined,
+        valueOverrides: decision.valueOverrides,
+      })),
+      materialsById: new Map(),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    expect(cellText(dataRow.getCell(2).value)).toBe("VB-50");
+    expect(cellText(dataRow.getCell(3).value)).toBe("cái");
+    expect(cellText(dataRow.getCell(4).value)).toBe("Van");
+    expect(cellText(dataRow.getCell(5).value)).toBe("DN50");
+    expect(cellText(dataRow.getCell(6).value)).toBe("Kitz");
+    expect(cellText(dataRow.getCell(7).value)).toBe("Nhật");
+    expect(dataRow.getCell(8).value).toBe(250000);
+    expect(cellText(dataRow.getCell(9).value)).toBe("https://example.com/van");
+  });
+});
+
 describe("classifyStatus thresholds", () => {
   it("classifies exactly 0.85 as auto", () => {
     expect(classifyStatus(0.85)).toBe("auto");

@@ -140,6 +140,32 @@ export function buildFillPlan(
   return plan;
 }
 
+/**
+ * Like {@link buildFillPlan}, but overlays user inline-edits on top of the base
+ * material/found values before planning. An edited value wins over the
+ * candidate's value for that field; an edit is treated as a real value, so a
+ * field the user typed into fills (or overwrites) even when the base source had
+ * nothing. Blank edits ("") fall through to the base value rather than clearing
+ * it — to intentionally skip a field the UI unticks it instead.
+ */
+export function buildFillPlanWithEdits(
+  rowFields: Partial<Record<FillableField, string>>,
+  materialFields: Partial<Record<FillableField, string>> | null,
+  editedValues: Partial<Record<FillableField, string>> = {},
+  forceOverwrite: Set<FillableField> = new Set<FillableField>(),
+): FillPlanCell[] {
+  const overlaid: Partial<Record<FillableField, string>> = {
+    ...(materialFields ?? {}),
+  };
+  for (const field of FILLABLE_FIELDS) {
+    const edited = editedValues[field]?.trim();
+    if (edited != null && edited.length > 0) {
+      overlaid[field] = edited;
+    }
+  }
+  return buildFillPlan(rowFields, overlaid, forceOverwrite);
+}
+
 // ---------------------------------------------------------------------------
 // Candidate → field map (so the client can recompute a fill plan on the fly)
 // ---------------------------------------------------------------------------

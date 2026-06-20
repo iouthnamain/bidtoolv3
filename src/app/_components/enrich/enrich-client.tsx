@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   Download,
   FileSpreadsheet,
+  Globe,
   Loader2,
+  Pencil,
   Search,
   Upload,
 } from "lucide-react";
@@ -24,16 +26,17 @@ import {
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
 import { EnrichJobsList } from "~/app/_components/enrich/enrich-jobs-list";
+import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import {
-  ProductCandidateCard,
-  type EnrichCandidate,
-} from "~/app/_components/enrich/product-candidate-card";
+  ManualProductDialog,
+  type ManualProductValues,
+} from "~/app/_components/enrich/manual-product-dialog";
+import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
 import {
   buildFillPlan,
   candidateToFields,
-  FIELD_LABELS,
-  FILLABLE_FIELDS,
   type FillableField,
+  FILLABLE_FIELDS,
 } from "~/lib/materials/excel-enrich-fields";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -94,6 +97,9 @@ type RowDecision = {
   // value (Contract O: fed into buildFillPlan as `forceOverwrite` and exported
   // as `overwriteFields`).
   overwriteFields?: Set<FillableField>;
+  // Per-field inline edits: user-typed values that override the candidate's
+  // value at export time. Threaded into the export decision as `valueOverrides`.
+  editedValues?: Partial<Record<FillableField, string>>;
   // User explicitly chose to skip this row (vs. simply not decided yet).
   skipped?: boolean;
 };
@@ -333,8 +339,17 @@ export function MaterialEnrichClient() {
         materialId: decision.materialId,
         fields: Array.from(decision.acceptedFields),
         overwriteFields: Array.from(decision.overwriteFields ?? []),
+        valueOverrides: decision.editedValues ?? {},
       }))
-      .filter((d) => d.materialId != null && d.fields.length > 0);
+      // A row exports when it has accepted fields AND a source for their values:
+      // either a matched catalog material, or per-field overrides (manual entry
+      // / web-only rows) that cover the accepted fields.
+      .filter(
+        (d) =>
+          d.fields.length > 0 &&
+          (d.materialId != null ||
+            d.fields.every((field) => d.valueOverrides[field] != null)),
+      );
 
     exportXlsx.mutate(
       {
@@ -905,8 +920,10 @@ function MatchChooser({
   decision: RowDecision | undefined;
   onChange: (next: RowDecision) => void;
 }) {
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
@@ -917,10 +934,12 @@ function MatchChooser({
     { query: debounced },
     { enabled: debounced.length > 0 },
   );
+  const webSearch = api.material.enrichWebSearchRow.useMutation();
 
   const selectedId = decision?.materialId ?? null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
+  const editedValues = decision?.editedValues ?? {};
 
   const sheetFields: Partial<Record<FillableField, string>> = row.sheetFields;
 
@@ -932,12 +951,12 @@ function MatchChooser({
     ? searchCandidates
     : row.candidates;
 
-  // The currently selected candidate may come from either list.
   const selectedCandidate =
-    cards.find((c) => c.materialId === selectedId) ??
-    row.candidates.find((c) => c.materialId === selectedId) ??
-    searchCandidates.find((c) => c.materialId === selectedId) ??
-    null;
+    selectedId != null
+      ? (cards.find((candidate) => candidate.materialId === selectedId) ??
+        row.candidates.find((candidate) => candidate.materialId === selectedId) ??
+        null)
+      : null;
 
   const choose = (candidate: EnrichCandidate) => {
     const { fillable } = planForCandidate(sheetFields, candidate);
@@ -945,6 +964,7 @@ function MatchChooser({
       materialId: candidate.materialId,
       acceptedFields: fillable,
       overwriteFields: new Set(),
+      editedValues: {},
     });
   };
 
@@ -958,48 +978,10 @@ function MatchChooser({
       materialId: null,
       acceptedFields: new Set(),
       overwriteFields: new Set(),
+      editedValues: {},
       skipped: !isSkipped,
     });
   };
-
-  // Digit keys 1-9 select the matching candidate card. Guarded so typing in the
-  // manual-search box (or any text field) never hijacks the keystroke.
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
-      const digit = Number(event.key);
-      if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
-      const candidate = cards[digit - 1];
-      if (!candidate) return;
-      event.preventDefault();
-      choose(candidate);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-    // `cards` and `sheetFields` identity changes when the row/selection changes,
-    // which is exactly when we want a fresh handler.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, sheetFields]);
-
-  // The fill plan shown reflects the chosen candidate (recomputed locally so
-  // manual-search picks get a plan too), honoring the user's force-overwrite set.
-  const plan = selectedCandidate
-    ? buildFillPlan(
-        sheetFields,
-        candidateToFields(selectedCandidate),
-        overwrite,
-      )
-    : row.fillPlan;
 
   const toggleField = (field: FillableField) => {
     const next = new Set(accepted);
@@ -1017,6 +999,7 @@ function MatchChooser({
       materialId: selectedId,
       acceptedFields: next,
       overwriteFields: nextOverwrite,
+      editedValues,
     });
   };
 
@@ -1036,182 +1019,177 @@ function MatchChooser({
       materialId: selectedId,
       acceptedFields: nextAccepted,
       overwriteFields: nextOverwrite,
+      editedValues,
     });
   };
 
+  const editValue = (field: FillableField, value: string) => {
+    const nextEdited = { ...editedValues, [field]: value };
+    // Editing a field implies the user wants it written.
+    const nextAccepted = new Set(accepted);
+    nextAccepted.add(field);
+    onChange({
+      materialId: selectedId,
+      acceptedFields: nextAccepted,
+      overwriteFields: overwrite,
+      editedValues: nextEdited,
+    });
+  };
+
+  const applyManualValues = (values: ManualProductValues) => {
+    const nextAccepted = new Set<FillableField>();
+    const nextEdited: Partial<Record<FillableField, string>> = {};
+    for (const field of FILLABLE_FIELDS) {
+      if (field === "currency") continue;
+      const value = values[field]?.trim() ?? "";
+      if (value) {
+        nextEdited[field] = value;
+        nextAccepted.add(field);
+      }
+    }
+    onChange({
+      materialId: null,
+      acceptedFields: nextAccepted,
+      overwriteFields: new Set(),
+      editedValues: nextEdited,
+    });
+  };
+
+  const runWebSearch = () => {
+    webSearch.mutate(
+      {
+        name: row.name,
+        code: sheetFields.code,
+        manufacturer: sheetFields.manufacturer,
+        specText: sheetFields.specText,
+        unit: sheetFields.unit,
+        category: sheetFields.category,
+      },
+      {
+        onSuccess: (result) => {
+          if (Object.keys(result.fields).length === 0) {
+            toast.warning("Không tìm thấy thông tin sản phẩm trên web.");
+            return;
+          }
+          const nextEdited = { ...editedValues };
+          const nextAccepted = new Set(accepted);
+          for (const [field, value] of Object.entries(result.fields)) {
+            const fillable = field as FillableField;
+            const trimmed = value?.trim() ?? "";
+            if (!trimmed) continue;
+            nextEdited[fillable] = trimmed;
+            nextAccepted.add(fillable);
+          }
+          onChange({
+            materialId: null,
+            acceptedFields: nextAccepted,
+            overwriteFields: overwrite,
+            editedValues: nextEdited,
+          });
+          toast.success(
+            `Đã điền ${Object.keys(result.fields).length} trường từ web.`,
+          );
+        },
+        onError: (error) =>
+          toast.error(error.message || "Không tìm được thông tin trên web."),
+      },
+    );
+  };
+
+  const handleSavedToCatalog = (
+    materialId: number,
+    values: ManualProductValues,
+  ) => {
+    const nextAccepted = new Set<FillableField>();
+    for (const field of FILLABLE_FIELDS) {
+      if (field === "currency") continue;
+      const value = values[field]?.trim() ?? "";
+      if (value) {
+        nextAccepted.add(field);
+      }
+    }
+    onChange({
+      materialId,
+      acceptedFields: nextAccepted,
+      overwriteFields: new Set(),
+      editedValues: {},
+    });
+  };
+
+  const hasManualOrWebDecision =
+    selectedId == null &&
+    (accepted.size > 0 ||
+      Object.values(editedValues).some((value) => (value ?? "").trim().length > 0));
+
   return (
-    <div className="space-y-4">
-      {/* Excel row */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-              Dòng Excel {row.originalRowIndex}
-            </p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">
-              {row.name || "(không có tên)"}
-            </p>
-          </div>
-          <Button
-            variant={isSkipped ? "warning" : "secondary"}
-            size="sm"
-            className="shrink-0"
-            onClick={toggleSkip}
-          >
-            {isSkipped ? "Bỏ qua: bật" : "Bỏ qua dòng này"}
-          </Button>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {FILLABLE_FIELDS.filter((f) => f !== "currency").map((field) => {
-            const value = sheetFields[field]?.trim() ?? "";
-            return (
-              <span
-                key={field}
-                className={`rounded border px-1.5 py-0.5 text-[11px] ${
-                  value
-                    ? "border-slate-200 bg-white text-slate-600"
-                    : "border-dashed border-slate-300 bg-transparent text-slate-400"
-                }`}
-              >
-                {FIELD_LABELS[field]}: {value.length > 0 ? value : "(trống)"}
-              </span>
-            );
-          })}
-        </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setManualDialogOpen(true)}
+        >
+          <Pencil className="h-4 w-4" aria-hidden />
+          Thêm/sửa vật tư
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={runWebSearch}
+          disabled={webSearch.isPending || !row.name.trim()}
+        >
+          {webSearch.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Globe className="h-4 w-4" aria-hidden />
+          )}
+          Tìm web
+        </Button>
       </div>
 
-      {/* Manual search */}
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400"
-          aria-hidden
-        />
-        <input
-          type="search"
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Tìm sản phẩm khác trong catalog…"
-          spellCheck={false}
-          className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
-        />
-      </div>
+      <FieldCompareEditor
+      sheetLabel={`Dòng Excel ${row.originalRowIndex}`}
+      sheetName={row.name}
+      sheetFields={sheetFields}
+      selectedMaterialId={selectedId}
+      accepted={accepted}
+      overwrite={overwrite}
+      editedValues={editedValues}
+      onToggleField={toggleField}
+      onToggleOverwrite={toggleOverwrite}
+      onEditValue={editValue}
+      onClear={() =>
+        onChange({
+          materialId: null,
+          acceptedFields: new Set(),
+          overwriteFields: new Set(),
+          editedValues: {},
+        })
+      }
+      enableCandidateGrid
+      candidates={cards}
+      recommendedMaterialId={row.topCandidate?.materialId ?? null}
+      searchTerm={searchTerm}
+      onSearchTermChange={setSearchTerm}
+      isSearching={searchQuery.isLoading}
+      showingSearch={showingSearch}
+      onChoose={choose}
+      enableInlineEdit
+      enableSkip
+      isSkipped={isSkipped}
+      onToggleSkip={toggleSkip}
+      forceShowDecision={hasManualOrWebDecision}
+    />
 
-      {/* Candidate cards */}
-      {showingSearch && searchQuery.isLoading ? (
-        <p className="flex items-center gap-2 text-xs text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Đang tìm…
-        </p>
-      ) : cards.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
-          {showingSearch
-            ? "Không tìm thấy sản phẩm phù hợp."
-            : "Không có ứng viên ghép tự động — hãy tìm thủ công ở trên."}
-        </p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map((candidate, index) => {
-            const { fillable } = planForCandidate(sheetFields, candidate);
-            return (
-              <ProductCandidateCard
-                key={candidate.materialId}
-                candidate={candidate}
-                isSelected={candidate.materialId === selectedId}
-                isRecommended={
-                  !showingSearch &&
-                  index === 0 &&
-                  row.topCandidate?.materialId === candidate.materialId
-                }
-                fillCount={fillable.size}
-                onChoose={() => choose(candidate)}
-                hotkeyIndex={index + 1}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Fill plan for the chosen candidate */}
-      {selectedId != null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-            Sẽ điền vào dòng
-          </p>
-          <div className="mt-2 grid gap-1.5">
-            {plan.map((cell) => {
-              const field = cell.field;
-              const isFillable =
-                cell.action === "filled" || cell.action === "overwritten";
-              return (
-                <label
-                  key={cell.field}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs ${
-                    isFillable ? "bg-slate-50" : "opacity-60"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={!isFillable}
-                    checked={isFillable && accepted.has(field)}
-                    onChange={() => toggleField(field)}
-                  />
-                  <span className="w-20 shrink-0 font-semibold text-slate-600">
-                    {FIELD_LABELS[field]}
-                  </span>
-                  <span className="truncate text-slate-500">
-                    {cell.before || "(trống)"}
-                  </span>
-                  {isFillable ? (
-                    <>
-                      <span className="text-slate-400">→</span>
-                      <span className="truncate font-medium text-emerald-700">
-                        {cell.after}
-                      </span>
-                    </>
-                  ) : cell.action === "kept" ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        toggleOverwrite(field);
-                      }}
-                      className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
-                        overwrite.has(field)
-                          ? "border-amber-300 bg-amber-100 text-amber-800"
-                          : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
-                      }`}
-                    >
-                      Ghi đè
-                    </button>
-                  ) : (
-                    <span className="ml-auto text-[11px] text-slate-400" />
-                  )}
-                </label>
-              );
-            })}
-            {plan.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                Không có ô trống nào để điền cho lựa chọn này.
-              </p>
-            ) : null}
-          </div>
-          <div className="mt-2 flex justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                onChange({
-                  materialId: null,
-                  acceptedFields: new Set(),
-                  overwriteFields: new Set(),
-                })
-              }
-            >
-              Bỏ ghép dòng này
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      <ManualProductDialog
+        open={manualDialogOpen}
+        productName={row.name}
+        sheetFields={sheetFields}
+        selectedCandidate={selectedCandidate}
+        onClose={() => setManualDialogOpen(false)}
+        onApplyToRow={applyManualValues}
+        onSavedToCatalog={handleSavedToCatalog}
+      />
     </div>
   );
 }

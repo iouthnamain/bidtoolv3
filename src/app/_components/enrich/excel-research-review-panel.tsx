@@ -8,16 +8,27 @@ import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
   type ExcelResearchRowStatus,
 } from "~/app/_components/research-enrich/excel-research-types";
+import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
+import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
 import {
-  FIELD_LABELS,
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
-import { type RouterOutputs } from "~/trpc/react";
+import { api, type RouterOutputs } from "~/trpc/react";
 
 type ExcelResearchRowSummary =
   RouterOutputs["excelResearch"]["listRowResults"]["items"][number];
 type ExcelResearchRowEvidence =
   RouterOutputs["excelResearch"]["getRowResult"]["evidence"][number];
+type ExcelResearchCompare =
+  RouterOutputs["excelResearch"]["getRowResult"]["compare"];
+
+/** The decision payload an approved row carries to the server. */
+export type ResearchApproveDecision = {
+  materialId?: number;
+  acceptedFields: FillableField[];
+  overwriteFields: FillableField[];
+  editedValues: Partial<Record<FillableField, string>>;
+};
 
 export const ROW_STATUS_META: Record<
   ExcelResearchRowStatus,
@@ -31,10 +42,6 @@ export const ROW_STATUS_META: Record<
   skipped: { label: "Đã bỏ qua", tone: "critical" },
   error: { label: "Lỗi", tone: "critical" },
 };
-
-function fieldLabel(field: string) {
-  return FIELD_LABELS[field as FillableField] ?? field;
-}
 
 const BULK_MIN_CONFIDENCE = 0.85;
 
@@ -58,6 +65,7 @@ export function ExcelResearchReviewPanel({
   setSelectedRowNumber,
   selectedRow,
   evidence,
+  compare,
   isDetailLoading,
   isApproving,
   isRejecting,
@@ -88,10 +96,11 @@ export function ExcelResearchReviewPanel({
   setSelectedRowNumber: (value: number | null) => void;
   selectedRow: ExcelResearchRowSummary | null;
   evidence: ExcelResearchRowEvidence[];
+  compare: ExcelResearchCompare | null;
   isDetailLoading: boolean;
   isApproving: boolean;
   isRejecting: boolean;
-  onApprove: (rowNumber: number) => void;
+  onApprove: (rowNumber: number, decision: ResearchApproveDecision) => void;
   onReject: (rowNumber: number) => void;
   /**
    * Bulk approve. `rowIds` approves an explicit set of rows; when omitted the
@@ -361,10 +370,13 @@ export function ExcelResearchReviewPanel({
             <ExcelResearchRowDetailPanel
               row={selectedRow}
               evidence={evidence}
+              compare={compare}
               isDetailLoading={isDetailLoading}
               isApproving={isApproving}
               isRejecting={isRejecting}
-              onApprove={() => onApprove(selectedRow.rowNumber)}
+              onApprove={(decision) =>
+                onApprove(selectedRow.rowNumber, decision)
+              }
               onReject={() => onReject(selectedRow.rowNumber)}
             />
           ) : (
@@ -382,6 +394,7 @@ export function ExcelResearchReviewPanel({
 function ExcelResearchRowDetailPanel({
   row,
   evidence,
+  compare,
   isDetailLoading,
   isApproving,
   isRejecting,
@@ -390,10 +403,11 @@ function ExcelResearchRowDetailPanel({
 }: {
   row: ExcelResearchRowSummary;
   evidence: ExcelResearchRowEvidence[];
+  compare: ExcelResearchCompare | null;
   isDetailLoading: boolean;
   isApproving: boolean;
   isRejecting: boolean;
-  onApprove: () => void;
+  onApprove: (decision: ResearchApproveDecision) => void;
   onReject: () => void;
 }) {
   const meta = ROW_STATUS_META[row.status];
@@ -404,6 +418,113 @@ function ExcelResearchRowDetailPanel({
     row.status === "needs_review" ||
     row.status === "matched" ||
     row.status === "pending";
+
+  // Local decision state, seeded from the persisted compare payload whenever the
+  // selected row changes. The web-research row already stored found values +
+  // accepted/overwrite/edited sets, so re-entering a row restores prior edits.
+  const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(
+    null,
+  );
+  const [accepted, setAccepted] = useState<Set<FillableField>>(() => new Set());
+  const [overwrite, setOverwrite] = useState<Set<FillableField>>(
+    () => new Set(),
+  );
+  const [editedValues, setEditedValues] = useState<
+    Partial<Record<FillableField, string>>
+  >({});
+
+  // Manual catalog re-pick: same debounced search the step-2 chooser uses.
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+  const searchQuery = api.material.enrichSearchMaterials.useQuery(
+    { query: debounced },
+    { enabled: debounced.length > 0 },
+  );
+
+  // Re-seed whenever we switch rows or the server returns fresh compare data.
+  // Keyed on rowNumber so editing one row, then returning, restores its state.
+  useEffect(() => {
+    setSelectedMaterialId(compare?.matchedMaterialId ?? null);
+    setAccepted(new Set(compare?.acceptedFields ?? []));
+    setOverwrite(new Set(compare?.overwriteFields ?? []));
+    setEditedValues({ ...(compare?.editedFields ?? {}) });
+    setSearchTerm("");
+    setDebounced("");
+  }, [row.rowNumber, compare]);
+
+  const sheetFields = compare?.sheetFields ?? {};
+  const foundFields = compare?.foundFields ?? {};
+
+  const showingSearch = debounced.length > 0;
+  const candidates = (searchQuery.data?.candidates ?? []) as EnrichCandidate[];
+
+  const toggleField = (field: FillableField) => {
+    setAccepted((prev) => {
+      const next = new Set(prev);
+      if (next.has(field)) {
+        next.delete(field);
+        setOverwrite((o) => {
+          if (!o.has(field)) return o;
+          const no = new Set(o);
+          no.delete(field);
+          return no;
+        });
+      } else {
+        next.add(field);
+      }
+      return next;
+    });
+  };
+
+  const toggleOverwrite = (field: FillableField) => {
+    setOverwrite((prev) => {
+      const next = new Set(prev);
+      if (next.has(field)) {
+        next.delete(field);
+        setAccepted((a) => {
+          if (!a.has(field)) return a;
+          const na = new Set(a);
+          na.delete(field);
+          return na;
+        });
+      } else {
+        next.add(field);
+        setAccepted((a) => new Set(a).add(field));
+      }
+      return next;
+    });
+  };
+
+  const editValue = (field: FillableField, value: string) => {
+    setEditedValues((prev) => ({ ...prev, [field]: value }));
+    setAccepted((a) => new Set(a).add(field));
+  };
+
+  const choose = (candidate: EnrichCandidate) => {
+    setSelectedMaterialId(candidate.materialId);
+    // Re-pick keeps the user's accepted/edited choices; the editor recomputes
+    // the plan against the new candidate's fields.
+  };
+
+  const clear = () => {
+    setSelectedMaterialId(null);
+    setAccepted(new Set());
+    setOverwrite(new Set());
+    setEditedValues({});
+  };
+
+  const approve = () => {
+    onApprove({
+      materialId: selectedMaterialId ?? undefined,
+      acceptedFields: Array.from(accepted),
+      overwriteFields: Array.from(overwrite),
+      editedValues,
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -424,9 +545,40 @@ function ExcelResearchRowDetailPanel({
         ) : null}
       </div>
 
+      {/* Compare + per-field accept / overwrite / inline edit. Manual catalog
+          re-pick swaps the fill base to the chosen material; with no pick the
+          plan is driven by the web-found values. */}
       {isDetailLoading ? (
-        <p className="text-xs text-slate-500">Đang tải bằng chứng…</p>
-      ) : evidence.length > 0 ? (
+        <p className="text-xs text-slate-500">Đang tải kết quả…</p>
+      ) : (
+        <FieldCompareEditor
+          sheetLabel={`Dòng Excel ${row.rowNumber}`}
+          sheetName={row.productName ?? ""}
+          sheetFields={sheetFields}
+          proposedFields={foundFields}
+          selectedMaterialId={selectedMaterialId}
+          accepted={accepted}
+          overwrite={overwrite}
+          editedValues={editedValues}
+          onToggleField={toggleField}
+          onToggleOverwrite={toggleOverwrite}
+          onEditValue={editValue}
+          onClear={clear}
+          enableCandidateGrid
+          candidates={candidates}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
+          isSearching={searchQuery.isLoading}
+          showingSearch={showingSearch}
+          onChoose={choose}
+          enableInlineEdit
+          clearLabel="Bỏ ghép catalog (giữ giá trị web)"
+        />
+      )}
+
+      {/* Evidence stays a read-only gallery — evidence rows lack the full
+          material fields needed to act as fill candidates. */}
+      {!isDetailLoading && evidence.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs font-bold text-slate-700">Bằng chứng</p>
           {evidence.map((item) => (
@@ -481,33 +633,6 @@ function ExcelResearchRowDetailPanel({
         </div>
       ) : null}
 
-      {row.fillPlan.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 p-3">
-          <p className="text-xs font-bold text-slate-700">Kế hoạch điền</p>
-          <div className="mt-2 grid gap-1">
-            {row.fillPlan.map((cell) => (
-              <div
-                key={cell.field}
-                className="flex gap-2 text-xs text-slate-600"
-              >
-                <span className="w-24 shrink-0 font-semibold">
-                  {fieldLabel(cell.field)}
-                </span>
-                <span className="truncate">{cell.before || "(trống)"}</span>
-                {cell.action === "filled" ? (
-                  <>
-                    <span>→</span>
-                    <span className="truncate font-medium text-emerald-700">
-                      {cell.after}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       {canDecide ? (
         <div className="flex flex-wrap gap-2">
           <Button
@@ -516,7 +641,7 @@ function ExcelResearchRowDetailPanel({
             leftIcon={<ThumbsUp className="h-3.5 w-3.5" />}
             isLoading={isApproving}
             disabled={isRejecting}
-            onClick={onApprove}
+            onClick={approve}
           >
             Duyệt
           </Button>

@@ -29,8 +29,10 @@ export const SETTING_KEYS = {
   aiMatchCandidateThreshold: "ai_match_candidate_threshold",
   excelResearchMaxConcurrentJobs: "excel_research_max_concurrent_jobs",
   excelResearchBatchSize: "excel_research_batch_size",
+  excelResearchRowConcurrency: "excel_research_row_concurrency",
   excelResearchJobTtlDays: "excel_research_job_ttl_days",
   searxngBaseUrl: "searxng_base_url",
+  enrichmentItemConcurrency: "enrichment_item_concurrency",
   excelResearchDir: "bidtool_excel_research_dir",
 } as const;
 
@@ -306,8 +308,10 @@ export type OperationalSettingKey =
   | "aiMatchCandidateThreshold"
   | "excelResearchMaxConcurrentJobs"
   | "excelResearchBatchSize"
+  | "excelResearchRowConcurrency"
   | "excelResearchJobTtlDays"
   | "searxngBaseUrl"
+  | "enrichmentItemConcurrency"
   | "excelResearchDir";
 
 type OperationalSettingDefinition = {
@@ -429,6 +433,15 @@ export const OPERATIONAL_SETTINGS: Record<
     max: 200,
     integer: true,
   },
+  excelResearchRowConcurrency: {
+    settingKey: SETTING_KEYS.excelResearchRowConcurrency,
+    envVar: "EXCEL_RESEARCH_ROW_CONCURRENCY",
+    type: "number",
+    defaultValue: 3,
+    min: 1,
+    max: 8,
+    integer: true,
+  },
   excelResearchJobTtlDays: {
     settingKey: SETTING_KEYS.excelResearchJobTtlDays,
     envVar: "EXCEL_RESEARCH_JOB_TTL_DAYS",
@@ -443,6 +456,15 @@ export const OPERATIONAL_SETTINGS: Record<
     envVar: "SEARXNG_BASE_URL",
     type: "url",
     defaultValue: null,
+  },
+  enrichmentItemConcurrency: {
+    settingKey: SETTING_KEYS.enrichmentItemConcurrency,
+    envVar: "ENRICHMENT_ITEM_CONCURRENCY",
+    type: "number",
+    defaultValue: 2,
+    min: 1,
+    max: 8,
+    integer: true,
   },
   excelResearchDir: {
     settingKey: SETTING_KEYS.excelResearchDir,
@@ -711,6 +733,14 @@ export async function resolveExcelResearchMaxConcurrentJobs(): Promise<number> {
 
 export async function resolveExcelResearchBatchSize(): Promise<number> {
   return resolveOperationalNumber("excelResearchBatchSize");
+}
+
+export async function resolveExcelResearchRowConcurrency(): Promise<number> {
+  return resolveOperationalNumber("excelResearchRowConcurrency");
+}
+
+export async function resolveEnrichmentItemConcurrency(): Promise<number> {
+  return resolveOperationalNumber("enrichmentItemConcurrency");
 }
 
 export async function resolveExcelResearchJobTtlDays(): Promise<number> {

@@ -260,6 +260,8 @@ export const excelResearchRouter = createTRPCRouter({
       rowNumberInput.extend({
         materialId: z.number().int().positive().optional(),
         acceptedFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+        overwriteFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+        editedValues: z.record(z.enum(FILLABLE_FIELDS), z.string()).optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -269,6 +271,8 @@ export const excelResearchRouter = createTRPCRouter({
           rowNumber: input.rowNumber,
           materialId: input.materialId,
           acceptedFields: input.acceptedFields,
+          overwriteFields: input.overwriteFields,
+          editedValues: input.editedValues,
           scope: tenantScopeValue(ctx),
         }),
       ),

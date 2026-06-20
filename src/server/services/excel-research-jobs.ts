@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
-import type { FillPlanCell } from "~/lib/materials/excel-enrich-fields";
 import { db } from "~/server/db";
 import {
   tenantConditionForValue,
@@ -508,7 +507,28 @@ export async function getRowResult(
     .from(excelResearchRowEvidence)
     .where(eq(excelResearchRowEvidence.jobRowId, row.id));
 
-  return { row, evidence };
+  const result = (row.resultJson ?? {}) as {
+    matched_fields?: Partial<Record<FillableField, string>>;
+    accepted_fields?: FillableField[];
+    overwrite_fields?: FillableField[];
+    edited_fields?: Partial<Record<FillableField, string>>;
+  };
+
+  // Derived compare block so the review UI gets a step-2-style side-by-side
+  // (sheet values vs. found values) plus the persisted per-field decision,
+  // without reverse-engineering it from resultJson on the client.
+  const compare = {
+    sheetFields: (row.inputFieldsJson ?? {}) as Partial<
+      Record<FillableField, string>
+    >,
+    foundFields: result.matched_fields ?? {},
+    acceptedFields: result.accepted_fields ?? [],
+    overwriteFields: result.overwrite_fields ?? [],
+    editedFields: result.edited_fields ?? {},
+    matchedMaterialId: row.matchedMaterialId,
+  };
+
+  return { row, evidence, compare };
 }
 
 export async function approveRow(input: {
@@ -516,6 +536,8 @@ export async function approveRow(input: {
   rowNumber: number;
   materialId?: number;
   acceptedFields?: FillableField[];
+  overwriteFields?: FillableField[];
+  editedValues?: Partial<Record<FillableField, string>>;
   scope?: TenantScopeValue;
 }) {
   await assertJobInScope(input.jobId, input.scope);
@@ -537,6 +559,14 @@ export async function approveRow(input: {
   const accepted =
     input.acceptedFields ??
     ((result.accepted_fields as FillableField[] | undefined) ?? []);
+  const overwrite =
+    input.overwriteFields ??
+    ((result.overwrite_fields as FillableField[] | undefined) ?? []);
+  const edited =
+    input.editedValues ??
+    ((result.edited_fields as
+      | Partial<Record<FillableField, string>>
+      | undefined) ?? {});
 
   const now = new Date().toISOString();
   await db
@@ -549,6 +579,8 @@ export async function approveRow(input: {
       resultJson: {
         ...result,
         accepted_fields: accepted,
+        overwrite_fields: overwrite,
+        edited_fields: edited,
         needs_review: false,
       },
     })
@@ -750,13 +782,35 @@ export async function exportJobExcel(jobId: string, scope?: TenantScopeValue) {
 
   const decisions = exportRows
     .map((row) => {
-      const result = row.resultJson as { accepted_fields?: FillableField[] };
+      const result = row.resultJson as {
+        accepted_fields?: FillableField[];
+        overwrite_fields?: FillableField[];
+        matched_fields?: Partial<Record<FillableField, string>>;
+        edited_fields?: Partial<Record<FillableField, string>>;
+      };
       const fields = result.accepted_fields ?? [];
-      if (!row.matchedMaterialId || fields.length === 0) return null;
+      if (fields.length === 0) return null;
+      // Found (web/catalog) values plus any inline edits become value
+      // overrides, so web-only rows (no catalog match) still export and edited
+      // values win over the matched material. Edits take precedence.
+      const valueOverrides: Partial<Record<FillableField, string>> = {
+        ...(result.matched_fields ?? {}),
+        ...(result.edited_fields ?? {}),
+      };
+      // Drop the web-only-row guard: a row with no catalog match can still
+      // export as long as its accepted fields are covered by overrides.
+      if (!row.matchedMaterialId) {
+        const covered = fields.every(
+          (f) => (valueOverrides[f] ?? "").trim().length > 0,
+        );
+        if (!covered) return null;
+      }
       return {
         originalRowIndex: row.rowNumber,
         materialId: row.matchedMaterialId,
         fields,
+        overwriteFields: result.overwrite_fields ?? [],
+        valueOverrides,
       };
     })
     .filter((d): d is NonNullable<typeof d> => d != null);
@@ -844,6 +898,9 @@ function toRowSummary(row: typeof excelResearchJobRows.$inferSelect) {
       : null,
     needsReview: result.needs_review ?? row.status === "needs_review",
     reviewReason: result.review_reason ?? "",
-    fillPlan: row.fillPlanJson as FillPlanCell[],
+    // `fillPlan` is intentionally NOT included: it is heavy (before→after per
+    // field) and the list can return up to 200 rows. The compare UI fetches the
+    // full plan per selected row via getRowResult instead.
+    hasMatch: row.matchedMaterialId != null,
   };
 }

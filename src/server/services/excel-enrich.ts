@@ -320,6 +320,13 @@ export type ExportDecision = {
    * the server contract; the catalog UI sends this under the same name.
    */
   overwriteFields?: FillableField[];
+  /**
+   * Per-field user-typed values that take precedence over the matched material's
+   * value (inline edits). Lets a row write a value not present on any catalog
+   * material — including web-research rows that never matched a material
+   * (`materialId == null`), so long as the override covers the accepted field.
+   */
+  valueOverrides?: Partial<Record<FillableField, string>>;
 };
 
 export type ExportMode = "preserve" | "clean";
@@ -419,15 +426,20 @@ async function writePreservedWorkbook(
   };
 
   for (const [rowIndex, decision] of decisionByRow) {
-    if (decision.materialId == null || decision.fields.length === 0) continue;
-    const material = opts.materialsById.get(decision.materialId);
-    if (!material) continue;
+    if (decision.fields.length === 0) continue;
+    // A catalog match supplies values for un-edited fields; web-only rows carry
+    // all their values in `valueOverrides` and have no material.
+    const material =
+      decision.materialId == null
+        ? undefined
+        : opts.materialsById.get(decision.materialId);
+    if (decision.materialId != null && !material) continue;
 
     const overwriteFields = new Set(decision.overwriteFields ?? []);
     const row = sheet.getRow(rowIndex);
     for (const field of decision.fields) {
       if (columnKeyForField(field) == null) continue; // currency has no column
-      const value = materialCellValue(material, field);
+      const value = resolveCellValue(material, field, decision.valueOverrides);
       if (value == null || value === "") continue;
       const colNumber = ensureColumnForField(field);
       const targetCell = row.getCell(colNumber);
@@ -480,13 +492,18 @@ async function writeCleanWorkbook(
   ]);
 
   for (const decision of opts.decisions) {
-    if (decision.materialId == null) continue;
-    const material = opts.materialsById.get(decision.materialId);
-    if (!material) continue;
+    if (decision.fields.length === 0) continue;
+    const material =
+      decision.materialId == null
+        ? undefined
+        : opts.materialsById.get(decision.materialId);
+    if (decision.materialId != null && !material) continue;
 
     sheet.addRow([
-      material.name,
-      ...CLEAN_COLUMN_ORDER.map((field) => materialCellValue(material, field) ?? ""),
+      material?.name ?? "",
+      ...CLEAN_COLUMN_ORDER.map(
+        (field) => resolveCellValue(material, field, decision.valueOverrides) ?? "",
+      ),
     ]);
   }
 
@@ -507,6 +524,28 @@ function materialCellValue(
   if (typeof raw === "number") return raw;
   if (typeof raw === "string") return raw;
   return null;
+}
+
+/**
+ * Resolve the value to write for a field: a user inline-edit override wins over
+ * the matched material's value. Numeric fields are coerced to numbers so Excel
+ * formats them. `material` may be undefined for web-only rows that carry their
+ * values entirely in `valueOverrides`.
+ */
+function resolveCellValue(
+  material: MaterialRow | undefined,
+  field: FillableField,
+  valueOverrides: Partial<Record<FillableField, string>> | undefined,
+): string | number | null {
+  const override = valueOverrides?.[field];
+  if (override != null && override.trim().length > 0) {
+    if (NUMERIC_FIELDS.has(field)) {
+      const num = Number(override.replace(/[^\d.-]/g, ""));
+      return Number.isFinite(num) ? num : null;
+    }
+    return override;
+  }
+  return material ? materialCellValue(material, field) : null;
 }
 
 function cellToText(value: ExcelJS.CellValue): string {

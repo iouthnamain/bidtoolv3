@@ -4,6 +4,7 @@
  */
 
 import { ENRICH_THRESHOLDS } from "~/lib/materials/excel-enrich-fields";
+import type { FillableField } from "~/lib/materials/excel-enrich-fields";
 
 /**
  * Canonical confidence thresholds live in `excel-enrich-fields.ts` as
@@ -19,6 +20,7 @@ export const ENRICHMENT_THRESHOLDS = {
 } as const;
 
 export const ENRICHABLE_FIELDS = [
+  "code",
   "category",
   "specText",
   "manufacturer",
@@ -29,6 +31,29 @@ export const ENRICHABLE_FIELDS = [
 ] as const;
 
 export type EnrichableField = (typeof ENRICHABLE_FIELDS)[number];
+
+/**
+ * Bridge between the enrichment field model (`price`) and the shared fill-plan
+ * model (`defaultUnitPrice`). The server commit path has its own copy in
+ * `material-enrichment-commit.ts`; this client-safe pair lets the review dialog
+ * reuse the generic `FieldCompareEditor` (keyed on FillableField).
+ */
+export const ENRICHABLE_TO_FILLABLE_FIELD: Record<EnrichableField, FillableField> =
+  {
+    code: "code",
+    category: "category",
+    specText: "specText",
+    manufacturer: "manufacturer",
+    originCountry: "originCountry",
+    unit: "unit",
+    price: "defaultUnitPrice",
+    sourceUrl: "sourceUrl",
+  };
+
+export const FILLABLE_TO_ENRICHABLE_FIELD = Object.fromEntries(
+  Object.entries(ENRICHABLE_TO_FILLABLE_FIELD).map(([e, f]) => [f, e]),
+) as Record<FillableField, EnrichableField | undefined>;
+
 
 export type MaterialEnrichmentConfidenceBand = "auto" | "review" | "skip";
 
@@ -87,6 +112,15 @@ export type MaterialEnrichmentResult = {
   status: MaterialEnrichmentItemStatus;
   selectedCandidateId?: number | null;
   error?: string | null;
+  /**
+   * User review decision (set by the review dialog before commit). When
+   * `accepted_fields` is present, commit writes only those fields; when absent
+   * (e.g. the runner's auto-commit), commit writes all fields as before.
+   * `edited_fields` carries per-field inline edits that override the extracted
+   * value at commit time.
+   */
+  accepted_fields?: EnrichableField[];
+  edited_fields?: Partial<Record<EnrichableField, string>>;
 };
 
 export type MaterialEnrichmentFilterOptions = {

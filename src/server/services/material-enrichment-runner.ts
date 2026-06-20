@@ -22,8 +22,10 @@ import {
 } from "~/server/db/schema";
 import {
   resolveAiProvider,
+  resolveEnrichmentItemConcurrency,
 } from "~/server/services/app-settings";
 import { listCatalogDocumentsForMaterial } from "~/server/services/catalog-documents";
+import { runWithConcurrency } from "~/server/services/concurrency";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import {
@@ -52,7 +54,6 @@ export type MaterialEnrichmentJobProgress = {
 
 const DEFAULT_MAX_SEARCH_RESULTS = 12;
 const DEFAULT_MAX_QUERIES = 4;
-const ITEM_CONCURRENCY = 2;
 
 function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
@@ -364,6 +365,8 @@ function isMaterialWellFilled(
   }
   const valueFor = (field: EnrichableField): string | null => {
     switch (field) {
+      case "code":
+        return material.code;
       case "category":
         return material.category;
       case "specText":
@@ -624,25 +627,6 @@ async function refreshJobCounters(jobId: string) {
     .where(eq(materialEnrichmentJobs.id, jobId));
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-) {
-  let index = 0;
-  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (index < items.length) {
-      const current = items[index];
-      index += 1;
-      if (!current) {
-        continue;
-      }
-      await worker(current);
-    }
-  });
-  await Promise.all(runners);
-}
-
 export async function processEnrichmentJob(
   jobId: string,
   options: {
@@ -686,7 +670,8 @@ export async function processEnrichmentJob(
     )
     .orderBy(asc(materialEnrichmentItems.sortOrder));
 
-  await runWithConcurrency(pendingItems, ITEM_CONCURRENCY, async (item) => {
+  const itemConcurrency = await resolveEnrichmentItemConcurrency();
+  await runWithConcurrency(pendingItems, itemConcurrency, async (item) => {
     throwIfAborted(signal);
     const [currentJob] = await db
       .select({ status: materialEnrichmentJobs.status })

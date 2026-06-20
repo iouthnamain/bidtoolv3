@@ -10,7 +10,10 @@ import {
   Button,
 } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
-import { ExcelResearchReviewPanel } from "~/app/_components/enrich/excel-research-review-panel";
+import {
+  ExcelResearchReviewPanel,
+  type ResearchApproveDecision,
+} from "~/app/_components/enrich/excel-research-review-panel";
 import {
   type ExcelResearchRowStatus,
   isExcelResearchJobActive,
@@ -180,10 +183,20 @@ export function EnrichResearchStep({
     );
   };
 
-  const handleApprove = (rowNumber: number) => {
+  const handleApprove = (
+    rowNumber: number,
+    decision: ResearchApproveDecision,
+  ) => {
     if (!jobId) return;
     approveRow.mutate(
-      { jobId, rowNumber },
+      {
+        jobId,
+        rowNumber,
+        materialId: decision.materialId,
+        acceptedFields: decision.acceptedFields,
+        overwriteFields: decision.overwriteFields,
+        editedValues: decision.editedValues,
+      },
       {
         onSuccess: () => {
           void Promise.all([
@@ -347,6 +360,7 @@ export function EnrichResearchStep({
         rowData.items.find((r) => r.rowNumber === selectedRowNumber) ?? null
       }
       evidence={rowDetailQuery.data?.evidence ?? []}
+      compare={rowDetailQuery.data?.compare ?? null}
       isDetailLoading={rowDetailQuery.isLoading}
       isApproving={approveRow.isPending}
       isRejecting={rejectRow.isPending}

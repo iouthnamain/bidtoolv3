@@ -71,6 +71,7 @@ import {
 } from "~/server/services/shop-import-jobs";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import { findFuzzyCandidates } from "~/server/services/ai-product-matcher";
+import { enrichRowFromWeb } from "~/server/services/enrich-web-row";
 import {
   addShopScrapeJobProduct,
   cancelShopScrapeJob,
@@ -2146,6 +2147,22 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
+  enrichWebSearchRow: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1),
+        code: z.string().trim().optional(),
+        manufacturer: z.string().trim().optional(),
+        specText: z.string().trim().optional(),
+        unit: z.string().trim().optional(),
+        category: z.string().trim().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const result = await enrichRowFromWeb(input);
+      return result;
+    }),
+
   enrichExportXlsx: requirePermission("material:write")
     .input(
       z.object({
@@ -2162,6 +2179,9 @@ export const materialRouter = createTRPCRouter({
               materialId: z.number().int().positive().nullable(),
               fields: z.array(z.enum(FILLABLE_FIELDS)),
               overwriteFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+              valueOverrides: z
+                .record(z.enum(FILLABLE_FIELDS), z.string())
+                .optional(),
             }),
           )
           .max(MAX_ENRICH_ROWS),
@@ -2199,6 +2219,7 @@ export const materialRouter = createTRPCRouter({
           materialId: d.materialId,
           fields: d.fields,
           overwriteFields: d.overwriteFields,
+          valueOverrides: d.valueOverrides,
         })),
         materialsById,
         mode: input.mode,

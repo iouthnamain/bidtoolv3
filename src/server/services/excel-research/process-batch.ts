@@ -12,7 +12,11 @@ import {
   excelResearchRowEvidence,
 } from "~/server/db/schema";
 import { processSingleRow } from "~/server/services/excel-research/row-research";
-import { resolveExcelResearchBatchSize } from "~/server/services/app-settings";
+import {
+  resolveExcelResearchBatchSize,
+  resolveExcelResearchRowConcurrency,
+} from "~/server/services/app-settings";
+import { runWithConcurrency } from "~/server/services/concurrency";
 import {
   DEFAULT_EXCEL_RESEARCH_CONFIG,
   excelResearchJobConfigSchema,
@@ -325,7 +329,17 @@ export async function processJobBatch(jobId: string): Promise<number> {
     })
     .where(eq(excelResearchJobs.id, jobId));
 
-  for (const row of claimed) {
+  const rowConcurrency = await resolveExcelResearchRowConcurrency();
+  await runWithConcurrency(claimed, rowConcurrency, async (row) => {
+    const [currentJob] = await db
+      .select({ status: excelResearchJobs.status })
+      .from(excelResearchJobs)
+      .where(eq(excelResearchJobs.id, jobId))
+      .limit(1);
+    if (currentJob?.status !== "running") {
+      return;
+    }
+
     try {
       await persistRowResult(jobId, row, config, batchId);
     } catch (error) {
@@ -351,7 +365,7 @@ export async function processJobBatch(jobId: string): Promise<number> {
         payload: { message },
       });
     }
-  }
+  });
 
   if (claimed.length > 0) {
     await recomputeJobCounters(jobId);

@@ -24,12 +24,22 @@ import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   ENRICHABLE_FIELDS,
+  ENRICHABLE_TO_FILLABLE_FIELD,
   ENRICHMENT_THRESHOLDS,
+  FILLABLE_TO_ENRICHABLE_FIELD,
   type EnrichableField,
   type MaterialEnrichmentInput,
   type MaterialEnrichmentItemStatus,
 } from "~/lib/materials/material-enrichment-types";
+import { type FillableField } from "~/lib/materials/excel-enrich-fields";
+import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import { api, type RouterOutputs } from "~/trpc/react";
+
+/** The per-field commit decision the material review dialog produces. */
+type EnrichmentCommitDecision = {
+  acceptedFields: EnrichableField[];
+  editedFields: Partial<Record<EnrichableField, string>>;
+};
 
 type EnrichmentJob = RouterOutputs["materialEnrichment"]["getMaterialEnrichmentJob"];
 type EnrichmentJobListItem =
@@ -42,6 +52,7 @@ const JOB_POLL_MS = 1_500;
 const JOB_LIST_POLL_MS = 3_000;
 
 const fieldLabel: Record<EnrichableField, string> = {
+  code: "Mã vật tư",
   category: "Nhóm",
   specText: "Thông số",
   manufacturer: "NCC",
@@ -314,6 +325,9 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     },
   });
 
+  const setItemDecision =
+    api.materialEnrichment.setEnrichmentItemDecision.useMutation();
+
   const rejectItem = api.materialEnrichment.rejectMaterialEnrichmentItem.useMutation({
     onSuccess: () => {
       void invalidateJobData();
@@ -341,8 +355,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     },
   });
 
-  const selectCandidate = api.materialEnrichment.selectWebCandidate.useMutation({
-    onSuccess: () => {
+  const selectCandidate = api.materialEnrichment.selectWebCandidate.useMutation({    onSuccess: () => {
       void invalidateJobData();
       if (reviewItemId !== null) {
         void reviewItemQuery.refetch();
@@ -935,15 +948,29 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
         item={reviewItemQuery.data ?? null}
         isLoading={reviewItemQuery.isLoading}
         isSelecting={selectCandidate.isPending}
-        isCommitting={commitItem.isPending}
+        isCommitting={commitItem.isPending || setItemDecision.isPending}
         isRejecting={rejectItem.isPending}
         onSelectCandidate={(candidateId) => {
           if (reviewItemId === null) return;
           selectCandidate.mutate({ itemId: reviewItemId, candidateId });
         }}
-        onCommit={() => {
+        onCommit={(decision) => {
           if (reviewItemId === null) return;
-          commitItem.mutate({ itemId: reviewItemId });
+          const itemId = reviewItemId;
+          // Persist the per-field accept/edit decision, then commit so the
+          // server honors exactly what the reviewer chose.
+          setItemDecision.mutate(
+            {
+              itemId,
+              acceptedFields: decision.acceptedFields,
+              editedFields: decision.editedFields,
+            },
+            {
+              onSuccess: () => commitItem.mutate({ itemId }),
+              onError: (error) =>
+                toast.error(error.message || "Không thể lưu lựa chọn."),
+            },
+          );
         }}
         onReject={() => {
           if (reviewItemId === null) return;
@@ -1025,7 +1052,7 @@ function EnrichmentReviewDialog({
   isCommitting: boolean;
   isRejecting: boolean;
   onSelectCandidate: (candidateId: number) => void;
-  onCommit: () => void;
+  onCommit: (decision: EnrichmentCommitDecision) => void;
   onReject: () => void;
   onClose: () => void;
 }) {
@@ -1052,12 +1079,50 @@ function EnrichmentReviewDialog({
   const candidates: WebCandidate[] = candidatesQuery.data ?? [];
   const loadingCandidates = candidatesQuery.isLoading && open && item != null;
 
+  // Per-field commit decision, in FillableField space so the shared
+  // FieldCompareEditor can drive it. Seeded from the result when the item loads:
+  // every field with a proposed value starts accepted (mirrors auto-commit), and
+  // any previously-saved decision on resultJson is restored.
+  const [accepted, setAccepted] = useState<Set<FillableField>>(() => new Set());
+  const [editedValues, setEditedValues] = useState<
+    Partial<Record<FillableField, string>>
+  >({});
+
+  const itemId = item?.id ?? null;
+  const result = item?.result;
+
+  useEffect(() => {
+    if (!result) {
+      setAccepted(new Set());
+      setEditedValues({});
+      return;
+    }
+    const saved = result.accepted_fields;
+    const nextAccepted = new Set<FillableField>();
+    for (const field of ENRICHABLE_FIELDS) {
+      const fillable = ENRICHABLE_TO_FILLABLE_FIELD[field];
+      const proposed = result.fields[field]?.value;
+      const hasProposed = (proposed ?? "").trim().length > 0;
+      // Restore a saved decision if present; otherwise default-accept every
+      // field that has a proposed value.
+      if (saved ? saved.includes(field) : hasProposed) {
+        nextAccepted.add(fillable);
+      }
+    }
+    setAccepted(nextAccepted);
+    const edits: Partial<Record<FillableField, string>> = {};
+    for (const [f, v] of Object.entries(result.edited_fields ?? {})) {
+      const fillable = ENRICHABLE_TO_FILLABLE_FIELD[f as EnrichableField];
+      if (fillable) edits[fillable] = v;
+    }
+    setEditedValues(edits);
+  }, [itemId, result]);
+
   if (!open) {
     return null;
   }
 
   const snapshot = (item?.originalSnapshot ?? {}) as Partial<MaterialEnrichmentInput>;
-  const result = item?.result;
   const trimmedName = snapshot.name?.trim();
   const materialName = trimmedName ?? "Vật tư";
 
@@ -1141,73 +1206,67 @@ function EnrichmentReviewDialog({
                   </p>
                 </div>
               </div>
-              <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
-                    <tr>
-                      <th className="px-3 py-2">Trường</th>
-                      <th className="px-3 py-2">Trước</th>
-                      <th className="px-3 py-2">Đề xuất</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {ENRICHABLE_FIELDS.map((field) => {
-                      const before = readSnapshotField(snapshot, field);
-                      const proposed = result.fields[field];
-                      const after = formatFieldValue(field, proposed?.value ?? null);
-                      const changed = before !== after && after !== "";
-                      return (
-                        <tr key={field} className={changed ? "bg-sky-50/50" : undefined}>
-                          <td className="px-3 py-2 font-medium text-slate-700">
-                            {fieldLabel[field]}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {before || <span className="text-slate-400">—</span>}
-                          </td>
-                          <td className="px-3 py-2">
-                            {after ? (
-                              <span className="font-medium text-slate-900">{after}</span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                            {proposed ? (
-                              <span className="ml-2">
-                                <ConfidenceBadge confidence={proposed.confidence} />
-                              </span>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {(() => {
-                      const proposedPdfCount = result.catalogPdfUrls.length;
-                      return (
-                        <tr
-                          className={
-                            proposedPdfCount > 0 ? "bg-sky-50/50" : undefined
-                          }
-                        >
-                          <td className="px-3 py-2 font-medium text-slate-700">
-                            Catalog PDF
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            <span className="text-slate-400">—</span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {proposedPdfCount > 0 ? (
-                              <span className="font-medium text-slate-900">
-                                {proposedPdfCount.toLocaleString("vi-VN")} catalog
-                                PDF
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })()}
-                  </tbody>
-                </table>
+              <div className="mt-2">
+                {(() => {
+                  // Build the compare maps in FillableField space. Sheet = the
+                  // material's current snapshot; proposed = extracted values
+                  // (preferring matchedOption). Price is formatted raw → number
+                  // string so the editor shows/edits a clean value.
+                  const sheetFields: Partial<Record<FillableField, string>> = {};
+                  const proposedFields: Partial<Record<FillableField, string>> = {};
+                  for (const field of ENRICHABLE_FIELDS) {
+                    const fillable = ENRICHABLE_TO_FILLABLE_FIELD[field];
+                    sheetFields[fillable] = readSnapshotField(snapshot, field);
+                    const extracted = result.fields[field];
+                    const raw =
+                      extracted?.matchedOption ?? extracted?.value ?? null;
+                    proposedFields[fillable] =
+                      field === "price"
+                        ? raw == null
+                          ? ""
+                          : String(raw).replace(/[^\d.-]/g, "")
+                        : (raw ?? "");
+                  }
+                  return (
+                    <FieldCompareEditor
+                      sheetLabel="Giá trị hiện tại"
+                      sheetName={materialName}
+                      sheetFields={sheetFields}
+                      proposedFields={proposedFields}
+                      selectedMaterialId={null}
+                      accepted={accepted}
+                      overwrite={new Set()}
+                      editedValues={editedValues}
+                      onToggleField={(field) =>
+                        setAccepted((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(field)) next.delete(field);
+                          else next.add(field);
+                          return next;
+                        })
+                      }
+                      onToggleOverwrite={() => {
+                        /* overwrite disabled for this surface */
+                      }}
+                      onEditValue={(field, value) => {
+                        setEditedValues((prev) => ({ ...prev, [field]: value }));
+                        setAccepted((prev) => new Set(prev).add(field));
+                      }}
+                      onClear={() => {
+                        setAccepted(new Set());
+                        setEditedValues({});
+                      }}
+                      enableInlineEdit
+                    />
+                  );
+                })()}
+                {result.catalogPdfUrls.length > 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    +{" "}
+                    {result.catalogPdfUrls.length.toLocaleString("vi-VN")} catalog
+                    PDF sẽ được đính kèm.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -1371,7 +1430,24 @@ function EnrichmentReviewDialog({
           disabled={isCommitting || !item}
           isLoading={isCommitting}
           leftIcon={<Check className="h-3.5 w-3.5" />}
-          onClick={onCommit}
+          onClick={() => {
+            // Translate the FillableField-keyed decision back to the
+            // enrichment field model the commit path expects.
+            const acceptedFields: EnrichableField[] = [];
+            for (const fillable of accepted) {
+              const enrichable = FILLABLE_TO_ENRICHABLE_FIELD[fillable];
+              if (enrichable) acceptedFields.push(enrichable);
+            }
+            const editedFields: Partial<Record<EnrichableField, string>> = {};
+            for (const [f, v] of Object.entries(editedValues)) {
+              const enrichable =
+                FILLABLE_TO_ENRICHABLE_FIELD[f as FillableField];
+              if (enrichable && (v ?? "").trim().length > 0) {
+                editedFields[enrichable] = v;
+              }
+            }
+            onCommit({ acceptedFields, editedFields });
+          }}
         >
           Commit vào catalog
         </Button>

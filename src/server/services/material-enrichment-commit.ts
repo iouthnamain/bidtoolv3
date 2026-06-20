@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { buildFillPlan, type FillableField } from "~/lib/materials/excel-enrich-fields";
+import { resolveEnrichmentFieldProposal } from "~/lib/materials/material-enrichment-commit-decision";
 import {
   ENRICHABLE_FIELDS,
   type EnrichableField,
@@ -45,6 +46,7 @@ export type MaterialUpdatePlanCell = {
 };
 
 const FIELD_TO_LOCK_KEY: Record<EnrichableField, MaterialFieldLockKey> = {
+  code: "code",
   category: "category",
   specText: "specText",
   manufacturer: "manufacturer",
@@ -60,6 +62,7 @@ const FIELD_TO_LOCK_KEY: Record<EnrichableField, MaterialFieldLockKey> = {
  * translating between the two when reusing buildFillPlan.
  */
 const ENRICHABLE_TO_FILLABLE: Record<EnrichableField, FillableField> = {
+  code: "code",
   category: "category",
   specText: "specText",
   manufacturer: "manufacturer",
@@ -97,6 +100,8 @@ export function parseEnrichmentPrice(value: string | null | undefined): number |
 
 function materialFieldValue(material: MaterialRow, field: EnrichableField) {
   switch (field) {
+    case "code":
+      return material.code;
     case "category":
       return material.category;
     case "specText":
@@ -291,6 +296,8 @@ export async function commitEnrichmentItem(
     }
 
     const result = item.resultJson as MaterialEnrichmentResult;
+    // The per-field commit decision (accept gating + inline edits) is read from
+    // `result` inside resolveEnrichmentFieldProposal below.
     const metadata = normalizeMaterialMetadata(material.metadataJson);
     const locks = metadata.fieldLocks ?? {};
     const update: Partial<typeof materials.$inferInsert> = {};
@@ -311,8 +318,12 @@ export async function commitEnrichmentItem(
     const generatePdfIfMissing = jobOptions.generatePdfIfMissing === true;
 
     for (const field of ENRICHABLE_FIELDS) {
+      const proposed = resolveEnrichmentFieldProposal(result, field);
+      // `undefined` means the field was gated out by the per-field decision.
+      if (proposed === undefined) {
+        continue;
+      }
       const extracted = result.fields[field];
-      const proposed = extracted?.matchedOption ?? extracted?.value ?? null;
       const existing = materialFieldValue(material, field);
       const nextValue = applyLockedFillEmptyField(locks, field, existing, proposed);
       if (nextValue === undefined) {
@@ -325,6 +336,12 @@ export async function commitEnrichmentItem(
       }
 
       switch (field) {
+        case "code":
+          // Fill-empty-only (enforced by applyLockedFillEmptyField above): this
+          // branch only runs when the existing code was blank, so we never
+          // overwrite an existing code and never collide on the unique index.
+          update.code = after || null;
+          break;
         case "category":
           update.category = after || null;
           break;
