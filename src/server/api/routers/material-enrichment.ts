@@ -18,6 +18,7 @@ import {
   deleteMaterialEnrichmentJob,
   exportMaterialEnrichmentReport,
   getMaterialEnrichmentItem,
+  getMaterialEnrichmentItemCandidates,
   getMaterialEnrichmentJob,
   listMaterialEnrichmentItems,
   listMaterialEnrichmentJobs,
@@ -43,6 +44,8 @@ async function withShopJobErrors<T>(operation: () => Promise<T>) {
 
 const materialEnrichmentJobOptionsInput = z.object({
   autoCommitHighConfidence: z.boolean().optional(),
+  skipWellFilled: z.boolean().optional(),
+  generatePdfIfMissing: z.boolean().optional(),
   model: z.string().trim().optional(),
   maxSearchResults: z.number().int().positive().optional(),
   maxQueries: z.number().int().positive().optional(),
@@ -173,6 +176,17 @@ export const materialEnrichmentRouter = createTRPCRouter({
       }
       return item;
     }),
+
+  getMaterialEnrichmentItemCandidates: publicProcedure
+    .input(materialEnrichmentItemInput)
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        getMaterialEnrichmentItemCandidates(
+          input.itemId,
+          tenantScopeValue(ctx),
+        ),
+      ),
+    ),
 
   selectWebCandidate: requirePermission("enrichment:run")
     .input(selectWebCandidateInput)

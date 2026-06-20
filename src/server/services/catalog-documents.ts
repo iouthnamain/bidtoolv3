@@ -11,6 +11,7 @@ import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
 } from "~/server/db/schema";
+import { saveCatalogPdfFile } from "~/server/services/catalog-pdf-storage";
 
 type AppDb = typeof appDb;
 
@@ -198,4 +199,67 @@ export async function countCatalogDocumentLinks(
     counts.set(row.documentId, (counts.get(row.documentId) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * Create a catalog document backed by a locally-stored file (no source URL) and
+ * link it to a material. Unlike the URL helpers, this is for bytes we produced
+ * ourselves (e.g. a generated catalog PDF): it inserts the row, writes the file
+ * to disk via {@link saveCatalogPdfFile}, backfills the file columns, then links
+ * it. `normalizedSourceUrl` stays "" so the row is excluded from the URL dedupe
+ * index. Returns the created document id.
+ */
+export async function createLocalCatalogDocument(
+  db: AppDb,
+  input: {
+    materialId: number;
+    title: string;
+    fileName: string;
+    buffer: Buffer;
+    sourceType?: CatalogDocumentSourceType;
+    linkSource?: CatalogDocumentLinkSource;
+    supplier?: string | null;
+    notes?: string;
+  },
+): Promise<number> {
+  const now = new Date().toISOString();
+  const [row] = await db
+    .insert(materialCatalogDocuments)
+    .values({
+      title: input.title.trim() || "Catalog PDF",
+      supplier: input.supplier?.trim() ? input.supplier : null,
+      sourceUrl: null,
+      normalizedSourceUrl: "",
+      sourceType: input.sourceType ?? "generated",
+      notes: input.notes ?? "",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: materialCatalogDocuments.id });
+
+  if (!row) {
+    throw new Error("Không thể tạo tài liệu catalog.");
+  }
+
+  const stored = await saveCatalogPdfFile(row.id, input.fileName, input.buffer);
+  await db
+    .update(materialCatalogDocuments)
+    .set({
+      localFilePath: stored.localFilePath,
+      fileName: stored.fileName,
+      fileSize: stored.fileSize,
+      mimeType: stored.mimeType,
+      checksum: stored.checksum,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(materialCatalogDocuments.id, row.id));
+
+  await linkCatalogDocumentsToMaterial(
+    db,
+    [row.id],
+    input.materialId,
+    input.linkSource ?? "manual",
+  );
+
+  return row.id;
 }

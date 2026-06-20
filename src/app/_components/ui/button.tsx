@@ -3,7 +3,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "warning" | "danger";
 type ButtonSize = "sm" | "md";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -20,6 +20,8 @@ const variantClass: Record<ButtonVariant, string> = {
   secondary:
     "border border-slate-300 bg-white text-slate-700 shadow-[var(--shadow-flat)] hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
   ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200",
+  warning:
+    "border border-amber-300 bg-amber-50 text-amber-800 shadow-[var(--shadow-flat)] hover:border-amber-400 hover:bg-amber-100 active:bg-amber-200",
   danger:
     "bg-rose-600 text-white shadow-[0_1px_2px_rgba(190,18,60,0.2)] hover:bg-rose-700 hover:shadow-[0_2px_6px_rgba(190,18,60,0.3)] active:bg-rose-800",
 };

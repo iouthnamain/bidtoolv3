@@ -20,7 +20,7 @@ export function EnrichJobsClient({ jobId }: { jobId?: string }) {
             ← Danh sách job nghiên cứu
           </Link>
         </section>
-        <ExcelResearchJobDetail jobId={jobId} />
+        <ExcelResearchJobDetail key={jobId} jobId={jobId} />
       </div>
     );
   }

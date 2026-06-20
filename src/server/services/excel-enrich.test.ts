@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFillPlan,
+  classifyStatus,
+  decodeBase64ForTest,
   rowToScrapedProduct,
   writeEnrichedWorkbook,
   type FillableField,
@@ -228,5 +230,154 @@ describe("writeEnrichedWorkbook (clean)", () => {
     // Header + one data row.
     expect(sheet.rowCount).toBe(2);
     expect(cellText(sheet.getRow(2).getCell(1).value)).toBe("Ống nhựa D21");
+  });
+});
+
+describe("writeEnrichedWorkbook (force-overwrite)", () => {
+  it("replaces a populated cell when the field is in overwriteFields", async () => {
+    const headers = ["Tên vật tư", "ĐVT", "Nhà sản xuất"];
+    const base64 = await makeWorkbookBase64(headers, [
+      ["Ống nhựa D21", "cuộn", "Bình Minh"],
+    ]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: 5,
+          fields: ["unit", "manufacturer"],
+          overwriteFields: ["unit"],
+        },
+      ],
+      materialsById: new Map([
+        [
+          5,
+          material({
+            id: 5,
+            name: "Ống nhựa D21",
+            unit: "m",
+            manufacturer: "Tiền Phong",
+          }),
+        ],
+      ]),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    // Unit was force-overwritten: "cuộn" → "m".
+    expect(cellText(dataRow.getCell(2).value)).toBe("m");
+  });
+
+  it("keeps a populated cell for a field NOT in overwriteFields", async () => {
+    const headers = ["Tên vật tư", "ĐVT", "Nhà sản xuất"];
+    const base64 = await makeWorkbookBase64(headers, [
+      ["Ống nhựa D21", "cuộn", "Bình Minh"],
+    ]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: 5,
+          fields: ["unit", "manufacturer"],
+          overwriteFields: ["unit"],
+        },
+      ],
+      materialsById: new Map([
+        [
+          5,
+          material({
+            id: 5,
+            name: "Ống nhựa D21",
+            unit: "m",
+            manufacturer: "Tiền Phong",
+          }),
+        ],
+      ]),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    const dataRow = sheet.getRow(2);
+    // Manufacturer was NOT in overwriteFields and had a value: sheet wins.
+    expect(cellText(dataRow.getCell(3).value)).toBe("Bình Minh");
+  });
+
+  it("never writes currency as its own column", async () => {
+    const headers = ["Tên vật tư", "ĐVT"];
+    const base64 = await makeWorkbookBase64(headers, [["Ống nhựa", ""]]);
+    const mapping = suggestColumnMapping(headers);
+
+    const buffer = await writeEnrichedWorkbook({
+      workbookBase64: base64,
+      sheetName: "Sheet1",
+      mapping,
+      headerRowIndex: 1,
+      decisions: [
+        {
+          originalRowIndex: 2,
+          materialId: 5,
+          fields: ["currency"],
+          overwriteFields: ["currency"],
+        },
+      ],
+      materialsById: new Map([
+        [5, material({ id: 5, name: "Ống nhựa", currency: "USD" })],
+      ]),
+      mode: "preserve",
+    });
+
+    const out = new ExcelJS.Workbook();
+    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    const sheet = out.getWorksheet("Sheet1")!;
+    // No new column should have been appended for currency: still 2 columns.
+    expect(sheet.columnCount).toBe(2);
+    // And the currency value "USD" appears nowhere in the data row.
+    const dataRow = sheet.getRow(2);
+    for (let col = 1; col <= sheet.columnCount; col++) {
+      expect(cellText(dataRow.getCell(col).value)).not.toBe("USD");
+    }
+  });
+});
+
+describe("classifyStatus thresholds", () => {
+  it("classifies exactly 0.85 as auto", () => {
+    expect(classifyStatus(0.85)).toBe("auto");
+  });
+  it("classifies exactly 0.5 as review", () => {
+    expect(classifyStatus(0.5)).toBe("review");
+  });
+  it("classifies just below 0.5 as unmatched", () => {
+    expect(classifyStatus(0.4999)).toBe("unmatched");
+  });
+  it("treats null and undefined as unmatched", () => {
+    expect(classifyStatus(null)).toBe("unmatched");
+    expect(classifyStatus(undefined)).toBe("unmatched");
+  });
+});
+
+describe("decodeBase64ForTest", () => {
+  it("produces identical buffers with and without a data URL prefix", () => {
+    const raw = Buffer.from("hello world", "utf8").toString("base64");
+    const withPrefix = `data:application/octet-stream;base64,${raw}`;
+    const a = decodeBase64ForTest(raw);
+    const b = decodeBase64ForTest(withPrefix);
+    expect(a.equals(b)).toBe(true);
+    expect(a.toString("utf8")).toBe("hello world");
   });
 });

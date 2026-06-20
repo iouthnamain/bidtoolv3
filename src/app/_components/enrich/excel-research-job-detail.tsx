@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import { keepPreviousData } from "@tanstack/react-query";
+import { Loader2, Pause, Play, RotateCcw, XCircle } from "lucide-react";
 
 import { Badge, Button, ConfirmDialog } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
@@ -11,11 +12,15 @@ import {
   type ExcelResearchJobStatus,
   type ExcelResearchRowStatus,
   isExcelResearchJobActive,
+  isExcelResearchJobBusy,
   isExcelResearchJobReviewReady,
 } from "~/app/_components/research-enrich/excel-research-types";
-import { api } from "~/trpc/react";
+import { api, type RouterOutputs } from "~/trpc/react";
 
 const JOB_POLL_MS = 2_000;
+
+type ExcelResearchRowSummary =
+  RouterOutputs["excelResearch"]["listRowResults"]["items"][number];
 
 const JOB_STATUS_LABEL: Record<ExcelResearchJobStatus, string> = {
   draft: "Nháp",
@@ -77,6 +82,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
   );
   const [selectedRowNumber, setSelectedRowNumber] = useState<number | null>(null);
   const [confirmExportOpen, setConfirmExportOpen] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const jobQuery = api.excelResearch.getJob.useQuery(
     { jobId },
@@ -87,13 +93,16 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
     { jobId },
     {
       refetchInterval: (query) =>
-        isExcelResearchJobActive(query.state.data) ? JOB_POLL_MS : false,
+        isExcelResearchJobBusy(query.state.data) ? JOB_POLL_MS : false,
       refetchOnWindowFocus: false,
       retry: false,
     },
   );
 
   const startJob = api.excelResearch.startJob.useMutation();
+  const restartJob = api.excelResearch.restartJob.useMutation();
+  const pauseJob = api.excelResearch.pauseJob.useMutation();
+  const cancelJob = api.excelResearch.cancelJob.useMutation();
   const approveRow = api.excelResearch.approveRow.useMutation();
   const rejectRow = api.excelResearch.rejectRow.useMutation();
   const bulkApproveRows = api.excelResearch.bulkApproveRows.useMutation();
@@ -101,7 +110,15 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
 
   const activeJob = jobStatusQuery.data;
   const isJobRunning = isExcelResearchJobActive(activeJob);
+  const isJobBusy = isExcelResearchJobBusy(activeJob);
   const reviewReady = isExcelResearchJobReviewReady(activeJob);
+
+  // Refetch job + status so a freshly-started/paused/cancelled job updates the
+  // badge and (re)arms the polling interval without waiting for a manual reload.
+  const refreshJob = () => {
+    void jobStatusQuery.refetch();
+    void jobQuery.refetch();
+  };
 
   const listRowsQuery = api.excelResearch.listRowResults.useQuery(
     {
@@ -111,6 +128,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
     },
     {
       enabled: reviewReady,
+      placeholderData: keepPreviousData,
       refetchOnWindowFocus: false,
     },
   );
@@ -128,27 +146,19 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
 
   const rowData = listRowsQuery.data;
 
+  // Filter-chip counts must come from the server's unfiltered per-status counts,
+  // not from rowData.items (which is filtered by statusFilter and capped at the
+  // page limit). Each chip count equals the rows shown when that chip is
+  // selected, so "matched" is the matched status only (approved is its own chip).
   const rowSummary = useMemo(() => {
-    const counts: Record<ExcelResearchRowStatus, number> = {
-      pending: 0,
-      processing: 0,
-      matched: 0,
-      needs_review: 0,
-      approved: 0,
-      skipped: 0,
-      error: 0,
-    };
-    for (const row of rowData?.items ?? []) {
-      counts[row.status] += 1;
-    }
+    const counts = rowData?.statusCounts;
     return {
-      total: rowData?.total ?? activeJob?.totalRows ?? 0,
-      ...counts,
-      needsReview: activeJob?.needsReviewRows ?? counts.needs_review,
-      errors: activeJob?.errorRows ?? counts.error,
-      matched: activeJob?.matchedRows ?? counts.matched,
-      approved: counts.approved,
-      skipped: counts.skipped,
+      total: rowData?.totalRows ?? rowData?.total ?? activeJob?.totalRows ?? 0,
+      needsReview: counts?.needs_review ?? activeJob?.needsReviewRows ?? 0,
+      errors: counts?.error ?? activeJob?.errorRows ?? 0,
+      matched: counts?.matched ?? 0,
+      approved: counts?.approved ?? 0,
+      skipped: counts?.skipped ?? 0,
     };
   }, [rowData, activeJob]);
 
@@ -158,6 +168,40 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
     }
   }, [rowData?.items, selectedRowNumber]);
 
+  // When the active selection is no longer present in the current (filtered or
+  // refetched) list — e.g. after a decision moved the row out of the filter, or
+  // the filter changed — drop it so the auto-select effect re-picks the first.
+  useEffect(() => {
+    if (
+      selectedRowNumber != null &&
+      rowData?.items &&
+      !rowData.items.some((r) => r.rowNumber === selectedRowNumber)
+    ) {
+      setSelectedRowNumber(null);
+    }
+  }, [rowData?.items, selectedRowNumber]);
+
+  // Advance selection to the next row after a decision, using the items
+  // RESOLVED by the post-decision refetch (not a stale closure). If the decided
+  // row is gone, advance to the row that shifted into its slot (same index);
+  // fall back to the first row, or null when the list is empty so the
+  // auto-select effect re-picks.
+  const advanceSelectionAfterDecision = (
+    decidedRowNumber: number,
+    items: ExcelResearchRowSummary[],
+  ) => {
+    if (items.length === 0) {
+      setSelectedRowNumber(null);
+      return;
+    }
+    const idx = items.findIndex((r) => r.rowNumber === decidedRowNumber);
+    // Row still present: move to the next one. Row removed: the row at the same
+    // index now holds what shifted up; use it, else the last/first row.
+    const next =
+      idx >= 0 ? (items[idx + 1] ?? items[idx]) : (items[0] ?? null);
+    setSelectedRowNumber(next ? next.rowNumber : null);
+  };
+
   const runExport = () => {
     exportExcel.mutate(
       { jobId },
@@ -165,6 +209,9 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
         onSuccess: (result) => {
           downloadBase64Xlsx(result.fileName, result.workbookBase64);
           toast.success("Đã xuất file nghiên cứu web.");
+          // The server may flip the job to "exporting"/"completed"; refetch so
+          // the badge updates and busy-polling (re)arms if needed.
+          refreshJob();
         },
         onError: (err) =>
           toast.error(err.message || "Không xuất được file nghiên cứu."),
@@ -181,16 +228,75 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
     runExport();
   };
 
+  const handleStart = () => {
+    startJob.mutate(
+      { jobId },
+      {
+        onSuccess: () => {
+          toast.success("Đã khởi chạy job.");
+          // Without this the status query has no fresh "running" data, so the
+          // refetchInterval predicate never turns polling on and the UI looks
+          // frozen until a manual reload. Refetch to seed the active state.
+          refreshJob();
+        },
+        onError: (err) =>
+          toast.error(err.message || "Không khởi chạy được job."),
+      },
+    );
+  };
+
+  const handleRetry = () => {
+    restartJob.mutate(
+      { jobId },
+      {
+        onSuccess: () => {
+          toast.success("Đã chạy lại job.");
+          refreshJob();
+        },
+        onError: (err) => toast.error(err.message || "Không chạy lại được job."),
+      },
+    );
+  };
+
+  const handlePause = () => {
+    pauseJob.mutate(
+      { jobId },
+      {
+        onSuccess: () => {
+          toast.success("Đã tạm dừng job.");
+          refreshJob();
+        },
+        onError: (err) => toast.error(err.message || "Không tạm dừng được job."),
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    cancelJob.mutate(
+      { jobId },
+      {
+        onSuccess: () => {
+          toast.success("Đã hủy job.");
+          refreshJob();
+        },
+        onError: (err) => toast.error(err.message || "Không hủy được job."),
+      },
+    );
+  };
+
   const handleApprove = (rowNumber: number) => {
     approveRow.mutate(
       { jobId, rowNumber },
       {
         onSuccess: () => {
-          void Promise.all([
-            listRowsQuery.refetch(),
-            rowDetailQuery.refetch(),
-            jobStatusQuery.refetch(),
-          ]).then(() => toast.success("Đã duyệt dòng."));
+          void (async () => {
+            const [{ data }] = await Promise.all([
+              listRowsQuery.refetch(),
+              jobStatusQuery.refetch(),
+            ]);
+            advanceSelectionAfterDecision(rowNumber, data?.items ?? []);
+            toast.success("Đã duyệt dòng.");
+          })();
         },
         onError: (err) => toast.error(err.message || "Không duyệt được dòng."),
       },
@@ -202,11 +308,14 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
       { jobId, rowNumber },
       {
         onSuccess: () => {
-          void Promise.all([
-            listRowsQuery.refetch(),
-            rowDetailQuery.refetch(),
-            jobStatusQuery.refetch(),
-          ]).then(() => toast.success("Đã từ chối dòng."));
+          void (async () => {
+            const [{ data }] = await Promise.all([
+              listRowsQuery.refetch(),
+              jobStatusQuery.refetch(),
+            ]);
+            advanceSelectionAfterDecision(rowNumber, data?.items ?? []);
+            toast.success("Đã từ chối dòng.");
+          })();
         },
         onError: (err) => toast.error(err.message || "Không từ chối được dòng."),
       },
@@ -269,6 +378,12 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
         ? Math.round((activeJob.processedRows / activeJob.totalRows) * 100)
         : 0;
     const canStart = ["draft", "paused", "queued"].includes(status);
+    const canRetry = status === "failed" || status === "cancelled";
+    const startLabel = canRetry
+      ? "Chạy lại job"
+      : status === "paused"
+        ? "Tiếp tục chạy job"
+        : "Bắt đầu chạy job";
 
     return (
       <>
@@ -289,12 +404,12 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
               </span>
             </div>
 
-            {isJobRunning && activeJob ? (
+            {isJobBusy && activeJob ? (
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
                 <div className="flex items-center justify-between text-xs font-semibold text-violet-900">
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    Đang nghiên cứu…
+                    {status === "exporting" ? "Đang xuất file…" : "Đang nghiên cứu…"}
                   </span>
                   <span className="tabular-nums">
                     {activeJob.processedRows.toLocaleString("vi-VN")}/
@@ -303,6 +418,11 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-200">
                   <div
+                    role="progressbar"
+                    aria-valuenow={progressPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuetext={`${activeJob.processedRows}/${activeJob.totalRows}`}
                     className="h-full rounded-full bg-violet-600 transition-all"
                     style={{ width: `${progressPct}%` }}
                   />
@@ -315,31 +435,50 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
               </div>
             ) : null}
 
-            {status === "failed" || status === "cancelled" ? (
+            {canRetry ? (
               <p className="text-sm text-rose-800">
                 {activeJob?.error ?? activeJob?.message ?? job.error ?? "Job thất bại."}
               </p>
             ) : null}
 
-            {canStart ? (
-              <Button
-                variant="primary"
-                leftIcon={<Play className="h-4 w-4" />}
-                isLoading={startJob.isPending}
-                onClick={() =>
-                  startJob.mutate(
-                    { jobId },
-                    {
-                      onSuccess: () => toast.success("Đã khởi chạy job."),
-                      onError: (err) =>
-                        toast.error(err.message || "Không khởi chạy được job."),
-                    },
-                  )
-                }
-              >
-                Tiếp tục chạy job
-              </Button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {canStart || canRetry ? (
+                <Button
+                  variant="primary"
+                  leftIcon={
+                    canRetry ? (
+                      <RotateCcw className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )
+                  }
+                  isLoading={canRetry ? restartJob.isPending : startJob.isPending}
+                  onClick={canRetry ? handleRetry : handleStart}
+                >
+                  {startLabel}
+                </Button>
+              ) : null}
+              {isJobRunning ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    leftIcon={<Pause className="h-4 w-4" />}
+                    isLoading={pauseJob.isPending}
+                    onClick={handlePause}
+                  >
+                    Tạm dừng
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    leftIcon={<XCircle className="h-4 w-4" />}
+                    isLoading={cancelJob.isPending}
+                    onClick={() => setConfirmCancelOpen(true)}
+                  >
+                    Hủy job
+                  </Button>
+                </>
+              ) : null}
+            </div>
           </div>
         </section>
 
@@ -354,6 +493,19 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
             runExport();
           }}
           onCancel={() => setConfirmExportOpen(false)}
+        />
+
+        <ConfirmDialog
+          open={confirmCancelOpen}
+          title="Hủy job nghiên cứu?"
+          description="Job đang chạy sẽ dừng lại và không thể tiếp tục từ vị trí hiện tại."
+          confirmLabel="Hủy job"
+          variant="danger"
+          onConfirm={() => {
+            setConfirmCancelOpen(false);
+            handleCancel();
+          }}
+          onCancel={() => setConfirmCancelOpen(false)}
         />
       </>
     );
@@ -410,6 +562,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
         onReject={handleReject}
         onBulkApprove={handleBulkApprove}
         isBulkApproving={bulkApproveRows.isPending}
+        listTotal={rowData.total}
         onPrimaryAction={handleExportClick}
         onSecondaryAction={() => router.push("/enrich/jobs")}
         primaryActionLabel="Xuất file (.xlsx)"

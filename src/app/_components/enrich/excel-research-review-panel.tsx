@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CheckCheck, Download, ImageOff, ThumbsDown, ThumbsUp } from "lucide-react";
 
@@ -65,6 +65,7 @@ export function ExcelResearchReviewPanel({
   onReject,
   onBulkApprove,
   isBulkApproving = false,
+  listTotal,
   onPrimaryAction,
   onSecondaryAction,
   primaryActionLabel = "Tiếp tục xuất file",
@@ -98,6 +99,12 @@ export function ExcelResearchReviewPanel({
    */
   onBulkApprove?: (args: { rowIds?: string[]; minConfidence?: number }) => void;
   isBulkApproving?: boolean;
+  /**
+   * Total rows matching the active filter on the server. When it exceeds the
+   * number of rows actually returned (`rows.length`, capped at the page
+   * limit) the list is truncated and we surface a notice.
+   */
+  listTotal?: number;
   onPrimaryAction: () => void;
   onSecondaryAction: () => void;
   primaryActionLabel?: string;
@@ -106,6 +113,13 @@ export function ExcelResearchReviewPanel({
   emptyContinueLabel?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+
+  // Selecting a different filter changes which rows are visible; carrying the
+  // old selection over would let a user bulk-approve rows they can't see and
+  // desync the select-all checkbox. Clear it whenever the filter changes.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter]);
 
   if (rows.length === 0) {
     return (
@@ -126,12 +140,12 @@ export function ExcelResearchReviewPanel({
   const bulkApprovableRows = rows.filter((row) =>
     BULK_APPROVABLE_STATUSES.includes(row.status),
   );
-  const confidentNeedsReview = bulkApprovableRows.filter(
-    (row) =>
-      row.status === "needs_review" &&
-      row.confidenceScore != null &&
-      row.confidenceScore >= BULK_MIN_CONFIDENCE,
-  );
+  // The confident-approve button approves server-side across the WHOLE job
+  // (bulkApproveRows with minConfidence, no rowIds), so its enabled state must
+  // reflect the job-wide needs_review + matched totals — not just visible rows
+  // (capped at the page limit) or just needs_review. Threshold filtering then
+  // happens on the server.
+  const jobConfidentCandidates = summary.needsReview + summary.matched;
   const selectedApprovable = bulkApprovableRows.filter((row) =>
     selectedIds.has(row.id),
   );
@@ -162,7 +176,7 @@ export function ExcelResearchReviewPanel({
   };
 
   const approveConfident = () => {
-    if (!onBulkApprove || confidentNeedsReview.length === 0) return;
+    if (!onBulkApprove || jobConfidentCandidates === 0) return;
     onBulkApprove({ minConfidence: BULK_MIN_CONFIDENCE });
     setSelectedIds(new Set());
   };
@@ -170,6 +184,8 @@ export function ExcelResearchReviewPanel({
   const allApprovableSelected =
     bulkApprovableRows.length > 0 &&
     bulkApprovableRows.every((row) => selectedIds.has(row.id));
+
+  const isTruncated = listTotal != null && listTotal > rows.length;
 
   const filters: Array<{
     id: ExcelResearchRowStatus | "all";
@@ -266,14 +282,11 @@ export function ExcelResearchReviewPanel({
               size="sm"
               leftIcon={<CheckCheck className="h-3.5 w-3.5" />}
               isLoading={isBulkApproving}
-              disabled={confidentNeedsReview.length === 0}
+              disabled={jobConfidentCandidates === 0}
               onClick={approveConfident}
             >
-              Duyệt tất cả đủ tin cậy (≥ {Math.round(BULK_MIN_CONFIDENCE * 100)}%
-              {confidentNeedsReview.length > 0
-                ? ` · ${confidentNeedsReview.length.toLocaleString("vi-VN")}`
-                : ""}
-              )
+              Duyệt các dòng đủ tin cậy (≥{" "}
+              {Math.round(BULK_MIN_CONFIDENCE * 100)}%)
             </Button>
           </div>
         </div>
@@ -281,6 +294,13 @@ export function ExcelResearchReviewPanel({
 
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-200 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
+          {isTruncated ? (
+            <p className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+              Hiển thị {rows.length.toLocaleString("vi-VN")}/
+              {listTotal.toLocaleString("vi-VN")} dòng. Lọc theo trạng thái để
+              xem các dòng còn lại.
+            </p>
+          ) : null}
           {rows.map((row) => {
             const meta = ROW_STATUS_META[row.status];
             const isSelected = row.rowNumber === selectedRowNumber;
@@ -377,6 +397,9 @@ function ExcelResearchRowDetailPanel({
   onReject: () => void;
 }) {
   const meta = ROW_STATUS_META[row.status];
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const canDecide =
     row.status === "needs_review" ||
     row.status === "matched" ||
@@ -412,13 +435,22 @@ function ExcelResearchRowDetailPanel({
               className="flex gap-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
             >
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-                {item.imageUrl ? (
+                {item.imageUrl && !failedImageIds.has(item.id) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={item.imageUrl}
-                    alt=""
+                    alt={item.title ?? ""}
+                    referrerPolicy="no-referrer"
                     className="h-full w-full object-contain"
                     loading="lazy"
+                    onError={() =>
+                      setFailedImageIds((prev) => {
+                        if (prev.has(item.id)) return prev;
+                        const next = new Set(prev);
+                        next.add(item.id);
+                        return next;
+                      })
+                    }
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-300">

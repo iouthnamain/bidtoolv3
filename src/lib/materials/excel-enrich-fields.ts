@@ -26,8 +26,13 @@ export const FILLABLE_FIELDS = [
 
 export type FillableField = (typeof FILLABLE_FIELDS)[number];
 
-/** Maps a fillable material field to the Excel column key used for mapping. */
-export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey> = {
+/**
+ * Maps a fillable material field to the Excel column key used for mapping.
+ * `currency` has no dedicated column, so it maps to `null`: consumers must skip
+ * it rather than silently writing it into another column. The `null` makes the
+ * compiler enforce that skip at every call site.
+ */
+export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey | null> = {
   code: "code",
   unit: "unit",
   category: "category",
@@ -35,8 +40,7 @@ export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey> = {
   manufacturer: "vendorHint",
   originCountry: "originHint",
   defaultUnitPrice: "unitPrice",
-  // currency has no dedicated column; it is never auto-filled into the sheet.
-  currency: "unit",
+  currency: null,
   sourceUrl: "sourceUrl",
 };
 

@@ -43,6 +43,7 @@ const sourceTypeLabel: Record<CatalogDocumentListItem["sourceType"], string> = {
   uploaded: "Đã upload",
   detected: "Tự phát hiện",
   manual_url: "URL thủ công",
+  generated: "Tạo tự động",
 };
 
 const inputClass =

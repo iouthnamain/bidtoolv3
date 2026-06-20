@@ -16,15 +16,10 @@ import {
   isExcelResearchJobActive,
   isExcelResearchJobReviewReady,
 } from "~/app/_components/research-enrich/excel-research-types";
-import { api, type RouterOutputs } from "~/trpc/react";
+import { api } from "~/trpc/react";
 
 const JOB_POLL_MS = 2_000;
 const EMPTY_JOB_ID = "00000000-0000-0000-0000-000000000000";
-
-type ExcelResearchJobStatusResponse =
-  RouterOutputs["excelResearch"]["getJobStatus"];
-type ExcelResearchListRowsResult =
-  RouterOutputs["excelResearch"]["listRowResults"];
 
 export function EnrichResearchStep({
   fileName,
@@ -103,27 +98,18 @@ export function EnrichResearchStep({
 
   const rowData = listRowsQuery.data;
 
+  // Filter-chip counts come from the server's unfiltered per-status counts, not
+  // from rowData.items (filtered by statusFilter and capped at the page limit).
+  // Each chip count equals the rows shown when that chip is selected.
   const rowSummary = useMemo(() => {
-    const counts: Record<ExcelResearchRowStatus, number> = {
-      pending: 0,
-      processing: 0,
-      matched: 0,
-      needs_review: 0,
-      approved: 0,
-      skipped: 0,
-      error: 0,
-    };
-    for (const row of rowData?.items ?? []) {
-      counts[row.status] += 1;
-    }
+    const counts = rowData?.statusCounts;
     return {
-      total: rowData?.total ?? activeJob?.totalRows ?? 0,
-      ...counts,
-      needsReview: activeJob?.needsReviewRows ?? counts.needs_review,
-      errors: activeJob?.errorRows ?? counts.error,
-      matched: activeJob?.matchedRows ?? counts.matched,
-      approved: counts.approved,
-      skipped: counts.skipped,
+      total: rowData?.totalRows ?? rowData?.total ?? activeJob?.totalRows ?? 0,
+      needsReview: counts?.needs_review ?? activeJob?.needsReviewRows ?? 0,
+      errors: counts?.error ?? activeJob?.errorRows ?? 0,
+      matched: counts?.matched ?? 0,
+      approved: counts?.approved ?? 0,
+      skipped: counts?.skipped ?? 0,
     };
   }, [rowData, activeJob]);
 

@@ -46,11 +46,18 @@ export function ProductCandidateCard({
   const hasScore = candidate.score > 0;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onChoose}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onChoose();
+        }
+      }}
       aria-pressed={isSelected}
-      className={`group relative flex w-full flex-col gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+      className={`group relative flex w-full cursor-pointer flex-col gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
         isSelected
           ? "border-sky-500 bg-sky-50 ring-1 ring-sky-400"
           : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
@@ -148,6 +155,7 @@ export function ProductCandidateCard({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:underline"
           >
             <ExternalLink className="h-3 w-3" aria-hidden />
@@ -165,6 +173,6 @@ export function ProductCandidateCard({
       >
         {isSelected ? "Đã chọn" : "Chọn sản phẩm này"}
       </span>
-    </button>
+    </div>
   );
 }

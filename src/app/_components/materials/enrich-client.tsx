@@ -137,10 +137,6 @@ function materialNameFromItem(item: EnrichmentItem) {
   return trimmedName;
 }
 
-function itemNeedsReview(item: EnrichmentItem) {
-  return item.status === "review" || item.result.status === "review";
-}
-
 function confidenceColorClass(confidence: number): string {
   if (confidence >= ENRICHMENT_THRESHOLDS.high) {
     return "bg-green-50 text-green-700 border-green-200";
@@ -350,6 +346,11 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
       void invalidateJobData();
       if (reviewItemId !== null) {
         void reviewItemQuery.refetch();
+        // Refresh the focused candidate list so the radio `checked` state
+        // reflects the new selection.
+        void utils.materialEnrichment.getMaterialEnrichmentItemCandidates.invalidate(
+          { itemId: reviewItemId },
+        );
       }
       toast.success("Đã chọn ứng viên web.");
     },
@@ -385,6 +386,8 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     startJob.mutate({
       materialIds: materialIdsFromUrl,
       options: {
+        skipWellFilled: options.skipWellFilled,
+        generatePdfIfMissing: options.generatePdfIfMissing,
         autoCommitHighConfidence: options.autoCommitHighConfidence,
       },
     });
@@ -820,7 +823,6 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                       <th className="px-3 py-2">Vật tư</th>
                       <th className="px-3 py-2">Trạng thái</th>
                       <th className="px-3 py-2">Độ tin cậy</th>
-                      <th className="px-3 py-2">Cần duyệt</th>
                       <th className="px-3 py-2 text-right">Thao tác</th>
                     </tr>
                   </thead>
@@ -858,13 +860,6 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                             <ConfidenceBadge
                               confidence={item.result.overallConfidence}
                             />
-                          </td>
-                          <td className="px-3 py-2">
-                            {itemNeedsReview(item) ? (
-                              <Badge tone="warning">Có</Badge>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-1.5">
@@ -939,7 +934,6 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
         open={reviewItemId !== null}
         item={reviewItemQuery.data ?? null}
         isLoading={reviewItemQuery.isLoading}
-        jobId={focusedJobId}
         isSelecting={selectCandidate.isPending}
         isCommitting={commitItem.isPending}
         isRejecting={rejectItem.isPending}
@@ -1016,7 +1010,6 @@ function EnrichmentReviewDialog({
   open,
   item,
   isLoading,
-  jobId,
   isSelecting,
   isCommitting,
   isRejecting,
@@ -1028,7 +1021,6 @@ function EnrichmentReviewDialog({
   open: boolean;
   item: RouterOutputs["materialEnrichment"]["getMaterialEnrichmentItem"] | null;
   isLoading: boolean;
-  jobId: string | null;
   isSelecting: boolean;
   isCommitting: boolean;
   isRejecting: boolean;
@@ -1038,9 +1030,6 @@ function EnrichmentReviewDialog({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const utils = api.useUtils();
-  const [candidates, setCandidates] = useState<WebCandidate[]>([]);
-  const [loadingCandidates, setLoadingCandidates] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -1052,47 +1041,16 @@ function EnrichmentReviewDialog({
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!open || !item || !jobId) {
-      setCandidates([]);
-      return;
-    }
-
-    let cancelled = false;
-    setLoadingCandidates(true);
-
-    void (async () => {
-      try {
-        const json =
-          await utils.materialEnrichment.exportMaterialEnrichmentReport.fetch({
-            jobId,
-          });
-        const parsed = JSON.parse(json) as {
-          candidatesByItem?: Array<{
-            itemId: number;
-            candidates: WebCandidate[];
-          }>;
-        };
-        if (cancelled) return;
-        const match = parsed.candidatesByItem?.find(
-          (entry) => entry.itemId === item.id,
-        );
-        setCandidates(match?.candidates ?? []);
-      } catch {
-        if (!cancelled) {
-          setCandidates([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingCandidates(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, item, jobId, utils.materialEnrichment.exportMaterialEnrichmentReport]);
+  // Focused query for just this item's web candidates — avoids re-downloading
+  // the entire export report on every dialog open. Refetched after a candidate
+  // selection so the radio `checked` state reflects fresh data.
+  const candidatesQuery =
+    api.materialEnrichment.getMaterialEnrichmentItemCandidates.useQuery(
+      { itemId: item?.id ?? 0 },
+      { enabled: open && item != null, staleTime: 0 },
+    );
+  const candidates: WebCandidate[] = candidatesQuery.data ?? [];
+  const loadingCandidates = candidatesQuery.isLoading && open && item != null;
 
   if (!open) {
     return null;
@@ -1164,7 +1122,7 @@ function EnrichmentReviewDialog({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={item.materialImageUrl}
-                      alt=""
+                      alt={`Ảnh vật tư hiện tại: ${materialName}`}
                       className="h-full w-full object-contain"
                       loading="lazy"
                     />
@@ -1321,7 +1279,7 @@ function EnrichmentReviewDialog({
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={candidate.imageUrl}
-                            alt=""
+                            alt={`Ảnh ứng viên: ${candidate.title}`}
                             className="h-full w-full object-contain"
                             loading="lazy"
                           />
@@ -1340,6 +1298,7 @@ function EnrichmentReviewDialog({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="mt-0.5 inline-flex items-center gap-1 text-xs text-sky-700 hover:underline"
+                          onClick={(event) => event.stopPropagation()}
                         >
                           <ExternalLink className="h-3 w-3" aria-hidden />
                           {candidate.domain}

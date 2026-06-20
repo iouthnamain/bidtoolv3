@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, RotateCcw } from "lucide-react";
+import { ArrowRight, Loader2, RotateCcw } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
   type ExcelResearchJobStatus,
   isExcelResearchJobActive,
+  isExcelResearchJobBusy,
+  isExcelResearchJobReviewReady,
 } from "~/app/_components/research-enrich/excel-research-types";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -77,7 +80,7 @@ export function EnrichJobsList({
     {
       refetchInterval: (query) => {
         const jobs = query.state.data ?? [];
-        return jobs.some((job) => isExcelResearchJobActive(job))
+        return jobs.some((job) => isExcelResearchJobBusy(job))
           ? JOB_LIST_POLL_MS
           : false;
       },
@@ -101,16 +104,27 @@ export function EnrichJobsList({
             {compact ? "Job nghiên cứu Excel" : "Lịch sử nghiên cứu"}
           </h2>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          isLoading={jobListQuery.isFetching}
-          leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
-          onClick={() => void jobListQuery.refetch()}
-        >
-          Làm mới
-        </Button>
+        <div className="flex items-center gap-2">
+          {compact ? (
+            <Link
+              href="/enrich/jobs"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:text-violet-900"
+            >
+              Xem tất cả
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            isLoading={jobListQuery.isFetching}
+            leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={() => void jobListQuery.refetch()}
+          >
+            Làm mới
+          </Button>
+        </div>
       </div>
 
       {jobListQuery.isLoading ? (
@@ -147,7 +161,13 @@ function JobListRow({
   onOpen: () => void;
 }) {
   const active = isExcelResearchJobActive(job);
+  const reviewReady = isExcelResearchJobReviewReady(job);
   const pct = progressPercent(job.processedRows, job.totalRows);
+  const openLabel = reviewReady
+    ? "Duyệt kết quả"
+    : active
+      ? "Xem tiến độ"
+      : "Mở";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-slate-50">
@@ -173,6 +193,11 @@ function JobListRow({
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-violet-100">
               <div
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={`${job.processedRows}/${job.totalRows}`}
                 className="h-full rounded-full bg-violet-600"
                 style={{ width: `${pct}%` }}
               />
@@ -188,13 +213,23 @@ function JobListRow({
           </p>
         )}
       </button>
-      <Badge tone={JOB_STATUS_TONE[job.status]}>
-        {active ? (
-          <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
-        ) : null}
-        {JOB_STATUS_LABEL[job.status]}
-      </Badge>
-
+      <div className="flex items-center gap-2">
+        <Badge tone={JOB_STATUS_TONE[job.status]}>
+          {active ? (
+            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
+          ) : null}
+          {JOB_STATUS_LABEL[job.status]}
+        </Badge>
+        <Button
+          type="button"
+          variant={reviewReady ? "primary" : "secondary"}
+          size="sm"
+          rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+          onClick={onOpen}
+        >
+          {openLabel}
+        </Button>
+      </div>
     </div>
   );
 }

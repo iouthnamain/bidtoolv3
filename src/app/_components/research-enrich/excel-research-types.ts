@@ -87,6 +87,17 @@ export const ACTIVE_JOB_STATUSES: ExcelResearchJobStatus[] = [
   "running",
 ];
 
+/**
+ * Statuses where the server is still doing work and the UI should keep
+ * polling. Extends ACTIVE with "exporting" so the badge/progress don't stick
+ * while an export is in flight. "paused" stays excluded on purpose — a paused
+ * job is idle until the user resumes it.
+ */
+export const BUSY_JOB_STATUSES: ExcelResearchJobStatus[] = [
+  ...ACTIVE_JOB_STATUSES,
+  "exporting",
+];
+
 export const REVIEW_READY_JOB_STATUSES: ExcelResearchJobStatus[] = [
   "awaiting_review",
   "completed",
@@ -96,6 +107,12 @@ export function isExcelResearchJobActive(
   job: { status: ExcelResearchJobStatus } | null | undefined,
 ) {
   return job != null && ACTIVE_JOB_STATUSES.includes(job.status);
+}
+
+export function isExcelResearchJobBusy(
+  job: { status: ExcelResearchJobStatus } | null | undefined,
+) {
+  return job != null && BUSY_JOB_STATUSES.includes(job.status);
 }
 
 export function isExcelResearchJobReviewReady(

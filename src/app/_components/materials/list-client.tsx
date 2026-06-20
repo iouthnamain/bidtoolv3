@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type {
-  ChangeEventHandler,
   MouseEvent as ReactMouseEvent,
-  ReactNode,
 } from "react";
 import { useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -19,9 +17,6 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   ArrowUpRight,
   ChevronDown,
   ChevronLeft,
@@ -70,6 +65,18 @@ import {
   parseOptionalNumber,
 } from "~/lib/materials/format";
 import { normalizeMaterialMetadata } from "~/lib/material-price-sources";
+import {
+  loadColumnVisibility as loadColumnVisibilityShared,
+  loadDensity as loadDensityShared,
+  loadViewMode as loadViewModeShared,
+  QuickFilterCell,
+  SelectionCheckbox,
+  SortableHeader,
+  tableCellClass,
+  tableHeaderClass,
+  type TableDensity,
+  type ViewMode,
+} from "~/app/_components/materials/list-table-helpers";
 import { api, type RouterInputs, type RouterOutputs } from "~/trpc/react";
 
 type MaterialSearchInput = RouterInputs["material"]["searchMaterials"];
@@ -98,9 +105,6 @@ const MATERIAL_FILTER_OPTIONS_STALE_MS = 5 * 60_000;
 const MATERIAL_COLUMN_VISIBILITY_KEY = "bidtool:material-catalog-columns:v1";
 const MATERIAL_DENSITY_KEY = "bidtool:material-catalog-density:v1";
 const MATERIAL_VIEW_MODE_KEY = "bidtool:material-catalog-view-mode:v1";
-
-type TableDensity = "comfortable" | "compact";
-type ViewMode = "table" | "grid";
 
 const defaultColumnVisibility: VisibilityState = {
   unit: false,
@@ -201,42 +205,18 @@ function parsePageIndex(value: string) {
 }
 
 function loadColumnVisibility(): VisibilityState {
-  if (typeof window === "undefined") {
-    return defaultColumnVisibility;
-  }
-
-  try {
-    const raw = localStorage.getItem(MATERIAL_COLUMN_VISIBILITY_KEY);
-    if (!raw) {
-      return defaultColumnVisibility;
-    }
-    return {
-      ...defaultColumnVisibility,
-      ...(JSON.parse(raw) as VisibilityState),
-    };
-  } catch {
-    return defaultColumnVisibility;
-  }
+  return loadColumnVisibilityShared(
+    MATERIAL_COLUMN_VISIBILITY_KEY,
+    defaultColumnVisibility,
+  );
 }
 
 function loadDensity(): TableDensity {
-  if (typeof window === "undefined") {
-    return "comfortable";
-  }
-
-  return localStorage.getItem(MATERIAL_DENSITY_KEY) === "compact"
-    ? "compact"
-    : "comfortable";
+  return loadDensityShared(MATERIAL_DENSITY_KEY);
 }
 
 function loadViewMode(): ViewMode {
-  if (typeof window === "undefined") {
-    return "table";
-  }
-
-  return localStorage.getItem(MATERIAL_VIEW_MODE_KEY) === "grid"
-    ? "grid"
-    : "table";
+  return loadViewModeShared(MATERIAL_VIEW_MODE_KEY);
 }
 
 function updateUrlParam(
@@ -302,138 +282,34 @@ const materialColumnWidthClass: Record<string, string> = {
 
 function materialTableHeaderClass(columnId: string, density: TableDensity) {
   const width = materialColumnWidthClass[columnId] ?? "";
-  const pad = density === "compact" ? "px-3 py-1.5" : "px-3 py-2.5";
-  if (columnId === "select") {
-    return `${pad} text-center ${width}`;
-  }
-  if (columnId === "stt") {
-    return `${pad} text-center ${width}`;
-  }
-  if (columnId === "actions") {
-    return `${pad} text-right ${width}`;
-  }
-  return `${pad} ${width}`;
+  const align =
+    columnId === "select" || columnId === "stt"
+      ? "center"
+      : columnId === "actions"
+        ? "right"
+        : "left";
+  return tableHeaderClass(width, density, align);
 }
+
+const materialCellBaseClass: Record<string, string> = {
+  select: "text-center align-top",
+  stt: "text-center align-top text-slate-500 tabular-nums",
+  name: "align-top font-semibold text-slate-900",
+  code: "align-top font-mono text-xs text-slate-700 truncate",
+  unit: "align-top text-slate-700",
+  specText: "align-top text-slate-600",
+  catalog: "align-top",
+  manufacturer: "align-top text-slate-600",
+  originCountry: "align-top text-slate-600",
+  defaultUnitPrice: "align-top text-right",
+  updatedAt: "align-top",
+  actions: "align-top",
+};
 
 function materialTableCellClass(columnId: string, density: TableDensity) {
-  const pad = density === "compact" ? "px-3 py-1.5 text-[13px]" : "px-3 py-2.5";
-  const classes: Record<string, string> = {
-    select: `${pad} text-center align-top`,
-    stt: `${pad} text-center align-top text-slate-500 tabular-nums`,
-    name: `${pad} align-top font-semibold text-slate-900`,
-    code: `${pad} align-top font-mono text-xs text-slate-700 truncate`,
-    unit: `${pad} align-top text-slate-700`,
-    specText: `${pad} align-top text-slate-600`,
-    catalog: `${pad} align-top`,
-    manufacturer: `${pad} align-top text-slate-600`,
-    originCountry: `${pad} align-top text-slate-600`,
-    defaultUnitPrice: `${pad} align-top text-right`,
-    updatedAt: `${pad} align-top`,
-    actions: `${pad} align-top`,
-  };
-
   const width = materialColumnWidthClass[columnId] ?? "";
-  return `${classes[columnId] ?? `${pad} align-top`} ${width}`.trim();
-}
-
-function MaterialSortableHeader({
-  label,
-  columnId,
-  sortBy,
-  sortOrder,
-  onSort,
-}: {
-  label: string;
-  columnId: MaterialSortBy;
-  sortBy: MaterialSortBy;
-  sortOrder: SortOrder;
-  onSort: (columnId: MaterialSortBy) => void;
-}) {
-  const isActive = sortBy === columnId;
-  const SortIcon = isActive
-    ? sortOrder === "asc"
-      ? ArrowUp
-      : ArrowDown
-    : ArrowUpDown;
-
-  return (
-    <button
-      type="button"
-      className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-left transition hover:bg-slate-200/70 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
-        isActive ? "text-slate-900" : "text-slate-600"
-      }`}
-      aria-label={`Sắp xếp theo ${label}`}
-      aria-pressed={isActive}
-      onClick={() => onSort(columnId)}
-    >
-      <span>{label}</span>
-      <SortIcon
-        className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-sky-700" : "text-slate-400"}`}
-        aria-hidden
-      />
-    </button>
-  );
-}
-
-function QuickFilterCell({
-  value,
-  onFilter,
-  children,
-}: {
-  value: string | null | undefined;
-  onFilter: (value: string) => void;
-  children?: ReactNode;
-}) {
-  const normalizedValue = value?.trim();
-  if (!normalizedValue) {
-    return <span>-</span>;
-  }
-
-  return (
-    <button
-      type="button"
-      className="line-clamp-2 text-left hover:text-sky-700 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
-      title={`Lọc theo "${normalizedValue}"`}
-      aria-label={`Lọc theo ${normalizedValue}`}
-      onClick={() => onFilter(normalizedValue)}
-    >
-      {children ?? normalizedValue}
-    </button>
-  );
-}
-
-function SelectionCheckbox({
-  checked,
-  indeterminate = false,
-  disabled = false,
-  ariaLabel,
-  onChange,
-}: {
-  checked: boolean;
-  indeterminate?: boolean;
-  disabled?: boolean;
-  ariaLabel: string;
-  onChange: ChangeEventHandler<HTMLInputElement>;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = indeterminate && !checked;
-    }
-  }, [checked, indeterminate]);
-
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      disabled={disabled}
-      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600 disabled:cursor-not-allowed"
-      aria-label={ariaLabel}
-    />
-  );
+  const base = materialCellBaseClass[columnId] ?? "align-top";
+  return tableCellClass(base, density, width);
 }
 
 function MaterialMobileCard({
@@ -1273,7 +1149,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "name",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="Tên vật tư"
             columnId="name"
             sortBy={sortBy}
@@ -1302,7 +1178,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "unit",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="ĐVT"
             columnId="unit"
             sortBy={sortBy}
@@ -1351,7 +1227,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "manufacturer",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="NCC"
             columnId="manufacturer"
             sortBy={sortBy}
@@ -1369,7 +1245,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "originCountry",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="Xuất xứ"
             columnId="originCountry"
             sortBy={sortBy}
@@ -1387,7 +1263,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "defaultUnitPrice",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="Đơn giá"
             columnId="defaultUnitPrice"
             sortBy={sortBy}
@@ -1406,7 +1282,7 @@ export function MaterialsListClient() {
       {
         accessorKey: "updatedAt",
         header: () => (
-          <MaterialSortableHeader
+          <SortableHeader
             label="Cập nhật"
             columnId="updatedAt"
             sortBy={sortBy}

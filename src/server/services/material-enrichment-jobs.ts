@@ -23,6 +23,7 @@ import {
 } from "~/server/db/schema";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
+import { abortMaterialEnrichmentJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 
 export type MaterialEnrichmentJobStatus =
@@ -327,6 +328,10 @@ export async function cancelMaterialEnrichmentJob(
     )
     .returning();
 
+  // The DB flip alone doesn't stop the in-flight runner; abort its controller so
+  // threaded `signal`s fire and any in-progress web/LLM work is torn down.
+  abortMaterialEnrichmentJob(jobId);
+
   return cancelled ? toJobSnapshot(cancelled) : getMaterialEnrichmentJob(jobId);
 }
 
@@ -416,6 +421,23 @@ export async function listMaterialWebCandidates(itemId: number) {
     .orderBy(desc(materialWebCandidates.confidenceScore));
 
   return rows.map(toCandidateSnapshot);
+}
+
+/**
+ * Focused query for the review dialog: return just one item's web candidates,
+ * tenant-scoped via its parent job. Avoids re-downloading the full export
+ * report on every dialog open.
+ */
+export async function getMaterialEnrichmentItemCandidates(
+  itemId: number,
+  scope?: TenantScopeValue,
+) {
+  // Mirror getMaterialEnrichmentItem's scoping: the item has no tenantId, so
+  // confirm its parent job is in scope before returning candidates.
+  if (scope !== undefined) {
+    await assertItemInScope(itemId, scope);
+  }
+  return listMaterialWebCandidates(itemId);
 }
 
 export async function selectWebCandidate(
@@ -527,6 +549,7 @@ export async function bulkCommitMaterialEnrichment(
     return item.result.overallConfidence >= minConfidence;
   });
   const results: MaterialEnrichmentItemSnapshot[] = [];
+  const errors: string[] = [];
   let committed = 0;
   let failed = 0;
 
@@ -535,12 +558,18 @@ export async function bulkCommitMaterialEnrichment(
       // Items already confirmed in-scope by listMaterialEnrichmentItems above.
       results.push(await commitMaterialEnrichmentItem(item.id));
       committed += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      const message =
+        error instanceof Error ? error.message : "Lỗi không xác định.";
+      console.error(
+        `[material-enrichment] bulkCommit failed job=${input.jobId} item=${item.id}: ${message}`,
+      );
+      errors.push(`#${item.id}: ${message}`);
     }
   }
 
-  return { committed, failed, items: results };
+  return { committed, failed, items: results, errors };
 }
 
 export async function rejectMaterialEnrichmentItem(
@@ -574,12 +603,34 @@ export async function exportMaterialEnrichmentReport(
   }
 
   const items = await listMaterialEnrichmentItems({ jobId }, scope);
-  const candidatesByItem = await Promise.all(
-    items.map(async (item) => ({
-      itemId: item.id,
-      candidates: await listMaterialWebCandidates(item.id),
-    })),
-  );
+  const itemIds = items.map((item) => item.id);
+
+  // Single query for every item's candidates, then group in JS (avoids an N+1
+  // round-trip per item).
+  const candidateRows =
+    itemIds.length > 0
+      ? await db
+          .select()
+          .from(materialWebCandidates)
+          .where(inArray(materialWebCandidates.enrichmentItemId, itemIds))
+          .orderBy(desc(materialWebCandidates.confidenceScore))
+      : [];
+
+  const grouped = new Map<number, MaterialWebCandidateSnapshot[]>();
+  for (const row of candidateRows) {
+    const snapshot = toCandidateSnapshot(row);
+    const bucket = grouped.get(snapshot.enrichmentItemId);
+    if (bucket) {
+      bucket.push(snapshot);
+    } else {
+      grouped.set(snapshot.enrichmentItemId, [snapshot]);
+    }
+  }
+
+  const candidatesByItem = items.map((item) => ({
+    itemId: item.id,
+    candidates: grouped.get(item.id) ?? [],
+  }));
 
   return JSON.stringify(
     {

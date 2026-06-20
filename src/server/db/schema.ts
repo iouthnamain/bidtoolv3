@@ -87,7 +87,7 @@ export const productMatchStatusEnum = pgEnum("product_match_status", [
 
 export const catalogDocumentSourceTypeEnum = pgEnum(
   "catalog_document_source_type",
-  ["uploaded", "detected", "manual_url"],
+  ["uploaded", "detected", "manual_url", "generated"],
 );
 
 export const catalogDocumentLinkSourceEnum = pgEnum(

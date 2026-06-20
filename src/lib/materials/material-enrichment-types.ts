@@ -3,9 +3,19 @@
  * Keep this module free of server-only imports (DB, fetch, OpenRouter).
  */
 
+import { ENRICH_THRESHOLDS } from "~/lib/materials/excel-enrich-fields";
+
+/**
+ * Canonical confidence thresholds live in `excel-enrich-fields.ts` as
+ * `ENRICH_THRESHOLDS = { auto, review }`. We re-key them here as
+ * `{ high, medium }` so existing consumers keep working while there remains a
+ * single source of truth. (env.js holds AI_MATCH_AUTO_THRESHOLD as a
+ * separately-configurable runtime copy used by the matcher; it is intentionally
+ * not wired here.)
+ */
 export const ENRICHMENT_THRESHOLDS = {
-  high: 0.85,
-  medium: 0.5,
+  high: ENRICH_THRESHOLDS.auto,
+  medium: ENRICH_THRESHOLDS.review,
 } as const;
 
 export const ENRICHABLE_FIELDS = [
@@ -88,6 +98,10 @@ export type MaterialEnrichmentFilterOptions = {
 
 export type MaterialEnrichmentJobOptions = {
   autoCommitHighConfidence?: boolean;
+  /** Skip enrichment for materials that already have their enrichable fields filled. */
+  skipWellFilled?: boolean;
+  /** Gate the catalog-PDF attach step (and, in future, PDF generation). */
+  generatePdfIfMissing?: boolean;
   model?: string;
   maxSearchResults?: number;
   maxQueries?: number;
