@@ -948,6 +948,20 @@ function MatchChooser({
     });
   };
 
+  const isSkipped = decision?.skipped === true;
+
+  // Per-row skip: mark this single row to be left untouched on export (works for
+  // any row — unmatched OR mid-confidence "review" — not just via the bulk
+  // "skip all unmatched" button). Choosing a candidate clears it implicitly.
+  const toggleSkip = () => {
+    onChange({
+      materialId: null,
+      acceptedFields: new Set(),
+      overwriteFields: new Set(),
+      skipped: !isSkipped,
+    });
+  };
+
   // Digit keys 1-9 select the matching candidate card. Guarded so typing in the
   // manual-search box (or any text field) never hijacks the keystroke.
   useEffect(() => {
@@ -1029,12 +1043,24 @@ function MatchChooser({
     <div className="space-y-4">
       {/* Excel row */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-          Dòng Excel {row.originalRowIndex}
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-900">
-          {row.name || "(không có tên)"}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              Dòng Excel {row.originalRowIndex}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">
+              {row.name || "(không có tên)"}
+            </p>
+          </div>
+          <Button
+            variant={isSkipped ? "warning" : "secondary"}
+            size="sm"
+            className="shrink-0"
+            onClick={toggleSkip}
+          >
+            {isSkipped ? "Bỏ qua: bật" : "Bỏ qua dòng này"}
+          </Button>
+        </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {FILLABLE_FIELDS.filter((f) => f !== "currency").map((field) => {
             const value = sheetFields[field]?.trim() ?? "";
