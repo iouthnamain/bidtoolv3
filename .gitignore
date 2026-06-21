@@ -57,3 +57,6 @@ yarn-error.log*
 # bun
 bun.lockb
 .obsidian
+
+# runtime data (uploaded/generated files — never commit)
+/data

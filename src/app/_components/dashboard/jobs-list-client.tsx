@@ -83,6 +83,12 @@ type UnifiedJob = {
   updatedAt: string | null;
   /** Detail route, or null when the job type has no dedicated page. */
   href: string | null;
+  /** Optional outcome breakdown rendered as chips under the subtitle. */
+  counts?: {
+    matched?: number;
+    needsReview?: number;
+    error?: number;
+  };
 };
 
 function shortId(id: string) {
@@ -123,6 +129,11 @@ function fromExcel(job: ExcelJob): UnifiedJob {
     total: job.totalRows,
     updatedAt: job.updatedAt,
     href: `/enrich/jobs/${job.id}`,
+    counts: {
+      matched: job.matchedRows,
+      needsReview: job.needsReviewRows,
+      error: job.errorRows,
+    },
   };
 }
 
@@ -167,6 +178,11 @@ function fromEnrichment(job: EnrichmentJob): UnifiedJob {
     total: job.total,
     updatedAt: job.lastProgressAt ?? job.finishedAt ?? job.startedAt,
     href: `/materials/enrich/jobs/${job.id}`,
+    counts: {
+      matched: job.matched,
+      needsReview: job.needsReview,
+      error: job.failed,
+    },
   };
 }
 
@@ -354,6 +370,28 @@ function JobRow({
       <p className="mt-0.5 truncate text-xs text-slate-500">
         {job.subtitle} · {formatDateTime(job.updatedAt)}
       </p>
+      {job.counts &&
+      (job.counts.matched ||
+        job.counts.needsReview ||
+        job.counts.error) ? (
+        <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold">
+          {job.counts.matched ? (
+            <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700 tabular-nums">
+              {job.counts.matched.toLocaleString("vi-VN")} khớp
+            </span>
+          ) : null}
+          {job.counts.needsReview ? (
+            <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-amber-700 tabular-nums">
+              {job.counts.needsReview.toLocaleString("vi-VN")} cần duyệt
+            </span>
+          ) : null}
+          {job.counts.error ? (
+            <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-rose-700 tabular-nums">
+              {job.counts.error.toLocaleString("vi-VN")} lỗi
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {active && job.total > 0 ? (
         <div className="mt-2 max-w-xs">
           <div className="flex justify-between text-[11px] font-semibold text-sky-800">
