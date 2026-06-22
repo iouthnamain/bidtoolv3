@@ -42,6 +42,11 @@ bun run db:studio     # Drizzle Studio
 
 Releases (desktop, on-prem bundle, on-prem image) are built by GitHub Actions. Tag with `bun run release patch` or `git tag v0.1.0 && git push origin v0.1.0`. See [`docs/updates/README.md`](docs/updates/README.md).
 
+## Documentation
+
+- [Main workflows](docs/workflows.md) — routes, tRPC procedures, services, and background jobs
+- [Docs index](docs/README.md) — all documentation
+
 ## Troubleshooting
 
 - Docker errors: ensure the Docker daemon is running before `dev:*` commands.
