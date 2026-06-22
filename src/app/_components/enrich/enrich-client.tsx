@@ -25,7 +25,6 @@ import {
   type EnrichStep,
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
-import { EnrichJobsList } from "~/app/_components/enrich/enrich-jobs-list";
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import {
   ManualProductDialog,
@@ -405,12 +404,6 @@ export function MaterialEnrichClient() {
 
   return (
     <div className="animate-rise space-y-4">
-      {step === 1 && !file ? (
-        <section className="panel p-4 sm:p-5">
-          <EnrichJobsList limit={10} compact />
-        </section>
-      ) : null}
-
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
 
       {error ? (
@@ -665,7 +658,119 @@ function UploadStep({
           </Button>
         </div>
       </div>
+
+      <EnrichXlsxPreviewPanel
+        sheet={activeSheet}
+        isLoading={isPreviewLoading}
+      />
     </section>
+  );
+}
+
+function EnrichXlsxPreviewPanel({
+  sheet,
+  isLoading,
+}: {
+  sheet: EnrichPreviewSheet | undefined;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="border-t border-slate-200 px-4 py-4">
+        <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Đang đọc file và tạo preview…
+        </div>
+      </div>
+    );
+  }
+
+  if (!sheet) {
+    return null;
+  }
+
+  const mappedHeaders = new Set(
+    Object.values(sheet.suggestedMapping).filter(
+      (header): header is string => Boolean(header),
+    ),
+  );
+  const headers = sheet.headers.length > 0 ? sheet.headers : ["(trống)"];
+
+  return (
+    <div className="border-t border-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <div>
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            Xem trước Excel
+          </p>
+          <p className="mt-1 text-sm font-bold text-slate-900">{sheet.name}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Header dòng {sheet.activeHeaderRowIndex};{" "}
+            {sheet.rowCount.toLocaleString("vi-VN")} dòng dữ liệu.
+          </p>
+        </div>
+        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 tabular-nums">
+          {sheet.previewRows.length.toLocaleString("vi-VN")} dòng preview
+        </span>
+      </div>
+
+      <div className="px-4 pb-4">
+        {sheet.warnings.length > 0 ? (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {sheet.warnings[0]}
+          </div>
+        ) : null}
+
+        {sheet.previewRows.length > 0 ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[36rem] divide-y divide-slate-200 text-sm break-words">
+              <thead className="bg-slate-100 text-left text-xs font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="sticky left-0 z-10 bg-slate-100 px-3 py-2 whitespace-nowrap">
+                    Dòng
+                  </th>
+                  {headers.map((header) => (
+                    <th
+                      key={header}
+                      className={`max-w-48 px-3 py-2 whitespace-nowrap ${
+                        mappedHeaders.has(header)
+                          ? "bg-sky-100 text-sky-900"
+                          : ""
+                      }`}
+                    >
+                      <span className="line-clamp-2">{header}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {sheet.previewRows.map((row, index) => (
+                  <tr key={row.key}>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
+                      {sheet.activeHeaderRowIndex + index + 1}
+                    </td>
+                    {headers.map((header) => (
+                      <td
+                        key={`${row.key}-${header}`}
+                        className="max-w-56 px-3 py-2 text-slate-700"
+                      >
+                        <span className="line-clamp-3">
+                          {row.values[header]?.trim() || "-"}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+            Không có dòng dữ liệu để preview trên sheet này.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

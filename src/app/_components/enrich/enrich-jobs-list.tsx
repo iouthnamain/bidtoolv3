@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2, RotateCcw } from "lucide-react";
+import { Loader2, RotateCcw } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
@@ -58,18 +57,12 @@ function progressPercent(processed: number, total: number) {
   return Math.min(100, Math.round((processed / total) * 100));
 }
 
-/**
- * Shared excel-research job list. Used on the main "Đối chiếu & điền Excel"
- * page (compact mode) and the dedicated /enrich/jobs page (full mode).
- */
+/** Excel-research job list for the dedicated /enrich/jobs page. */
 export function EnrichJobsList({
   limit = 50,
-  compact = false,
   emptyAction,
 }: {
   limit?: number;
-  /** Compact mode shrinks the chrome for embedding above the upload wizard. */
-  compact?: boolean;
   /** Optional CTA shown in the empty state. */
   emptyAction?: React.ReactNode;
 }) {
@@ -101,19 +94,10 @@ export function EnrichJobsList({
         <div>
           <p className="section-title">Danh sách job</p>
           <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
-            {compact ? "Job nghiên cứu Excel" : "Lịch sử nghiên cứu"}
+            Lịch sử nghiên cứu
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          {compact ? (
-            <Link
-              href="/enrich/jobs"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:text-violet-900"
-            >
-              Xem tất cả
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-            </Link>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
