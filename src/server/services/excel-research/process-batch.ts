@@ -17,6 +17,8 @@ import {
   resolveExcelResearchRowConcurrency,
 } from "~/server/services/app-settings";
 import { runWithConcurrency } from "~/server/services/concurrency";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-process-batch");
 import {
   DEFAULT_EXCEL_RESEARCH_CONFIG,
   excelResearchJobConfigSchema,
@@ -301,7 +303,7 @@ async function persistRowResult(
  * Claim up to one batch of pending rows, run catalog + web research, persist
  * evidence and change log. Returns the number of rows still pending.
  */
-export async function processJobBatch(jobId: string): Promise<number> {
+async function _processJobBatch(jobId: string): Promise<number> {
   const [job] = await db
     .select()
     .from(excelResearchJobs)
@@ -374,7 +376,7 @@ export async function processJobBatch(jobId: string): Promise<number> {
   return countPendingRows(jobId);
 }
 
-export async function processJobBatchDetailed(
+async function _processJobBatchDetailed(
   jobId: string,
 ): Promise<ProcessBatchResult> {
   const batchId = randomUUID();
@@ -387,7 +389,7 @@ export async function processJobBatchDetailed(
   };
 }
 
-export async function resetStaleExcelResearchRows() {
+async function _resetStaleExcelResearchRows() {
   const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
@@ -406,3 +408,7 @@ export async function resetStaleExcelResearchRows() {
       ),
     );
 }
+
+export const processJobBatch = traceFn(log, "processJobBatch", _processJobBatch);
+export const processJobBatchDetailed = traceFn(log, "processJobBatchDetailed", _processJobBatchDetailed);
+export const resetStaleExcelResearchRows = traceFn(log, "resetStaleExcelResearchRows", _resetStaleExcelResearchRows);

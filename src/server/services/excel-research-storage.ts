@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { resolveExcelResearchDir } from "~/server/services/app-settings";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-storage");
 
 export class ExcelResearchStorageError extends Error {}
 
@@ -35,7 +37,7 @@ async function storageRoot() {
     : path.join(process.cwd(), "data", "excel-research");
 }
 
-export async function excelResearchJobRoot(jobId: string) {
+async function _excelResearchJobRoot(jobId: string) {
   return path.join(await storageRoot(), jobId);
 }
 
@@ -43,7 +45,7 @@ async function artifactDir(jobId: string, kind: ExcelResearchStorageKind) {
   return path.join(await excelResearchJobRoot(jobId), ARTIFACT_SUBDIRS[kind]);
 }
 
-export function sanitizeExcelResearchFileName(fileName: string) {
+function _sanitizeExcelResearchFileName(fileName: string) {
   const base = path.basename(fileName.trim() || "workbook.xlsx");
   const cleaned = base
     .replace(/[^\p{L}\p{N}._\- ]+/gu, "_")
@@ -54,7 +56,7 @@ export function sanitizeExcelResearchFileName(fileName: string) {
   return /\.xlsx$/i.test(withName) ? withName : `${withName}.xlsx`;
 }
 
-export function sanitizeArtifactFileName(fileName: string, fallback: string) {
+function _sanitizeArtifactFileName(fileName: string, fallback: string) {
   const base = path.basename(fileName.trim() || fallback);
   const cleaned = base
     .replace(/[^\p{L}\p{N}._\- ]+/gu, "_")
@@ -64,7 +66,7 @@ export function sanitizeArtifactFileName(fileName: string, fallback: string) {
   return cleaned.replace(/^\.+/, "") || fallback;
 }
 
-export function decodeExcelResearchBase64(value: string) {
+function _decodeExcelResearchBase64(value: string) {
   const base64 = value.includes(",") ? (value.split(",").pop() ?? "") : value;
   const buffer = Buffer.from(base64, "base64");
   if (buffer.byteLength === 0) {
@@ -100,7 +102,7 @@ function defaultFileName(kind: ExcelResearchStorageKind, fileName: string) {
   return sanitizeArtifactFileName(fileName, "report.json");
 }
 
-export async function saveExcelResearchFile(
+async function _saveExcelResearchFile(
   jobId: string,
   kind: ExcelResearchStorageKind,
   fileName: string,
@@ -122,19 +124,19 @@ export async function saveExcelResearchFile(
   };
 }
 
-export async function readExcelResearchFile(localFilePath: string) {
+async function _readExcelResearchFile(localFilePath: string) {
   return readFile(await resolveArtifactPath(localFilePath));
 }
 
-export async function readExcelResearchArtifact(localFilePath: string) {
+async function _readExcelResearchArtifact(localFilePath: string) {
   return readExcelResearchFile(localFilePath);
 }
 
-export function bufferToDataUrl(buffer: Buffer) {
+function _bufferToDataUrl(buffer: Buffer) {
   return `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${buffer.toString("base64")}`;
 }
 
-export async function saveOriginalWorkbook(
+async function _saveOriginalWorkbook(
   jobId: string,
   fileName: string,
   buffer: Buffer,
@@ -142,7 +144,7 @@ export async function saveOriginalWorkbook(
   return saveExcelResearchFile(jobId, "original", fileName, buffer);
 }
 
-export async function saveEnrichedWorkbook(
+async function _saveEnrichedWorkbook(
   jobId: string,
   fileName: string,
   buffer: Buffer,
@@ -150,7 +152,7 @@ export async function saveEnrichedWorkbook(
   return saveExcelResearchFile(jobId, "enriched", fileName, buffer);
 }
 
-export async function saveResearchPdf(
+async function _saveResearchPdf(
   jobId: string,
   fileName: string,
   buffer: Buffer,
@@ -158,7 +160,7 @@ export async function saveResearchPdf(
   return saveExcelResearchFile(jobId, "pdf", fileName, buffer);
 }
 
-export async function saveResearchReport(
+async function _saveResearchReport(
   jobId: string,
   fileName: string,
   buffer: Buffer,
@@ -167,7 +169,21 @@ export async function saveResearchReport(
   return saveExcelResearchFile(jobId, "report", fileName, buffer, mimeType);
 }
 
-export async function deleteExcelResearchJobFiles(jobId: string) {
+async function _deleteExcelResearchJobFiles(jobId: string) {
   const absoluteDir = await excelResearchJobRoot(jobId);
   await rm(absoluteDir, { recursive: true, force: true });
 }
+
+export const excelResearchJobRoot = traceFn(log, "excelResearchJobRoot", _excelResearchJobRoot);
+export const sanitizeExcelResearchFileName = traceFn(log, "sanitizeExcelResearchFileName", _sanitizeExcelResearchFileName);
+export const sanitizeArtifactFileName = traceFn(log, "sanitizeArtifactFileName", _sanitizeArtifactFileName);
+export const decodeExcelResearchBase64 = traceFn(log, "decodeExcelResearchBase64", _decodeExcelResearchBase64);
+export const saveExcelResearchFile = traceFn(log, "saveExcelResearchFile", _saveExcelResearchFile);
+export const readExcelResearchFile = traceFn(log, "readExcelResearchFile", _readExcelResearchFile);
+export const readExcelResearchArtifact = traceFn(log, "readExcelResearchArtifact", _readExcelResearchArtifact);
+export const bufferToDataUrl = traceFn(log, "bufferToDataUrl", _bufferToDataUrl);
+export const saveOriginalWorkbook = traceFn(log, "saveOriginalWorkbook", _saveOriginalWorkbook);
+export const saveEnrichedWorkbook = traceFn(log, "saveEnrichedWorkbook", _saveEnrichedWorkbook);
+export const saveResearchPdf = traceFn(log, "saveResearchPdf", _saveResearchPdf);
+export const saveResearchReport = traceFn(log, "saveResearchReport", _saveResearchReport);
+export const deleteExcelResearchJobFiles = traceFn(log, "deleteExcelResearchJobFiles", _deleteExcelResearchJobFiles);

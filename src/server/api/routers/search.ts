@@ -37,6 +37,9 @@ import {
   InvalidSourceUrlError,
 } from "~/server/services/bidwinner-detail";
 import { queryBidWinnerPublicSearch } from "~/server/services/bidwinner-public-search";
+import { createLogger } from "~/server/lib/logger";
+
+const log = createLogger("search");
 import {
   isSavedFilterSchemaDriftError,
   throwSavedFilterSchemaDriftError,
@@ -421,14 +424,11 @@ export const searchRouter = createTRPCRouter({
           sortOrder: input.sortOrder,
         });
       } catch (error) {
-        console.warn("BidWinner public search failed", {
-          input: {
-            mode: input.mode,
-            criteria,
-            offset: input.offset,
-            limit: input.limit,
-            sortOrder: input.sortOrder,
-          },
+        log.warn("bidwinner_public_search_failed", {
+          mode: input.mode,
+          offset: input.offset,
+          limit: input.limit,
+          sortOrder: input.sortOrder,
           error,
         });
 
@@ -537,8 +537,10 @@ export const searchRouter = createTRPCRouter({
           });
         }
 
-        console.error("BidWinner detail fetch failed", {
-          input,
+        log.error("bidwinner_detail_fetch_failed", {
+          entityType: input.entityType,
+          externalId: input.externalId,
+          sourceUrl: input.sourceUrl,
           error,
         });
 

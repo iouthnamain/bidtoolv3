@@ -21,6 +21,8 @@ import {
 } from "~/lib/materials/shop-attribute-normalize";
 import { isServerlessRuntime } from "~/server/runtime";
 import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-material-scraper");
 
 export { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
 
@@ -170,7 +172,7 @@ type ShopScrapePageConfig = {
   specLabelPrefixes?: readonly string[];
 };
 
-export async function scrapeShopMaterialsFromUrl({
+async function _scrapeShopMaterialsFromUrl({
   url,
   maxPages = DEFAULT_MAX_PAGES,
   maxProducts = DEFAULT_MAX_PRODUCTS,
@@ -604,7 +606,7 @@ function throwIfAborted(signal: AbortSignal | undefined) {
   }
 }
 
-export async function closeShopScraperBrowser() {
+async function _closeShopScraperBrowser() {
   const browserPromise = SHARED_BROWSER_PROMISE;
   SHARED_BROWSER_PROMISE = null;
   if (!browserPromise) {
@@ -626,7 +628,7 @@ export async function closeShopScraperBrowser() {
   }
 }
 
-export function extractProductsFromPageSnapshot(
+function _extractProductsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
 ): ScrapedShopProduct[] {
@@ -634,7 +636,7 @@ export function extractProductsFromPageSnapshot(
     .products;
 }
 
-export function extractProductsWithDiagnosticsFromPageSnapshot(
+function _extractProductsWithDiagnosticsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
 ): {
@@ -843,7 +845,7 @@ function findBestDetailProduct(
   );
 }
 
-export function mergeScrapedProductData(
+function _mergeScrapedProductData(
   base: ScrapedShopProduct | undefined,
   incoming: ScrapedShopProduct,
 ): ScrapedShopProduct {
@@ -1145,7 +1147,7 @@ function isPrivateIpv4(address: string) {
   );
 }
 
-export function collectShopPageSnapshot(
+function _collectShopPageSnapshot(
   config: ShopScrapePageConfig = { promoBadgeLabels: [] },
 ): ShopPageSnapshot {
   const promoBadgeLabels = config.promoBadgeLabels ?? [];
@@ -2697,7 +2699,7 @@ function cleanLabeledValue(value: string | undefined) {
   return cleaned.slice(0, 160);
 }
 
-export function enrichProductWithPageText(
+function _enrichProductWithPageText(
   product: ScrapedShopProduct,
   pageText: string,
   specPairs?: ReadonlyArray<{ label: string; value: string }>,
@@ -2782,3 +2784,11 @@ function normalizeKey(value: string) {
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+export const scrapeShopMaterialsFromUrl = traceFn(log, "scrapeShopMaterialsFromUrl", _scrapeShopMaterialsFromUrl);
+export const closeShopScraperBrowser = traceFn(log, "closeShopScraperBrowser", _closeShopScraperBrowser);
+export const extractProductsFromPageSnapshot = traceFn(log, "extractProductsFromPageSnapshot", _extractProductsFromPageSnapshot);
+export const extractProductsWithDiagnosticsFromPageSnapshot = traceFn(log, "extractProductsWithDiagnosticsFromPageSnapshot", _extractProductsWithDiagnosticsFromPageSnapshot);
+export const mergeScrapedProductData = traceFn(log, "mergeScrapedProductData", _mergeScrapedProductData);
+export const collectShopPageSnapshot = traceFn(log, "collectShopPageSnapshot", _collectShopPageSnapshot);
+export const enrichProductWithPageText = traceFn(log, "enrichProductWithPageText", _enrichProductWithPageText);

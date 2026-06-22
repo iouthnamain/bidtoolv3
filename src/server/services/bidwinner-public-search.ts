@@ -20,6 +20,8 @@ import {
 } from "~/server/services/bidwinner-search";
 import { resolveBidwinnerBaseUrl, resolveBidwinnerTimeoutMs } from "~/server/services/app-settings";
 import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-bidwinner-public-search");
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -1329,7 +1331,7 @@ async function searchProjectMode(input: {
   };
 }
 
-export async function queryBidWinnerPublicSearch(input: {
+async function _queryBidWinnerPublicSearch(input: {
   mode: SearchMode;
   criteria: SearchCriteria;
   offset: number;
@@ -1368,3 +1370,5 @@ export async function queryBidWinnerPublicSearch(input: {
     sortOrder: input.sortOrder,
   });
 }
+
+export const queryBidWinnerPublicSearch = traceFn(log, "queryBidWinnerPublicSearch", _queryBidWinnerPublicSearch);

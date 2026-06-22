@@ -13,6 +13,10 @@ import { db } from "~/server/db";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { can, type Permission, type Role } from "~/lib/permissions";
+import { createLogger } from "~/server/lib/logger";
+import { resolveSlowProcedureLogMs } from "~/server/lib/trpc-request-log";
+
+const log = createLogger("trpc");
 
 /**
  * 1. CONTEXT
@@ -76,10 +80,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
       session = result.session;
     }
   } catch (error) {
-    console.error(
-      "[TRPC] Session resolution failed; treating as anonymous",
-      error,
-    );
+    log.warn("session_resolution_failed", { error });
   }
 
   return {
@@ -136,14 +137,7 @@ export const createTRPCRouter = t.router;
 
 const trpcDebugEnabled = process.env.BIDTOOL_TRPC_DEBUG === "true";
 const trpcArtificialDelayEnabled = process.env.BIDTOOL_TRPC_DELAY === "true";
-const configuredSlowProcedureLogMs = Number(
-  process.env.BIDTOOL_TRPC_SLOW_MS ?? 750,
-);
-const slowProcedureLogMs =
-  Number.isFinite(configuredSlowProcedureLogMs) &&
-  configuredSlowProcedureLogMs >= 0
-    ? configuredSlowProcedureLogMs
-    : 750;
+const slowProcedureLogMs = resolveSlowProcedureLogMs();
 
 function shouldLogProcedure(elapsedMs: number) {
   return trpcDebugEnabled || elapsedMs >= slowProcedureLogMs;
@@ -156,7 +150,7 @@ function shouldLogProcedure(elapsedMs: number) {
  * waterfalls. Set BIDTOOL_TRPC_DEBUG=true to log every procedure; otherwise
  * only slow procedures are logged.
  */
-const timingMiddleware = t.middleware(async ({ next, path }) => {
+const timingMiddleware = t.middleware(async ({ next, path, type }) => {
   const start = Date.now();
 
   if (t._config.isDev && trpcArtificialDelayEnabled) {
@@ -168,7 +162,14 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
   const elapsedMs = Date.now() - start;
 
   if (shouldLogProcedure(elapsedMs)) {
-    console.log(`[TRPC] ${path} took ${elapsedMs}ms to execute`);
+    const level = result.ok ? "debug" : "warn";
+    log[level]("procedure_finished", {
+      path,
+      type,
+      durationMs: elapsedMs,
+      ok: result.ok,
+      ...(elapsedMs >= slowProcedureLogMs ? { slow: true } : {}),
+    });
   }
 
   return result;

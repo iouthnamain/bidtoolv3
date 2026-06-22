@@ -14,6 +14,8 @@ import {
   isShopScrapeJobActivelyRunning,
 } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-scrape-jobs");
 import {
   sanitizeScrapedProductList,
   sanitizeScrapedProductName,
@@ -71,7 +73,7 @@ const ACTIVE_JOB_STATUSES: ShopScrapeJobStatus[] = ["queued", "running"];
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
 
-export async function startShopScrapeJob(input: {
+async function _startShopScrapeJob(input: {
   url: string;
   scrapeMode: "limited" | "all";
   maxPages: number | null;
@@ -133,7 +135,7 @@ export async function startShopScrapeJob(input: {
   }
 }
 
-export async function listShopScrapeJobs(
+async function _listShopScrapeJobs(
   input: {
     limit?: number;
     offset?: number;
@@ -155,7 +157,7 @@ export async function listShopScrapeJobs(
   return rows.map(toScrapeJobListItem);
 }
 
-export async function getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
+async function _getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(shopScrapeJobs)
@@ -170,7 +172,7 @@ export async function getShopScrapeJob(jobId: string, scope?: TenantScopeValue) 
   return job ? toScrapeJobSnapshot(job) : null;
 }
 
-export async function cancelShopScrapeJob(
+async function _cancelShopScrapeJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -218,7 +220,7 @@ const EDITABLE_SCRAPE_JOB_STATUSES: ShopScrapeJobStatus[] = [
   "cancelled",
 ];
 
-export function isScrapeJobProductsEditable(job: {
+function _isScrapeJobProductsEditable(job: {
   id: string;
   status: ShopScrapeJobStatus;
   products: ScrapedShopProduct[];
@@ -300,7 +302,7 @@ async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProd
   return toScrapeJobSnapshot(requireRow(updated));
 }
 
-export async function updateShopScrapeJobProduct(
+async function _updateShopScrapeJobProduct(
   input: {
     jobId: string;
     sourceUrl: string;
@@ -349,7 +351,7 @@ export async function updateShopScrapeJobProduct(
   return persistScrapeJobProducts(input.jobId, products);
 }
 
-export async function deleteShopScrapeJobProduct(
+async function _deleteShopScrapeJobProduct(
   input: {
     jobId: string;
     sourceUrl: string;
@@ -378,7 +380,7 @@ export async function deleteShopScrapeJobProduct(
   return persistScrapeJobProducts(input.jobId, products);
 }
 
-export async function deleteShopScrapeJobProducts(
+async function _deleteShopScrapeJobProducts(
   input: {
     jobId: string;
     sourceUrls: string[];
@@ -420,7 +422,7 @@ export async function deleteShopScrapeJobProducts(
   return { job: snapshot, removedCount };
 }
 
-export async function addShopScrapeJobProduct(
+async function _addShopScrapeJobProduct(
   input: {
     jobId: string;
     product: ScrapedShopProduct;
@@ -453,7 +455,7 @@ export async function addShopScrapeJobProduct(
   return persistScrapeJobProducts(input.jobId, [...job.products, nextProduct]);
 }
 
-export async function deleteShopScrapeJob(
+async function _deleteShopScrapeJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -476,7 +478,7 @@ export async function deleteShopScrapeJob(
   return deleted ? toScrapeJobSnapshot(deleted) : existing;
 }
 
-export function normalizeShopScrapeUrl(input: string) {
+function _normalizeShopScrapeUrl(input: string) {
   let parsed: URL;
   try {
     parsed = new URL(input.trim());
@@ -611,3 +613,15 @@ function isUniqueViolation(error: unknown) {
   }
   return false;
 }
+
+export const startShopScrapeJob = traceFn(log, "startShopScrapeJob", _startShopScrapeJob);
+export const listShopScrapeJobs = traceFn(log, "listShopScrapeJobs", _listShopScrapeJobs);
+export const getShopScrapeJob = traceFn(log, "getShopScrapeJob", _getShopScrapeJob);
+export const cancelShopScrapeJob = traceFn(log, "cancelShopScrapeJob", _cancelShopScrapeJob);
+export const isScrapeJobProductsEditable = traceFn(log, "isScrapeJobProductsEditable", _isScrapeJobProductsEditable);
+export const updateShopScrapeJobProduct = traceFn(log, "updateShopScrapeJobProduct", _updateShopScrapeJobProduct);
+export const deleteShopScrapeJobProduct = traceFn(log, "deleteShopScrapeJobProduct", _deleteShopScrapeJobProduct);
+export const deleteShopScrapeJobProducts = traceFn(log, "deleteShopScrapeJobProducts", _deleteShopScrapeJobProducts);
+export const addShopScrapeJobProduct = traceFn(log, "addShopScrapeJobProduct", _addShopScrapeJobProduct);
+export const deleteShopScrapeJob = traceFn(log, "deleteShopScrapeJob", _deleteShopScrapeJob);
+export const normalizeShopScrapeUrl = traceFn(log, "normalizeShopScrapeUrl", _normalizeShopScrapeUrl);

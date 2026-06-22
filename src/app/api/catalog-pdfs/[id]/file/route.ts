@@ -9,6 +9,7 @@ import {
   CatalogPdfStorageError,
   readCatalogPdfFile,
 } from "~/server/services/catalog-pdf-storage";
+import { logApiRoute } from "~/server/lib/trpc-request-log";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,15 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id: rawId } = await params;
+  return logApiRoute({
+    route: `/api/catalog-pdfs/${rawId}/file`,
+    method: "GET",
+    handler: async () => handleCatalogPdfFile(request, rawId),
+  });
+}
+
+async function handleCatalogPdfFile(request: Request, rawId: string) {
   // Auth guard (Phase 4). When auth is disabled this is a complete no-op and the
   // route behaves exactly as before. When enabled, any authenticated user may
   // download — catalog PDFs are GLOBAL/shared data, not tenant-scoped.
@@ -26,7 +36,6 @@ export async function GET(
     }
   }
 
-  const { id: rawId } = await params;
   const id = Number.parseInt(rawId, 10);
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "ID không hợp lệ." }, { status: 400 });

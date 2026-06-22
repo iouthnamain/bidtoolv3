@@ -1,4 +1,6 @@
 import { resolveSearxngBaseUrl } from "~/server/services/app-settings";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-web-search");
 
 export type RawSearchHit = {
   provider: string;
@@ -28,7 +30,7 @@ function domainFromUrl(url: string) {
   }
 }
 
-export async function searchWeb(
+async function _searchWeb(
   query: string,
   limit = 8,
 ): Promise<{ hits: RawSearchHit[]; warning?: string }> {
@@ -70,3 +72,5 @@ export async function searchWeb(
 
   return { hits: hits.filter((h) => h.url.length > 0) };
 }
+
+export const searchWeb = traceFn(log, "searchWeb", _searchWeb);

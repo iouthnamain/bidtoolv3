@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { eq, lt } from "drizzle-orm";
 
 import { db } from "~/server/db";
+import { createLogger, traceFn } from "~/server/lib/logger";
+
+const log = createLogger("bidwinner-detail");
 import {
   packageDetailsCache,
   planDetailsCache,
@@ -938,7 +941,7 @@ async function extractLiveDetails(input: {
   };
 }
 
-export async function fetchBidWinnerDetail(input: {
+async function _fetchBidWinnerDetail(input: {
   externalId: string;
   sourceUrl?: string;
 }): Promise<BidWinnerDetailResult> {
@@ -1036,7 +1039,7 @@ async function purgeStaleCacheRows(entityType: BidWinnerDetailEntityType) {
     .where(lt(packageDetailsCache.updatedAt, cutoff));
 }
 
-export async function fetchBidWinnerSourceDetail(input: {
+async function _fetchBidWinnerSourceDetail(input: {
   entityType: BidWinnerDetailEntityType;
   externalId: string;
   sourceUrl?: string;
@@ -1056,7 +1059,7 @@ export async function fetchBidWinnerSourceDetail(input: {
   try {
     cacheRow = await readCacheRow(input.entityType, cacheKey);
   } catch (error) {
-    console.warn("Package details cache read failed, continue without cache", {
+    log.warn("cache_read_failed", {
       entityType: input.entityType,
       externalId: input.externalId,
       sourceUrl: resolvedSourceUrl,
@@ -1078,7 +1081,7 @@ export async function fetchBidWinnerSourceDetail(input: {
       : null;
 
   if (cachedCore && cachedAgeMs !== null && cachedAgeMs <= CACHE_TTL_MS) {
-    console.info("Package details cache hit", {
+    log.debug("cache_hit", {
       externalId: input.externalId,
       sourceUrl: resolvedSourceUrl,
       cacheAgeMs: cachedAgeMs,
@@ -1107,7 +1110,7 @@ export async function fetchBidWinnerSourceDetail(input: {
         updatedAt: nowIso,
       });
 
-      console.info("Package details cache refreshed", {
+      log.debug("cache_refreshed", {
         entityType: input.entityType,
         externalId: input.externalId,
         sourceUrl: resolvedSourceUrl,
@@ -1117,22 +1120,19 @@ export async function fetchBidWinnerSourceDetail(input: {
         try {
           await purgeStaleCacheRows(input.entityType);
         } catch (purgeError) {
-          console.warn("Stale detail cache purge failed", {
+          log.warn("cache_purge_failed", {
             entityType: input.entityType,
             error: purgeError,
           });
         }
       }
     } catch (error) {
-      console.warn(
-        "Package details cache write failed, continue with live data",
-        {
-          entityType: input.entityType,
-          externalId: input.externalId,
-          sourceUrl: resolvedSourceUrl,
-          error,
-        },
-      );
+      log.warn("cache_write_failed", {
+        entityType: input.entityType,
+        externalId: input.externalId,
+        sourceUrl: resolvedSourceUrl,
+        error,
+      });
     }
 
     return hydrateDetailResult(freshCore, {
@@ -1141,7 +1141,7 @@ export async function fetchBidWinnerSourceDetail(input: {
     });
   } catch (error) {
     if (cachedCore) {
-      console.warn("Package details upstream failed, serving stale cache", {
+      log.warn("upstream_failed_serving_stale_cache", {
         entityType: input.entityType,
         externalId: input.externalId,
         sourceUrl: resolvedSourceUrl,
@@ -1161,3 +1161,6 @@ export async function fetchBidWinnerSourceDetail(input: {
     throw error;
   }
 }
+
+export const fetchBidWinnerDetail = traceFn(log, "fetchBidWinnerDetail", _fetchBidWinnerDetail);
+export const fetchBidWinnerSourceDetail = traceFn(log, "fetchBidWinnerSourceDetail", _fetchBidWinnerSourceDetail);

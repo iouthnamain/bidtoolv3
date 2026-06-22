@@ -16,6 +16,8 @@ import { searchWeb } from "~/server/services/excel-research/web-search";
 import { resolveAiProvider } from "~/server/services/app-settings";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import type { MaterialEnrichmentInput } from "~/lib/materials/material-enrichment-types";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-row-research");
 
 type AppDb = typeof appDb;
 
@@ -48,7 +50,7 @@ export type RowResearchOutput = {
   }>;
 };
 
-export async function processSingleRow(
+async function _processSingleRow(
   db: AppDb,
   input: RowResearchInput,
   config: ExcelResearchJobConfig,
@@ -297,3 +299,5 @@ export async function processSingleRow(
     webEvidence,
   };
 }
+
+export const processSingleRow = traceFn(log, "processSingleRow", _processSingleRow);

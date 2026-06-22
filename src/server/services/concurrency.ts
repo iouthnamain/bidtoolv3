@@ -1,4 +1,6 @@
 import "server-only";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-concurrency");
 
 /**
  * Runs `worker` over `items` with at most `concurrency` tasks in flight at a
@@ -6,7 +8,7 @@ import "server-only";
  * that throws rejects the whole run (callers that want per-item error handling
  * should catch inside the worker).
  */
-export async function runWithConcurrency<T>(
+async function _runWithConcurrency<T>(
   items: T[],
   concurrency: number,
   worker: (item: T) => Promise<void>,
@@ -27,3 +29,5 @@ export async function runWithConcurrency<T>(
   );
   await Promise.all(runners);
 }
+
+export const runWithConcurrency = traceFn(log, "runWithConcurrency", _runWithConcurrency);

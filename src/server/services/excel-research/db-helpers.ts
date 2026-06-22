@@ -1,13 +1,15 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "~/server/db";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-db-helpers");
 import {
   excelResearchChangeLog,
   excelResearchJobRows,
   excelResearchJobs,
 } from "~/server/db/schema";
 
-export async function appendChangeLog(input: {
+async function _appendChangeLog(input: {
   jobId: string;
   jobRowId?: number;
   rowNumber?: number;
@@ -33,7 +35,7 @@ export async function appendChangeLog(input: {
   });
 }
 
-export async function recomputeJobCounters(jobId: string) {
+async function _recomputeJobCounters(jobId: string) {
   const rows = await db
     .select({ status: excelResearchJobRows.status })
     .from(excelResearchJobRows)
@@ -65,3 +67,6 @@ export async function recomputeJobCounters(jobId: string) {
     })
     .where(eq(excelResearchJobs.id, jobId));
 }
+
+export const appendChangeLog = traceFn(log, "appendChangeLog", _appendChangeLog);
+export const recomputeJobCounters = traceFn(log, "recomputeJobCounters", _recomputeJobCounters);

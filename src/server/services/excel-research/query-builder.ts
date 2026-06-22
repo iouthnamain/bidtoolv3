@@ -1,9 +1,12 @@
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-query-builder");
+
 export type SearchQuery = {
   query: string;
   intent: "official" | "datasheet" | "pdf" | "general";
 };
 
-export function buildSearchQueries(input: {
+function _buildSearchQueries(input: {
   name: string;
   manufacturer?: string;
   code?: string;
@@ -37,3 +40,5 @@ export function buildSearchQueries(input: {
 
   return queries.slice(0, 2);
 }
+
+export const buildSearchQueries = traceFn(log, "buildSearchQueries", _buildSearchQueries);

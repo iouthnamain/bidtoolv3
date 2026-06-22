@@ -1,4 +1,6 @@
 import { env } from "~/env";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-openrouter");
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -62,7 +64,7 @@ type OpenRouterAssistantMessage = {
   reasoning?: string | null;
 };
 
-export function extractOpenRouterMessageContent(
+function _extractOpenRouterMessageContent(
   message: OpenRouterAssistantMessage | null | undefined,
 ) {
   if (!message) {
@@ -90,7 +92,7 @@ export function extractOpenRouterMessageContent(
   return reasoning;
 }
 
-export async function createOpenRouterChatCompletion(input: {
+async function _createOpenRouterChatCompletion(input: {
   apiKey: string;
   model: string;
   messages: OpenRouterChatMessage[];
@@ -130,7 +132,7 @@ export async function createOpenRouterChatCompletion(input: {
   };
 }
 
-export async function testOpenRouterConnection(input: {
+async function _testOpenRouterConnection(input: {
   apiKey: string;
   model: string;
 }) {
@@ -146,3 +148,7 @@ export async function testOpenRouterConnection(input: {
     model: result.model,
   };
 }
+
+export const extractOpenRouterMessageContent = traceFn(log, "extractOpenRouterMessageContent", _extractOpenRouterMessageContent);
+export const createOpenRouterChatCompletion = traceFn(log, "createOpenRouterChatCompletion", _createOpenRouterChatCompletion);
+export const testOpenRouterConnection = traceFn(log, "testOpenRouterConnection", _testOpenRouterConnection);

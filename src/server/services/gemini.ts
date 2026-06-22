@@ -1,3 +1,6 @@
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-gemini");
+
 /**
  * Google Gemini API service.
  * Uses the OpenAI-compatible endpoint provided by Google AI Studio.
@@ -42,7 +45,7 @@ function formatGeminiError(status: number, body: string) {
   return `Gemini error (${status}): ${body.slice(0, 300)}`;
 }
 
-export async function createGeminiChatCompletion(input: {
+async function _createGeminiChatCompletion(input: {
   apiKey: string;
   model: string;
   messages: GeminiChatMessage[];
@@ -84,3 +87,5 @@ export async function createGeminiChatCompletion(input: {
     usage: data.usage,
   };
 }
+
+export const createGeminiChatCompletion = traceFn(log, "createGeminiChatCompletion", _createGeminiChatCompletion);

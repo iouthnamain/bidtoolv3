@@ -29,6 +29,8 @@ import type {
   ShopImportJobResult,
 } from "~/server/services/shop-import-jobs";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-product-importer");
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
@@ -57,7 +59,7 @@ export type ImportScrapedProductsOptions = {
   onProgress?: (progress: ShopImportJobProgress) => void;
 };
 
-export async function importScrapedProducts(
+async function _importScrapedProducts(
   db: AppDb,
   products: ScrapedShopProduct[],
   options: ImportScrapedProductsOptions = {},
@@ -852,3 +854,5 @@ async function tryFuzzyMatch(
 
   return null;
 }
+
+export const importScrapedProducts = traceFn(log, "importScrapedProducts", _importScrapedProducts);

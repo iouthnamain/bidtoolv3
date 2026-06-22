@@ -2,6 +2,8 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-material-price-sources");
 
 export {
   buildMaterialMetadata,
@@ -17,7 +19,7 @@ export type {
 
 const DNS_TIMEOUT_MS = 5_000;
 
-export async function fetchPriceFromUrl(url: string): Promise<{
+async function _fetchPriceFromUrl(url: string): Promise<{
   priceText: string | null;
   price: number | null;
 }> {
@@ -142,3 +144,5 @@ function isPrivateIpv4(address: string) {
     a >= 224
   );
 }
+
+export const fetchPriceFromUrl = traceFn(log, "fetchPriceFromUrl", _fetchPriceFromUrl);

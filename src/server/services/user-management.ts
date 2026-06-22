@@ -6,6 +6,8 @@ import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { ROLES, type Role } from "~/lib/permissions";
 import { tenant, user } from "~/server/db/schema";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-user-management");
 
 /**
  * User management service (admin/manager governance).
@@ -101,7 +103,7 @@ async function assertNotLastAdmin(targetUserId: string): Promise<void> {
 }
 
 /** List all users with their tenant name joined in, newest first. */
-export async function listUsers(): Promise<ManagedUser[]> {
+async function _listUsers(): Promise<ManagedUser[]> {
   const rows = await db
     .select({
       id: user.id,
@@ -131,7 +133,7 @@ interface CreateUserInput {
   tenantId: string | null;
 }
 
-export async function createManagedUser(
+async function _createManagedUser(
   acting: ActingUser,
   input: CreateUserInput,
 ): Promise<void> {
@@ -177,7 +179,7 @@ export async function createManagedUser(
     .where(eq(user.email, input.email.trim()));
 }
 
-export async function setUserRole(
+async function _setUserRole(
   acting: ActingUser,
   targetUserId: string,
   role: Role,
@@ -221,7 +223,7 @@ export async function setUserRole(
  * Assign or change a user's tenant. Only meaningful for customers (internal
  * roles are un-tenanted). Pass null to clear. Refuses to tenant a non-customer.
  */
-export async function setUserTenant(
+async function _setUserTenant(
   acting: ActingUser,
   targetUserId: string,
   tenantId: string | null,
@@ -260,7 +262,7 @@ export async function setUserTenant(
     .where(eq(user.id, targetUserId));
 }
 
-export async function setUserBanned(
+async function _setUserBanned(
   acting: ActingUser,
   targetUserId: string,
   banned: boolean,
@@ -300,7 +302,7 @@ export async function setUserBanned(
   }
 }
 
-export async function deleteManagedUser(
+async function _deleteManagedUser(
   acting: ActingUser,
   targetUserId: string,
 ): Promise<void> {
@@ -324,3 +326,10 @@ export async function deleteManagedUser(
   // session + account rows cascade on user delete (onDelete: "cascade").
   await db.delete(user).where(eq(user.id, targetUserId));
 }
+
+export const listUsers = traceFn(log, "listUsers", _listUsers);
+export const createManagedUser = traceFn(log, "createManagedUser", _createManagedUser);
+export const setUserRole = traceFn(log, "setUserRole", _setUserRole);
+export const setUserTenant = traceFn(log, "setUserTenant", _setUserTenant);
+export const setUserBanned = traceFn(log, "setUserBanned", _setUserBanned);
+export const deleteManagedUser = traceFn(log, "deleteManagedUser", _deleteManagedUser);

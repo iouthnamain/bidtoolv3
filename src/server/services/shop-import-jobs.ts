@@ -12,6 +12,8 @@ import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortShopImportJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-import-jobs");
 
 export type ShopImportJobStatus =
   | "queued"
@@ -64,7 +66,7 @@ const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
 
-export async function startShopImportJob(
+async function _startShopImportJob(
   input: {
     scrapeJobId: string;
     productSourceUrls?: string[];
@@ -131,7 +133,7 @@ export async function startShopImportJob(
   return toImportJobSnapshot(requireRow(job));
 }
 
-export async function listShopImportJobs(
+async function _listShopImportJobs(
   input: {
     scrapeJobId?: string;
     limit?: number;
@@ -161,7 +163,7 @@ export async function listShopImportJobs(
   return rows.map(toImportJobListItem);
 }
 
-export async function getShopImportJob(jobId: string, scope?: TenantScopeValue) {
+async function _getShopImportJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(shopImportJobs)
@@ -176,7 +178,7 @@ export async function getShopImportJob(jobId: string, scope?: TenantScopeValue) 
   return job ? toImportJobSnapshot(job) : null;
 }
 
-export async function cancelShopImportJob(
+async function _cancelShopImportJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -297,3 +299,8 @@ function requireRow(row: ShopImportJobRow | undefined) {
   }
   return row;
 }
+
+export const startShopImportJob = traceFn(log, "startShopImportJob", _startShopImportJob);
+export const listShopImportJobs = traceFn(log, "listShopImportJobs", _listShopImportJobs);
+export const getShopImportJob = traceFn(log, "getShopImportJob", _getShopImportJob);
+export const cancelShopImportJob = traceFn(log, "cancelShopImportJob", _cancelShopImportJob);

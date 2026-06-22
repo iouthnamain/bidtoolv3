@@ -1,6 +1,8 @@
 import "server-only";
 
 import { resolveSearxngBaseUrl } from "~/server/services/app-settings";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("material-web-search");
 
 export type WebSearchResult = {
   title: string;
@@ -229,7 +231,7 @@ async function searchSearxngQuery(
   }
 
   if (warnings.length > 0) {
-    console.warn(`[material-enrichment] SearXNG warnings: ${warnings.join(" | ")}`);
+    log.warn("searxng_warnings", { query, warnings });
   }
 
   return [];
@@ -306,13 +308,13 @@ async function searchDuckDuckGoQuery(
   }
 
   if (warnings.length > 0) {
-    console.warn(`[material-enrichment] DuckDuckGo warnings: ${warnings.join(" | ")}`);
+    log.warn("duckduckgo_warnings", { query, warnings });
   }
 
   return [];
 }
 
-export async function fetchUrlAsSearchResult(
+async function _fetchUrlAsSearchResult(
   url: string,
   query = "known_source",
   signal?: AbortSignal,
@@ -360,7 +362,7 @@ export async function fetchUrlAsSearchResult(
   }
 }
 
-export async function fetchKnownSourceCandidates(
+async function _fetchKnownSourceCandidates(
   urls: string[],
   signal?: AbortSignal,
 ): Promise<WebSearchResult[]> {
@@ -382,7 +384,7 @@ export async function fetchKnownSourceCandidates(
   return results;
 }
 
-export async function searchQueryWithFallback(
+async function _searchQueryWithFallback(
   query: string,
   signal?: AbortSignal,
 ): Promise<WebSearchResponse> {
@@ -418,7 +420,7 @@ export async function searchQueryWithFallback(
   return { results: [], warnings };
 }
 
-export async function searchWebForProduct(
+async function _searchWebForProduct(
   queries: string[],
   signal?: AbortSignal,
 ): Promise<WebSearchResponse> {
@@ -447,9 +449,7 @@ export async function searchWebForProduct(
   }
 
   if (merged.length === 0 && warnings.length > 0) {
-    console.warn(
-      `[material-enrichment] Web search returned no results: ${warnings.join(" | ")}`,
-    );
+    log.warn("web_search_no_results", { warnings });
   }
 
   return { results: merged, warnings };
@@ -473,7 +473,7 @@ function isMarketplaceDomain(domain: string) {
   );
 }
 
-export function rankSearchResults(
+function _rankSearchResults(
   results: WebSearchResult[],
   input: { manufacturer?: string | null; name?: string | null; sourceUrl?: string | null },
 ): WebSearchResult[] {
@@ -520,7 +520,7 @@ export function rankSearchResults(
   return [...pool].sort((left, right) => right.rankScore - left.rankScore);
 }
 
-export function extractPdfUrlsFromResults(results: WebSearchResult[]) {
+function _extractPdfUrlsFromResults(results: WebSearchResult[]) {
   const urls: string[] = [];
   const seen = new Set<string>();
   for (const result of results) {
@@ -535,3 +535,10 @@ export function extractPdfUrlsFromResults(results: WebSearchResult[]) {
   }
   return urls;
 }
+
+export const fetchUrlAsSearchResult = traceFn(log, "fetchUrlAsSearchResult", _fetchUrlAsSearchResult);
+export const fetchKnownSourceCandidates = traceFn(log, "fetchKnownSourceCandidates", _fetchKnownSourceCandidates);
+export const searchQueryWithFallback = traceFn(log, "searchQueryWithFallback", _searchQueryWithFallback);
+export const searchWebForProduct = traceFn(log, "searchWebForProduct", _searchWebForProduct);
+export const rankSearchResults = traceFn(log, "rankSearchResults", _rankSearchResults);
+export const extractPdfUrlsFromResults = traceFn(log, "extractPdfUrlsFromResults", _extractPdfUrlsFromResults);

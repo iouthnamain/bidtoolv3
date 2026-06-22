@@ -4,6 +4,8 @@ import { createGeminiChatCompletion, type GeminiChatMessage } from "~/server/ser
 import { createOpenAICompatibleChatCompletion, type OpenAICompatibleChatMessage } from "~/server/services/openai-compatible";
 import { createOpenRouterChatCompletion, type OpenRouterChatMessage } from "~/server/services/openrouter";
 import type { ResolvedAiProvider } from "~/server/services/app-settings";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-ai-dispatch");
 
 export type AiChatMessage = {
   role: "system" | "user" | "assistant";
@@ -24,7 +26,7 @@ export type AiChatCompletionResult = {
  * Unified chat completion dispatcher.
  * Routes to the correct provider based on the resolved config from resolveAiProvider().
  */
-export async function callAiProvider(
+async function _callAiProvider(
   resolved: ResolvedAiProvider,
   messages: AiChatMessage[],
   options?: {
@@ -62,3 +64,5 @@ export async function callAiProvider(
     responseFormat: options?.responseFormat,
   });
 }
+
+export const callAiProvider = traceFn(log, "callAiProvider", _callAiProvider);

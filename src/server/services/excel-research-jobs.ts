@@ -45,6 +45,8 @@ import {
 } from "~/server/services/excel-workbook";
 import { writeEnrichedWorkbook } from "~/server/services/excel-enrich";
 import type { FillableField } from "~/lib/materials/excel-enrich-fields";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-jobs");
 
 function decodeBase64(workbookBase64: string): Buffer {
   const base64 = workbookBase64.includes(",")
@@ -77,7 +79,7 @@ async function ttlExpiresAt() {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-export async function createJob(input: {
+async function _createJob(input: {
   fileName: string;
   workbookBase64: string;
   sheetName: string;
@@ -185,7 +187,7 @@ export async function createJob(input: {
   return { jobId, totalRows: rows.length, artifactId: artifact?.id ?? null };
 }
 
-export async function getJob(jobId: string, scope?: TenantScopeValue) {
+async function _getJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(excelResearchJobs)
@@ -204,7 +206,7 @@ export async function getJob(jobId: string, scope?: TenantScopeValue) {
  * tenant scope. Used by row-level and mutation functions to ensure a customer
  * can never touch another tenant's job (or its child rows/evidence).
  */
-export async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
+async function _assertJobInScope(jobId: string, scope: TenantScopeValue) {
   const job = await getJob(jobId, scope);
   if (!job) {
     throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
@@ -212,7 +214,7 @@ export async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
   return job;
 }
 
-export async function getJobStatus(jobId: string, scope?: TenantScopeValue) {
+async function _getJobStatus(jobId: string, scope?: TenantScopeValue) {
   const job = await getJob(jobId, scope);
   if (!job) {
     throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
@@ -232,7 +234,7 @@ export async function getJobStatus(jobId: string, scope?: TenantScopeValue) {
   };
 }
 
-export async function listJobs(limit = 25, scope?: TenantScopeValue) {
+async function _listJobs(limit = 25, scope?: TenantScopeValue) {
   const rows = await db
     .select()
     .from(excelResearchJobs)
@@ -242,7 +244,7 @@ export async function listJobs(limit = 25, scope?: TenantScopeValue) {
   return rows.map(toJobSnapshot);
 }
 
-export async function startJob(jobId: string, scope?: TenantScopeValue) {
+async function _startJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
   const [job] = await db
     .select()
@@ -293,7 +295,7 @@ export async function startJob(jobId: string, scope?: TenantScopeValue) {
   return getJob(jobId);
 }
 
-export async function pauseJob(jobId: string, scope?: TenantScopeValue) {
+async function _pauseJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
   const now = new Date().toISOString();
   await db
@@ -303,7 +305,7 @@ export async function pauseJob(jobId: string, scope?: TenantScopeValue) {
   return getJob(jobId);
 }
 
-export async function cancelJob(jobId: string, scope?: TenantScopeValue) {
+async function _cancelJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
   const now = new Date().toISOString();
   await db
@@ -326,7 +328,7 @@ export async function cancelJob(jobId: string, scope?: TenantScopeValue) {
  * path takes over. The batch processor only ever claims `pending` rows, so
  * already `matched`/`approved`/`needs_review`/`skipped` rows are untouched.
  */
-export async function restartJob(jobId: string, scope?: TenantScopeValue) {
+async function _restartJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
   const [job] = await db
     .select()
@@ -417,7 +419,7 @@ export async function restartJob(jobId: string, scope?: TenantScopeValue) {
   return startJob(jobId, scope);
 }
 
-export async function listRowResults(
+async function _listRowResults(
   jobId: string,
   opts: { status?: ExcelResearchRowStatus; limit?: number; offset?: number } = {},
   scope?: TenantScopeValue,
@@ -482,7 +484,7 @@ export async function listRowResults(
   };
 }
 
-export async function getRowResult(
+async function _getRowResult(
   jobId: string,
   rowNumber: number,
   scope?: TenantScopeValue,
@@ -531,7 +533,7 @@ export async function getRowResult(
   return { row, evidence, compare };
 }
 
-export async function approveRow(input: {
+async function _approveRow(input: {
   jobId: string;
   rowNumber: number;
   materialId?: number;
@@ -604,7 +606,7 @@ const BULK_APPROVABLE_STATUSES: ExcelResearchRowStatus[] = [
   "matched",
 ];
 
-export async function bulkApproveRows(input: {
+async function _bulkApproveRows(input: {
   jobId: string;
   rowIds?: string[];
   minConfidence?: number;
@@ -695,7 +697,7 @@ export async function bulkApproveRows(input: {
   return { approved, failed };
 }
 
-export async function rejectRow(input: {
+async function _rejectRow(input: {
   jobId: string;
   rowNumber: number;
   reason?: string;
@@ -739,7 +741,7 @@ export async function rejectRow(input: {
   return getRowResult(input.jobId, input.rowNumber);
 }
 
-export async function exportJobExcel(jobId: string, scope?: TenantScopeValue) {
+async function _exportJobExcel(jobId: string, scope?: TenantScopeValue) {
   const job = requireRow(await getJob(jobId, scope));
   const [artifact] = await db
     .select()
@@ -904,3 +906,19 @@ function toRowSummary(row: typeof excelResearchJobRows.$inferSelect) {
     hasMatch: row.matchedMaterialId != null,
   };
 }
+
+export const createJob = traceFn(log, "createJob", _createJob);
+export const getJob = traceFn(log, "getJob", _getJob);
+export const assertJobInScope = traceFn(log, "assertJobInScope", _assertJobInScope);
+export const getJobStatus = traceFn(log, "getJobStatus", _getJobStatus);
+export const listJobs = traceFn(log, "listJobs", _listJobs);
+export const startJob = traceFn(log, "startJob", _startJob);
+export const pauseJob = traceFn(log, "pauseJob", _pauseJob);
+export const cancelJob = traceFn(log, "cancelJob", _cancelJob);
+export const restartJob = traceFn(log, "restartJob", _restartJob);
+export const listRowResults = traceFn(log, "listRowResults", _listRowResults);
+export const getRowResult = traceFn(log, "getRowResult", _getRowResult);
+export const approveRow = traceFn(log, "approveRow", _approveRow);
+export const bulkApproveRows = traceFn(log, "bulkApproveRows", _bulkApproveRows);
+export const rejectRow = traceFn(log, "rejectRow", _rejectRow);
+export const exportJobExcel = traceFn(log, "exportJobExcel", _exportJobExcel);

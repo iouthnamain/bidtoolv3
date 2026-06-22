@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 
-export function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: "bidtoolv3",
-    timestamp: new Date().toISOString(),
+import { logApiRoute } from "~/server/lib/trpc-request-log";
+
+export async function GET() {
+  return logApiRoute({
+    route: "/api/health",
+    method: "GET",
+    handler: async () =>
+      NextResponse.json({
+        ok: true,
+        service: "bidtoolv3",
+        timestamp: new Date().toISOString(),
+      }),
   });
 }

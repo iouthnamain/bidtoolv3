@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-workbook");
 
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_IMPORT_COLS = 80;
@@ -227,7 +229,7 @@ function normalizeHeader(value: unknown): string {
   return "";
 }
 
-export function normalizeToken(value: string): string {
+function _normalizeToken(value: string): string {
   return value
     .replace(/[đĐ]/g, (match) => (match === "Đ" ? "D" : "d"))
     .normalize("NFD")
@@ -276,7 +278,7 @@ function cleanCell(value: unknown): string {
   return "";
 }
 
-export function parseOptionalNumber(value: string): number | null {
+function _parseOptionalNumber(value: string): number | null {
   const cleaned = value.replace(/[^\d,.-]/g, "").trim();
   if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === ",") {
     return null;
@@ -364,7 +366,7 @@ function headerScore(row: unknown[]): number {
   return mappedCount * 5 + hasName + hasUnit + hasQty + Math.min(nonEmpty, 8);
 }
 
-export function detectHeaderIndex(rows: unknown[][]): number {
+function _detectHeaderIndex(rows: unknown[][]): number {
   let bestIndex = 0;
   let bestScore = -1;
 
@@ -384,7 +386,7 @@ export function detectHeaderIndex(rows: unknown[][]): number {
   return bestIndex;
 }
 
-export function suggestColumnMapping(headers: string[]): ColumnMapping {
+function _suggestColumnMapping(headers: string[]): ColumnMapping {
   return Object.fromEntries(
     columnKeys.map((key) => [key, matchHeader(headers, aliases[key])]),
   ) as ColumnMapping;
@@ -430,7 +432,7 @@ function buildSheetFromMatrix(input: {
   };
 }
 
-export function rebuildSheetWithHeaderRow(
+function _rebuildSheetWithHeaderRow(
   sheet: ParsedWorkbookSheet,
   headerRowIndex: number,
 ): ParsedWorkbookSheet {
@@ -489,7 +491,7 @@ function excelWorksheetToMatrix(sheet: ExcelJS.Worksheet): string[][] {
   return matrix;
 }
 
-export async function parseWorkbookBase64(
+async function _parseWorkbookBase64(
   fileName: string,
   workbookBase64: string,
 ): Promise<ParsedWorkbook> {
@@ -557,7 +559,7 @@ function normalizeTerm(value: string): WorkbookTerm {
   return "term_1";
 }
 
-export function rowsFromMapping(
+function _rowsFromMapping(
   sheet: ParsedWorkbookSheet,
   mapping: ColumnMapping,
 ): ImportedWorkbookRow[] {
@@ -632,3 +634,11 @@ export function rowsFromMapping(
       return hasMappedText || row.qtyTotal != null || row.unitPrice != null;
     });
 }
+
+export const normalizeToken = traceFn(log, "normalizeToken", _normalizeToken);
+export const parseOptionalNumber = traceFn(log, "parseOptionalNumber", _parseOptionalNumber);
+export const detectHeaderIndex = traceFn(log, "detectHeaderIndex", _detectHeaderIndex);
+export const suggestColumnMapping = traceFn(log, "suggestColumnMapping", _suggestColumnMapping);
+export const rebuildSheetWithHeaderRow = traceFn(log, "rebuildSheetWithHeaderRow", _rebuildSheetWithHeaderRow);
+export const parseWorkbookBase64 = traceFn(log, "parseWorkbookBase64", _parseWorkbookBase64);
+export const rowsFromMapping = traceFn(log, "rowsFromMapping", _rowsFromMapping);

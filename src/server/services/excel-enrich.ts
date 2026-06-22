@@ -8,6 +8,8 @@ import {
   type ScoreBreakdown,
 } from "~/server/services/ai-product-matcher";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-enrich");
 import {
   columnKeys,
   parseOptionalNumber,
@@ -87,7 +89,7 @@ export type EnrichRowResult = {
 // Row → ScrapedShopProduct shape (the matcher's input)
 // ---------------------------------------------------------------------------
 
-export function rowToScrapedProduct(
+function _rowToScrapedProduct(
   fields: Partial<Record<FillableField, string>> & { name?: string },
 ): ScrapedShopProduct {
   return {
@@ -195,7 +197,7 @@ function materialToFields(
  * DB row to the field-map shape the pure planner expects and delegates, so the
  * fill logic has exactly one implementation.
  */
-export function buildFillPlan(
+function _buildFillPlan(
   rowFields: Partial<Record<FillableField, string>>,
   material: MaterialRow | null,
   forceOverwrite = new Set<FillableField>(),
@@ -238,7 +240,7 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function matchRows(
+async function _matchRows(
   db: AppDb,
   rows: Array<EnrichRowInput & { name?: string }>,
   opts: { minSimilarity?: number; limit?: number } = {},
@@ -360,7 +362,7 @@ export type WriteWorkbookOptions = {
  * and filled values are written into the existing data rows. In "clean" mode a
  * fresh workbook with the canonical column order is emitted.
  */
-export async function writeEnrichedWorkbook(
+async function _writeEnrichedWorkbook(
   opts: WriteWorkbookOptions,
 ): Promise<Buffer> {
   return opts.mode === "clean"
@@ -578,7 +580,7 @@ function cellToText(value: ExcelJS.CellValue): string {
  * Resolve the row field map for a sheet given its mapping, keyed by the
  * fillable field set. The product name lives under the reserved `name` key.
  */
-export function extractRowFields(
+function _extractRowFields(
   sheet: ParsedWorkbookSheet,
   mapping: ColumnMapping,
 ): Array<EnrichRowInput & { name: string }> {
@@ -613,3 +615,9 @@ export function extractRowFields(
 }
 
 export { columnKeys };
+
+export const rowToScrapedProduct = traceFn(log, "rowToScrapedProduct", _rowToScrapedProduct);
+export const buildFillPlan = traceFn(log, "buildFillPlan", _buildFillPlan);
+export const matchRows = traceFn(log, "matchRows", _matchRows);
+export const writeEnrichedWorkbook = traceFn(log, "writeEnrichedWorkbook", _writeEnrichedWorkbook);
+export const extractRowFields = traceFn(log, "extractRowFields", _extractRowFields);

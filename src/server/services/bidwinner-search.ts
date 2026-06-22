@@ -14,6 +14,8 @@ import {
   resolveBidwinnerTimeoutMs,
 } from "~/server/services/app-settings";
 import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-bidwinner-search");
 
 type SearchOptions = {
   keyword?: string;
@@ -87,7 +89,7 @@ export type LivePackageItem = {
   sourceUrl: string;
 };
 
-export function formatBidNoticeNumber(raw: {
+function _formatBidNoticeNumber(raw: {
   id: number;
   so_tbmt?: number | string | null;
   rev?: number | string | null;
@@ -186,7 +188,7 @@ const MAX_REFINE_PAGES = 5;
  *   `MAX_REFINE_PAGES * perPage` source items. `truncated` is true when the
  *   source has more pages than were scanned.
  */
-export function computeScanPageRange(options: {
+function _computeScanPageRange(options: {
   offset: number;
   limit: number;
   perPage: number;
@@ -451,7 +453,7 @@ function toLivePackageItem(
   };
 }
 
-export function getRefinementFields(
+function _getRefinementFields(
   input: SearchOptions,
 ): LocalRefinementField[] {
   const keywords = (input.keyword ?? "")
@@ -742,7 +744,7 @@ async function ensureProvinceStreamHasItem(stream: ProvinceStream) {
   return true;
 }
 
-export async function searchBidWinnerLive(
+async function _searchBidWinnerLive(
   input: SearchOptions,
 ): Promise<LiveSearchResult> {
   const normalizedInput = normalizeSearchSelections(input);
@@ -996,3 +998,8 @@ export async function searchBidWinnerLive(
     options: buildOptions(),
   };
 }
+
+export const formatBidNoticeNumber = traceFn(log, "formatBidNoticeNumber", _formatBidNoticeNumber);
+export const computeScanPageRange = traceFn(log, "computeScanPageRange", _computeScanPageRange);
+export const getRefinementFields = traceFn(log, "getRefinementFields", _getRefinementFields);
+export const searchBidWinnerLive = traceFn(log, "searchBidWinnerLive", _searchBidWinnerLive);
