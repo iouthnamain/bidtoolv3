@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
@@ -67,6 +67,8 @@ export type ShopScrapeJobSnapshot = {
 
 export type ShopScrapeJobListItem = Omit<ShopScrapeJobSnapshot, "products">;
 
+export type ShopScrapeJobProgressSnapshot = ShopScrapeJobListItem;
+
 type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 
 const ACTIVE_JOB_STATUSES: ShopScrapeJobStatus[] = ["queued", "running"];
@@ -84,6 +86,10 @@ async function _startShopScrapeJob(input: {
   tenantId?: string | null;
 }) {
   const normalizedUrl = normalizeShopScrapeUrl(input.url);
+  const tenantCondition =
+    input.tenantId == null
+      ? isNull(shopScrapeJobs.tenantId)
+      : eq(shopScrapeJobs.tenantId, input.tenantId);
   const [duplicate] = await db
     .select({ id: shopScrapeJobs.id, status: shopScrapeJobs.status })
     .from(shopScrapeJobs)
@@ -91,6 +97,7 @@ async function _startShopScrapeJob(input: {
       and(
         eq(shopScrapeJobs.normalizedUrl, normalizedUrl),
         inArray(shopScrapeJobs.status, ACTIVE_JOB_STATUSES),
+        tenantCondition,
       ),
     )
     .limit(1);
@@ -170,6 +177,24 @@ async function _getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
     .limit(1);
 
   return job ? toScrapeJobSnapshot(job) : null;
+}
+
+async function _getShopScrapeJobProgress(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const [job] = await db
+    .select()
+    .from(shopScrapeJobs)
+    .where(
+      and(
+        eq(shopScrapeJobs.id, jobId),
+        tenantConditionForValue(scope, shopScrapeJobs.tenantId),
+      ),
+    )
+    .limit(1);
+
+  return job ? toScrapeJobListItem(job) : null;
 }
 
 async function _cancelShopScrapeJob(
@@ -617,6 +642,11 @@ function isUniqueViolation(error: unknown) {
 export const startShopScrapeJob = traceFn(log, "startShopScrapeJob", _startShopScrapeJob);
 export const listShopScrapeJobs = traceFn(log, "listShopScrapeJobs", _listShopScrapeJobs);
 export const getShopScrapeJob = traceFn(log, "getShopScrapeJob", _getShopScrapeJob);
+export const getShopScrapeJobProgress = traceFn(
+  log,
+  "getShopScrapeJobProgress",
+  _getShopScrapeJobProgress,
+);
 export const cancelShopScrapeJob = traceFn(log, "cancelShopScrapeJob", _cancelShopScrapeJob);
 export const isScrapeJobProductsEditable = traceFn(log, "isScrapeJobProductsEditable", _isScrapeJobProductsEditable);
 export const updateShopScrapeJobProduct = traceFn(log, "updateShopScrapeJobProduct", _updateShopScrapeJobProduct);

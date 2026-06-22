@@ -6,10 +6,10 @@
 // Leading label residue that sometimes survives extraction, e.g. a value of
 // "Xuất xứ: Trung Quốc" should become "Trung Quốc".
 const ORIGIN_LABEL_PREFIX =
-  /^(?:xuất\s*xứ|xuat\s*xu|xuất\s*sứ|nơi\s*sản\s*xuất|noi\s*san\s*xuat|nước\s*sản\s*xuất|nuoc\s*san\s*xuat|sản\s*xuất\s*tại|san\s*xuat\s*tai|made\s*in|origin|country\s*of\s*origin)\s*[:：\-]?\s*/i;
+  /^(?:xx|xuất\s*xứ(?:\s*sx)?|xuat\s*xu(?:\s*sx)?|xuất\s*sứ|nơi\s*sản\s*xuất|noi\s*san\s*xuat|nước\s*sản\s*xuất|nuoc\s*san\s*xuat|quốc\s*gia|quoc\s*gia|sản\s*xuất\s*tại|san\s*xuat\s*tai|made\s*in|origin|country(?:\s*of\s*origin)?)\s*[:：\-]?\s*/i;
 
 const MANUFACTURER_LABEL_PREFIX =
-  /^(?:ncc|nhà\s*cung\s*cấp|nha\s*cung\s*cap|nhà\s*sản\s*xuất|nha\s*san\s*xuat|nhà\s*sx|nha\s*sx|nhãn\s*hiệu|nhan\s*hieu|thương\s*hiệu|thuong\s*hieu|hãng|hang|brand|manufacturer)\s*[:：\-]?\s*/i;
+  /^(?:nsx|ncc|nhà\s*cung\s*cấp|nha\s*cung\s*cap|nhà\s*sản\s*xuất|nha\s*san\s*xuat|nhà\s*sx|nha\s*sx|hãng\s*sx|hang\s*sx|nhãn\s*hiệu|nhan\s*hieu|thương\s*hiệu(?:\s*sx)?|thuong\s*hieu(?:\s*sx)?|hãng|hang|công\s*ty|cong\s*ty|cty|brand|manufacturer)\s*[:：\-]?\s*/i;
 
 // High-confidence origin synonyms keyed by a normalized (accent-stripped,
 // lowercased) lookup. Only add entries we are certain about — unknown values
@@ -39,6 +39,17 @@ const ORIGIN_SYNONYMS: Record<string, string> = {
   france: "Pháp",
   "thai lan": "Thái Lan",
   thailand: "Thái Lan",
+  malaysia: "Malaysia",
+  mys: "Malaysia",
+  indonesia: "Indonesia",
+  idn: "Indonesia",
+  singapore: "Singapore",
+  sgp: "Singapore",
+  india: "Ấn Độ",
+  ind: "Ấn Độ",
+  italy: "Ý",
+  ita: "Ý",
+  y: "Ý",
 };
 
 function normalizeLookupKey(value: string) {

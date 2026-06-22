@@ -79,6 +79,7 @@ import {
   deleteShopScrapeJobProduct,
   deleteShopScrapeJobProducts,
   getShopScrapeJob,
+  getShopScrapeJobProgress,
   listShopScrapeJobs,
   startShopScrapeJob,
   updateShopScrapeJobProduct,
@@ -137,7 +138,7 @@ const shopScrapeInput = z
     maxPages: z.number().int().min(1).max(100).nullable().optional(),
     maxProducts: z.number().int().min(1).max(2000).nullable().optional(),
     method: z.enum(SHOP_SCRAPE_METHODS).default("auto"),
-    detailEnrichment: z.enum(SHOP_DETAIL_ENRICHMENT_MODES).default("none"),
+    detailEnrichment: z.enum(SHOP_DETAIL_ENRICHMENT_MODES).default("missing_fields"),
   })
   .transform((input) => ({
     ...input,
@@ -570,6 +571,40 @@ async function selectMaterialTextOptions(db: AppDb, column: AnyPgColumn) {
   return {
     values: values.slice(0, MATERIAL_FILTER_OPTION_LIMIT),
     truncated: values.length > MATERIAL_FILTER_OPTION_LIMIT,
+  };
+}
+
+function scrapeProductExportCsvRow(product: {
+  name: string;
+  unit: string | null;
+  category: string | null;
+  specText: string;
+  manufacturer: string | null;
+  originCountry: string | null;
+  price: number | null;
+  priceText: string | null;
+  currency: string;
+  sourceUrl: string;
+  sku: string | null;
+  model: string | null;
+  shopCategory: string | null;
+  catalogPdfUrls: string[];
+}) {
+  return {
+    name: product.name,
+    unit: product.unit ?? "",
+    category: product.category ?? "",
+    spec_text: product.specText,
+    manufacturer: product.manufacturer ?? "",
+    origin_country: product.originCountry ?? "",
+    price: product.price == null ? "" : String(product.price),
+    price_text: product.priceText ?? "",
+    currency: product.currency,
+    source_url: product.sourceUrl,
+    sku: product.sku ?? "",
+    model: product.model ?? "",
+    shop_category: product.shopCategory ?? "",
+    catalog_pdf_urls: product.catalogPdfUrls.join(" | "),
   };
 }
 
@@ -1100,6 +1135,22 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
+  getShopScrapeJobProgress: publicProcedure
+    .input(z.object({ jobId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const job = await getShopScrapeJobProgress(
+        input.jobId,
+        tenantScopeValue(ctx),
+      );
+      if (!job) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy job scrape shop.",
+        });
+      }
+      return job;
+    }),
+
   cancelShopScrapeJob: requirePermission("scrape:run")
     .input(shopScrapeJobInput)
     .mutation(async ({ ctx, input }) => {
@@ -1193,6 +1244,23 @@ export const materialRouter = createTRPCRouter({
         });
       }
       return job;
+    }),
+
+  exportShopScrapeJobCsv: publicProcedure
+    .input(z.object({ jobId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const job = await getShopScrapeJob(input.jobId, tenantScopeValue(ctx));
+      if (!job) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy job scrape shop.",
+        });
+      }
+      const csv = Papa.unparse(job.products.map(scrapeProductExportCsvRow));
+      return {
+        csv,
+        count: job.products.length,
+      };
     }),
 
   cancelShopImportJob: requirePermission("scrape:run")

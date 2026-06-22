@@ -52,6 +52,43 @@ import {
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { MatchCompareDrawer } from "~/app/_components/materials/match-compare-drawer";
 import {
+  ACTIVE_CLOCK_MS,
+  canImportJob,
+  DEFAULT_MAX_PAGES,
+  DEFAULT_MAX_PRODUCTS,
+  DEFAULT_PRODUCT_PAGE_SIZE,
+  EMPTY_UUID,
+  formatDuration,
+  formatMoney,
+  hostFromUrl,
+  IMPORTABLE_SCRAPE_STATUSES,
+  isImportJobActive,
+  isJobActive,
+  isNotFoundTRPCError,
+  IMPORT_POLL_MS,
+  JOB_LIST_POLL_MS,
+  MAX_PAGE_LIMIT,
+  MAX_PRODUCT_LIMIT,
+  productKey,
+  progressPercent,
+  progressWidth,
+  readStoredJobId,
+  SCRAPE_JOBS_LIST_CAP,
+  SCRAPE_POLL_MS,
+  SHOP_JOB_CACHE_MS,
+  SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY,
+  shortJobId,
+  writeStoredJobId,
+  type DetailEnrichmentMode,
+  type ImportJob,
+  type ImportShopItem,
+  type ScrapeJob,
+  type ScrapeJobListItem,
+  type ScrapeMethod,
+  type ScrapeMode,
+  type ScrapedProduct,
+} from "~/app/_components/materials/scrape-job-utils";
+import {
   loadColumnVisibility as loadColumnVisibilityShared,
   loadDensity as loadDensityShared,
   loadViewMode as loadViewModeShared,
@@ -65,17 +102,15 @@ import {
 } from "~/app/_components/materials/list-table-helpers";
 import { useToast } from "~/app/_components/ui/toast";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
-import { api, type RouterOutputs } from "~/trpc/react";
+import {
+  matchesQualityFilter,
+  qualityFlags,
+  SCRAPE_QUALITY_FLAG_LABELS,
+  type ScrapeProductQualityFilter,
+  type ScrapeQualityFlag,
+} from "~/lib/materials/scrape-product-quality";
+import { api } from "~/trpc/react";
 
-type ScrapeJob = RouterOutputs["material"]["getShopScrapeJob"];
-type ScrapeJobListItem =
-  RouterOutputs["material"]["listShopScrapeJobs"][number];
-type ScrapedProduct = ScrapeJob["products"][number];
-type ScrapeMode = ScrapeJob["scrapeMode"];
-type ScrapeMethod = ScrapeJob["method"];
-type DetailEnrichmentMode = ScrapeJob["detailEnrichment"];
-type ImportJob = RouterOutputs["material"]["getShopImportJob"];
-type ImportShopItem = ImportJob["items"][number];
 type PendingScrapeJob = {
   url: string;
   scrapeMode: ScrapeMode;
@@ -86,18 +121,14 @@ type PendingScrapeJob = {
   startedAt: number;
 };
 
-const SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY =
-  "bidtool:shop-scrape-focused-job:v2";
-const EMPTY_UUID = "00000000-0000-4000-8000-000000000000";
-const SCRAPE_POLL_MS = 1_500;
-const IMPORT_POLL_MS = 1_000;
-const JOB_LIST_POLL_MS = 3_000;
-const ACTIVE_CLOCK_MS = 1_000;
-const SHOP_JOB_CACHE_MS = 60 * 60_000;
-const DEFAULT_MAX_PAGES = 25;
-const DEFAULT_MAX_PRODUCTS = 500;
-const MAX_PAGE_LIMIT = 100;
-const MAX_PRODUCT_LIMIT = 2_000;
+const SCRAPE_QUALITY_FILTER_OPTIONS: ScrapeQualityFlag[] = [
+  "missingPrice",
+  "missingNcc",
+  "missingOrigin",
+  "missingSpec",
+  "suspiciousName",
+  "hasPdf",
+];
 
 const scrapeModeLabel: Record<ScrapeMode, string> = {
   limited: "Giới hạn",
@@ -192,39 +223,6 @@ const importStatusTone: Record<
   cancelled: "warning",
 };
 
-function hostFromUrl(value: string) {
-  try {
-    return new URL(value).host;
-  } catch {
-    return value;
-  }
-}
-
-function formatMoney(value: number | null | undefined, currency = "VND") {
-  if (value == null) {
-    return "-";
-  }
-  return `${value.toLocaleString("vi-VN")} ${currency}`;
-}
-
-function formatDuration(ms: number | null | undefined) {
-  if (ms == null) {
-    return "-";
-  }
-  if (ms < 1000) {
-    return `${ms}ms`;
-  }
-  const seconds = ms / 1000;
-  if (seconds < 60) {
-    return `${seconds.toLocaleString("vi-VN", {
-      maximumFractionDigits: 1,
-    })}s`;
-  }
-  return `${Math.floor(seconds / 60).toLocaleString("vi-VN")}m ${Math.round(
-    seconds % 60,
-  ).toLocaleString("vi-VN")}s`;
-}
-
 function formatDateTime(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString("vi-VN") : "-";
 }
@@ -250,34 +248,6 @@ function clampNumber(value: number, min: number, max: number) {
 
 function formatLimit(value: number | null | undefined) {
   return value == null ? "Không giới hạn" : value.toLocaleString("vi-VN");
-}
-
-function readStoredJobId(storageKey: string) {
-  try {
-    return window.localStorage.getItem(storageKey);
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredJobId(storageKey: string, jobId: string | null) {
-  try {
-    if (jobId) {
-      window.localStorage.setItem(storageKey, jobId);
-    } else {
-      window.localStorage.removeItem(storageKey);
-    }
-  } catch {
-    // Storage can be unavailable in restricted browser contexts.
-  }
-}
-
-function productKey(product: ScrapedProduct) {
-  return product.sourceUrl;
-}
-
-function shortJobId(jobId: string) {
-  return jobId.slice(0, 8);
 }
 
 function productDisplayId(jobId: string, index: number) {
@@ -713,61 +683,6 @@ function productInfoSummary(product: ScrapedProduct) {
     .join(" • ");
 }
 
-function progressPercent(value: number, total: number | null | undefined) {
-  if (total == null) {
-    return null;
-  }
-  if (total <= 0) {
-    return 0;
-  }
-  return Math.min(100, Math.round((value / total) * 100));
-}
-
-function progressWidth(percent: number | null, active: boolean) {
-  if (percent != null) {
-    return `${percent}%`;
-  }
-  return active ? "55%" : "100%";
-}
-
-function isJobActive(job: { status: ScrapeJob["status"] } | null | undefined) {
-  return job?.status === "queued" || job?.status === "running";
-}
-
-function isImportJobActive(
-  job: { status: ImportJob["status"] } | null | undefined,
-) {
-  return job?.status === "queued" || job?.status === "running";
-}
-
-function canImportJob(job: ScrapeJob | null | undefined) {
-  return (
-    !!job &&
-    !job.isExpired &&
-    job.status === "completed" &&
-    job.products.length > 0
-  );
-}
-
-function isNotFoundTRPCError(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  const data =
-    "data" in error && error.data && typeof error.data === "object"
-      ? error.data
-      : null;
-  const code =
-    data && "code" in data && typeof data.code === "string" ? data.code : null;
-  const message =
-    "message" in error && typeof error.message === "string"
-      ? error.message
-      : "";
-
-  return code === "NOT_FOUND" || message.includes("Không tìm thấy job");
-}
-
 type PreviewStatus = {
   label: string;
   tone: Parameters<typeof Badge>[0]["tone"];
@@ -905,8 +820,6 @@ const SCRAPE_JOBS_PAGE_SIZE_OPTIONS = [
   25, 50, 80, 100, SCRAPE_JOBS_VIEW_ALL_PAGE_SIZE,
 ] as const;
 const DEFAULT_SCRAPE_JOBS_PAGE_SIZE = 25;
-const SCRAPE_JOBS_LIST_CAP = 100;
-
 const scrapeJobControlClass =
   "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
 
@@ -2534,7 +2447,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
   const [scrapeMethod, setScrapeMethod] = useState<ScrapeMethod>("auto");
   const [detailEnrichment, setDetailEnrichment] =
-    useState<DetailEnrichmentMode>("none");
+    useState<DetailEnrichmentMode>("missing_fields");
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(
@@ -2567,6 +2480,22 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [bulkDeleteSelectedOpen, setBulkDeleteSelectedOpen] = useState(false);
   const [compareProducts, setCompareProducts] = useState<ScrapedProduct[]>([]);
   const [compareIndex, setCompareIndex] = useState(0);
+  const [stopJobTarget, setStopJobTarget] = useState<{
+    id: string;
+    url: string;
+  } | null>(null);
+  const [deleteJobTarget, setDeleteJobTarget] = useState<{
+    id: string;
+    url: string;
+  } | null>(null);
+  const [cancelImportOpen, setCancelImportOpen] = useState(false);
+  const [qualityFilter, setQualityFilter] =
+    useState<ScrapeProductQualityFilter>("all");
+  const [hideMissingNameProducts, setHideMissingNameProducts] = useState(true);
+  const [productPageIndex, setProductPageIndex] = useState(0);
+  const [productPageSize, setProductPageSize] = useState(
+    DEFAULT_PRODUCT_PAGE_SIZE,
+  );
   const [clockMs, setClockMs] = useState(() => Date.now());
   const utils = api.useUtils();
   const toast = useToast();
@@ -2600,14 +2529,33 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     gcTime: SHOP_JOB_CACHE_MS,
   });
 
+  const focusedListJob =
+    jobListQuery.data?.find((job) => job.id === focusedJobId) ?? null;
+  const progressSeedJob =
+    (startedJob?.id === focusedJobId ? startedJob : null) ?? focusedListJob;
+  const shouldPollJobProgress =
+    focusedJobId !== null &&
+    (pendingScrapeJob !== null || isJobActive(progressSeedJob));
+
+  const jobProgressQuery = api.material.getShopScrapeJobProgress.useQuery(
+    { jobId: focusedJobId ?? EMPTY_UUID },
+    {
+      enabled: shouldPollJobProgress,
+      refetchInterval: shouldPollJobProgress ? SCRAPE_POLL_MS : false,
+      refetchOnWindowFocus: false,
+      retry: false,
+      staleTime: 0,
+      gcTime: SHOP_JOB_CACHE_MS,
+    },
+  );
+
   const jobQuery = api.material.getShopScrapeJob.useQuery(
     { jobId: focusedJobId ?? EMPTY_UUID },
     {
-      enabled: focusedJobId !== null,
-      refetchInterval: (query) => {
-        const job = query.state.data;
-        return isJobActive(job) ? SCRAPE_POLL_MS : false;
-      },
+      enabled:
+        focusedJobId !== null &&
+        !shouldPollJobProgress &&
+        !isJobActive(jobProgressQuery.data),
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
@@ -2642,8 +2590,25 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
-  const activeJob =
-    jobQuery.data ?? (startedJob?.id === focusedJobId ? startedJob : null);
+  const activeJob = useMemo(() => {
+    const fullJob =
+      jobQuery.data ?? (startedJob?.id === focusedJobId ? startedJob : null);
+    const progressJob = jobProgressQuery.data;
+    if (shouldPollJobProgress && progressJob) {
+      return {
+        ...progressJob,
+        products: fullJob?.products ?? [],
+        productsEditable: fullJob?.productsEditable ?? false,
+      } as ScrapeJob;
+    }
+    return fullJob;
+  }, [
+    focusedJobId,
+    jobProgressQuery.data,
+    jobQuery.data,
+    shouldPollJobProgress,
+    startedJob,
+  ]);
   const activeImportJob =
     importJobQuery.data ??
     (startedImportJob?.id === importJobId ? startedImportJob : null);
@@ -2658,6 +2623,28 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     () => sanitizeScrapedProductList(activeJob?.products ?? []),
     [activeJob?.products],
   );
+  const filteredScrapeProducts = useMemo(
+    () =>
+      scrapeProducts.filter((product) =>
+        matchesQualityFilter(product, qualityFilter, {
+          hideMissingName: hideMissingNameProducts,
+        }),
+      ),
+    [hideMissingNameProducts, qualityFilter, scrapeProducts],
+  );
+  const productPageCount = Math.max(
+    1,
+    Math.ceil(filteredScrapeProducts.length / productPageSize),
+  );
+  const pagedScrapeProducts = useMemo(() => {
+    const start = productPageIndex * productPageSize;
+    return filteredScrapeProducts.slice(start, start + productPageSize);
+  }, [filteredScrapeProducts, productPageIndex, productPageSize]);
+  const isPartialImportableJob =
+    !!activeJob &&
+    (activeJob.status === "failed" || activeJob.status === "cancelled") &&
+    activeJob.productCount > 0 &&
+    !activeJob.isExpired;
   const allProductKeys = useMemo(
     () => new Set(scrapeProducts.map(productKey)),
     [scrapeProducts],
@@ -2678,14 +2665,35 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         )
       : -1;
   const scrapeJobPollingError =
-    jobQuery.isError && !isNotFoundTRPCError(jobQuery.error)
+    (jobProgressQuery.isError && !isNotFoundTRPCError(jobProgressQuery.error)
+      ? (jobProgressQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
+      : null) ??
+    (jobQuery.isError && !isNotFoundTRPCError(jobQuery.error)
       ? (jobQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
-      : null;
+      : null);
   const importJobPollingError =
     importJobQuery.isError && !isNotFoundTRPCError(importJobQuery.error)
       ? (importJobQuery.error.message ??
         "Không cập nhật được tiến độ nhập catalog.")
       : null;
+
+  useEffect(() => {
+    const progress = jobProgressQuery.data;
+    if (!focusedJobId || !progress || isJobActive(progress)) {
+      return;
+    }
+    void jobQuery.refetch();
+  }, [focusedJobId, jobProgressQuery.data, jobQuery]);
+
+  useEffect(() => {
+    setProductPageIndex(0);
+  }, [qualityFilter, hideMissingNameProducts, activeJob?.id]);
+
+  useEffect(() => {
+    if (productPageIndex + 1 > productPageCount) {
+      setProductPageIndex(Math.max(0, productPageCount - 1));
+    }
+  }, [productPageCount, productPageIndex]);
 
   useEffect(() => {
     const latestImportJob = importJobsQuery.data?.[0] ?? null;
@@ -3094,23 +3102,60 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     if (cancelShopScrapeJob.isPending) {
       return;
     }
-    if (!window.confirm(`Dừng job scrape ${hostFromUrl(job.url)}?`)) {
-      return;
-    }
-    focusScrapeJob(job.id);
-    cancelShopScrapeJob.mutate({ jobId: job.id });
+    setStopJobTarget(job);
   };
 
   const deleteScrapeJob = (job: { id: string; url: string }) => {
     if (deleteShopScrapeJob.isPending) {
       return;
     }
-    if (
-      !window.confirm(`Xóa job scrape ${hostFromUrl(job.url)} khỏi danh sách?`)
-    ) {
+    setDeleteJobTarget(job);
+  };
+
+  const confirmStopScrapeJob = () => {
+    if (!stopJobTarget) {
       return;
     }
-    deleteShopScrapeJob.mutate({ jobId: job.id });
+    focusScrapeJob(stopJobTarget.id);
+    cancelShopScrapeJob.mutate({ jobId: stopJobTarget.id });
+    setStopJobTarget(null);
+  };
+
+  const confirmDeleteScrapeJob = () => {
+    if (!deleteJobTarget) {
+      return;
+    }
+    deleteShopScrapeJob.mutate({ jobId: deleteJobTarget.id });
+    setDeleteJobTarget(null);
+  };
+
+  const downloadScrapeCsv = async () => {
+    if (!activeJob) {
+      return;
+    }
+    try {
+      const result = await utils.material.exportShopScrapeJobCsv.fetch({
+        jobId: activeJob.id,
+      });
+      const blob = new Blob([result.csv], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `scrape-${shortJobId(activeJob.id)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        `Đã tải CSV preview (${result.count.toLocaleString("vi-VN")} sản phẩm).`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không thể xuất CSV preview scrape.",
+      );
+    }
   };
 
   const submitScrape = (event: FormEvent<HTMLFormElement>) => {
@@ -3205,6 +3250,42 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={stopJobTarget !== null}
+        title={`Dừng job scrape ${stopJobTarget ? hostFromUrl(stopJobTarget.url) : ""}?`}
+        description="Job sẽ dừng ngay. Các sản phẩm đã thu thập vẫn giữ trong preview."
+        confirmLabel="Dừng job"
+        variant="danger"
+        isLoading={cancelShopScrapeJob.isPending}
+        onConfirm={confirmStopScrapeJob}
+        onCancel={() => setStopJobTarget(null)}
+      />
+      <ConfirmDialog
+        open={deleteJobTarget !== null}
+        title={`Xóa job scrape ${deleteJobTarget ? hostFromUrl(deleteJobTarget.url) : ""}?`}
+        description="Job sẽ bị gỡ khỏi danh sách. Preview sản phẩm không còn khả dụng."
+        confirmLabel="Xóa job"
+        variant="danger"
+        isLoading={deleteShopScrapeJob.isPending}
+        onConfirm={confirmDeleteScrapeJob}
+        onCancel={() => setDeleteJobTarget(null)}
+      />
+      <ConfirmDialog
+        open={cancelImportOpen}
+        title="Hủy job nhập catalog?"
+        description="Tiến trình ghi DB sẽ dừng. Các dòng đã ghi vẫn giữ trong catalog."
+        confirmLabel="Hủy nhập"
+        variant="danger"
+        isLoading={cancelShopImportJob.isPending}
+        onConfirm={() => {
+          if (!activeImportJob) {
+            return;
+          }
+          cancelShopImportJob.mutate({ jobId: activeImportJob.id });
+          setCancelImportOpen(false);
+        }}
+        onCancel={() => setCancelImportOpen(false)}
+      />
       {isJobPage ? (
         <section className="panel p-4 sm:p-5">
           <Link
@@ -3715,6 +3796,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           ) : null}
 
+          {isPartialImportableJob ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+              Job dừng sớm — vẫn có thể nhập{" "}
+              {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm đã thu
+              thập sau khi duyệt preview.
+            </div>
+          ) : null}
+
           {activeJob.detailEnrichment === "none" ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               Job này chỉ đọc trang danh mục. Nếu NCC, xuất xứ hoặc thông số bị
@@ -3883,6 +3972,16 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 type="button"
                 variant="secondary"
                 size="sm"
+                disabled={scrapeProducts.length === 0}
+                leftIcon={<Upload className="h-3.5 w-3.5" />}
+                onClick={() => void downloadScrapeCsv()}
+              >
+                Tải CSV preview
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 disabled={scrapeProducts.length === 0 || isImportActive}
                 leftIcon={
                   allSelected ? (
@@ -4025,11 +4124,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                       size="sm"
                       isLoading={cancelShopImportJob.isPending}
                       leftIcon={<StopCircle className="h-3.5 w-3.5" />}
-                      onClick={() =>
-                        cancelShopImportJob.mutate({
-                          jobId: activeImportJob.id,
-                        })
-                      }
+                      onClick={() => setCancelImportOpen(true)}
                     >
                       Hủy nhập
                     </Button>
@@ -4090,6 +4185,49 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
+          {scrapeProducts.length > 0 || activeJob.productCount > 0 ? (
+            <>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-wrap gap-2">
+                {SCRAPE_QUALITY_FILTER_OPTIONS.map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    className={
+                      qualityFilter === filter
+                        ? "rounded-full border border-sky-400 bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-900"
+                        : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:border-sky-200"
+                    }
+                    onClick={() =>
+                      setQualityFilter((current) =>
+                        current === filter ? "all" : filter,
+                      )
+                    }
+                  >
+                    {SCRAPE_QUALITY_FLAG_LABELS[filter]}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                  checked={hideMissingNameProducts}
+                  onChange={(event) =>
+                    setHideMissingNameProducts(event.target.checked)
+                  }
+                />
+                Ẩn sản phẩm thiếu tên
+              </label>
+            </div>
+
+            {isActive && scrapeProducts.length === 0 && activeJob.productCount > 0 ? (
+              <p className="mt-3 text-xs text-slate-500">
+                Đang thu thập {activeJob.productCount.toLocaleString("vi-VN")}{" "}
+                sản phẩm — bảng preview sẽ hiện đầy đủ khi job dừng.
+              </p>
+            ) : null}
+
           {scrapeProducts.length > 0 ? (
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
@@ -4110,11 +4248,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {scrapeProducts.map((item, index) => {
+                  {pagedScrapeProducts.map((item, index) => {
                     const key = productKey(item);
                     const selected = selectedSourceUrls.has(key);
                     const missingLabels = productMissingLabels(item);
                     const infoSummary = productInfoSummary(item);
+                    const rowQualityFlags = qualityFlags(item);
+                    const globalIndex = productPageIndex * productPageSize + index;
 
                     const isDetailOpen = detailProductKey === key;
 
@@ -4154,7 +4294,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         </td>
                         <td className="px-3 py-2">
                           <span className="font-mono text-xs font-bold text-slate-700">
-                            {productDisplayId(activeJob.id, index)}
+                            {productDisplayId(activeJob.id, globalIndex)}
                           </span>
                         </td>
                         <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
@@ -4195,14 +4335,23 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         </td>
                         <td className="max-w-56 px-3 py-2">
                           <div className="flex flex-wrap gap-1">
-                            {missingLabels.length === 0 ? (
+                            {missingLabels.length === 0 &&
+                            rowQualityFlags.length === 0 ? (
                               <Badge tone="success">Đủ thông tin</Badge>
                             ) : (
-                              missingLabels.map((label) => (
-                                <Badge key={label} tone="warning">
-                                  {label}
-                                </Badge>
-                              ))
+                              <>
+                                {missingLabels.map((label) => (
+                                  <Badge key={label} tone="warning">
+                                    {label}
+                                  </Badge>
+                                ))}
+                                {rowQualityFlags.includes("suspiciousName") ? (
+                                  <Badge tone="critical">Tên nghi vấn</Badge>
+                                ) : null}
+                                {rowQualityFlags.includes("missingPrice") ? (
+                                  <Badge tone="warning">Thiếu giá</Badge>
+                                ) : null}
+                              </>
                             )}
                             {item.catalogPdfUrls.length > 0 ? (
                               <Badge tone="info">
@@ -4278,17 +4427,79 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 </tbody>
               </table>
             </div>
-          ) : (
-            <EmptyState
-              className="mt-4"
-              title={
-                isActive
-                  ? "Đang đọc shop, chưa có sản phẩm."
-                  : "Job này chưa tìm thấy sản phẩm."
-              }
-              description="Nếu shop có nhiều JavaScript hoặc chặn crawler, hãy thử URL danh mục cụ thể hơn hoặc tăng giới hạn trang."
-            />
-          )}
+          ) : null}
+
+            {filteredScrapeProducts.length > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+                <p>
+                  Hiển thị{" "}
+                  {(productPageIndex * productPageSize + 1).toLocaleString(
+                    "vi-VN",
+                  )}
+                  –
+                  {Math.min(
+                    (productPageIndex + 1) * productPageSize,
+                    filteredScrapeProducts.length,
+                  ).toLocaleString("vi-VN")}{" "}
+                  / {filteredScrapeProducts.length.toLocaleString("vi-VN")} sau
+                  lọc
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-2">
+                    <span>Dòng/trang</span>
+                    <select
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1"
+                      value={productPageSize}
+                      onChange={(event) => {
+                        setProductPageSize(Number(event.target.value));
+                        setProductPageIndex(0);
+                      }}
+                    >
+                      {[25, 50, 100].map((size) => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={productPageIndex === 0}
+                    onClick={() =>
+                      setProductPageIndex((current) => Math.max(0, current - 1))
+                    }
+                  >
+                    Trang trước
+                  </Button>
+                  <span>
+                    Trang {productPageIndex + 1} / {productPageCount}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={productPageIndex + 1 >= productPageCount}
+                    onClick={() =>
+                      setProductPageIndex((current) =>
+                        Math.min(productPageCount - 1, current + 1),
+                      )
+                    }
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            ) : scrapeProducts.length > 0 ? (
+              <EmptyState
+                className="mt-4"
+                title="Không có sản phẩm khớp bộ lọc."
+                description="Thử bỏ bộ lọc chất lượng hoặc tắt ẩn sản phẩm thiếu tên."
+              />
+            ) : null}
+            </>
+          ) : null}
         </section>
       ) : null}
 

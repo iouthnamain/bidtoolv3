@@ -63,6 +63,11 @@ export type ShopImportJobListItem = Omit<ShopImportJobSnapshot, "items">;
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 
 const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
+const IMPORTABLE_SCRAPE_JOB_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
 
@@ -79,6 +84,7 @@ async function _startShopImportJob(
       status: shopScrapeJobs.status,
       products: shopScrapeJobs.products,
       tenantId: shopScrapeJobs.tenantId,
+      expiresAt: shopScrapeJobs.expiresAt,
     })
     .from(shopScrapeJobs)
     .where(
@@ -95,11 +101,21 @@ async function _startShopImportJob(
       "Không tìm thấy job scrape shop.",
     );
   }
-  if (scrapeJob.status !== "completed") {
+  if (
+    !IMPORTABLE_SCRAPE_JOB_STATUSES.includes(
+      scrapeJob.status as (typeof IMPORTABLE_SCRAPE_JOB_STATUSES)[number],
+    )
+  ) {
     throw new ShopJobServiceError(
       "BAD_REQUEST",
-      "Chỉ có thể nhập catalog từ job scrape đã hoàn tất.",
+      "Chỉ có thể nhập catalog từ job scrape đã dừng (hoàn tất, lỗi hoặc hủy).",
     );
+  }
+  if (
+    scrapeJob.expiresAt &&
+    new Date(scrapeJob.expiresAt).getTime() < Date.now()
+  ) {
+    throw new ShopJobServiceError("BAD_REQUEST", "Job scrape đã hết hạn.");
   }
 
   const products = filterProductsBySourceUrls(
