@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, RotateCcw } from "lucide-react";
 
+import { formatDateTimeShort } from "~/lib/datetime";
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
   type ExcelResearchJobStatus,
@@ -49,7 +50,7 @@ function shortJobId(jobId: string) {
 }
 
 function formatDateTime(value: string | null | undefined) {
-  return value ? new Date(value).toLocaleString("vi-VN") : "-";
+  return formatDateTimeShort(value);
 }
 
 function progressPercent(processed: number, total: number) {

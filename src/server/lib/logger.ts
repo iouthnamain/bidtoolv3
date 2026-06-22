@@ -1,5 +1,7 @@
 import "server-only";
 
+import { formatLogTimestamp } from "~/lib/datetime";
+
 /**
  * Env vars:
  * - BIDTOOL_LOG_LEVEL: debug | info | warn | error
@@ -279,7 +281,7 @@ function writeJson(level: LogLevel, entry: Record<string, unknown>) {
 }
 
 function writePretty(level: LogLevel, entry: Record<string, unknown>) {
-  const ts = new Date().toISOString().slice(11, 23);
+  const ts = formatLogTimestamp();
   const service =
     typeof entry.service === "string" ? `[${entry.service}] ` : "";
   const msg = typeof entry.msg === "string" ? entry.msg : "log";
