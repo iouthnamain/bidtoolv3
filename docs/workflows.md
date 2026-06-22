@@ -187,23 +187,20 @@ sequenceDiagram
   Sch->>DB: runImportJob → materials rows
 ```
 
-After import, fuzzy match suggestions may appear in **match review** (section 5).
+After import, fuzzy matches are merged into the catalog automatically during import.
 
 ---
 
-## 5. Match review
+## 5. Match decisions (audit log)
 
-**Purpose:** Human review of post-scrape catalog match suggestions.
+**Purpose:** Record of scrape→catalog fuzzy matches (auto-accepted on import).
 
 | | |
 |--|--|
-| **Route** | `/materials/match-review` |
-| **Client** | `match-review-client.tsx` |
-| **Router** | `material.listPendingMatches`, `acceptMatch`, `rejectMatch`, `bulkAcceptMatches` |
 | **Service** | `ai-product-matcher.ts` (pg_trgm scoring) |
 | **Table** | `materialMatchDecisions` |
 
-Flow: pending scrape→catalog matches → accept/reject → updates material linkage.
+Import writes `accepted` decisions when a candidate exceeds the candidate threshold. No manual review step.
 
 ---
 

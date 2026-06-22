@@ -120,7 +120,6 @@ const navSections: NavSection[] = [
           { href: "/materials", label: "Danh mục" },
           { href: "/materials/new", label: "Thêm thủ công" },
           { href: "/materials/scrape", label: "Scrape shop" },
-          { href: "/materials/match-review", label: "Match review" },
         ],
       },
       {

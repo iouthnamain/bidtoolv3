@@ -3,8 +3,14 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
+import {
+  buildMergePreview as buildMergePreviewFields,
+  computeMergedMaterialValues,
+  type MergePreviewField,
+} from "~/lib/materials/shop-import-merge-preview";
 import type { db as appDb } from "~/server/db";
-import { materials } from "~/server/db/schema";
+import type { materialMatchDecisions } from "~/server/db/schema";
+import { materials, shopScrapeJobs } from "~/server/db/schema";
 import {
   findFuzzyCandidates,
   getCachedDecision,
@@ -13,7 +19,6 @@ import {
 } from "~/server/services/ai-product-matcher";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
-  resolveAiMatchAutoThreshold,
   resolveAiMatchCandidateThreshold,
 } from "~/server/services/app-settings";
 import {
@@ -30,10 +35,12 @@ import type {
 } from "~/server/services/shop-import-jobs";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import { createLogger, traceFn } from "~/server/lib/logger";
+
 const log = createLogger("services-shop-product-importer");
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
+type MaterialMatchDecisionRow = typeof materialMatchDecisions.$inferSelect;
 
 type MaterialInput = {
   code?: string | null;
@@ -54,9 +61,36 @@ type MaterialLookupIndexes = {
   byNameUnit: Map<string, MaterialRow>;
 };
 
+export type { MergePreviewField };
+
+export type ImportPreviewAction = "create" | "update" | "skip_no_name";
+
+export type ImportClassification = {
+  action: ImportPreviewAction;
+  name: string;
+  sourceUrl: string;
+  message: string;
+  confidence?: number;
+  materialId?: number;
+  matchedMaterialName?: string;
+};
+
+export type ImportPreviewSummary = {
+  create: number;
+  update: number;
+  skipNoName: number;
+  total: number;
+};
+
 export type ImportScrapedProductsOptions = {
   signal?: AbortSignal;
   onProgress?: (progress: ShopImportJobProgress) => void;
+  scrapeJobId?: string;
+};
+
+type ClassifyOptions = {
+  dryRun?: boolean;
+  scrapeJobId?: string;
 };
 
 async function _importScrapedProducts(
@@ -107,210 +141,55 @@ async function _importScrapedProducts(
     throwIfImportAborted(options.signal);
     const name = product.name.trim();
     reportProgress(name || "(không có tên)", product.sourceUrl);
-    if (!name) {
-      skipped += 1;
-      items.push({
-        name: "(không có tên)",
-        sourceUrl: product.sourceUrl,
-        action: "skipped",
-        message: "Bỏ qua vì thiếu tên sản phẩm.",
-      });
-      processed += 1;
-      reportProgress("(không có tên)", product.sourceUrl);
-      continue;
-    }
-
-    const scrapedUnit = product.unit?.trim();
-    const unit =
-      scrapedUnit && scrapedUnit.length > 0 ? scrapedUnit : "unknown";
-    const now = new Date().toISOString();
 
     try {
-      const existing = findExistingScrapedMaterial(indexes, {
-        ...product,
-        unit,
-      });
-      if (existing) {
-        const locks =
-          normalizeMaterialMetadata(existing.metadataJson).fieldLocks ?? {};
-        const metadataJson = metadataForScrapedProduct(existing, product, now);
-        const [row] = await db
-          .update(materials)
-          .set({
-            category: applyLockedFillEmptyField(
-              locks,
-              "category",
-              existing.category,
-              product.category,
-            ),
-            specText:
-              applyLockedFillEmptyField(
-                locks,
-                "specText",
-                existing.specText,
-                product.specText,
-              ) ?? existing.specText,
-            manufacturer: applyLockedFillEmptyField(
-              locks,
-              "manufacturer",
-              existing.manufacturer,
-              product.manufacturer,
-            ),
-            originCountry: applyLockedFillEmptyField(
-              locks,
-              "originCountry",
-              existing.originCountry,
-              product.originCountry,
-            ),
-            defaultUnitPrice: applyLockedPriceField(
-              locks,
-              existing.defaultUnitPrice,
-              product.price,
-            ),
-            currency: applyLockedCurrencyField(
-              locks,
-              existing.defaultUnitPrice,
-              existing.currency,
-              product.price,
-              product.currency,
-            ),
-            sourceUrl: applyLockedFillEmptyField(
-              locks,
-              "sourceUrl",
-              existing.sourceUrl,
-              product.sourceUrl,
-            ),
-            imageUrl: isFieldLocked(locks, "imageUrl")
-              ? existing.imageUrl
-              : materialImageUrlFromScrape(product.imageUrl),
-            metadataJson,
-            updatedAt: now,
-          })
-          .where(
-            and(eq(materials.id, existing.id), isNull(materials.deletedAt)),
-          )
-          .returning();
+      const classification = await classifyScrapedProductForImport(
+        db,
+        product,
+        indexes,
+        { scrapeJobId: options.scrapeJobId },
+      );
 
-        const updatedRow = requireUpdatedMaterial(row);
-        indexMaterialRow(indexes, updatedRow);
-        await linkScrapedCatalogPdfs(db, updatedRow.id, product);
-        updated += 1;
+      if (classification.action === "skip_no_name") {
+        skipped += 1;
         items.push({
-          name,
-          sourceUrl: product.sourceUrl,
-          action: "updated",
-          materialId: updatedRow.id,
-          message: importMessageForUpdated(existing, product, locks),
+          name: classification.name,
+          sourceUrl: classification.sourceUrl,
+          action: "skipped",
+          message: classification.message,
         });
         processed += 1;
-        reportProgress(name, product.sourceUrl);
+        reportProgress(classification.name, classification.sourceUrl);
         continue;
       }
 
-      // Tier 4: Fuzzy matching via pg_trgm + multi-signal scoring
-      const fuzzyResult = await tryFuzzyMatch(db, product, unit, indexes);
-      if (fuzzyResult) {
-        if (fuzzyResult.action === "auto_matched" && fuzzyResult.materialRow) {
-          const locks =
-            normalizeMaterialMetadata(fuzzyResult.materialRow.metadataJson)
-              .fieldLocks ?? {};
-          const metadataJson = metadataForScrapedProduct(
-            fuzzyResult.materialRow,
-            product,
-            now,
-          );
-          const [row] = await db
-            .update(materials)
-            .set({
-              category: applyLockedFillEmptyField(
-                locks,
-                "category",
-                fuzzyResult.materialRow.category,
-                product.category,
-              ),
-              specText:
-                applyLockedFillEmptyField(
-                  locks,
-                  "specText",
-                  fuzzyResult.materialRow.specText,
-                  product.specText,
-                ) ?? fuzzyResult.materialRow.specText,
-              manufacturer: applyLockedFillEmptyField(
-                locks,
-                "manufacturer",
-                fuzzyResult.materialRow.manufacturer,
-                product.manufacturer,
-              ),
-              originCountry: applyLockedFillEmptyField(
-                locks,
-                "originCountry",
-                fuzzyResult.materialRow.originCountry,
-                product.originCountry,
-              ),
-              defaultUnitPrice: applyLockedPriceField(
-                locks,
-                fuzzyResult.materialRow.defaultUnitPrice,
-                product.price,
-              ),
-              currency: applyLockedCurrencyField(
-                locks,
-                fuzzyResult.materialRow.defaultUnitPrice,
-                fuzzyResult.materialRow.currency,
-                product.price,
-                product.currency,
-              ),
-              sourceUrl: applyLockedFillEmptyField(
-                locks,
-                "sourceUrl",
-                fuzzyResult.materialRow.sourceUrl,
-                product.sourceUrl,
-              ),
-              imageUrl: isFieldLocked(locks, "imageUrl")
-                ? fuzzyResult.materialRow.imageUrl
-                : materialImageUrlFromScrape(product.imageUrl),
-              metadataJson,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(materials.id, fuzzyResult.materialRow.id),
-                isNull(materials.deletedAt),
-              ),
-            )
-            .returning();
-
-          const updatedRow = requireUpdatedMaterial(row);
-          indexMaterialRow(indexes, updatedRow);
-          await linkScrapedCatalogPdfs(db, updatedRow.id, product);
-          updated += 1;
-          items.push({
-            name,
-            sourceUrl: product.sourceUrl,
-            action: "updated",
-            materialId: updatedRow.id,
-            message: `Ghép tự động (AI: ${(fuzzyResult.confidence * 100).toFixed(0)}%) với "${fuzzyResult.materialRow.name}".`,
-          });
-          processed += 1;
-          reportProgress(name, product.sourceUrl);
-          continue;
-        }
-
-        if (fuzzyResult.action === "pending_review") {
-          skipped += 1;
-          items.push({
-            name,
-            sourceUrl: product.sourceUrl,
-            action: "skipped",
-            message: `Tìm thấy ứng viên tương tự (${(fuzzyResult.confidence * 100).toFixed(0)}%), chờ xác nhận.`,
-          });
-          processed += 1;
-          reportProgress(name, product.sourceUrl);
-          continue;
-        }
+      if (classification.action === "update" && classification.materialId) {
+        const existing = await loadMaterialById(db, classification.materialId);
+        const updatedRow = await applyScrapedProductToMaterial(
+          db,
+          existing,
+          product,
+        );
+        indexMaterialRow(indexes, updatedRow);
+        updated += 1;
+        items.push({
+          name: classification.name,
+          sourceUrl: classification.sourceUrl,
+          action: "updated",
+          materialId: updatedRow.id,
+          message: classification.message,
+        });
+        processed += 1;
+        reportProgress(classification.name, classification.sourceUrl);
+        continue;
       }
 
+      const now = new Date().toISOString();
+      const scrapedUnit = product.unit?.trim();
+      const unit =
+        scrapedUnit && scrapedUnit.length > 0 ? scrapedUnit : "unknown";
       const createInput: MaterialInput = {
-        name,
+        name: classification.name,
         unit,
         category: product.category,
         specText: product.specText,
@@ -334,30 +213,182 @@ async function _importScrapedProducts(
       await linkScrapedCatalogPdfs(db, createdRow.id, product);
       created += 1;
       items.push({
-        name,
-        sourceUrl: product.sourceUrl,
+        name: classification.name,
+        sourceUrl: classification.sourceUrl,
         action: "created",
         materialId: createdRow.id,
-        message: importMessageForCreated(product),
+        message: classification.message,
       });
       processed += 1;
-      reportProgress(name, product.sourceUrl);
+      reportProgress(classification.name, classification.sourceUrl);
     } catch (error) {
       failed += 1;
       items.push({
-        name,
+        name: name || "(không có tên)",
         sourceUrl: product.sourceUrl,
         action: "failed",
         message:
           error instanceof Error ? error.message : "Không thể lưu sản phẩm.",
       });
       processed += 1;
-      reportProgress(name, product.sourceUrl);
+      reportProgress(name || "(không có tên)", product.sourceUrl);
     }
   }
 
   reportProgress(null, null);
   return { created, updated, skipped, failed, items };
+}
+
+async function _previewShopImportProducts(
+  db: AppDb,
+  products: ScrapedShopProduct[],
+): Promise<{ summary: ImportPreviewSummary; items: ImportClassification[] }> {
+  if (products.length === 0) {
+    throw new Error("Không có sản phẩm scrape để xem trước.");
+  }
+
+  const existingMaterials = await db
+    .select()
+    .from(materials)
+    .where(isNull(materials.deletedAt))
+    .limit(25_000);
+  const indexes = createMaterialLookupIndexes(existingMaterials);
+  const items: ImportClassification[] = [];
+
+  for (const product of products) {
+    items.push(
+      await classifyScrapedProductForImport(db, product, indexes, {
+        dryRun: true,
+      }),
+    );
+  }
+
+  const summary: ImportPreviewSummary = {
+    create: items.filter((item) => item.action === "create").length,
+    update: items.filter((item) => item.action === "update").length,
+    skipNoName: items.filter((item) => item.action === "skip_no_name").length,
+    total: items.length,
+  };
+
+  return { summary, items };
+}
+
+async function _classifyScrapedProductForImport(
+  db: AppDb,
+  product: ScrapedShopProduct,
+  indexes: MaterialLookupIndexes,
+  options: ClassifyOptions = {},
+): Promise<ImportClassification> {
+  const name = product.name.trim();
+  const sourceUrl = product.sourceUrl;
+
+  if (!name) {
+    return {
+      action: "skip_no_name",
+      name: "(không có tên)",
+      sourceUrl,
+      message: "Bỏ qua vì thiếu tên sản phẩm.",
+    };
+  }
+
+  const scrapedUnit = product.unit?.trim();
+  const unit = scrapedUnit && scrapedUnit.length > 0 ? scrapedUnit : "unknown";
+
+  const existing = findExistingScrapedMaterial(indexes, {
+    ...product,
+    unit,
+  });
+  if (existing) {
+    const locks =
+      normalizeMaterialMetadata(existing.metadataJson).fieldLocks ?? {};
+    return {
+      action: "update",
+      name,
+      sourceUrl,
+      materialId: existing.id,
+      matchedMaterialName: existing.name,
+      message: importMessageForUpdated(existing, product, locks),
+    };
+  }
+
+  const fuzzyResult = await tryFuzzyMatch(db, product, unit, indexes, options);
+  if (fuzzyResult?.action === "auto_matched" && fuzzyResult.materialRow) {
+    return {
+      action: "update",
+      name,
+      sourceUrl,
+      materialId: fuzzyResult.materialRow.id,
+      matchedMaterialName: fuzzyResult.materialRow.name,
+      confidence: fuzzyResult.confidence,
+      message: `Ghép tự động (AI: ${(fuzzyResult.confidence * 100).toFixed(0)}%) với "${fuzzyResult.materialRow.name}".`,
+    };
+  }
+
+  return {
+    action: "create",
+    name,
+    sourceUrl,
+    message: importMessageForCreated(product),
+  };
+}
+
+async function _applyScrapedProductToMaterial(
+  db: AppDb,
+  material: MaterialRow,
+  product: ScrapedShopProduct,
+): Promise<MaterialRow> {
+  const now = new Date().toISOString();
+  const mergedValues = computeMergedMaterialValues(material, product, now);
+  const [row] = await db
+    .update(materials)
+    .set({
+      ...mergedValues,
+      updatedAt: now,
+    })
+    .where(and(eq(materials.id, material.id), isNull(materials.deletedAt)))
+    .returning();
+
+  const updatedRow = requireUpdatedMaterial(row);
+  await linkScrapedCatalogPdfs(db, updatedRow.id, product);
+  return updatedRow;
+}
+
+function _buildMergePreview(
+  material: MaterialRow,
+  product: ScrapedShopProduct,
+): MergePreviewField[] {
+  return buildMergePreviewFields(material, product);
+}
+
+async function _resolveScrapedProductForDecision(
+  db: AppDb,
+  decision: Pick<
+    MaterialMatchDecisionRow,
+    "scrapedSourceUrl" | "scrapeJobId"
+  >,
+  preferredScrapeJobId?: string | null,
+): Promise<ScrapedShopProduct | null> {
+  const scrapeJobId = decision.scrapeJobId ?? preferredScrapeJobId ?? null;
+  if (!scrapeJobId) {
+    return null;
+  }
+
+  const [scrapeJob] = await db
+    .select({ products: shopScrapeJobs.products })
+    .from(shopScrapeJobs)
+    .where(eq(shopScrapeJobs.id, scrapeJobId))
+    .limit(1);
+
+  if (!scrapeJob || !Array.isArray(scrapeJob.products)) {
+    return null;
+  }
+
+  const products = scrapeJob.products as ScrapedShopProduct[];
+  return (
+    products.find(
+      (product) => product.sourceUrl.trim() === decision.scrapedSourceUrl.trim(),
+    ) ?? null
+  );
 }
 
 function materialValues(input: MaterialInput, now: string) {
@@ -404,6 +435,16 @@ function requireUpdatedMaterial<T>(material: T | undefined): T {
   return material;
 }
 
+async function loadMaterialById(db: AppDb, materialId: number) {
+  const [material] = await db
+    .select()
+    .from(materials)
+    .where(and(eq(materials.id, materialId), isNull(materials.deletedAt)))
+    .limit(1);
+
+  return requireUpdatedMaterial(material);
+}
+
 function normalizeLookupKey(value: string | null | undefined) {
   return value
     ?.normalize("NFKD")
@@ -442,7 +483,7 @@ function nameUnitKey(
     : null;
 }
 
-function createMaterialLookupIndexes(
+export function createMaterialLookupIndexes(
   rows: MaterialRow[],
 ): MaterialLookupIndexes {
   const indexes: MaterialLookupIndexes = {
@@ -599,51 +640,6 @@ function isFieldLocked(
   return locks[field] === true;
 }
 
-function applyLockedFillEmptyField(
-  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
-  field: MaterialFieldLockKey,
-  existing: string | null | undefined,
-  scraped: string | null | undefined,
-): string | undefined {
-  if (isFieldLocked(locks, field)) {
-    return existing ?? undefined;
-  }
-  const existingTrimmed = existing?.trim();
-  if (existingTrimmed) {
-    return existing ?? undefined;
-  }
-  const scrapedTrimmed = scraped?.trim();
-  return scrapedTrimmed ? (scraped ?? undefined) : (existing ?? undefined);
-}
-
-function applyLockedPriceField(
-  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
-  existingPrice: number | null,
-  scrapedPrice: number | null,
-) {
-  if (isFieldLocked(locks, "defaultUnitPrice")) {
-    return existingPrice;
-  }
-  return existingPrice == null && scrapedPrice != null
-    ? scrapedPrice
-    : existingPrice;
-}
-
-function applyLockedCurrencyField(
-  locks: Partial<Record<MaterialFieldLockKey, boolean>>,
-  existingPrice: number | null,
-  existingCurrency: string,
-  scrapedPrice: number | null,
-  scrapedCurrency: string,
-) {
-  if (isFieldLocked(locks, "currency")) {
-    return existingCurrency;
-  }
-  return existingPrice == null && scrapedPrice != null
-    ? scrapedCurrency
-    : existingCurrency;
-}
-
 function countLockedFields(
   locks: Partial<Record<MaterialFieldLockKey, boolean>>,
 ) {
@@ -772,87 +768,128 @@ function importMessageForUpdated(
     : `Không ghi đè dữ liệu catalog đã có; đã cập nhật nguồn giá.${lockedSuffix}`;
 }
 
+async function loadLiveMaterialRow(db: AppDb, materialId: number) {
+  const [row] = await db
+    .select()
+    .from(materials)
+    .where(and(eq(materials.id, materialId), isNull(materials.deletedAt)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+async function autoMatchFromCandidate(
+  db: AppDb,
+  candidate: { materialId: number; score: number },
+  indexes: MaterialLookupIndexes,
+) {
+  const materialRow = await loadLiveMaterialRow(db, candidate.materialId);
+  if (!materialRow) {
+    return null;
+  }
+
+  indexMaterialRow(indexes, materialRow);
+  return {
+    action: "auto_matched" as const,
+    confidence: candidate.score,
+    materialRow,
+  };
+}
+
 async function tryFuzzyMatch(
   db: AppDb,
   product: ScrapedShopProduct,
   unit: string,
   indexes: MaterialLookupIndexes,
+  options: ClassifyOptions = {},
 ): Promise<{
-  action: "auto_matched" | "pending_review" | "no_match";
+  action: "auto_matched" | "no_match";
   confidence: number;
   materialRow?: MaterialRow;
 } | null> {
-  const hash = hashScrapedProduct(product);
+  try {
+    const hash = hashScrapedProduct(product);
 
-  const cached = await getCachedDecision(db, hash);
-  if (cached) {
-    if (cached.status === "accepted" && cached.matchedMaterialId) {
-      const row = await db
-        .select()
-        .from(materials)
-        .where(
-          and(
-            eq(materials.id, cached.matchedMaterialId),
-            isNull(materials.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (row[0]) {
-        return {
-          action: "auto_matched",
-          confidence: cached.confidence,
-          materialRow: row[0],
-        };
+    const cached = await getCachedDecision(db, hash);
+    if (cached) {
+      if (cached.status === "rejected") {
+        return null;
+      }
+      if (cached.matchedMaterialId) {
+        const cachedMatch = await autoMatchFromCandidate(
+          db,
+          { materialId: cached.matchedMaterialId, score: cached.confidence },
+          indexes,
+        );
+        if (cachedMatch) {
+          return cachedMatch;
+        }
       }
     }
-    if (cached.status === "rejected") {
+
+    const candidates = await findFuzzyCandidates(db, product);
+    if (candidates.length === 0) return null;
+
+    const candidateThreshold = await resolveAiMatchCandidateThreshold();
+    const topCandidate = candidates[0];
+    if (!topCandidate || topCandidate.score < candidateThreshold) {
       return null;
     }
-    if (cached.status === "pending") {
-      return {
-        action: "pending_review",
-        confidence: cached.confidence,
-      };
+
+    if (options.dryRun) {
+      return autoMatchFromCandidate(db, topCandidate, indexes);
     }
-  }
 
-  const candidates = await findFuzzyCandidates(db, product);
-  if (candidates.length === 0) return null;
+    const decision = await saveMatchDecision(db, product, candidates, {
+      candidateThreshold,
+      scrapeJobId: options.scrapeJobId,
+    });
 
-  const decision = await saveMatchDecision(db, product, candidates, {
-    autoThreshold: await resolveAiMatchAutoThreshold(),
-    candidateThreshold: await resolveAiMatchCandidateThreshold(),
-  });
-
-  if (decision.action === "auto_matched" && decision.matchedMaterialId) {
-    const row = await db
-      .select()
-      .from(materials)
-      .where(
-        and(
-          eq(materials.id, decision.matchedMaterialId),
-          isNull(materials.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (row[0]) {
-      indexMaterialRow(indexes, row[0]);
-      return {
-        action: "auto_matched",
-        confidence: decision.confidence,
-        materialRow: row[0],
-      };
+    if (decision.action === "auto_matched" && decision.matchedMaterialId) {
+      return autoMatchFromCandidate(
+        db,
+        { materialId: decision.matchedMaterialId, score: decision.confidence },
+        indexes,
+      );
     }
-  }
 
-  if (decision.action === "pending_review") {
-    return {
-      action: "pending_review",
-      confidence: decision.confidence,
-    };
+    return null;
+  } catch (error) {
+    log.warn("fuzzy_match_failed", {
+      sourceUrl: product.sourceUrl,
+      error,
+    });
+    return null;
   }
-
-  return null;
 }
 
-export const importScrapedProducts = traceFn(log, "importScrapedProducts", _importScrapedProducts);
+export const importScrapedProducts = traceFn(
+  log,
+  "importScrapedProducts",
+  _importScrapedProducts,
+);
+export const previewShopImportProducts = traceFn(
+  log,
+  "previewShopImportProducts",
+  _previewShopImportProducts,
+);
+export const classifyScrapedProductForImport = traceFn(
+  log,
+  "classifyScrapedProductForImport",
+  _classifyScrapedProductForImport,
+);
+export const applyScrapedProductToMaterial = traceFn(
+  log,
+  "applyScrapedProductToMaterial",
+  _applyScrapedProductToMaterial,
+);
+export const buildMergePreview = traceFn(
+  log,
+  "buildMergePreview",
+  _buildMergePreview,
+);
+export const resolveScrapedProductForDecision = traceFn(
+  log,
+  "resolveScrapedProductForDecision",
+  _resolveScrapedProductForDecision,
+);

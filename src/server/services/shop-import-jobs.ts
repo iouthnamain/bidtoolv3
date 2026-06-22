@@ -293,7 +293,7 @@ function normalizeProductSourceUrls(sourceUrls: string[] | undefined) {
   );
 }
 
-function filterProductsBySourceUrls(
+export function filterProductsBySourceUrls(
   products: ScrapedShopProduct[],
   sourceUrls: string[] | undefined,
 ) {

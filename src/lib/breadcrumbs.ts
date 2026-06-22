@@ -49,7 +49,6 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials/enrich/jobs/:jobId": "Chi tiết job làm giàu",
   "/materials/scrape": "Scrape shop",
   "/materials/scrape/jobs/:jobId": "Chi tiết job",
-  "/materials/match-review": "Match review",
   "/materials/:id": "Chi tiết vật tư",
   "/materials/:id/prices": "Nguồn giá",
   "/materials/:id/documents": "Catalog PDFs",

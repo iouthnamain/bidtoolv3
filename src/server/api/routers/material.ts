@@ -27,6 +27,7 @@ import {
   materialCatalogDocuments,
   materialMatchDecisions,
   materials,
+  shopScrapeJobs,
 } from "~/server/db/schema";
 import {
   parseWorkbookBase64,
@@ -70,6 +71,12 @@ import {
   listShopImportJobs,
   startShopImportJob,
 } from "~/server/services/shop-import-jobs";
+import { previewShopImportJob } from "~/server/services/shop-import-preview";
+import {
+  applyScrapedProductToMaterial,
+  buildMergePreview,
+  resolveScrapedProductForDecision,
+} from "~/server/services/shop-product-importer";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import { findFuzzyCandidates } from "~/server/services/ai-product-matcher";
 import { enrichRowFromWeb } from "~/server/services/enrich-web-row";
@@ -809,6 +816,24 @@ function selectWorkbookSheet(
   return sheet;
 }
 
+async function mergeAcceptedMatchDecision(
+  db: AppDb,
+  decision: typeof materialMatchDecisions.$inferSelect,
+  materialId: number,
+) {
+  const scrapedProduct = await resolveScrapedProductForDecision(
+    db,
+    decision,
+    decision.scrapeJobId,
+  );
+  if (!scrapedProduct) {
+    return null;
+  }
+
+  const material = await getActiveMaterialById(db, materialId);
+  return applyScrapedProductToMaterial(db, material, scrapedProduct);
+}
+
 export const materialRouter = createTRPCRouter({
   getById: publicProcedure
     .input(z.object({ id: z.number().int().positive() }))
@@ -1228,6 +1253,20 @@ export const materialRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       withShopJobErrors(() =>
         startShopImportJob(
+          {
+            scrapeJobId: input.scrapeJobId,
+            productSourceUrls: input.productSourceUrls,
+          },
+          tenantScopeValue(ctx),
+        ),
+      ),
+    ),
+
+  previewShopImportJob: requirePermission("scrape:run")
+    .input(startShopImportJobInput)
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        previewShopImportJob(
           {
             scrapeJobId: input.scrapeJobId,
             productSourceUrls: input.productSourceUrls,
@@ -1955,6 +1994,7 @@ export const materialRouter = createTRPCRouter({
         limit: z.number().int().min(1).max(100).default(50),
         offset: z.number().int().min(0).default(0),
         minConfidence: z.number().min(0).max(1).optional(),
+        scrapeJobId: z.string().uuid().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -1962,6 +2002,29 @@ export const materialRouter = createTRPCRouter({
       if (input.minConfidence != null) {
         conditions.push(
           sql`${materialMatchDecisions.confidence} >= ${input.minConfidence}`,
+        );
+      }
+
+      if (input.scrapeJobId) {
+        const [scrapeJob] = await ctx.db
+          .select({ products: shopScrapeJobs.products })
+          .from(shopScrapeJobs)
+          .where(eq(shopScrapeJobs.id, input.scrapeJobId))
+          .limit(1);
+
+        const sourceUrls = Array.isArray(scrapeJob?.products)
+          ? (scrapeJob.products as Array<{ sourceUrl: string }>).map((product) =>
+              product.sourceUrl.trim(),
+            )
+          : [];
+
+        conditions.push(
+          or(
+            eq(materialMatchDecisions.scrapeJobId, input.scrapeJobId),
+            sourceUrls.length > 0
+              ? inArray(materialMatchDecisions.scrapedSourceUrl, sourceUrls)
+              : eq(materialMatchDecisions.scrapeJobId, input.scrapeJobId),
+          )!,
         );
       }
 
@@ -1984,6 +2047,58 @@ export const materialRouter = createTRPCRouter({
           confidence: Number(row.confidence),
         })),
         total: Number(countResult[0]?.count ?? 0),
+      };
+    }),
+
+  getMatchDecisionCompare: requirePermission("scrape:run")
+    .input(z.object({ decisionId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const [decision] = await ctx.db
+        .select()
+        .from(materialMatchDecisions)
+        .where(eq(materialMatchDecisions.id, input.decisionId))
+        .limit(1);
+
+      if (!decision) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy quyết định ghép.",
+        });
+      }
+
+      if (!decision.matchedMaterialId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Quyết định ghép chưa có vật tư đích.",
+        });
+      }
+
+      const material = await getActiveMaterialById(
+        ctx.db,
+        decision.matchedMaterialId,
+      );
+      const scrapedProduct = await resolveScrapedProductForDecision(
+        ctx.db,
+        decision,
+        decision.scrapeJobId,
+      );
+
+      if (!scrapedProduct) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Không tìm thấy dữ liệu scrape gốc cho quyết định ghép này.",
+        });
+      }
+
+      return {
+        decision: {
+          ...decision,
+          confidence: Number(decision.confidence),
+        },
+        scrapedProduct,
+        material,
+        mergePreview: buildMergePreview(material, scrapedProduct),
       };
     }),
 
@@ -2018,7 +2133,18 @@ export const materialRouter = createTRPCRouter({
         });
       }
 
-      return { success: true, decisionId: updated.id };
+      const mergedMaterial = await mergeAcceptedMatchDecision(
+        ctx.db,
+        updated,
+        input.materialId,
+      );
+
+      return {
+        success: true,
+        decisionId: updated.id,
+        materialId: mergedMaterial?.id ?? input.materialId,
+        merged: mergedMaterial != null,
+      };
     }),
 
   rejectMatch: requirePermission("material:write")
@@ -2049,24 +2175,95 @@ export const materialRouter = createTRPCRouter({
   bulkAcceptMatches: requirePermission("material:write")
     .input(
       z.object({
-        minConfidence: z.number().min(0).max(1).default(0.85),
+        minConfidence: z.number().min(0).max(1).optional(),
+        scrapeJobId: z.string().uuid().optional(),
+        applyMerge: z.boolean().default(true),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
-      const updated = await ctx.db
-        .update(materialMatchDecisions)
-        .set({ status: "accepted", reviewedAt: now })
-        .where(
-          and(
-            eq(materialMatchDecisions.status, "pending"),
-            sql`${materialMatchDecisions.confidence} >= ${input.minConfidence}`,
-            isNotNull(materialMatchDecisions.matchedMaterialId),
-          ),
-        )
-        .returning({ id: materialMatchDecisions.id });
+      const conditions = [
+        eq(materialMatchDecisions.status, "pending"),
+        isNotNull(materialMatchDecisions.matchedMaterialId),
+      ];
 
-      return { accepted: updated.length };
+      if (input.minConfidence != null) {
+        conditions.push(
+          sql`${materialMatchDecisions.confidence} >= ${input.minConfidence}`,
+        );
+      }
+
+      if (input.scrapeJobId) {
+        const [scrapeJob] = await ctx.db
+          .select({ products: shopScrapeJobs.products })
+          .from(shopScrapeJobs)
+          .where(eq(shopScrapeJobs.id, input.scrapeJobId))
+          .limit(1);
+
+        const sourceUrls = Array.isArray(scrapeJob?.products)
+          ? (scrapeJob.products as Array<{ sourceUrl: string }>).map((product) =>
+              product.sourceUrl.trim(),
+            )
+          : [];
+
+        conditions.push(
+          or(
+            eq(materialMatchDecisions.scrapeJobId, input.scrapeJobId),
+            sourceUrls.length > 0
+              ? inArray(materialMatchDecisions.scrapedSourceUrl, sourceUrls)
+              : eq(materialMatchDecisions.scrapeJobId, input.scrapeJobId),
+          )!,
+        );
+      }
+
+      const pending = await ctx.db
+        .select()
+        .from(materialMatchDecisions)
+        .where(and(...conditions));
+
+      let accepted = 0;
+      let merged = 0;
+
+      for (const decision of pending) {
+        const materialId = decision.matchedMaterialId;
+        if (!materialId) {
+          continue;
+        }
+
+        const [updated] = await ctx.db
+          .update(materialMatchDecisions)
+          .set({
+            status: "accepted",
+            matchedMaterialId: materialId,
+            reviewedAt: now,
+          })
+          .where(
+            and(
+              eq(materialMatchDecisions.id, decision.id),
+              eq(materialMatchDecisions.status, "pending"),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          continue;
+        }
+
+        accepted += 1;
+
+        if (input.applyMerge) {
+          const mergedMaterial = await mergeAcceptedMatchDecision(
+            ctx.db,
+            updated,
+            materialId,
+          );
+          if (mergedMaterial) {
+            merged += 1;
+          }
+        }
+      }
+
+      return { accepted, merged };
     }),
 
   // -------------------------------------------------------------------------

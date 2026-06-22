@@ -504,6 +504,7 @@ async function runImportJob(job: ShopImportJobRow) {
     const products = await loadProductsForImportJob(job);
     const result = await importScrapedProducts(db, products, {
       signal: controller.signal,
+      scrapeJobId: job.scrapeJobId,
       onProgress: (progress) => {
         progressWriter.queue(progress);
       },

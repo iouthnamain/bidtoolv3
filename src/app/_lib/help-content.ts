@@ -373,11 +373,6 @@ export const pageDirectory: PageDirectoryItem[] = [
     body: "Chạy job scrape URL shop nhiều trang rồi nhập sản phẩm, giá và nguồn vào catalog.",
   },
   {
-    href: "/materials/match-review",
-    title: "Xét duyệt ghép sản phẩm",
-    body: "Duyệt đề xuất ghép sản phẩm scrape với vật tư catalog theo độ tương tự.",
-  },
-  {
     href: "/catalog-pdfs",
     title: "Catalog PDFs",
     body: "Thư viện tài liệu catalog PDF: upload, lưu URL nguồn và gắn với vật tư.",
@@ -592,7 +587,7 @@ export const sections: Section[] = [
     steps: [
       "Mở `/materials` để kiểm tra danh sách vật tư đã có.",
       "Tạo vật tư thủ công tại `/materials/new` khi cần một item chuẩn trước khi nhập hàng loạt.",
-      "Chạy job scrape shop tại `/materials/scrape`, rồi duyệt đề xuất ghép tại `/materials/match-review`.",
+      "Chạy job scrape shop tại `/materials/scrape`, rồi nhập sản phẩm vào catalog (ghép trùng tự động).",
       "Mở chi tiết vật tư để cập nhật thông số, nguồn giá hoặc gắn tài liệu catalog PDF.",
       "Dùng catalog này làm nguồn chuẩn cho nhập catalog và đối chiếu & điền Excel.",
     ],

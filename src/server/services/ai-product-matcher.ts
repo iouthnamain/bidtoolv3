@@ -42,6 +42,7 @@ export type MatchDecision = {
   scrapedName: string;
   scrapedUnit: string;
   scrapedSourceUrl: string;
+  scrapeJobId: string | null;
   reviewedAt: string | null;
   createdAt: string;
 };
@@ -646,11 +647,11 @@ async function _saveMatchDecision(
   product: ScrapedShopProduct,
   candidates: MatchCandidate[],
   opts: {
-    autoThreshold: number;
     candidateThreshold: number;
+    scrapeJobId?: string;
   },
 ): Promise<{
-  action: "auto_matched" | "pending_review" | "no_match";
+  action: "auto_matched" | "no_match";
   matchedMaterialId?: number;
   confidence: number;
 }> {
@@ -662,9 +663,8 @@ async function _saveMatchDecision(
   }
 
   const confidence = topCandidate.score;
-  const isAutoMatch = confidence >= opts.autoThreshold;
-  const status = isAutoMatch ? "accepted" : "pending";
   const reasoning = buildReasoning(topCandidate);
+  const reviewedAt = new Date().toISOString();
 
   const storedCandidates = candidates.slice(0, 5).map((c) => ({
     materialId: c.materialId,
@@ -682,23 +682,35 @@ async function _saveMatchDecision(
       confidence: confidence.toFixed(3),
       reasoning,
       candidatesJson: storedCandidates,
-      status,
+      status: "accepted",
       scrapedName: product.name,
       scrapedUnit: product.unit ?? "",
       scrapedSourceUrl: product.sourceUrl,
-      reviewedAt: isAutoMatch ? new Date().toISOString() : null,
+      scrapeJobId: opts.scrapeJobId ?? null,
+      reviewedAt,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: materialMatchDecisions.scrapedProductHash,
+      set: {
+        matchedMaterialId: topCandidate.materialId,
+        matchMethod: "hybrid",
+        confidence: confidence.toFixed(3),
+        reasoning,
+        candidatesJson: storedCandidates,
+        status: "accepted",
+        scrapedName: product.name,
+        scrapedUnit: product.unit ?? "",
+        scrapedSourceUrl: product.sourceUrl,
+        scrapeJobId: opts.scrapeJobId ?? null,
+        reviewedAt,
+      },
+    });
 
-  if (isAutoMatch) {
-    return {
-      action: "auto_matched",
-      matchedMaterialId: topCandidate.materialId,
-      confidence,
-    };
-  }
-
-  return { action: "pending_review", confidence };
+  return {
+    action: "auto_matched",
+    matchedMaterialId: topCandidate.materialId,
+    confidence,
+  };
 }
 
 function buildReasoning(candidate: MatchCandidate): string {

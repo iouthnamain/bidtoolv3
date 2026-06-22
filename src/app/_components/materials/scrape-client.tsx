@@ -63,7 +63,6 @@ import {
   formatDuration,
   formatMoney,
   hostFromUrl,
-  IMPORTABLE_SCRAPE_STATUSES,
   isImportJobActive,
   isJobActive,
   isNotFoundTRPCError,
@@ -110,7 +109,7 @@ import {
   type ScrapeProductQualityFilter,
   type ScrapeQualityFlag,
 } from "~/lib/materials/scrape-product-quality";
-import { api } from "~/trpc/react";
+import { api, type RouterOutputs } from "~/trpc/react";
 
 type PendingScrapeJob = {
   url: string;
@@ -175,6 +174,7 @@ const actionLabel: Record<ImportShopItem["action"], string> = {
   skipped: "Bỏ qua",
   failed: "Lỗi",
 };
+
 
 const statusLabel: Record<ScrapeJob["status"], string> = {
   queued: "Đang xếp hàng",
@@ -2444,6 +2444,60 @@ function ScrapeJobsList({
   );
 }
 
+function ImportPreviewSummaryPanel({
+  summary,
+}: {
+  summary: RouterOutputs["material"]["previewShopImportJob"]["summary"];
+}) {
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <PreviewCountCard label="Tạo mới" value={summary.create} tone="success" />
+        <PreviewCountCard label="Cập nhật" value={summary.update} tone="info" />
+        <PreviewCountCard
+          label="Thiếu tên"
+          value={summary.skipNoName}
+          tone="neutral"
+        />
+      </div>
+      <p className="text-xs text-slate-500">
+        Tổng {(summary.total ?? 0).toLocaleString("vi-VN")} sản phẩm trong lần
+        nhập này. Các sản phẩm trùng catalog sẽ được ghép tự động khi nhập.
+      </p>
+    </div>
+  );
+}
+
+function PreviewCountCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "success" | "info" | "warning" | "neutral";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "info"
+        ? "border-sky-200 bg-sky-50 text-sky-900"
+        : tone === "warning"
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-slate-200 bg-slate-50 text-slate-700";
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-bold tabular-nums">
+        {(value ?? 0).toLocaleString("vi-VN")}
+      </p>
+    </div>
+  );
+}
+
 export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } = {}) {
   const router = useRouter();
   const isJobPage = routeJobId != null;
@@ -2493,6 +2547,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     url: string;
   } | null>(null);
   const [cancelImportOpen, setCancelImportOpen] = useState(false);
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [importPreviewTarget, setImportPreviewTarget] = useState<{
+    productSourceUrls?: string[];
+  } | null>(null);
+  const [importPreviewData, setImportPreviewData] =
+    useState<RouterOutputs["material"]["previewShopImportJob"] | null>(null);
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false);
   const [qualityFilter, setQualityFilter] =
     useState<ScrapeProductQualityFilter>("all");
   const [hideMissingNameProducts, setHideMissingNameProducts] = useState(true);
@@ -3305,17 +3366,51 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     if (!activeJob || !canImportAll) {
       return;
     }
-    startShopImportJob.mutate({ scrapeJobId: activeJob.id });
+    void requestImportPreview();
   };
 
   const importSelected = () => {
     if (!activeJob || !canImportSelected) {
       return;
     }
+    void requestImportPreview(Array.from(selectedSourceUrls));
+  };
+
+  const requestImportPreview = async (productSourceUrls?: string[]) => {
+    if (!activeJob) {
+      return;
+    }
+    setImportPreviewLoading(true);
+    try {
+      const preview = await utils.material.previewShopImportJob.fetch({
+        scrapeJobId: activeJob.id,
+        productSourceUrls,
+      });
+      setImportPreviewData(preview);
+      setImportPreviewTarget({ productSourceUrls });
+      setImportPreviewOpen(true);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không thể xem trước kết quả nhập catalog.",
+      );
+    } finally {
+      setImportPreviewLoading(false);
+    }
+  };
+
+  const confirmImportPreview = () => {
+    if (!activeJob || !importPreviewTarget) {
+      return;
+    }
     startShopImportJob.mutate({
       scrapeJobId: activeJob.id,
-      productSourceUrls: Array.from(selectedSourceUrls),
+      productSourceUrls: importPreviewTarget.productSourceUrls,
     });
+    setImportPreviewOpen(false);
+    setImportPreviewTarget(null);
+    setImportPreviewData(null);
   };
 
   const resetJob = () => {
@@ -3399,6 +3494,24 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         }}
         onCancel={() => setCancelImportOpen(false)}
       />
+      <ConfirmDialog
+        open={importPreviewOpen}
+        title="Xác nhận nhập catalog"
+        description="Xem trước kết quả trước khi ghi vào catalog. Sản phẩm trùng catalog sẽ được ghép tự động."
+        confirmLabel="Bắt đầu nhập"
+        variant="primary"
+        isLoading={startShopImportJob.isPending || importPreviewLoading}
+        onConfirm={confirmImportPreview}
+        onCancel={() => {
+          setImportPreviewOpen(false);
+          setImportPreviewTarget(null);
+          setImportPreviewData(null);
+        }}
+      >
+        {importPreviewData ? (
+          <ImportPreviewSummaryPanel summary={importPreviewData.summary} />
+        ) : null}
+      </ConfirmDialog>
       {isJobPage ? (
         <section className="panel p-4 sm:p-5">
           <Link
@@ -4193,10 +4306,11 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={!canImportSelected}
+                disabled={!canImportSelected || importPreviewLoading}
                 isLoading={
-                  startShopImportJob.isPending &&
-                  startShopImportJob.variables?.productSourceUrls !== undefined
+                  importPreviewLoading ||
+                  (startShopImportJob.isPending &&
+                    startShopImportJob.variables?.productSourceUrls !== undefined)
                 }
                 leftIcon={<Upload className="h-3.5 w-3.5" />}
                 onClick={importSelected}
@@ -4207,10 +4321,11 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 type="button"
                 variant="primary"
                 size="sm"
-                disabled={!canImportAll}
+                disabled={!canImportAll || importPreviewLoading}
                 isLoading={
-                  startShopImportJob.isPending &&
-                  startShopImportJob.variables?.productSourceUrls === undefined
+                  importPreviewLoading ||
+                  (startShopImportJob.isPending &&
+                    startShopImportJob.variables?.productSourceUrls === undefined)
                 }
                 leftIcon={<Upload className="h-3.5 w-3.5" />}
                 onClick={importAll}

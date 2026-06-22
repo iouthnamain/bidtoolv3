@@ -1204,6 +1204,9 @@ export const materialMatchDecisions = pgTable(
     scrapedName: text("scraped_name").notNull().default(""),
     scrapedUnit: text("scraped_unit").notNull().default(""),
     scrapedSourceUrl: text("scraped_source_url").notNull().default(""),
+    scrapeJobId: uuid("scrape_job_id").references(() => shopScrapeJobs.id, {
+      onDelete: "set null",
+    }),
     reviewedAt: timestamp("reviewed_at", {
       mode: "string",
       withTimezone: true,
@@ -1219,6 +1222,9 @@ export const materialMatchDecisions = pgTable(
     statusIdx: index("material_match_decisions_status_idx").on(table.status),
     materialIdx: index("material_match_decisions_material_idx").on(
       table.matchedMaterialId,
+    ),
+    scrapeJobIdx: index("material_match_decisions_scrape_job_id_idx").on(
+      table.scrapeJobId,
     ),
   }),
 );

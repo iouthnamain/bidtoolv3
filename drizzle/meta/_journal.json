@@ -162,6 +162,27 @@
       "when": 1782000000000,
       "tag": "0022_scrape_tenant_url_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782100000000,
+      "tag": "0023_material_match_decision_scraped_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782200000000,
+      "tag": "0024_match_decision_scrape_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782300000000,
+      "tag": "0025_reset_stale_match_decisions",
+      "breakpoints": true
     }
   ]
 }
