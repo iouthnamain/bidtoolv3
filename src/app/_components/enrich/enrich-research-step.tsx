@@ -10,21 +10,19 @@ import {
   Button,
 } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
-import { ExcelResearchReviewPanel } from "~/app/_components/enrich/excel-research-review-panel";
+import {
+  ExcelResearchReviewPanel,
+  type ResearchApproveDecision,
+} from "~/app/_components/enrich/excel-research-review-panel";
 import {
   type ExcelResearchRowStatus,
   isExcelResearchJobActive,
   isExcelResearchJobReviewReady,
 } from "~/app/_components/research-enrich/excel-research-types";
-import { api, type RouterOutputs } from "~/trpc/react";
+import { api } from "~/trpc/react";
 
 const JOB_POLL_MS = 2_000;
 const EMPTY_JOB_ID = "00000000-0000-0000-0000-000000000000";
-
-type ExcelResearchJobStatusResponse =
-  RouterOutputs["excelResearch"]["getJobStatus"];
-type ExcelResearchListRowsResult =
-  RouterOutputs["excelResearch"]["listRowResults"];
 
 export function EnrichResearchStep({
   fileName,
@@ -67,8 +65,17 @@ export function EnrichResearchStep({
     { jobId: jobId ?? EMPTY_JOB_ID },
     {
       enabled: jobId !== null,
-      refetchInterval: (query) =>
-        isExcelResearchJobActive(query.state.data) ? JOB_POLL_MS : false,
+      refetchInterval: (query) => {
+        const status = query.state.data?.status;
+        if (!status) return JOB_POLL_MS;
+        // Poll while the job is active OR still in the transient "draft" state
+        // (just created, scheduler hasn't picked it up yet). Stop once it
+        // reaches a review-ready/terminal state. Without polling on "draft" the
+        // indicator can stick if the status is read before startJob lands.
+        const stillWorking =
+          status === "draft" || isExcelResearchJobActive({ status });
+        return stillWorking ? JOB_POLL_MS : false;
+      },
       refetchOnWindowFocus: false,
       retry: false,
     },
@@ -77,6 +84,16 @@ export function EnrichResearchStep({
   const activeJob = jobStatusQuery.data;
   const isJobRunning = isExcelResearchJobActive(activeJob);
   const reviewReady = isExcelResearchJobReviewReady(activeJob);
+
+  // True from the moment the user clicks until the job is actually processing:
+  // the create/start mutations are in flight, OR the job exists but is still in
+  // the transient "draft" state waiting for the scheduler to pick it up. Drives
+  // the spinner/disabled state so the UI never looks idle after a click.
+  const isJobStarting =
+    createJob.isPending ||
+    startJob.isPending ||
+    (jobId !== null && !reviewReady && activeJob?.status === "draft");
+  const isWorking = isJobRunning || isJobStarting;
 
   const listRowsQuery = api.excelResearch.listRowResults.useQuery(
     {
@@ -103,27 +120,18 @@ export function EnrichResearchStep({
 
   const rowData = listRowsQuery.data;
 
+  // Filter-chip counts come from the server's unfiltered per-status counts, not
+  // from rowData.items (filtered by statusFilter and capped at the page limit).
+  // Each chip count equals the rows shown when that chip is selected.
   const rowSummary = useMemo(() => {
-    const counts: Record<ExcelResearchRowStatus, number> = {
-      pending: 0,
-      processing: 0,
-      matched: 0,
-      needs_review: 0,
-      approved: 0,
-      skipped: 0,
-      error: 0,
-    };
-    for (const row of rowData?.items ?? []) {
-      counts[row.status] += 1;
-    }
+    const counts = rowData?.statusCounts;
     return {
-      total: rowData?.total ?? activeJob?.totalRows ?? 0,
-      ...counts,
-      needsReview: activeJob?.needsReviewRows ?? counts.needs_review,
-      errors: activeJob?.errorRows ?? counts.error,
-      matched: activeJob?.matchedRows ?? counts.matched,
-      approved: counts.approved,
-      skipped: counts.skipped,
+      total: rowData?.totalRows ?? rowData?.total ?? activeJob?.totalRows ?? 0,
+      needsReview: counts?.needs_review ?? activeJob?.needsReviewRows ?? 0,
+      errors: counts?.error ?? activeJob?.errorRows ?? 0,
+      matched: counts?.matched ?? 0,
+      approved: counts?.approved ?? 0,
+      skipped: counts?.skipped ?? 0,
     };
   }, [rowData, activeJob]);
 
@@ -158,6 +166,12 @@ export function EnrichResearchStep({
             {
               onSuccess: () => {
                 toast.success("Đã bắt đầu nghiên cứu sản phẩm trên web.");
+                // Re-arm the status poll: the status query may have already
+                // fetched the job while it was still "draft" (before startJob
+                // flipped it to "running"), which disables refetchInterval. A
+                // refetch picks up the now-running status and restarts polling,
+                // so the progress indicator actually appears.
+                void jobStatusQuery.refetch();
               },
               onError: (err) =>
                 onError(err.message || "Không khởi chạy được job."),
@@ -169,10 +183,20 @@ export function EnrichResearchStep({
     );
   };
 
-  const handleApprove = (rowNumber: number) => {
+  const handleApprove = (
+    rowNumber: number,
+    decision: ResearchApproveDecision,
+  ) => {
     if (!jobId) return;
     approveRow.mutate(
-      { jobId, rowNumber },
+      {
+        jobId,
+        rowNumber,
+        materialId: decision.materialId,
+        acceptedFields: decision.acceptedFields,
+        overwriteFields: decision.overwriteFields,
+        editedValues: decision.editedValues,
+      },
       {
         onSuccess: () => {
           void Promise.all([
@@ -259,27 +283,35 @@ export function EnrichResearchStep({
             </p>
           </div>
 
-          {isJobRunning && activeJob ? (
+          {isWorking ? (
             <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
               <div className="flex items-center justify-between text-xs font-semibold text-violet-900">
                 <span className="inline-flex items-center gap-1.5">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  Đang nghiên cứu…
+                  {isJobRunning ? "Đang nghiên cứu…" : "Đang khởi tạo job…"}
                 </span>
-                <span className="tabular-nums">
-                  {activeJob.processedRows.toLocaleString("vi-VN")}/
-                  {activeJob.totalRows.toLocaleString("vi-VN")}
-                </span>
+                {isJobRunning && activeJob ? (
+                  <span className="tabular-nums">
+                    {activeJob.processedRows.toLocaleString("vi-VN")}/
+                    {activeJob.totalRows.toLocaleString("vi-VN")}
+                  </span>
+                ) : null}
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-200">
                 <div
-                  className="h-full rounded-full bg-violet-600 transition-all"
-                  style={{ width: `${progressPct}%` }}
+                  className={`h-full rounded-full bg-violet-600 transition-all ${
+                    isJobRunning ? "" : "animate-pulse"
+                  }`}
+                  style={{ width: isJobRunning ? `${progressPct}%` : "100%" }}
                 />
               </div>
-              {activeJob.message ? (
+              {isJobRunning && activeJob?.message ? (
                 <p className="mt-2 text-[11px] text-violet-700">
                   {activeJob.message}
+                </p>
+              ) : !isJobRunning ? (
+                <p className="mt-2 text-[11px] text-violet-700">
+                  Đang chuẩn bị — quá trình nghiên cứu sẽ bắt đầu trong giây lát.
                 </p>
               ) : null}
             </div>
@@ -289,13 +321,13 @@ export function EnrichResearchStep({
             <Button
               variant="primary"
               leftIcon={<Play className="h-4 w-4" />}
-              disabled={isJobRunning}
-              isLoading={createJob.isPending || startJob.isPending}
+              disabled={isWorking}
+              isLoading={isJobStarting}
               onClick={runJob}
             >
-              {isJobRunning ? "Đang chạy…" : "Bắt đầu nghiên cứu web"}
+              {isWorking ? "Đang chạy…" : "Bắt đầu nghiên cứu web"}
             </Button>
-            <Button variant="secondary" disabled={isJobRunning} onClick={onSkip}>
+            <Button variant="secondary" disabled={isWorking} onClick={onSkip}>
               Bỏ qua → xuất file
             </Button>
           </div>
@@ -328,6 +360,7 @@ export function EnrichResearchStep({
         rowData.items.find((r) => r.rowNumber === selectedRowNumber) ?? null
       }
       evidence={rowDetailQuery.data?.evidence ?? []}
+      compare={rowDetailQuery.data?.compare ?? null}
       isDetailLoading={rowDetailQuery.isLoading}
       isApproving={approveRow.isPending}
       isRejecting={rejectRow.isPending}

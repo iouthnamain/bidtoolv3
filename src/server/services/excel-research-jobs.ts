@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
-import type { FillPlanCell } from "~/lib/materials/excel-enrich-fields";
 import { db } from "~/server/db";
 import {
   tenantConditionForValue,
@@ -24,7 +23,6 @@ import {
   appendChangeLog,
   recomputeJobCounters,
 } from "~/server/services/excel-research/db-helpers";
-import { processJobBatch } from "~/server/services/excel-research/process-batch";
 import {
   DEFAULT_EXCEL_RESEARCH_CONFIG,
   ExcelResearchJobError,
@@ -47,8 +45,6 @@ import {
 } from "~/server/services/excel-workbook";
 import { writeEnrichedWorkbook } from "~/server/services/excel-enrich";
 import type { FillableField } from "~/lib/materials/excel-enrich-fields";
-
-const activeResearchRuns = new Map<string, AbortController>();
 
 function decodeBase64(workbookBase64: string): Buffer {
   const base64 = workbookBase64.includes(",")
@@ -208,7 +204,7 @@ export async function getJob(jobId: string, scope?: TenantScopeValue) {
  * tenant scope. Used by row-level and mutation functions to ensure a customer
  * can never touch another tenant's job (or its child rows/evidence).
  */
-async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
+export async function assertJobInScope(jobId: string, scope: TenantScopeValue) {
   const job = await getJob(jobId, scope);
   if (!job) {
     throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
@@ -291,60 +287,14 @@ export async function startJob(jobId: string, scope?: TenantScopeValue) {
     })
     .where(eq(excelResearchJobs.id, jobId));
 
-  const controller = new AbortController();
-  activeResearchRuns.set(jobId, controller);
-  void runResearchLoop(jobId, controller.signal);
-
+  // The job scheduler (started on boot) claims any row with status="running"
+  // within ~1s and drives the batch loop. It is the sole, durable processor —
+  // no in-process loop is spawned here.
   return getJob(jobId);
-}
-
-async function runResearchLoop(jobId: string, signal: AbortSignal) {
-  try {
-    while (!signal.aborted) {
-      const job = await getJob(jobId);
-      if (job?.status !== "running") break;
-
-      const remaining = await processJobBatch(jobId);
-      if (remaining === 0) {
-        const now = new Date().toISOString();
-        const nextStatus =
-          job.needsReviewRows > 0 ? "awaiting_review" : "completed";
-        await db
-          .update(excelResearchJobs)
-          .set({
-            status: nextStatus,
-            finishedAt: now,
-            message:
-              nextStatus === "awaiting_review"
-                ? "Hoàn tất — còn dòng cần duyệt."
-                : "Hoàn tất nghiên cứu.",
-            updatedAt: now,
-            lastProgressAt: now,
-          })
-          .where(eq(excelResearchJobs.id, jobId));
-        break;
-      }
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Lỗi không xác định.";
-    await db
-      .update(excelResearchJobs)
-      .set({
-        status: "failed",
-        error: message,
-        message: "Job thất bại.",
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(excelResearchJobs.id, jobId));
-  } finally {
-    activeResearchRuns.delete(jobId);
-  }
 }
 
 export async function pauseJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
-  activeResearchRuns.get(jobId)?.abort();
   const now = new Date().toISOString();
   await db
     .update(excelResearchJobs)
@@ -355,7 +305,6 @@ export async function pauseJob(jobId: string, scope?: TenantScopeValue) {
 
 export async function cancelJob(jobId: string, scope?: TenantScopeValue) {
   await assertJobInScope(jobId, scope);
-  activeResearchRuns.get(jobId)?.abort();
   const now = new Date().toISOString();
   await db
     .update(excelResearchJobs)
@@ -367,6 +316,105 @@ export async function cancelJob(jobId: string, scope?: TenantScopeValue) {
     })
     .where(eq(excelResearchJobs.id, jobId));
   return getJob(jobId);
+}
+
+/**
+ * Resume a job that ended in `failed` or `cancelled`. Completed work is kept:
+ * only the rows that never finished (`error`, plus rows left stuck in
+ * `processing` when the run aborted mid-batch) are requeued to `pending`, the
+ * job's failure state is cleared back to `draft`, and the normal `startJob`
+ * path takes over. The batch processor only ever claims `pending` rows, so
+ * already `matched`/`approved`/`needs_review`/`skipped` rows are untouched.
+ */
+export async function restartJob(jobId: string, scope?: TenantScopeValue) {
+  await assertJobInScope(jobId, scope);
+  const [job] = await db
+    .select()
+    .from(excelResearchJobs)
+    .where(eq(excelResearchJobs.id, jobId))
+    .limit(1);
+  const row = requireRow(job);
+
+  if (!["failed", "cancelled"].includes(row.status)) {
+    throw new ExcelResearchJobError(
+      "BAD_REQUEST",
+      `Chỉ có thể chạy lại job đã lỗi hoặc đã hủy (hiện tại: ${row.status}).`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  // Requeue rows that never reached a terminal-good state + reset the job, then
+  // recompute the job counters from the post-requeue row statuses — all in one
+  // transaction so the job is never observed with stale counters. Rows stuck in
+  // `processing` belong to a batch that was aborted, so reset them too and clear
+  // their processing lease.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(excelResearchJobRows)
+      .set({
+        status: "pending",
+        processingToken: null,
+        processingStartedAt: null,
+        errorMessage: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(excelResearchJobRows.jobId, jobId),
+          inArray(excelResearchJobRows.status, ["error", "processing"]),
+        ),
+      );
+
+    // Clear the job's failure state so startJob accepts it.
+    await tx
+      .update(excelResearchJobs)
+      .set({
+        status: "draft",
+        error: null,
+        finishedAt: null,
+        message: "Chuẩn bị chạy lại…",
+        updatedAt: now,
+      })
+      .where(eq(excelResearchJobs.id, jobId));
+
+    // Recompute counters from the actual (post-requeue) row statuses so they are
+    // correct immediately — requeued rows now count toward neither processed nor
+    // error; surviving terminal-good rows are preserved.
+    const rows = await tx
+      .select({ status: excelResearchJobRows.status })
+      .from(excelResearchJobRows)
+      .where(eq(excelResearchJobRows.jobId, jobId));
+
+    const terminal = new Set([
+      "matched",
+      "needs_review",
+      "approved",
+      "skipped",
+      "error",
+    ]);
+    const processed = rows.filter((r) => terminal.has(r.status)).length;
+    const matched = rows.filter(
+      (r) => r.status === "matched" || r.status === "approved",
+    ).length;
+    const needsReview = rows.filter((r) => r.status === "needs_review").length;
+    const errors = rows.filter((r) => r.status === "error").length;
+
+    await tx
+      .update(excelResearchJobs)
+      .set({
+        processedRows: processed,
+        matchedRows: matched,
+        needsReviewRows: needsReview,
+        errorRows: errors,
+        updatedAt: now,
+        lastProgressAt: now,
+      })
+      .where(eq(excelResearchJobs.id, jobId));
+  });
+
+  // startJob does its own status update + maxConcurrent guard. If it throws
+  // (e.g. CONFLICT), the job is still a valid draft with correct counters.
+  return startJob(jobId, scope);
 }
 
 export async function listRowResults(
@@ -397,7 +445,41 @@ export async function listRowResults(
     .from(excelResearchJobRows)
     .where(and(...conditions));
 
-  return { items: rows.map(toRowSummary), total: totalRow?.count ?? 0 };
+  // Per-status counts across ALL rows of the job (ignoring the status filter
+  // and pagination) so the review UI can render stable filter-chip counts.
+  // Deriving these from the filtered/paginated `rows` above would collapse
+  // them to 0 (or the filtered subtotal) whenever a status filter is active.
+  const statusCountRows = await db
+    .select({
+      status: excelResearchJobRows.status,
+      count: count(),
+    })
+    .from(excelResearchJobRows)
+    .where(eq(excelResearchJobRows.jobId, jobId))
+    .groupBy(excelResearchJobRows.status);
+
+  const statusCounts: Record<ExcelResearchRowStatus, number> = {
+    pending: 0,
+    processing: 0,
+    matched: 0,
+    needs_review: 0,
+    approved: 0,
+    skipped: 0,
+    error: 0,
+  };
+  let totalRows = 0;
+  for (const entry of statusCountRows) {
+    const status = entry.status as ExcelResearchRowStatus;
+    if (status in statusCounts) statusCounts[status] = entry.count;
+    totalRows += entry.count;
+  }
+
+  return {
+    items: rows.map(toRowSummary),
+    total: totalRow?.count ?? 0,
+    totalRows,
+    statusCounts,
+  };
 }
 
 export async function getRowResult(
@@ -425,7 +507,28 @@ export async function getRowResult(
     .from(excelResearchRowEvidence)
     .where(eq(excelResearchRowEvidence.jobRowId, row.id));
 
-  return { row, evidence };
+  const result = (row.resultJson ?? {}) as {
+    matched_fields?: Partial<Record<FillableField, string>>;
+    accepted_fields?: FillableField[];
+    overwrite_fields?: FillableField[];
+    edited_fields?: Partial<Record<FillableField, string>>;
+  };
+
+  // Derived compare block so the review UI gets a step-2-style side-by-side
+  // (sheet values vs. found values) plus the persisted per-field decision,
+  // without reverse-engineering it from resultJson on the client.
+  const compare = {
+    sheetFields: (row.inputFieldsJson ?? {}) as Partial<
+      Record<FillableField, string>
+    >,
+    foundFields: result.matched_fields ?? {},
+    acceptedFields: result.accepted_fields ?? [],
+    overwriteFields: result.overwrite_fields ?? [],
+    editedFields: result.edited_fields ?? {},
+    matchedMaterialId: row.matchedMaterialId,
+  };
+
+  return { row, evidence, compare };
 }
 
 export async function approveRow(input: {
@@ -433,6 +536,8 @@ export async function approveRow(input: {
   rowNumber: number;
   materialId?: number;
   acceptedFields?: FillableField[];
+  overwriteFields?: FillableField[];
+  editedValues?: Partial<Record<FillableField, string>>;
   scope?: TenantScopeValue;
 }) {
   await assertJobInScope(input.jobId, input.scope);
@@ -454,6 +559,14 @@ export async function approveRow(input: {
   const accepted =
     input.acceptedFields ??
     ((result.accepted_fields as FillableField[] | undefined) ?? []);
+  const overwrite =
+    input.overwriteFields ??
+    ((result.overwrite_fields as FillableField[] | undefined) ?? []);
+  const edited =
+    input.editedValues ??
+    ((result.edited_fields as
+      | Partial<Record<FillableField, string>>
+      | undefined) ?? {});
 
   const now = new Date().toISOString();
   await db
@@ -466,6 +579,8 @@ export async function approveRow(input: {
       resultJson: {
         ...result,
         accepted_fields: accepted,
+        overwrite_fields: overwrite,
+        edited_fields: edited,
         needs_review: false,
       },
     })
@@ -667,13 +782,35 @@ export async function exportJobExcel(jobId: string, scope?: TenantScopeValue) {
 
   const decisions = exportRows
     .map((row) => {
-      const result = row.resultJson as { accepted_fields?: FillableField[] };
+      const result = row.resultJson as {
+        accepted_fields?: FillableField[];
+        overwrite_fields?: FillableField[];
+        matched_fields?: Partial<Record<FillableField, string>>;
+        edited_fields?: Partial<Record<FillableField, string>>;
+      };
       const fields = result.accepted_fields ?? [];
-      if (!row.matchedMaterialId || fields.length === 0) return null;
+      if (fields.length === 0) return null;
+      // Found (web/catalog) values plus any inline edits become value
+      // overrides, so web-only rows (no catalog match) still export and edited
+      // values win over the matched material. Edits take precedence.
+      const valueOverrides: Partial<Record<FillableField, string>> = {
+        ...(result.matched_fields ?? {}),
+        ...(result.edited_fields ?? {}),
+      };
+      // Drop the web-only-row guard: a row with no catalog match can still
+      // export as long as its accepted fields are covered by overrides.
+      if (!row.matchedMaterialId) {
+        const covered = fields.every(
+          (f) => (valueOverrides[f] ?? "").trim().length > 0,
+        );
+        if (!covered) return null;
+      }
       return {
         originalRowIndex: row.rowNumber,
         materialId: row.matchedMaterialId,
         fields,
+        overwriteFields: result.overwrite_fields ?? [],
+        valueOverrides,
       };
     })
     .filter((d): d is NonNullable<typeof d> => d != null);
@@ -756,11 +893,14 @@ function toRowSummary(row: typeof excelResearchJobRows.$inferSelect) {
     status: row.status,
     productName: row.productName,
     matchedMaterialId: row.matchedMaterialId,
-    confidenceScore: row.confidenceScore
+    confidenceScore: row.confidenceScore != null
       ? Number(row.confidenceScore)
       : null,
     needsReview: result.needs_review ?? row.status === "needs_review",
     reviewReason: result.review_reason ?? "",
-    fillPlan: row.fillPlanJson as FillPlanCell[],
+    // `fillPlan` is intentionally NOT included: it is heavy (before→after per
+    // field) and the list can return up to 200 rows. The compare UI fetches the
+    // full plan per selected row via getRowResult instead.
+    hasMatch: row.matchedMaterialId != null,
   };
 }

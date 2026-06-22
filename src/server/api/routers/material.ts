@@ -17,7 +17,7 @@ import {
 import Papa from "papaparse";
 import { z } from "zod";
 
-import { createTRPCRouter, publicProcedure, requirePermission } from "~/server/api/trpc";
+import { createTRPCRouter, protectedProcedure, publicProcedure, requirePermission } from "~/server/api/trpc";
 import {
   creatorTenantId,
   tenantScopeValue,
@@ -71,6 +71,7 @@ import {
 } from "~/server/services/shop-import-jobs";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import { findFuzzyCandidates } from "~/server/services/ai-product-matcher";
+import { enrichRowFromWeb } from "~/server/services/enrich-web-row";
 import {
   addShopScrapeJobProduct,
   cancelShopScrapeJob,
@@ -1810,15 +1811,18 @@ export const materialRouter = createTRPCRouter({
 
   deleteMany: requirePermission("material:delete")
     .input(
-      z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) }),
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(10_000) }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Soft-deletes up to 10k shared-catalog rows in one call; access is gated
+      // by the `material:delete` permission, which is the governance boundary.
+      const ids = Array.from(new Set(input.ids));
       const now = new Date().toISOString();
       const updated = await ctx.db
         .update(materials)
         .set({ deletedAt: now, updatedAt: now })
         .where(
-          and(inArray(materials.id, input.ids), isNull(materials.deletedAt)),
+          and(inArray(materials.id, ids), isNull(materials.deletedAt)),
         )
         .returning({ id: materials.id });
       return { count: updated.length };
@@ -1973,7 +1977,7 @@ export const materialRouter = createTRPCRouter({
   // Excel Enrich & Export (AI-less, pg_trgm + weighted scoring)
   // -------------------------------------------------------------------------
 
-  enrichPreviewXlsx: publicProcedure
+  enrichPreviewXlsx: protectedProcedure
     .input(
       z.object({
         fileName: z.string().min(1).default("materials.xlsx"),
@@ -2020,7 +2024,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  enrichMatchRows: publicProcedure
+  enrichMatchRows: protectedProcedure
     .input(
       z.object({
         fileName: z.string().min(1).default("materials.xlsx"),
@@ -2106,7 +2110,7 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  enrichSearchMaterials: publicProcedure
+  enrichSearchMaterials: protectedProcedure
     .input(
       z.object({
         query: z.string().trim().min(1),
@@ -2143,6 +2147,22 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
+  enrichWebSearchRow: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1),
+        code: z.string().trim().optional(),
+        manufacturer: z.string().trim().optional(),
+        specText: z.string().trim().optional(),
+        unit: z.string().trim().optional(),
+        category: z.string().trim().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const result = await enrichRowFromWeb(input);
+      return result;
+    }),
+
   enrichExportXlsx: requirePermission("material:write")
     .input(
       z.object({
@@ -2158,6 +2178,10 @@ export const materialRouter = createTRPCRouter({
               originalRowIndex: z.number().int().min(1),
               materialId: z.number().int().positive().nullable(),
               fields: z.array(z.enum(FILLABLE_FIELDS)),
+              overwriteFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+              valueOverrides: z
+                .record(z.enum(FILLABLE_FIELDS), z.string())
+                .optional(),
             }),
           )
           .max(MAX_ENRICH_ROWS),
@@ -2176,7 +2200,12 @@ export const materialRouter = createTRPCRouter({
         ? await ctx.db
             .select()
             .from(materials)
-            .where(inArray(materials.id, materialIds))
+            .where(
+              and(
+                inArray(materials.id, materialIds),
+                isNull(materials.deletedAt),
+              ),
+            )
         : [];
       const materialsById = new Map(materialRows.map((row) => [row.id, row]));
 
@@ -2189,6 +2218,8 @@ export const materialRouter = createTRPCRouter({
           originalRowIndex: d.originalRowIndex,
           materialId: d.materialId,
           fields: d.fields,
+          overwriteFields: d.overwriteFields,
+          valueOverrides: d.valueOverrides,
         })),
         materialsById,
         mode: input.mode,

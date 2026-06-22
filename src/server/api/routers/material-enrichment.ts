@@ -18,11 +18,13 @@ import {
   deleteMaterialEnrichmentJob,
   exportMaterialEnrichmentReport,
   getMaterialEnrichmentItem,
+  getMaterialEnrichmentItemCandidates,
   getMaterialEnrichmentJob,
-  listMaterialEnrichmentItems,
+  listMaterialEnrichmentItemSummaries,
   listMaterialEnrichmentJobs,
   rejectMaterialEnrichmentItem,
   selectWebCandidate,
+  setEnrichmentItemDecision,
   startMaterialEnrichmentJob,
 } from "~/server/services/material-enrichment-jobs";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
@@ -43,6 +45,8 @@ async function withShopJobErrors<T>(operation: () => Promise<T>) {
 
 const materialEnrichmentJobOptionsInput = z.object({
   autoCommitHighConfidence: z.boolean().optional(),
+  skipWellFilled: z.boolean().optional(),
+  generatePdfIfMissing: z.boolean().optional(),
   model: z.string().trim().optional(),
   maxSearchResults: z.number().int().positive().optional(),
   maxQueries: z.number().int().positive().optional(),
@@ -78,6 +82,12 @@ const materialEnrichmentItemInput = z.object({
 const selectWebCandidateInput = z.object({
   itemId: z.number().int().positive(),
   candidateId: z.number().int().positive(),
+});
+
+const setEnrichmentItemDecisionInput = z.object({
+  itemId: z.number().int().positive(),
+  acceptedFields: z.array(z.enum(ENRICHABLE_FIELDS)).optional(),
+  editedFields: z.record(z.enum(ENRICHABLE_FIELDS), z.string()).optional(),
 });
 
 const bulkCommitMaterialEnrichmentInput = z.object({
@@ -154,7 +164,7 @@ export const materialEnrichmentRouter = createTRPCRouter({
     .input(listMaterialEnrichmentItemsInput)
     .query(({ ctx, input }) =>
       withShopJobErrors(() =>
-        listMaterialEnrichmentItems(input, tenantScopeValue(ctx)),
+        listMaterialEnrichmentItemSummaries(input, tenantScopeValue(ctx)),
       ),
     ),
 
@@ -174,6 +184,17 @@ export const materialEnrichmentRouter = createTRPCRouter({
       return item;
     }),
 
+  getMaterialEnrichmentItemCandidates: publicProcedure
+    .input(materialEnrichmentItemInput)
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        getMaterialEnrichmentItemCandidates(
+          input.itemId,
+          tenantScopeValue(ctx),
+        ),
+      ),
+    ),
+
   selectWebCandidate: requirePermission("enrichment:run")
     .input(selectWebCandidateInput)
     .mutation(({ ctx, input }) =>
@@ -181,6 +202,21 @@ export const materialEnrichmentRouter = createTRPCRouter({
         selectWebCandidate(
           input.itemId,
           input.candidateId,
+          tenantScopeValue(ctx),
+        ),
+      ),
+    ),
+
+  setEnrichmentItemDecision: requirePermission("enrichment:run")
+    .input(setEnrichmentItemDecisionInput)
+    .mutation(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        setEnrichmentItemDecision(
+          input.itemId,
+          {
+            acceptedFields: input.acceptedFields,
+            editedFields: input.editedFields,
+          },
           tenantScopeValue(ctx),
         ),
       ),

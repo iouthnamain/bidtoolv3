@@ -1,0 +1,1 @@
+ALTER TYPE "public"."catalog_document_source_type" ADD VALUE 'generated';

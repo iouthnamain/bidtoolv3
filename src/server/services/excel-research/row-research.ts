@@ -1,5 +1,9 @@
 import type { FillPlanCell, FillableField } from "~/lib/materials/excel-enrich-fields";
 import type { db as appDb } from "~/server/db";
+import {
+  mapExtractedToFillable,
+  webHitsToSearchResults,
+} from "~/server/services/enrich-web-row";
 import { matchRows } from "~/server/services/excel-enrich";
 import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
 import { rankSearchHits } from "~/server/services/excel-research/source-ranker";
@@ -9,6 +13,9 @@ import type {
   RowResearchResult,
 } from "~/server/services/excel-research/types";
 import { searchWeb } from "~/server/services/excel-research/web-search";
+import { resolveAiProvider } from "~/server/services/app-settings";
+import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
+import type { MaterialEnrichmentInput } from "~/lib/materials/material-enrichment-types";
 
 type AppDb = typeof appDb;
 
@@ -113,6 +120,8 @@ export async function processSingleRow(
     .filter((cell) => cell.action === "filled")
     .map((cell) => cell.field);
 
+  const catalogFilledFields = new Set(acceptedFields);
+
   const evidence: FieldEvidence[] = [];
   if (top) {
     for (const cell of match?.fillPlan ?? []) {
@@ -138,6 +147,84 @@ export async function processSingleRow(
       note: web.snippet.slice(0, 200),
     });
   }
+
+  const matchedFields: Partial<Record<FillableField, string>> = Object.fromEntries(
+    (match?.fillPlan ?? [])
+      .filter((cell) => cell.action === "filled")
+      .map((cell) => [cell.field, cell.after]),
+  ) as Partial<Record<FillableField, string>>;
+
+  const webAcceptedFields: FillableField[] = [];
+
+  if (config.enableWebSearch && webEvidence.length > 0) {
+    try {
+      const provider = await resolveAiProvider("enrichment");
+      const rankedHits = webHitsToSearchResults(webEvidence);
+      const unitTrimmed = fields.unit?.trim();
+      const enrichmentInput: MaterialEnrichmentInput = {
+        materialId: top?.materialId ?? 0,
+        name: input.productName,
+        unit: unitTrimmed && unitTrimmed.length > 0 ? unitTrimmed : "cái",
+        code: fields.code ?? null,
+        category: fields.category ?? null,
+        specText: fields.specText ?? "",
+        manufacturer: fields.manufacturer ?? null,
+        originCountry: fields.originCountry ?? null,
+        defaultUnitPrice: null,
+        currency: "VND",
+        sourceUrl: null,
+        sku: fields.code ?? null,
+        model: fields.code ?? null,
+      };
+
+      const extracted = await extractProductFromSources(
+        enrichmentInput,
+        rankedHits,
+        provider,
+      );
+      const sourceUrls = [...new Set(webEvidence.map((hit) => hit.url).filter(Boolean))];
+      const webMapped = mapExtractedToFillable(extracted, sourceUrls);
+
+      for (const [field, value] of Object.entries(webMapped.fields)) {
+        const fillable = field as FillableField;
+        const trimmed = value?.trim() ?? "";
+        if (!trimmed) continue;
+        if (catalogFilledFields.has(fillable)) continue;
+
+        if (fillable === "code") {
+          const existingCode =
+            (fields.code ?? "").trim() || (matchedFields.code ?? "").trim();
+          if (existingCode) continue;
+        }
+
+        matchedFields[fillable] = trimmed;
+        webAcceptedFields.push(fillable);
+        evidence.push({
+          field: fillable,
+          value: trimmed,
+          source_url: webMapped.fields.sourceUrl ?? sourceUrls[0] ?? "",
+          source_type: "web_search",
+          confidence: Math.min(0.75, bestWebRank / 100),
+          note: "Trích xuất từ kết quả web",
+        });
+      }
+
+      for (const item of webMapped.evidence) {
+        evidence.push({
+          field: item.field,
+          value: item.value,
+          source_url: item.sourceUrl,
+          source_type: "web_search",
+          confidence: Math.min(0.75, bestWebRank / 100),
+          note: item.snippet.slice(0, 200),
+        });
+      }
+    } catch {
+      // Missing AI provider or extraction failure — keep today's URL-only evidence.
+    }
+  }
+
+  const allAcceptedFields = [...new Set([...acceptedFields, ...webAcceptedFields])];
 
   const webOnly = catalogScore < config.reviewThreshold && bestWebRank > 0;
   const confidenceScore = webOnly
@@ -187,12 +274,8 @@ export async function processSingleRow(
           source: webOnly ? "web" : "catalog",
         }
       : null,
-    matched_fields: Object.fromEntries(
-      (match?.fillPlan ?? [])
-        .filter((c) => c.action === "filled")
-        .map((c) => [c.field, c.after]),
-    ) as Partial<Record<FillableField, string>>,
-    accepted_fields: acceptedFields,
+    matched_fields: matchedFields,
+    accepted_fields: allAcceptedFields,
     catalog_pdf_url: top?.sourceUrl ?? webEvidence[0]?.url ?? "",
     source_urls: [
       ...catalogEvidence.map((c) => c.url).filter(Boolean),

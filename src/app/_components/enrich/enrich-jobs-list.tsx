@@ -7,6 +7,8 @@ import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
   type ExcelResearchJobStatus,
   isExcelResearchJobActive,
+  isExcelResearchJobBusy,
+  isExcelResearchJobReviewReady,
 } from "~/app/_components/research-enrich/excel-research-types";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -55,18 +57,12 @@ function progressPercent(processed: number, total: number) {
   return Math.min(100, Math.round((processed / total) * 100));
 }
 
-/**
- * Shared excel-research job list. Used on the main "Đối chiếu & điền Excel"
- * page (compact mode) and the dedicated /enrich/jobs page (full mode).
- */
+/** Excel-research job list for the dedicated /enrich/jobs page. */
 export function EnrichJobsList({
   limit = 50,
-  compact = false,
   emptyAction,
 }: {
   limit?: number;
-  /** Compact mode shrinks the chrome for embedding above the upload wizard. */
-  compact?: boolean;
   /** Optional CTA shown in the empty state. */
   emptyAction?: React.ReactNode;
 }) {
@@ -77,7 +73,7 @@ export function EnrichJobsList({
     {
       refetchInterval: (query) => {
         const jobs = query.state.data ?? [];
-        return jobs.some((job) => isExcelResearchJobActive(job))
+        return jobs.some((job) => isExcelResearchJobBusy(job))
           ? JOB_LIST_POLL_MS
           : false;
       },
@@ -98,19 +94,21 @@ export function EnrichJobsList({
         <div>
           <p className="section-title">Danh sách job</p>
           <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
-            {compact ? "Job nghiên cứu Excel" : "Lịch sử nghiên cứu"}
+            Lịch sử nghiên cứu
           </h2>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          isLoading={jobListQuery.isFetching}
-          leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
-          onClick={() => void jobListQuery.refetch()}
-        >
-          Làm mới
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            isLoading={jobListQuery.isFetching}
+            leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={() => void jobListQuery.refetch()}
+          >
+            Làm mới
+          </Button>
+        </div>
       </div>
 
       {jobListQuery.isLoading ? (
@@ -147,7 +145,13 @@ function JobListRow({
   onOpen: () => void;
 }) {
   const active = isExcelResearchJobActive(job);
+  const reviewReady = isExcelResearchJobReviewReady(job);
   const pct = progressPercent(job.processedRows, job.totalRows);
+  const openLabel = reviewReady
+    ? "Duyệt kết quả"
+    : active
+      ? "Xem tiến độ"
+      : "Mở";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-slate-50">
@@ -173,6 +177,11 @@ function JobListRow({
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-violet-100">
               <div
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={`${job.processedRows}/${job.totalRows}`}
                 className="h-full rounded-full bg-violet-600"
                 style={{ width: `${pct}%` }}
               />
@@ -188,13 +197,23 @@ function JobListRow({
           </p>
         )}
       </button>
-      <Badge tone={JOB_STATUS_TONE[job.status]}>
-        {active ? (
-          <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
-        ) : null}
-        {JOB_STATUS_LABEL[job.status]}
-      </Badge>
-
+      <div className="flex items-center gap-2">
+        <Badge tone={JOB_STATUS_TONE[job.status]}>
+          {active ? (
+            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
+          ) : null}
+          {JOB_STATUS_LABEL[job.status]}
+        </Badge>
+        <Button
+          type="button"
+          variant={reviewReady ? "primary" : "secondary"}
+          size="sm"
+          rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+          onClick={onOpen}
+        >
+          {openLabel}
+        </Button>
+      </div>
     </div>
   );
 }

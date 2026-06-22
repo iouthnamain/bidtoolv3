@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   Download,
   FileSpreadsheet,
+  Globe,
   Loader2,
+  Pencil,
   Search,
   Upload,
 } from "lucide-react";
@@ -23,17 +25,17 @@ import {
   type EnrichStep,
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
-import { EnrichJobsList } from "~/app/_components/enrich/enrich-jobs-list";
+import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import {
-  ProductCandidateCard,
-  type EnrichCandidate,
-} from "~/app/_components/enrich/product-candidate-card";
+  ManualProductDialog,
+  type ManualProductValues,
+} from "~/app/_components/enrich/manual-product-dialog";
+import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
 import {
   buildFillPlan,
   candidateToFields,
-  FIELD_LABELS,
-  FILLABLE_FIELDS,
   type FillableField,
+  FILLABLE_FIELDS,
 } from "~/lib/materials/excel-enrich-fields";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -90,6 +92,15 @@ function downloadBase64Xlsx(fileName: string, base64: string) {
 type RowDecision = {
   materialId: number | null;
   acceptedFields: Set<FillableField>;
+  // Fields the user chose to force-overwrite even though the sheet already has a
+  // value (Contract O: fed into buildFillPlan as `forceOverwrite` and exported
+  // as `overwriteFields`).
+  overwriteFields?: Set<FillableField>;
+  // Per-field inline edits: user-typed values that override the candidate's
+  // value at export time. Threaded into the export decision as `valueOverrides`.
+  editedValues?: Partial<Record<FillableField, string>>;
+  // User explicitly chose to skip this row (vs. simply not decided yet).
+  skipped?: boolean;
 };
 
 /**
@@ -104,7 +115,7 @@ function planForCandidate(
 ): { plan: FillPlanCell[]; fillable: Set<FillableField> } {
   if (!candidate) return { plan: [], fillable: new Set() };
   const materialFields = candidateToFields(candidate);
-  const plan = buildFillPlan(sheetFields, materialFields) as FillPlanCell[];
+  const plan = buildFillPlan(sheetFields, materialFields);
   const fillable = new Set<FillableField>(
     plan
       .filter((cell) => cell.action === "filled")
@@ -114,6 +125,12 @@ function planForCandidate(
 }
 
 const EMPTY_JOB_ID = "00000000-0000-0000-0000-000000000000";
+
+// The whole workbook is base64-encoded and sent in the request body (preview,
+// match, export). Base64 inflates size ~33%, so guard the raw file well under
+// typical body limits to fail fast with a clear message instead of an opaque
+// network/parse error.
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 export function MaterialEnrichClient() {
   const toast = useToast();
@@ -174,13 +191,24 @@ export function MaterialEnrichClient() {
     setPreview(null);
     setMatchData(null);
     setDecisions(new Map());
+    setStatusFilter("all");
     setSelectedRowIndex(null);
+    setConfirmUnmatchedOpen(false);
+    setResearchExportSummary(null);
     setResearchJobId(null);
     setError(null);
     setSheetName("");
     setStep(1);
     setMaxReached(1);
     if (!next) return;
+
+    if (next.size > MAX_UPLOAD_BYTES) {
+      setFile(null);
+      setError(
+        `Tệp quá lớn (${(next.size / 1024 / 1024).toFixed(1)} MB). Giới hạn ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)} MB.`,
+      );
+      return;
+    }
 
     try {
       const workbookBase64 = await fileToBase64(next);
@@ -217,8 +245,10 @@ export function MaterialEnrichClient() {
       {
         onSuccess: (result) => {
           setMatchData(result);
-          // Seed decisions: auto + review pre-select the top candidate and
-          // tick all "filled" fields; unmatched start empty.
+          // Seed decisions: only `auto` rows pre-select the top candidate and
+          // tick all "filled" fields. `review` rows require an explicit pick
+          // (so "Cần duyệt" rows aren't silently counted/exported); unmatched
+          // start empty.
           const seeded = new Map<number, RowDecision>();
           for (const row of result.results) {
             const acceptedFields = new Set<FillableField>(
@@ -228,10 +258,11 @@ export function MaterialEnrichClient() {
             );
             seeded.set(row.originalRowIndex, {
               materialId:
-                row.status === "unmatched"
-                  ? null
-                  : (row.topCandidate?.materialId ?? null),
-              acceptedFields,
+                row.status === "auto"
+                  ? (row.topCandidate?.materialId ?? null)
+                  : null,
+              acceptedFields:
+                row.status === "auto" ? acceptedFields : new Set(),
             });
           }
           setDecisions(seeded);
@@ -256,6 +287,41 @@ export function MaterialEnrichClient() {
     return count;
   }, [decisions]);
 
+  // Unmatched rows the user hasn't resolved yet — neither manually matched nor
+  // explicitly skipped. This is what export warnings should reflect, not the
+  // raw server count (which ignores the user's skip/manual-match decisions).
+  const pendingUnmatched = useMemo(() => {
+    if (!matchData) return 0;
+    return matchData.results.filter((row) => {
+      if (row.status !== "unmatched") return false;
+      const decision = decisions.get(row.originalRowIndex);
+      return decision?.materialId == null && !decision?.skipped;
+    }).length;
+  }, [matchData, decisions]);
+
+  // Mid-confidence "review" rows the user hasn't resolved yet — neither manually
+  // matched nor explicitly skipped. Seeded with materialId:null, these are never
+  // auto-accepted, so without surfacing them the user could export and silently
+  // drop every reviewable row. Mirrors pendingUnmatched but for status "review".
+  const pendingReview = useMemo(() => {
+    if (!matchData) return 0;
+    return matchData.results.filter((row) => {
+      if (row.status !== "review") return false;
+      const decision = decisions.get(row.originalRowIndex);
+      return decision?.materialId == null && !decision?.skipped;
+    }).length;
+  }, [matchData, decisions]);
+
+  // Rows the user has actually matched (a non-null materialId decision). This
+  // reflects manual picks and skips, unlike the server's static summary counts.
+  const matchedCount = useMemo(() => {
+    let count = 0;
+    for (const decision of decisions.values()) {
+      if (decision.materialId != null) count += 1;
+    }
+    return count;
+  }, [decisions]);
+
   const updateDecision = (rowIndex: number, next: RowDecision) => {
     setDecisions((prev) => {
       const map = new Map(prev);
@@ -271,8 +337,18 @@ export function MaterialEnrichClient() {
         originalRowIndex,
         materialId: decision.materialId,
         fields: Array.from(decision.acceptedFields),
+        overwriteFields: Array.from(decision.overwriteFields ?? []),
+        valueOverrides: decision.editedValues ?? {},
       }))
-      .filter((d) => d.materialId != null && d.fields.length > 0);
+      // A row exports when it has accepted fields AND a source for their values:
+      // either a matched catalog material, or per-field overrides (manual entry
+      // / web-only rows) that cover the accepted fields.
+      .filter(
+        (d) =>
+          d.fields.length > 0 &&
+          (d.materialId != null ||
+            d.fields.every((field) => d.valueOverrides[field] != null)),
+      );
 
     exportXlsx.mutate(
       {
@@ -295,8 +371,7 @@ export function MaterialEnrichClient() {
   };
 
   const handleExportClick = () => {
-    const unmatched = matchData?.summary.unmatched ?? 0;
-    if (unmatched > 0) {
+    if (pendingUnmatched > 0 || pendingReview > 0) {
       setConfirmUnmatchedOpen(true);
       return;
     }
@@ -329,12 +404,6 @@ export function MaterialEnrichClient() {
 
   return (
     <div className="animate-rise space-y-4">
-      {step === 1 && !file ? (
-        <section className="panel p-4 sm:p-5">
-          <EnrichJobsList limit={10} compact />
-        </section>
-      ) : null}
-
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
 
       {error ? (
@@ -364,11 +433,14 @@ export function MaterialEnrichClient() {
           matchData={matchData}
           decisions={decisions}
           updateDecision={updateDecision}
+          applyDecisions={setDecisions}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
           selectedRowIndex={selectedRowIndex}
           setSelectedRowIndex={setSelectedRowIndex}
           fieldsToFill={fieldsToFill}
+          matchedCount={matchedCount}
+          pendingUnmatched={pendingUnmatched}
           onContinue={() => reach(3)}
         />
       ) : null}
@@ -382,7 +454,7 @@ export function MaterialEnrichClient() {
           mapping={
             activeSheet.suggestedMapping as Record<string, string | null>
           }
-          unmatchedCount={matchData?.summary.unmatched ?? 0}
+          unmatchedCount={pendingUnmatched}
           jobId={researchJobId}
           onJobIdChange={setResearchJobId}
           onContinue={() => reach(4)}
@@ -395,6 +467,9 @@ export function MaterialEnrichClient() {
         <ExportStep
           matchData={matchData}
           fieldsToFill={fieldsToFill}
+          matchedCount={matchedCount}
+          pendingUnmatched={pendingUnmatched}
+          pendingReview={pendingReview}
           isExporting={exportXlsx.isPending}
           isResearchExporting={exportResearchXlsx.isPending}
           hasResearchJob={researchJobId != null}
@@ -411,8 +486,16 @@ export function MaterialEnrichClient() {
 
       <ConfirmDialog
         open={confirmUnmatchedOpen}
-        title={`${matchData?.summary.unmatched ?? 0} dòng chưa khớp`}
-        description="Các dòng chưa khớp sẽ được giữ nguyên trong file xuất ra. Tiếp tục?"
+        title={`${(pendingUnmatched + pendingReview).toLocaleString("vi-VN")} dòng chưa xử lý`}
+        description={`${
+          pendingUnmatched > 0
+            ? `${pendingUnmatched.toLocaleString("vi-VN")} dòng chưa khớp`
+            : ""
+        }${pendingUnmatched > 0 && pendingReview > 0 ? " và " : ""}${
+          pendingReview > 0
+            ? `${pendingReview.toLocaleString("vi-VN")} dòng cần duyệt chưa chọn`
+            : ""
+        } sẽ được giữ nguyên trong file xuất ra. Tiếp tục?`}
         confirmLabel="Xuất file"
         variant="primary"
         onConfirm={() => {
@@ -575,7 +658,119 @@ function UploadStep({
           </Button>
         </div>
       </div>
+
+      <EnrichXlsxPreviewPanel
+        sheet={activeSheet}
+        isLoading={isPreviewLoading}
+      />
     </section>
+  );
+}
+
+function EnrichXlsxPreviewPanel({
+  sheet,
+  isLoading,
+}: {
+  sheet: EnrichPreviewSheet | undefined;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="border-t border-slate-200 px-4 py-4">
+        <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Đang đọc file và tạo preview…
+        </div>
+      </div>
+    );
+  }
+
+  if (!sheet) {
+    return null;
+  }
+
+  const mappedHeaders = new Set(
+    Object.values(sheet.suggestedMapping).filter(
+      (header): header is string => Boolean(header),
+    ),
+  );
+  const headers = sheet.headers.length > 0 ? sheet.headers : ["(trống)"];
+
+  return (
+    <div className="border-t border-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <div>
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            Xem trước Excel
+          </p>
+          <p className="mt-1 text-sm font-bold text-slate-900">{sheet.name}</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Header dòng {sheet.activeHeaderRowIndex};{" "}
+            {sheet.rowCount.toLocaleString("vi-VN")} dòng dữ liệu.
+          </p>
+        </div>
+        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 tabular-nums">
+          {sheet.previewRows.length.toLocaleString("vi-VN")} dòng preview
+        </span>
+      </div>
+
+      <div className="px-4 pb-4">
+        {sheet.warnings.length > 0 ? (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {sheet.warnings[0]}
+          </div>
+        ) : null}
+
+        {sheet.previewRows.length > 0 ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[36rem] divide-y divide-slate-200 text-sm break-words">
+              <thead className="bg-slate-100 text-left text-xs font-bold text-slate-600 uppercase">
+                <tr>
+                  <th className="sticky left-0 z-10 bg-slate-100 px-3 py-2 whitespace-nowrap">
+                    Dòng
+                  </th>
+                  {headers.map((header) => (
+                    <th
+                      key={header}
+                      className={`max-w-48 px-3 py-2 whitespace-nowrap ${
+                        mappedHeaders.has(header)
+                          ? "bg-sky-100 text-sky-900"
+                          : ""
+                      }`}
+                    >
+                      <span className="line-clamp-2">{header}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {sheet.previewRows.map((row, index) => (
+                  <tr key={row.key}>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
+                      {sheet.activeHeaderRowIndex + index + 1}
+                    </td>
+                    {headers.map((header) => (
+                      <td
+                        key={`${row.key}-${header}`}
+                        className="max-w-56 px-3 py-2 text-slate-700"
+                      >
+                        <span className="line-clamp-3">
+                          {row.values[header]?.trim() || "-"}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+            Không có dòng dữ liệu để preview trên sheet này.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -583,24 +778,46 @@ function ReviewStep({
   matchData,
   decisions,
   updateDecision,
+  applyDecisions,
   statusFilter,
   setStatusFilter,
   selectedRowIndex,
   setSelectedRowIndex,
   fieldsToFill,
+  matchedCount,
+  pendingUnmatched,
   onContinue,
 }: {
   matchData: MatchResponse;
   decisions: Map<number, RowDecision>;
   updateDecision: (rowIndex: number, next: RowDecision) => void;
+  applyDecisions: (
+    updater: (prev: Map<number, RowDecision>) => Map<number, RowDecision>,
+  ) => void;
   statusFilter: MatchRow["status"] | "all";
   setStatusFilter: (value: MatchRow["status"] | "all") => void;
   selectedRowIndex: number | null;
   setSelectedRowIndex: (value: number | null) => void;
   fieldsToFill: number;
+  matchedCount: number;
+  pendingUnmatched: number;
   onContinue: () => void;
 }) {
   const rows = matchData.results;
+
+  const filtered =
+    statusFilter === "all"
+      ? rows
+      : rows.filter((row) => row.status === statusFilter);
+
+  // Reset selection to the first filtered row when the active filter excludes
+  // the currently-selected row (so the detail pane never shows a hidden row).
+  useEffect(() => {
+    if (filtered.length === 0) return;
+    if (!filtered.some((row) => row.originalRowIndex === selectedRowIndex)) {
+      setSelectedRowIndex(filtered[0]!.originalRowIndex);
+    }
+  }, [filtered, selectedRowIndex, setSelectedRowIndex]);
 
   if (rows.length === 0) {
     return (
@@ -613,51 +830,58 @@ function ReviewStep({
     );
   }
 
-  const filtered =
-    statusFilter === "all"
-      ? rows
-      : rows.filter((row) => row.status === statusFilter);
-
+  // Counts derived from the user's decisions so chips/headers reflect manual
+  // picks and skips, not just the server's static classification.
+  const reviewCount = rows.filter((row) => row.status === "review").length;
   const filters: Array<{
     id: MatchRow["status"] | "all";
     label: string;
     count: number;
   }> = [
     { id: "all", label: "Tất cả", count: rows.length },
-    { id: "auto", label: "Tự động", count: matchData.summary.auto },
-    { id: "review", label: "Cần duyệt", count: matchData.summary.review },
-    { id: "unmatched", label: "Chưa khớp", count: matchData.summary.unmatched },
+    { id: "auto", label: STATUS_META.auto.label, count: matchData.summary.auto },
+    { id: "review", label: STATUS_META.review.label, count: reviewCount },
+    { id: "unmatched", label: STATUS_META.unmatched.label, count: pendingUnmatched },
   ];
 
   const selectedRow =
     rows.find((row) => row.originalRowIndex === selectedRowIndex) ?? null;
 
   const confirmAllAuto = () => {
-    for (const row of rows) {
-      if (row.status !== "auto" || !row.topCandidate) continue;
-      const accepted = new Set<FillableField>(
-        row.fillPlan
-          .filter((cell) => cell.action === "filled")
-          .map((cell) => cell.field),
-      );
-      updateDecision(row.originalRowIndex, {
-        materialId: row.topCandidate.materialId,
-        acceptedFields: accepted,
-      });
-    }
+    applyDecisions((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) {
+        if (row.status !== "auto" || !row.topCandidate) continue;
+        const accepted = new Set<FillableField>(
+          row.fillPlan
+            .filter((cell) => cell.action === "filled")
+            .map((cell) => cell.field),
+        );
+        next.set(row.originalRowIndex, {
+          materialId: row.topCandidate.materialId,
+          acceptedFields: accepted,
+        });
+      }
+      return next;
+    });
   };
 
   const skipAllUnmatched = () => {
-    for (const row of rows) {
-      if (row.status !== "unmatched") continue;
-      updateDecision(row.originalRowIndex, {
-        materialId: null,
-        acceptedFields: new Set(),
-      });
-    }
+    applyDecisions((prev) => {
+      const next = new Map(prev);
+      for (const row of rows) {
+        if (row.status !== "unmatched") continue;
+        // Don't clobber an unmatched row the user already matched manually.
+        if (prev.get(row.originalRowIndex)?.materialId != null) continue;
+        next.set(row.originalRowIndex, {
+          materialId: null,
+          acceptedFields: new Set(),
+          skipped: true,
+        });
+      }
+      return next;
+    });
   };
-
-  const matched = matchData.summary.auto + matchData.summary.review;
 
   return (
     <section className="panel overflow-hidden">
@@ -668,10 +892,10 @@ function ReviewStep({
           </h3>
           <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
             <span className="tabular-nums">{matchData.matchedRows.toLocaleString("vi-VN")} dòng</span>
-            <span className="tabular-nums">{matched.toLocaleString("vi-VN")} khớp</span>
+            <span className="tabular-nums">{matchedCount.toLocaleString("vi-VN")} đã chọn</span>
             <span className="tabular-nums">{fieldsToFill.toLocaleString("vi-VN")} ô sẽ điền</span>
             <span className="tabular-nums">
-              {matchData.summary.unmatched.toLocaleString("vi-VN")} chưa khớp
+              {pendingUnmatched.toLocaleString("vi-VN")} chưa khớp
             </span>
           </p>
         </div>
@@ -679,7 +903,7 @@ function ReviewStep({
           variant="primary"
           size="sm"
           leftIcon={<Download className="h-3.5 w-3.5" />}
-          disabled={fieldsToFill === 0}
+          disabled={rows.length === 0}
           onClick={onContinue}
         >
           Tiếp tục xuất file
@@ -713,12 +937,13 @@ function ReviewStep({
             Xác nhận tất cả ≥ 85%
           </Button>
           <Button
-            variant="ghost"
+            variant="warning"
             size="sm"
-            disabled={matchData.summary.unmatched === 0}
+            disabled={pendingUnmatched === 0}
             onClick={skipAllUnmatched}
           >
             Bỏ qua chưa khớp
+            {pendingUnmatched > 0 ? ` (${pendingUnmatched.toLocaleString("vi-VN")})` : ""}
           </Button>
         </div>
       </div>
@@ -751,9 +976,11 @@ function ReviewStep({
                     Dòng {row.originalRowIndex}
                     {decision?.materialId != null
                       ? ` · đã chọn (${decision.acceptedFields.size} ô)`
-                      : row.status === "unmatched"
-                        ? " · chưa chọn"
-                        : ""}
+                      : decision?.skipped
+                        ? " · đã bỏ qua"
+                        : row.status === "unmatched"
+                          ? " · chưa chọn"
+                          : ""}
                   </p>
                 </div>
               </button>
@@ -770,6 +997,7 @@ function ReviewStep({
         <div className="min-w-0 p-4">
           {selectedRow ? (
             <MatchChooser
+              key={selectedRow.originalRowIndex}
               row={selectedRow}
               decision={decisions.get(selectedRow.originalRowIndex)}
               onChange={(next) =>
@@ -797,8 +1025,10 @@ function MatchChooser({
   decision: RowDecision | undefined;
   onChange: (next: RowDecision) => void;
 }) {
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
@@ -809,9 +1039,12 @@ function MatchChooser({
     { query: debounced },
     { enabled: debounced.length > 0 },
   );
+  const webSearch = api.material.enrichWebSearchRow.useMutation();
 
   const selectedId = decision?.materialId ?? null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
+  const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
+  const editedValues = decision?.editedValues ?? {};
 
   const sheetFields: Partial<Record<FillableField, string>> = row.sheetFields;
 
@@ -823,175 +1056,245 @@ function MatchChooser({
     ? searchCandidates
     : row.candidates;
 
-  // The currently selected candidate may come from either list.
   const selectedCandidate =
-    cards.find((c) => c.materialId === selectedId) ??
-    row.candidates.find((c) => c.materialId === selectedId) ??
-    searchCandidates.find((c) => c.materialId === selectedId) ??
-    null;
+    selectedId != null
+      ? (cards.find((candidate) => candidate.materialId === selectedId) ??
+        row.candidates.find((candidate) => candidate.materialId === selectedId) ??
+        null)
+      : null;
 
   const choose = (candidate: EnrichCandidate) => {
     const { fillable } = planForCandidate(sheetFields, candidate);
-    onChange({ materialId: candidate.materialId, acceptedFields: fillable });
+    onChange({
+      materialId: candidate.materialId,
+      acceptedFields: fillable,
+      overwriteFields: new Set(),
+      editedValues: {},
+    });
   };
 
-  // The fill plan shown reflects the chosen candidate (recomputed locally so
-  // manual-search picks get a plan too).
-  const plan = selectedCandidate
-    ? planForCandidate(sheetFields, selectedCandidate).plan
-    : row.fillPlan;
+  const isSkipped = decision?.skipped === true;
+
+  // Per-row skip: mark this single row to be left untouched on export (works for
+  // any row — unmatched OR mid-confidence "review" — not just via the bulk
+  // "skip all unmatched" button). Choosing a candidate clears it implicitly.
+  const toggleSkip = () => {
+    onChange({
+      materialId: null,
+      acceptedFields: new Set(),
+      overwriteFields: new Set(),
+      editedValues: {},
+      skipped: !isSkipped,
+    });
+  };
 
   const toggleField = (field: FillableField) => {
     const next = new Set(accepted);
-    if (next.has(field)) next.delete(field);
-    else next.add(field);
-    onChange({ materialId: selectedId, acceptedFields: next });
+    const nextOverwrite = new Set(overwrite);
+    if (next.has(field)) {
+      next.delete(field);
+      // Unchecking a force-overwritten field must also clear it from the
+      // overwrite set; otherwise the field stays classified "overwritten" (its
+      // "Ghi đè" toggle is gone) and can never be re-enabled — a one-way trap.
+      nextOverwrite.delete(field);
+    } else {
+      next.add(field);
+    }
+    onChange({
+      materialId: selectedId,
+      acceptedFields: next,
+      overwriteFields: nextOverwrite,
+      editedValues,
+    });
   };
 
+  // Mark/unmark a field for force-overwrite. Overwriting a kept field also adds
+  // it to the accepted set so it is actually written at export time.
+  const toggleOverwrite = (field: FillableField) => {
+    const nextOverwrite = new Set(overwrite);
+    const nextAccepted = new Set(accepted);
+    if (nextOverwrite.has(field)) {
+      nextOverwrite.delete(field);
+      nextAccepted.delete(field);
+    } else {
+      nextOverwrite.add(field);
+      nextAccepted.add(field);
+    }
+    onChange({
+      materialId: selectedId,
+      acceptedFields: nextAccepted,
+      overwriteFields: nextOverwrite,
+      editedValues,
+    });
+  };
+
+  const editValue = (field: FillableField, value: string) => {
+    const nextEdited = { ...editedValues, [field]: value };
+    // Editing a field implies the user wants it written.
+    const nextAccepted = new Set(accepted);
+    nextAccepted.add(field);
+    onChange({
+      materialId: selectedId,
+      acceptedFields: nextAccepted,
+      overwriteFields: overwrite,
+      editedValues: nextEdited,
+    });
+  };
+
+  const applyManualValues = (values: ManualProductValues) => {
+    const nextAccepted = new Set<FillableField>();
+    const nextEdited: Partial<Record<FillableField, string>> = {};
+    for (const field of FILLABLE_FIELDS) {
+      if (field === "currency") continue;
+      const value = values[field]?.trim() ?? "";
+      if (value) {
+        nextEdited[field] = value;
+        nextAccepted.add(field);
+      }
+    }
+    onChange({
+      materialId: null,
+      acceptedFields: nextAccepted,
+      overwriteFields: new Set(),
+      editedValues: nextEdited,
+    });
+  };
+
+  const runWebSearch = () => {
+    webSearch.mutate(
+      {
+        name: row.name,
+        code: sheetFields.code,
+        manufacturer: sheetFields.manufacturer,
+        specText: sheetFields.specText,
+        unit: sheetFields.unit,
+        category: sheetFields.category,
+      },
+      {
+        onSuccess: (result) => {
+          if (Object.keys(result.fields).length === 0) {
+            toast.warning("Không tìm thấy thông tin sản phẩm trên web.");
+            return;
+          }
+          const nextEdited = { ...editedValues };
+          const nextAccepted = new Set(accepted);
+          for (const [field, value] of Object.entries(result.fields)) {
+            const fillable = field as FillableField;
+            const trimmed = value?.trim() ?? "";
+            if (!trimmed) continue;
+            nextEdited[fillable] = trimmed;
+            nextAccepted.add(fillable);
+          }
+          onChange({
+            materialId: null,
+            acceptedFields: nextAccepted,
+            overwriteFields: overwrite,
+            editedValues: nextEdited,
+          });
+          toast.success(
+            `Đã điền ${Object.keys(result.fields).length} trường từ web.`,
+          );
+        },
+        onError: (error) =>
+          toast.error(error.message || "Không tìm được thông tin trên web."),
+      },
+    );
+  };
+
+  const handleSavedToCatalog = (
+    materialId: number,
+    values: ManualProductValues,
+  ) => {
+    const nextAccepted = new Set<FillableField>();
+    for (const field of FILLABLE_FIELDS) {
+      if (field === "currency") continue;
+      const value = values[field]?.trim() ?? "";
+      if (value) {
+        nextAccepted.add(field);
+      }
+    }
+    onChange({
+      materialId,
+      acceptedFields: nextAccepted,
+      overwriteFields: new Set(),
+      editedValues: {},
+    });
+  };
+
+  const hasManualOrWebDecision =
+    selectedId == null &&
+    (accepted.size > 0 ||
+      Object.values(editedValues).some((value) => (value ?? "").trim().length > 0));
+
   return (
-    <div className="space-y-4">
-      {/* Excel row */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-          Dòng Excel {row.originalRowIndex}
-        </p>
-        <p className="mt-1 text-sm font-semibold text-slate-900">
-          {row.name || "(không có tên)"}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {FILLABLE_FIELDS.filter((f) => f !== "currency").map((field) => {
-            const value = sheetFields[field]?.trim() ?? "";
-            return (
-              <span
-                key={field}
-                className={`rounded border px-1.5 py-0.5 text-[11px] ${
-                  value
-                    ? "border-slate-200 bg-white text-slate-600"
-                    : "border-dashed border-slate-300 bg-transparent text-slate-400"
-                }`}
-              >
-                {FIELD_LABELS[field]}: {value.length > 0 ? value : "(trống)"}
-              </span>
-            );
-          })}
-        </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setManualDialogOpen(true)}
+        >
+          <Pencil className="h-4 w-4" aria-hidden />
+          Thêm/sửa vật tư
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={runWebSearch}
+          disabled={webSearch.isPending || !row.name.trim()}
+        >
+          {webSearch.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Globe className="h-4 w-4" aria-hidden />
+          )}
+          Tìm web
+        </Button>
       </div>
 
-      {/* Manual search */}
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400"
-          aria-hidden
-        />
-        <input
-          type="search"
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Tìm sản phẩm khác trong catalog…"
-          spellCheck={false}
-          className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
-        />
-      </div>
+      <FieldCompareEditor
+      sheetLabel={`Dòng Excel ${row.originalRowIndex}`}
+      sheetName={row.name}
+      sheetFields={sheetFields}
+      selectedMaterialId={selectedId}
+      accepted={accepted}
+      overwrite={overwrite}
+      editedValues={editedValues}
+      onToggleField={toggleField}
+      onToggleOverwrite={toggleOverwrite}
+      onEditValue={editValue}
+      onClear={() =>
+        onChange({
+          materialId: null,
+          acceptedFields: new Set(),
+          overwriteFields: new Set(),
+          editedValues: {},
+        })
+      }
+      enableCandidateGrid
+      candidates={cards}
+      recommendedMaterialId={row.topCandidate?.materialId ?? null}
+      searchTerm={searchTerm}
+      onSearchTermChange={setSearchTerm}
+      isSearching={searchQuery.isLoading}
+      showingSearch={showingSearch}
+      onChoose={choose}
+      enableInlineEdit
+      enableSkip
+      isSkipped={isSkipped}
+      onToggleSkip={toggleSkip}
+      forceShowDecision={hasManualOrWebDecision}
+    />
 
-      {/* Candidate cards */}
-      {showingSearch && searchQuery.isLoading ? (
-        <p className="flex items-center gap-2 text-xs text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Đang tìm…
-        </p>
-      ) : cards.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
-          {showingSearch
-            ? "Không tìm thấy sản phẩm phù hợp."
-            : "Không có ứng viên ghép tự động — hãy tìm thủ công ở trên."}
-        </p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map((candidate, index) => {
-            const { fillable } = planForCandidate(sheetFields, candidate);
-            return (
-              <ProductCandidateCard
-                key={candidate.materialId}
-                candidate={candidate}
-                isSelected={candidate.materialId === selectedId}
-                isRecommended={
-                  !showingSearch &&
-                  index === 0 &&
-                  row.topCandidate?.materialId === candidate.materialId
-                }
-                fillCount={fillable.size}
-                onChoose={() => choose(candidate)}
-                hotkeyIndex={index + 1}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Fill plan for the chosen candidate */}
-      {selectedId != null ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-            Sẽ điền vào dòng
-          </p>
-          <div className="mt-2 grid gap-1.5">
-            {plan.map((cell) => {
-              const field = cell.field;
-              const isFillable =
-                cell.action === "filled" || cell.action === "overwritten";
-              return (
-                <label
-                  key={cell.field}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs ${
-                    isFillable ? "bg-slate-50" : "opacity-60"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={!isFillable}
-                    checked={isFillable && accepted.has(field)}
-                    onChange={() => toggleField(field)}
-                  />
-                  <span className="w-20 shrink-0 font-semibold text-slate-600">
-                    {FIELD_LABELS[field]}
-                  </span>
-                  <span className="truncate text-slate-500">
-                    {cell.before || "(trống)"}
-                  </span>
-                  {isFillable ? (
-                    <>
-                      <span className="text-slate-400">→</span>
-                      <span className="truncate font-medium text-emerald-700">
-                        {cell.after}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="ml-auto text-[11px] text-slate-400">
-                      {cell.action === "kept" ? "giữ nguyên" : ""}
-                    </span>
-                  )}
-                </label>
-              );
-            })}
-            {plan.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                Không có ô trống nào để điền cho lựa chọn này.
-              </p>
-            ) : null}
-          </div>
-          <div className="mt-2 flex justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                onChange({ materialId: null, acceptedFields: new Set() })
-              }
-            >
-              Bỏ ghép dòng này
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      <ManualProductDialog
+        open={manualDialogOpen}
+        productName={row.name}
+        sheetFields={sheetFields}
+        selectedCandidate={selectedCandidate}
+        onClose={() => setManualDialogOpen(false)}
+        onApplyToRow={applyManualValues}
+        onSavedToCatalog={handleSavedToCatalog}
+      />
     </div>
   );
 }
@@ -999,6 +1302,9 @@ function MatchChooser({
 function ExportStep({
   matchData,
   fieldsToFill,
+  matchedCount,
+  pendingUnmatched,
+  pendingReview,
   isExporting,
   isResearchExporting,
   hasResearchJob,
@@ -1009,6 +1315,9 @@ function ExportStep({
 }: {
   matchData: MatchResponse;
   fieldsToFill: number;
+  matchedCount: number;
+  pendingUnmatched: number;
+  pendingReview: number;
   isExporting: boolean;
   isResearchExporting: boolean;
   hasResearchJob: boolean;
@@ -1017,13 +1326,14 @@ function ExportStep({
   onExportResearch: () => void;
   onBack: () => void;
 }) {
-  const matched = matchData.summary.auto + matchData.summary.review;
   const stats: Array<{ label: string; value: number }> = [
     { label: "Tổng dòng", value: matchData.matchedRows },
-    { label: "Đã khớp", value: matched },
+    { label: "Đã khớp", value: matchedCount },
     { label: "Ô sẽ điền", value: fieldsToFill },
-    { label: "Chưa khớp", value: matchData.summary.unmatched },
+    { label: "Cần duyệt", value: pendingReview },
+    { label: "Chưa khớp", value: pendingUnmatched },
   ];
+  const nothingToExport = fieldsToFill === 0;
 
   return (
     <section className="panel overflow-hidden">
@@ -1036,7 +1346,7 @@ function ExportStep({
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {stats.map((stat) => (
             <div
               key={stat.label}
@@ -1050,33 +1360,55 @@ function ExportStep({
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {hasResearchJob ? (
-            <Button
-              variant="primary"
-              leftIcon={<Download className="h-4 w-4" />}
-              isLoading={isResearchExporting}
-              onClick={onExportResearch}
-            >
-              Xuất file nghiên cứu web (.xlsx)
-            </Button>
+            <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+              <Button
+                variant="primary"
+                leftIcon={<Download className="h-4 w-4" />}
+                isLoading={isResearchExporting}
+                onClick={onExportResearch}
+              >
+                Xuất file nghiên cứu web (.xlsx)
+              </Button>
+              <p className="text-xs text-slate-500">
+                Điền theo kết quả nghiên cứu web đã duyệt ở bước 3.
+              </p>
+            </div>
           ) : null}
-          <Button
-            variant={hasResearchJob ? "secondary" : "primary"}
-            leftIcon={<Download className="h-4 w-4" />}
-            isLoading={isExporting}
-            disabled={fieldsToFill === 0}
-            onClick={onExport}
-          >
-            Xuất file đối chiếu catalog (.xlsx)
-          </Button>
-          <Button variant="secondary" disabled={isExporting} onClick={onExportClean}>
-            Tải bản chuẩn
-          </Button>
-          <Button variant="ghost" onClick={onBack}>
-            Quay lại nghiên cứu web
-          </Button>
+
+          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+            <Button
+              variant={hasResearchJob ? "secondary" : "primary"}
+              leftIcon={<Download className="h-4 w-4" />}
+              isLoading={isExporting}
+              disabled={nothingToExport}
+              onClick={onExport}
+            >
+              Xuất file đối chiếu catalog (.xlsx)
+            </Button>
+            <p className="text-xs text-slate-500">
+              Giữ nguyên file gốc và điền các ô bạn đã chọn ở bước đối chiếu.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+            <Button
+              variant="secondary"
+              disabled={isExporting || nothingToExport}
+              onClick={onExportClean}
+            >
+              Tải bản chuẩn
+            </Button>
+            <p className="text-xs text-slate-500">
+              Tạo file mới theo cột chuẩn, chỉ gồm dữ liệu đã đối chiếu.
+            </p>
+          </div>
         </div>
+
+        <Button variant="ghost" onClick={onBack}>
+          Quay lại nghiên cứu web
+        </Button>
       </div>
     </section>
   );

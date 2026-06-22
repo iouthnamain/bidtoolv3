@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   FileText,
   LayoutDashboard,
+  ListChecks,
   Menu,
   MessageSquare,
   PanelLeftClose,
@@ -41,6 +42,7 @@ type IconName =
   | "enrich"
   | "documents"
   | "materials"
+  | "jobs"
   | "saved"
   | "workflow"
   | "notification"
@@ -125,6 +127,15 @@ const navSections: NavSection[] = [
         href: "/enrich",
         label: "Đối chiếu Excel",
         icon: "enrich",
+        subItems: [
+          { href: "/enrich", label: "Đối chiếu & điền" },
+          { href: "/enrich/jobs", label: "Job nghiên cứu" },
+        ],
+      },
+      {
+        href: "/jobs",
+        label: "Danh sách job",
+        icon: "jobs",
       },
       {
         href: "/catalog-pdfs",
@@ -211,6 +222,7 @@ const navIconMap: Record<IconName, LucideIcon> = {
   enrich: FileCheck2,
   documents: FileText,
   materials: Boxes,
+  jobs: ListChecks,
   saved: BookmarkCheck,
   workflow: Workflow,
   notification: Bell,

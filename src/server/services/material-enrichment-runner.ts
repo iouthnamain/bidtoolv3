@@ -22,7 +22,10 @@ import {
 } from "~/server/db/schema";
 import {
   resolveAiProvider,
+  resolveEnrichmentItemConcurrency,
 } from "~/server/services/app-settings";
+import { listCatalogDocumentsForMaterial } from "~/server/services/catalog-documents";
+import { runWithConcurrency } from "~/server/services/concurrency";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import {
@@ -51,7 +54,6 @@ export type MaterialEnrichmentJobProgress = {
 
 const DEFAULT_MAX_SEARCH_RESULTS = 12;
 const DEFAULT_MAX_QUERIES = 4;
-const ITEM_CONCURRENCY = 2;
 
 function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
@@ -72,6 +74,8 @@ function parseJobOptions(value: unknown): MaterialEnrichmentJobOptions {
 
   return {
     autoCommitHighConfidence: record.autoCommitHighConfidence === true,
+    skipWellFilled: record.skipWellFilled === true,
+    generatePdfIfMissing: record.generatePdfIfMissing === true,
     model: typeof record.model === "string" ? record.model : undefined,
     maxSearchResults:
       typeof record.maxSearchResults === "number"
@@ -337,6 +341,47 @@ function buildResultFromExtraction(
   return result;
 }
 
+/**
+ * Decide whether a material is already "well filled" for the target fields, so a
+ * `skipWellFilled` job can avoid spending web/LLM budget on it. Considers the
+ * core enrichable text fields (category, specText, manufacturer, originCountry)
+ * present; price/unit/sourceUrl are excluded because most catalog rows already
+ * have a unit and many never carry a sourceUrl.
+ */
+function isMaterialWellFilled(
+  material: typeof materials.$inferSelect,
+  targetFields: EnrichableField[],
+): boolean {
+  const considered: EnrichableField[] = [
+    "category",
+    "specText",
+    "manufacturer",
+    "originCountry",
+  ].filter((field): field is EnrichableField =>
+    targetFields.includes(field as EnrichableField),
+  );
+  if (considered.length === 0) {
+    return false;
+  }
+  const valueFor = (field: EnrichableField): string | null => {
+    switch (field) {
+      case "code":
+        return material.code;
+      case "category":
+        return material.category;
+      case "specText":
+        return material.specText;
+      case "manufacturer":
+        return material.manufacturer;
+      case "originCountry":
+        return material.originCountry;
+      default:
+        return null;
+    }
+  };
+  return considered.every((field) => (valueFor(field) ?? "").trim().length > 0);
+}
+
 export async function processEnrichmentItem(
   job: JobRow,
   item: ItemRow,
@@ -386,6 +431,42 @@ export async function processEnrichmentItem(
       updatedAt: now,
     })
     .where(eq(materialEnrichmentItems.id, item.id));
+
+  // `skipWellFilled`: when the material already has its core enrichable fields,
+  // mark the item "skipped" (matches the existing enum + the UI "Bỏ qua" label)
+  // and don't spend web/LLM budget on it. But the UI checkbox also promises it
+  // considers catalog PDF presence ("...NCC, thông số VÀ catalog PDF"): when
+  // `generatePdfIfMissing` is on, a well-filled material with NO linked catalog
+  // doc must still be processed so PDF generation can fire. So only skip when the
+  // material is well-filled AND (PDF generation is off OR it already has a doc).
+  // The catalog-doc lookup is gated behind the well-filled check so we never run
+  // an extra query for items we'd process anyway.
+  let skipBecauseWellFilled =
+    options.skipWellFilled && isMaterialWellFilled(material, targetFields);
+  if (skipBecauseWellFilled && options.generatePdfIfMissing) {
+    const existingDocs = await listCatalogDocumentsForMaterial(db, material.id);
+    if (existingDocs.length === 0) {
+      skipBecauseWellFilled = false;
+    }
+  }
+  if (skipBecauseWellFilled) {
+    const skippedResult: MaterialEnrichmentResult = {
+      fields: {},
+      catalogPdfUrls: [],
+      overallConfidence: 0,
+      status: "skipped",
+      error: "Đã đủ thông tin — bỏ qua theo tùy chọn.",
+    };
+    await db
+      .update(materialEnrichmentItems)
+      .set({
+        status: skippedResult.status,
+        resultJson: skippedResult,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(materialEnrichmentItems.id, item.id));
+    return skippedResult;
+  }
 
   try {
     const queries = buildSearchQueries(
@@ -467,6 +548,18 @@ export async function processEnrichmentItem(
 
     return result;
   } catch (error) {
+    // A cancelled job aborts the in-flight fetch, which surfaces here as an
+    // AbortError. That is not a genuine enrichment failure: writing status
+    // "failed" would inflate the failed count and prevent a resume. Leave the
+    // item as "pending" so it can be picked up again, and don't record it as a
+    // failure.
+    if (signal?.aborted === true || (error instanceof Error && error.name === "AbortError")) {
+      await db
+        .update(materialEnrichmentItems)
+        .set({ status: "pending", updatedAt: new Date().toISOString() })
+        .where(eq(materialEnrichmentItems.id, item.id));
+      throw error;
+    }
     const message =
       error instanceof Error ? error.message : "Lỗi không xác định khi enrichment.";
     const failedResult: MaterialEnrichmentResult = {
@@ -534,25 +627,6 @@ async function refreshJobCounters(jobId: string) {
     .where(eq(materialEnrichmentJobs.id, jobId));
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T) => Promise<void>,
-) {
-  let index = 0;
-  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (index < items.length) {
-      const current = items[index];
-      index += 1;
-      if (!current) {
-        continue;
-      }
-      await worker(current);
-    }
-  });
-  await Promise.all(runners);
-}
-
 export async function processEnrichmentJob(
   jobId: string,
   options: {
@@ -596,7 +670,8 @@ export async function processEnrichmentJob(
     )
     .orderBy(asc(materialEnrichmentItems.sortOrder));
 
-  await runWithConcurrency(pendingItems, ITEM_CONCURRENCY, async (item) => {
+  const itemConcurrency = await resolveEnrichmentItemConcurrency();
+  await runWithConcurrency(pendingItems, itemConcurrency, async (item) => {
     throwIfAborted(signal);
     const [currentJob] = await db
       .select({ status: materialEnrichmentJobs.status })

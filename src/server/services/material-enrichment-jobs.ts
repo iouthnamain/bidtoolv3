@@ -9,6 +9,7 @@ import {
   type MaterialEnrichmentFilterOptions,
   type MaterialEnrichmentJobOptions,
   type MaterialEnrichmentResult,
+  type EnrichableField,
 } from "~/lib/materials/material-enrichment-types";
 import { db } from "~/server/db";
 import {
@@ -23,6 +24,7 @@ import {
 } from "~/server/db/schema";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
+import { abortMaterialEnrichmentJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 
 export type MaterialEnrichmentJobStatus =
@@ -327,6 +329,10 @@ export async function cancelMaterialEnrichmentJob(
     )
     .returning();
 
+  // The DB flip alone doesn't stop the in-flight runner; abort its controller so
+  // threaded `signal`s fire and any in-progress web/LLM work is torn down.
+  abortMaterialEnrichmentJob(jobId);
+
   return cancelled ? toJobSnapshot(cancelled) : getMaterialEnrichmentJob(jobId);
 }
 
@@ -408,6 +414,22 @@ export async function listMaterialEnrichmentItems(
   return rows.map((row) => toItemSnapshot(row));
 }
 
+/**
+ * List variant for the review grid: same row set as
+ * {@link listMaterialEnrichmentItems} but with the heavy per-field `evidence`
+ * arrays and `catalogPdfUrls` stripped from each result. The list view only
+ * needs `overallConfidence` + `status`; the review dialog re-fetches the full
+ * item via `getMaterialEnrichmentItem`. Keeps bulk-commit eligibility checks
+ * (which read only status + confidence) working on the lighter payload.
+ */
+export async function listMaterialEnrichmentItemSummaries(
+  input: string | { jobId: string; limit?: number; offset?: number },
+  scope?: TenantScopeValue,
+) {
+  const items = await listMaterialEnrichmentItems(input, scope);
+  return items.map(trimItemSnapshotForList);
+}
+
 export async function listMaterialWebCandidates(itemId: number) {
   const rows = await db
     .select()
@@ -416,6 +438,23 @@ export async function listMaterialWebCandidates(itemId: number) {
     .orderBy(desc(materialWebCandidates.confidenceScore));
 
   return rows.map(toCandidateSnapshot);
+}
+
+/**
+ * Focused query for the review dialog: return just one item's web candidates,
+ * tenant-scoped via its parent job. Avoids re-downloading the full export
+ * report on every dialog open.
+ */
+export async function getMaterialEnrichmentItemCandidates(
+  itemId: number,
+  scope?: TenantScopeValue,
+) {
+  // Mirror getMaterialEnrichmentItem's scoping: the item has no tenantId, so
+  // confirm its parent job is in scope before returning candidates.
+  if (scope !== undefined) {
+    await assertItemInScope(itemId, scope);
+  }
+  return listMaterialWebCandidates(itemId);
 }
 
 export async function selectWebCandidate(
@@ -480,6 +519,54 @@ export async function selectWebCandidate(
   };
 }
 
+/**
+ * Persist the review dialog's per-field decision onto the item's resultJson so
+ * a subsequent commit (manual or bulk) honors it. Mirrors selectWebCandidate's
+ * patch-and-return shape. Passing `undefined` for a key leaves it unchanged;
+ * passing an empty array/object clears it (commit reverts to writing all fields).
+ */
+export async function setEnrichmentItemDecision(
+  itemId: number,
+  decision: {
+    acceptedFields?: EnrichableField[];
+    editedFields?: Partial<Record<EnrichableField, string>>;
+  },
+  scope?: TenantScopeValue,
+) {
+  await assertItemInScope(itemId, scope);
+  const [item] = await db
+    .select()
+    .from(materialEnrichmentItems)
+    .where(eq(materialEnrichmentItems.id, itemId))
+    .limit(1);
+
+  if (!item) {
+    throw new ShopJobServiceError("NOT_FOUND", "Không tìm thấy dòng enrichment.");
+  }
+
+  const result = (item.resultJson ?? {}) as MaterialEnrichmentResult;
+  const nextResult: MaterialEnrichmentResult = {
+    ...result,
+    ...(decision.acceptedFields !== undefined
+      ? { accepted_fields: decision.acceptedFields }
+      : {}),
+    ...(decision.editedFields !== undefined
+      ? { edited_fields: decision.editedFields }
+      : {}),
+  };
+
+  const [updated] = await db
+    .update(materialEnrichmentItems)
+    .set({
+      resultJson: nextResult,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(materialEnrichmentItems.id, itemId))
+    .returning();
+
+  return { item: toItemSnapshot(requireItemRow(updated)) };
+}
+
 export async function commitMaterialEnrichmentItem(
   itemId: number,
   scope?: TenantScopeValue,
@@ -527,6 +614,7 @@ export async function bulkCommitMaterialEnrichment(
     return item.result.overallConfidence >= minConfidence;
   });
   const results: MaterialEnrichmentItemSnapshot[] = [];
+  const errors: string[] = [];
   let committed = 0;
   let failed = 0;
 
@@ -535,12 +623,18 @@ export async function bulkCommitMaterialEnrichment(
       // Items already confirmed in-scope by listMaterialEnrichmentItems above.
       results.push(await commitMaterialEnrichmentItem(item.id));
       committed += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      const message =
+        error instanceof Error ? error.message : "Lỗi không xác định.";
+      console.error(
+        `[material-enrichment] bulkCommit failed job=${input.jobId} item=${item.id}: ${message}`,
+      );
+      errors.push(`#${item.id}: ${message}`);
     }
   }
 
-  return { committed, failed, items: results };
+  return { committed, failed, items: results, errors };
 }
 
 export async function rejectMaterialEnrichmentItem(
@@ -574,12 +668,34 @@ export async function exportMaterialEnrichmentReport(
   }
 
   const items = await listMaterialEnrichmentItems({ jobId }, scope);
-  const candidatesByItem = await Promise.all(
-    items.map(async (item) => ({
-      itemId: item.id,
-      candidates: await listMaterialWebCandidates(item.id),
-    })),
-  );
+  const itemIds = items.map((item) => item.id);
+
+  // Single query for every item's candidates, then group in JS (avoids an N+1
+  // round-trip per item).
+  const candidateRows =
+    itemIds.length > 0
+      ? await db
+          .select()
+          .from(materialWebCandidates)
+          .where(inArray(materialWebCandidates.enrichmentItemId, itemIds))
+          .orderBy(desc(materialWebCandidates.confidenceScore))
+      : [];
+
+  const grouped = new Map<number, MaterialWebCandidateSnapshot[]>();
+  for (const row of candidateRows) {
+    const snapshot = toCandidateSnapshot(row);
+    const bucket = grouped.get(snapshot.enrichmentItemId);
+    if (bucket) {
+      bucket.push(snapshot);
+    } else {
+      grouped.set(snapshot.enrichmentItemId, [snapshot]);
+    }
+  }
+
+  const candidatesByItem = items.map((item) => ({
+    itemId: item.id,
+    candidates: grouped.get(item.id) ?? [],
+  }));
 
   return JSON.stringify(
     {
@@ -652,6 +768,34 @@ function toItemSnapshot(
     sortOrder: row.sortOrder,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * Strip the heavy bits of a snapshot's result for list payloads: drops every
+ * field's `evidence` array and the item-level `catalogPdfUrls`, keeping
+ * `overallConfidence`, `status`, and the field values themselves.
+ */
+function trimItemSnapshotForList(
+  snapshot: MaterialEnrichmentItemSnapshot,
+): MaterialEnrichmentItemSnapshot {
+  const trimmedFields: MaterialEnrichmentResult["fields"] = {};
+  for (const [key, field] of Object.entries(snapshot.result.fields)) {
+    if (!field) {
+      continue;
+    }
+    trimmedFields[key as keyof MaterialEnrichmentResult["fields"]] = {
+      ...field,
+      evidence: [],
+    };
+  }
+  return {
+    ...snapshot,
+    result: {
+      ...snapshot.result,
+      fields: trimmedFields,
+      catalogPdfUrls: [],
+    },
   };
 }
 

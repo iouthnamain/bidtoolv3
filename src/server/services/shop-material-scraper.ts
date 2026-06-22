@@ -8,12 +8,17 @@ import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
 import {
   chooseScrapedProductName,
+  isShopPromoBadgeText,
   resolveProductNameFromCandidates,
   sanitizeScrapedProductList,
   sanitizeScrapedProductName,
   SHOP_PROMO_BADGE_LABELS,
   stripKhauHaoFromSpecText,
 } from "~/lib/materials/shop-promo-badges";
+import {
+  normalizeManufacturer,
+  normalizeOriginCountry,
+} from "~/lib/materials/shop-attribute-normalize";
 import { isServerlessRuntime } from "~/server/runtime";
 import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
 
@@ -90,6 +95,8 @@ type ShopScrapeOptions = {
   onProgress?: (progress: ShopScrapeProgress) => void;
 };
 
+type SpecPair = { label: string; value: string };
+
 type ProductCardSnapshot = {
   text: string;
   name: string | null;
@@ -97,6 +104,7 @@ type ProductCardSnapshot = {
   imageUrl: string | null;
   category: string | null;
   pdfUrls?: string[];
+  specPairs?: SpecPair[];
   extractSource?: ProductExtractSource;
   nameSource?: ProductNameSource;
 };
@@ -109,6 +117,7 @@ type ShopPageSnapshot = {
   cards: ProductCardSnapshot[];
   nextLinks: string[];
   pagePdfUrls?: string[];
+  specPairs?: SpecPair[];
 };
 
 type BrowserWithProcess = Browser & {
@@ -158,6 +167,7 @@ let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
 
 type ShopScrapePageConfig = {
   promoBadgeLabels: readonly string[];
+  specLabelPrefixes?: readonly string[];
 };
 
 export async function scrapeShopMaterialsFromUrl({
@@ -563,6 +573,7 @@ async function scrapePageSnapshot({
   await assertSafeScrapeUrl(page.url(), expectedHostname);
   return page.evaluate(collectShopPageSnapshot, {
     promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
+    specLabelPrefixes: [...ALL_SPEC_LABELS],
   });
 }
 
@@ -661,13 +672,47 @@ export function extractProductsWithDiagnosticsFromPageSnapshot(
     }
   }
 
+  const mergedProducts = mergeProductCandidates(
+    candidates,
+    snapshot.pageUrl,
+  ).map((candidate) => candidate.product);
+  // Page-level spec rows (a detail page's spec table / <dl>) fill any field a
+  // product is still missing. Structured pairs are more reliable than the
+  // flattened-text regex that produced the candidate. Only apply this on
+  // single-product (detail) snapshots: on a multi-product listing page the
+  // document-level pairs are a mix of every card, so filling a missing field
+  // from "the first value on the page" would smear one product's
+  // manufacturer/origin onto the others.
+  const pageLabels =
+    mergedProducts.length <= 1
+      ? extractLabelsFromPairs(snapshot.specPairs)
+      : null;
   const products = sanitizeScrapedProductList(
-    mergeProductCandidates(candidates, snapshot.pageUrl).map(
-      (candidate) => candidate.product,
-    ),
+    pageLabels
+      ? mergedProducts.map((product) => applyLabelFields(product, pageLabels))
+      : mergedProducts,
     snapshot.pageUrl,
   );
   return { products, diagnostics };
+}
+
+// Fills only empty fields on a product from extracted label fields.
+function applyLabelFields(
+  product: ScrapedShopProduct,
+  labels: ExtractedLabelFields,
+): ScrapedShopProduct {
+  return {
+    ...product,
+    category: product.category ?? labels.category,
+    manufacturer:
+      product.manufacturer ?? normalizeManufacturer(labels.manufacturer),
+    originCountry:
+      product.originCountry ?? normalizeOriginCountry(labels.originCountry),
+    sku: product.sku ?? labels.sku,
+    model: product.model ?? labels.model,
+    availability: product.availability ?? labels.availability,
+    shopCategory: product.shopCategory ?? labels.category,
+  };
 }
 
 type DetailEnrichmentInput = {
@@ -728,11 +773,16 @@ async function enrichProductsFromDetailPages({
 
       const snapshot = await page.evaluate(collectShopPageSnapshot, {
         promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
+        specLabelPrefixes: [...ALL_SPEC_LABELS],
       });
       const detailProducts = extractProductsFromPageSnapshot(snapshot, method);
       const detailProduct =
         findBestDetailProduct(product, detailProducts) ??
-        enrichProductWithPageText(product, snapshot.pageText ?? "");
+        enrichProductWithPageText(
+          product,
+          snapshot.pageText ?? "",
+          snapshot.specPairs,
+        );
       // PDFs anywhere on a product detail page belong to this product.
       const detailWithPdfs: ScrapedShopProduct = {
         ...detailProduct,
@@ -1221,6 +1271,110 @@ export function collectShopPageSnapshot(
     }
     return urls;
   };
+  // Spec labels (e.g. "Xuất xứ", "NCC") that mark a "label: value" row worth
+  // capturing as a structured pair. Normalized for accent-insensitive matching.
+  const specLabelPrefixes = config.specLabelPrefixes ?? [];
+  const normalizedSpecLabels = specLabelPrefixes
+    .map((label) =>
+      label
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean);
+  const normalizeLabelKey = (value: string) =>
+    value
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const isKnownSpecLabel = (label: string) => {
+    const normalized = normalizeLabelKey(label);
+    if (!normalized) {
+      return false;
+    }
+    return normalizedSpecLabels.some(
+      (known) => normalized === known || normalized.startsWith(`${known} `),
+    );
+  };
+  const SPEC_PAIR_CAP = 60;
+  const SPEC_VALUE_MAX = 200;
+  const pushSpecPair = (
+    pairs: Array<{ label: string; value: string }>,
+    seen: Set<string>,
+    rawLabel: string | null | undefined,
+    rawValue: string | null | undefined,
+  ) => {
+    if (pairs.length >= SPEC_PAIR_CAP) {
+      return;
+    }
+    const label = rawLabel?.replace(/\s+/g, " ").replace(/[:：]\s*$/, "").trim();
+    const value = rawValue?.replace(/\s+/g, " ").trim().slice(0, SPEC_VALUE_MAX);
+    if (!label || !value || label.length > 80) {
+      return;
+    }
+    const key = `${normalizeLabelKey(label)}=${value.toLowerCase()}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    pairs.push({ label, value });
+  };
+  const collectSpecPairs = (root: ParentNode) => {
+    const pairs: Array<{ label: string; value: string }> = [];
+    const seen = new Set<string>();
+    // <table> rows: <th> (or first <td>) = label, remaining cells = value.
+    for (const row of Array.from(root.querySelectorAll("tr"))) {
+      if (pairs.length >= SPEC_PAIR_CAP) break;
+      const cells = Array.from(row.querySelectorAll("th, td"));
+      if (cells.length < 2) {
+        continue;
+      }
+      const label = text(cells[0]);
+      const value = cells
+        .slice(1)
+        .map((cell) => text(cell))
+        .filter(Boolean)
+        .join(" ");
+      pushSpecPair(pairs, seen, label, value);
+    }
+    // <dl>: each <dt> = label, the following <dd> = value.
+    for (const dl of Array.from(root.querySelectorAll("dl"))) {
+      if (pairs.length >= SPEC_PAIR_CAP) break;
+      const children = Array.from(dl.children);
+      for (let i = 0; i < children.length; i += 1) {
+        const node = children[i];
+        if (node?.tagName?.toLowerCase() !== "dt") {
+          continue;
+        }
+        const next = children[i + 1];
+        if (next?.tagName?.toLowerCase() === "dd") {
+          pushSpecPair(pairs, seen, text(node), text(next));
+        }
+      }
+    }
+    // List/div rows matching "label: value" where label is a known spec prefix.
+    for (const node of Array.from(
+      root.querySelectorAll("li, .product-attribute, [class*='spec' i] *"),
+    )) {
+      if (pairs.length >= SPEC_PAIR_CAP) break;
+      if (node.querySelector("li, table, dl")) {
+        continue;
+      }
+      const value = text(node);
+      if (!value || value.length > 240) {
+        continue;
+      }
+      const match = /^([^:：]{1,60})[:：]\s*(.+)$/.exec(value);
+      if (match && isKnownSpecLabel(match[1] ?? "")) {
+        pushSpecPair(pairs, seen, match[1], match[2]);
+      }
+    }
+    return pairs;
+  };
   const isWidgetProductNode = (node: Element) =>
     node.classList.contains("product_list_widget") ||
     Boolean(
@@ -1427,6 +1581,7 @@ export function collectShopPageSnapshot(
       imageUrl: abs(imageSrc),
       category: text(categoryElement),
       pdfUrls: collectPdfUrls(cardRoot, 5),
+      specPairs: collectSpecPairs(cardRoot),
       extractSource,
     };
   };
@@ -1444,6 +1599,7 @@ export function collectShopPageSnapshot(
       imageUrl: string | null;
       category: string | null;
       pdfUrls: string[];
+      specPairs: Array<{ label: string; value: string }>;
       extractSource: ProductExtractSource;
       nameSource: ProductNameSource;
     }
@@ -1580,6 +1736,7 @@ export function collectShopPageSnapshot(
     cards,
     nextLinks,
     pagePdfUrls: collectPdfUrls(document, 20),
+    specPairs: collectSpecPairs(document),
   };
 }
 
@@ -1633,6 +1790,11 @@ function productsFromJsonLd(
     const offers = firstRecord(node.offers);
     const brand = firstRecord(node.brand);
     const manufacturer = firstRecord(node.manufacturer);
+    // schema.org additionalProperty (a PropertyValue or array of them) is where
+    // many VN shops stash NCC / Xuất xứ / SKU / model / category.
+    const additionalLabels = extractLabelsFromAdditionalProperty(
+      node.additionalProperty,
+    );
     const rawPrice =
       stringValue(offers?.price) ??
       stringValue(firstRecord(offers?.priceSpecification)?.price);
@@ -1648,13 +1810,15 @@ function productsFromJsonLd(
     results.push({
       name,
       unit: detectUnit(`${name} ${stringValue(node.description) ?? ""}`),
-      category: stringValue(node.category),
+      category: stringValue(node.category) ?? additionalLabels.category,
       specText: stringValue(node.description) ?? "",
       manufacturer:
         stringValue(manufacturer?.name) ??
         stringValue(brand?.name) ??
-        stringValue(node.brand),
-      originCountry: stringValue(node.countryOfOrigin),
+        stringValue(node.brand) ??
+        additionalLabels.manufacturer,
+      originCountry:
+        stringValue(node.countryOfOrigin) ?? additionalLabels.originCountry,
       price: priceResult.price,
       priceText: priceResult.priceText ?? rawPrice,
       currency:
@@ -1663,10 +1827,13 @@ function productsFromJsonLd(
         "VND",
       sourceUrl,
       imageUrl: absoluteUrl(firstString(node.image), pageUrl),
-      sku: stringValue(node.sku),
-      model: stringValue(node.model) ?? stringValue(node.mpn),
+      sku: stringValue(node.sku) ?? additionalLabels.sku,
+      model:
+        stringValue(node.model) ??
+        stringValue(node.mpn) ??
+        additionalLabels.model,
       availability: stringValue(offers?.availability),
-      shopCategory: stringValue(node.category),
+      shopCategory: stringValue(node.category) ?? additionalLabels.category,
       catalogPdfUrls: [],
     });
   };
@@ -1710,22 +1877,28 @@ function productCandidateFromCardSnapshot(
   }
   const priceResult = extractPriceFromText(card.text);
   const labels = extractProductLabels(card.text);
+  // Structured spec rows (tables / <dl> / labeled lists) are more reliable than
+  // flattened-text regex, so prefer them and fall back to the text labels.
+  const pairLabels = extractLabelsFromPairs(card.specPairs);
   const product: ScrapedShopProduct = {
     name,
     unit: detectUnit(`${name} ${card.text}`),
-    category: card.category ?? labels.category,
+    category: card.category ?? pairLabels.category ?? labels.category,
     specText: cleanDescription(card.text, name),
-    manufacturer: labels.manufacturer,
-    originCountry: labels.originCountry,
+    manufacturer: pairLabels.manufacturer ?? labels.manufacturer,
+    originCountry: pairLabels.originCountry ?? labels.originCountry,
     price: priceResult.price,
     priceText: priceResult.priceText,
     currency: detectCurrency(priceResult.priceText) ?? "VND",
     sourceUrl: href,
     imageUrl: card.imageUrl,
-    sku: labels.sku ?? detectSku(card.text),
-    model: labels.model,
-    availability: labels.availability ?? detectAvailability(card.text),
-    shopCategory: card.category ?? labels.category,
+    sku: pairLabels.sku ?? labels.sku ?? detectSku(card.text),
+    model: pairLabels.model ?? labels.model,
+    availability:
+      pairLabels.availability ??
+      labels.availability ??
+      detectAvailability(card.text),
+    shopCategory: card.category ?? pairLabels.category ?? labels.category,
     catalogPdfUrls: mergeCatalogPdfUrls(card.pdfUrls),
   };
   const nameSource = card.nameSource ?? "snapshot_name";
@@ -1775,6 +1948,8 @@ function candidateFromProduct(
     ...product,
     name,
     sourceUrl,
+    manufacturer: normalizeManufacturer(product.manufacturer),
+    originCountry: normalizeOriginCountry(product.originCountry),
     catalogPdfUrls: mergeCatalogPdfUrls(product.catalogPdfUrls),
   };
   if (productValidationDropReason(normalizedProduct, pageUrl, extractSource)) {
@@ -2305,18 +2480,28 @@ const labeledValueDefinitions = {
     "nha cung cap",
     "nhà sản xuất",
     "nha san xuat",
+    "nhà sx",
+    "nha sx",
     "hãng",
     "hang",
     "thương hiệu",
     "thuong hieu",
+    "nhãn hiệu",
+    "nhan hieu",
     "brand",
     "manufacturer",
   ],
   originCountry: [
     "xuất xứ",
     "xuat xu",
+    "xuất sứ",
+    "nơi sản xuất",
+    "noi san xuat",
     "nước sản xuất",
     "nuoc san xuat",
+    "sản xuất tại",
+    "san xuat tai",
+    "made in",
     "origin",
     "country of origin",
   ],
@@ -2346,6 +2531,13 @@ const allLabeledValueNames = Object.values(labeledValueDefinitions)
   .map(escapeRegExp)
   .join("|");
 
+// Flattened list of every known spec label, passed into the in-browser
+// snapshot collector so it can recognize "label: value" list rows. Kept as a
+// plain string[] because it crosses the page.evaluate boundary.
+const ALL_SPEC_LABELS: readonly string[] = Object.values(
+  labeledValueDefinitions,
+).flat();
+
 function extractProductLabels(text: string) {
   return {
     manufacturer: extractLabeledValue(
@@ -2365,6 +2557,104 @@ function extractProductLabels(text: string) {
   };
 }
 
+type LabeledFieldName = keyof typeof labeledValueDefinitions;
+
+// Lookup from a normalized label key (accent-stripped, lowercased) to the field
+// it maps to. Built once from labeledValueDefinitions.
+const LABEL_KEY_TO_FIELD: Map<string, LabeledFieldName> = (() => {
+  const map = new Map<string, LabeledFieldName>();
+  for (const [field, labels] of Object.entries(labeledValueDefinitions)) {
+    for (const label of labels) {
+      const key = normalizeKey(label);
+      if (key && !map.has(key)) {
+        map.set(key, field as LabeledFieldName);
+      }
+    }
+  }
+  return map;
+})();
+
+function matchLabeledFieldName(label: string): LabeledFieldName | null {
+  const key = normalizeKey(label);
+  if (!key) {
+    return null;
+  }
+  const direct = LABEL_KEY_TO_FIELD.get(key);
+  if (direct) {
+    return direct;
+  }
+  // Allow label rows like "Xuất xứ (Origin)" by matching a known label prefix.
+  for (const [knownKey, field] of LABEL_KEY_TO_FIELD) {
+    if (key === knownKey || key.startsWith(`${knownKey} `)) {
+      return field;
+    }
+  }
+  return null;
+}
+
+type ExtractedLabelFields = {
+  manufacturer: string | null;
+  originCountry: string | null;
+  category: string | null;
+  sku: string | null;
+  model: string | null;
+  availability: string | null;
+};
+
+// Maps structured spec pairs (from tables / <dl> / labeled list rows) onto the
+// known product fields. The first non-empty value for a field wins.
+function extractLabelsFromPairs(
+  pairs: ReadonlyArray<{ label: string; value: string }> | undefined,
+): ExtractedLabelFields {
+  const fields: ExtractedLabelFields = {
+    manufacturer: null,
+    originCountry: null,
+    category: null,
+    sku: null,
+    model: null,
+    availability: null,
+  };
+  if (!pairs?.length) {
+    return fields;
+  }
+  for (const pair of pairs) {
+    const field = matchLabeledFieldName(pair.label);
+    if (!field || field === "specText") {
+      continue;
+    }
+    if (fields[field] != null) {
+      continue;
+    }
+    const cleaned = cleanLabeledValue(pair.value);
+    if (cleaned) {
+      fields[field] = cleaned;
+    }
+  }
+  return fields;
+}
+
+// schema.org additionalProperty carries [{ name, value }] PropertyValue rows.
+function extractLabelsFromAdditionalProperty(
+  value: unknown,
+): ExtractedLabelFields {
+  const records = Array.isArray(value)
+    ? value.filter(isRecord)
+    : isRecord(value)
+      ? [value]
+      : [];
+  const pairs: Array<{ label: string; value: string }> = [];
+  for (const record of records) {
+    const label = stringValue(record.name) ?? stringValue(record.propertyID);
+    const propValue =
+      stringValue(record.value) ?? stringValue(record.unitText);
+    if (label && propValue) {
+      pairs.push({ label, value: propValue });
+    }
+  }
+  return extractLabelsFromPairs(pairs);
+}
+
+
 function extractLabeledValue(
   text: string,
   labels: readonly string[],
@@ -2380,16 +2670,28 @@ function extractLabeledValue(
 }
 
 function cleanLabeledValue(value: string | undefined) {
-  const cleaned = value
+  let cleaned = value
     ?.replace(/\b(còn hàng|hết hàng|in stock|out of stock)\b.*$/i, "")
     .replace(
       /\b(thông số kỹ thuật|thong so ky thuat|thông số|thong so|specs)\b.*$/i,
       "",
     )
+    // Trailing warranty fragments (e.g. "... bảo hành 12 tháng").
+    .replace(/\b(bảo hành|bao hanh|bh)\b.*$/i, "")
     .replace(/\b\d{1,3}(?:[.,]\d{3})+\s*(?:vnd|vnđ|₫|đ|dong|đồng)?\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
+  // Stop at the next known label even when no delimiter separated them, e.g.
+  // "Schneider Xuất xứ Pháp" → "Schneider".
+  if (cleaned) {
+    const nextLabel = new RegExp(`\\s+(?:${allLabeledValueNames})\\b.*$`, "i");
+    cleaned = cleaned.replace(nextLabel, "").trim();
+  }
   if (!cleaned || cleaned.length < 2) {
+    return null;
+  }
+  // Reject values that are only a promo badge (e.g. "Bán chạy").
+  if (isShopPromoBadgeText(cleaned)) {
     return null;
   }
   return cleaned.slice(0, 160);
@@ -2398,22 +2700,28 @@ function cleanLabeledValue(value: string | undefined) {
 export function enrichProductWithPageText(
   product: ScrapedShopProduct,
   pageText: string,
+  specPairs?: ReadonlyArray<{ label: string; value: string }>,
 ): ScrapedShopProduct {
   const labels = extractProductLabels(pageText);
+  // Prefer structured spec rows from the detail page over flattened-text regex.
+  const pairLabels = extractLabelsFromPairs(specPairs);
   return {
     ...product,
     unit: product.unit ?? detectUnit(`${product.name} ${pageText}`),
-    category: product.category ?? labels.category,
+    category: product.category ?? pairLabels.category ?? labels.category,
     specText:
       product.specText.trim().length > 0
         ? product.specText
         : cleanDescription(pageText, product.name),
-    manufacturer: product.manufacturer ?? labels.manufacturer,
-    originCountry: product.originCountry ?? labels.originCountry,
-    sku: product.sku ?? labels.sku,
-    model: product.model ?? labels.model,
-    availability: product.availability ?? labels.availability,
-    shopCategory: product.shopCategory ?? labels.category,
+    manufacturer:
+      product.manufacturer ?? pairLabels.manufacturer ?? labels.manufacturer,
+    originCountry:
+      product.originCountry ?? pairLabels.originCountry ?? labels.originCountry,
+    sku: product.sku ?? pairLabels.sku ?? labels.sku,
+    model: product.model ?? pairLabels.model ?? labels.model,
+    availability:
+      product.availability ?? pairLabels.availability ?? labels.availability,
+    shopCategory: product.shopCategory ?? pairLabels.category ?? labels.category,
   };
 }
 

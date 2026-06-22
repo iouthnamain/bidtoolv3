@@ -26,8 +26,13 @@ export const FILLABLE_FIELDS = [
 
 export type FillableField = (typeof FILLABLE_FIELDS)[number];
 
-/** Maps a fillable material field to the Excel column key used for mapping. */
-export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey> = {
+/**
+ * Maps a fillable material field to the Excel column key used for mapping.
+ * `currency` has no dedicated column, so it maps to `null`: consumers must skip
+ * it rather than silently writing it into another column. The `null` makes the
+ * compiler enforce that skip at every call site.
+ */
+export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey | null> = {
   code: "code",
   unit: "unit",
   category: "category",
@@ -35,8 +40,7 @@ export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey> = {
   manufacturer: "vendorHint",
   originCountry: "originHint",
   defaultUnitPrice: "unitPrice",
-  // currency has no dedicated column; it is never auto-filled into the sheet.
-  currency: "unit",
+  currency: null,
   sourceUrl: "sourceUrl",
 };
 
@@ -134,6 +138,32 @@ export function buildFillPlan(
   }
 
   return plan;
+}
+
+/**
+ * Like {@link buildFillPlan}, but overlays user inline-edits on top of the base
+ * material/found values before planning. An edited value wins over the
+ * candidate's value for that field; an edit is treated as a real value, so a
+ * field the user typed into fills (or overwrites) even when the base source had
+ * nothing. Blank edits ("") fall through to the base value rather than clearing
+ * it — to intentionally skip a field the UI unticks it instead.
+ */
+export function buildFillPlanWithEdits(
+  rowFields: Partial<Record<FillableField, string>>,
+  materialFields: Partial<Record<FillableField, string>> | null,
+  editedValues: Partial<Record<FillableField, string>> = {},
+  forceOverwrite: Set<FillableField> = new Set<FillableField>(),
+): FillPlanCell[] {
+  const overlaid: Partial<Record<FillableField, string>> = {
+    ...(materialFields ?? {}),
+  };
+  for (const field of FILLABLE_FIELDS) {
+    const edited = editedValues[field]?.trim();
+    if (edited != null && edited.length > 0) {
+      overlaid[field] = edited;
+    }
+  }
+  return buildFillPlan(rowFields, overlaid, forceOverwrite);
 }
 
 // ---------------------------------------------------------------------------

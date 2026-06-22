@@ -14,6 +14,10 @@ import {
   stripShopPromoBadgePrefix,
 } from "./shop-material-scraper";
 import { normalizeShopScrapeUrl } from "./shop-scrape-jobs";
+import {
+  normalizeManufacturer,
+  normalizeOriginCountry,
+} from "~/lib/materials/shop-attribute-normalize";
 
 const CODIENHAIAU_CATEGORY_URL =
   "https://codienhaiau.com/category/dong-ho-do/dong-ho-do-tan-so/";
@@ -823,6 +827,255 @@ describe("extractProductsFromPageSnapshot", () => {
         (product) => product.name,
       ),
     ).toEqual(["Sản phẩm schema", "Sản phẩm card"]);
+  });
+
+  it("extracts manufacturer/origin from structured card spec pairs over flattened text", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/category/tools/",
+        title: "Tools",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Cảm biến áp suất Autonics",
+            href: "https://shop.example.com/product/cam-bien-ap-suat-autonics/",
+            imageUrl: null,
+            category: null,
+            text: "Cảm biến áp suất Autonics 1.200.000 đ",
+            specPairs: [
+              { label: "Nhà sản xuất", value: "Autonics" },
+              { label: "Xuất xứ", value: "Hàn Quốc" },
+              { label: "Mã hàng", value: "PSAN-1CPV" },
+            ],
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      manufacturer: "Autonics",
+      originCountry: "Hàn Quốc",
+      sku: "PSAN-1CPV",
+    });
+  });
+
+  it("fills missing fields from page-level spec pairs (detail page table/dl)", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/product/bo-nguon-omron/",
+        title: "Bộ nguồn Omron S8VK",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Bộ nguồn Omron S8VK",
+            href: "https://shop.example.com/product/bo-nguon-omron/",
+            imageUrl: null,
+            category: null,
+            text: "Bộ nguồn Omron S8VK 980.000 đ",
+          },
+        ],
+        nextLinks: [],
+        specPairs: [
+          { label: "Nơi sản xuất", value: "Nhật Bản" },
+          { label: "Thương hiệu", value: "Omron" },
+        ],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      manufacturer: "Omron",
+      originCountry: "Nhật Bản",
+    });
+  });
+
+  it("does NOT smear page-level spec pairs across a multi-product listing page", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/category/bo-nguon/",
+        title: "Bộ nguồn",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Bộ nguồn Omron S8VK",
+            href: "https://shop.example.com/product/bo-nguon-omron/",
+            imageUrl: null,
+            category: null,
+            text: "Bộ nguồn Omron S8VK 980.000 đ",
+          },
+          {
+            name: "Bộ nguồn Khác KX-100",
+            href: "https://shop.example.com/product/bo-nguon-kx/",
+            imageUrl: null,
+            category: null,
+            text: "Bộ nguồn Khác KX-100 450.000 đ",
+          },
+        ],
+        nextLinks: [],
+        // Document-level pairs are a mix of every card on a listing page; they
+        // must not be used to fill products that are individually missing the
+        // field, or the first card's origin/manufacturer leaks onto the rest.
+        specPairs: [
+          { label: "Nơi sản xuất", value: "Nhật Bản" },
+          { label: "Thương hiệu", value: "Omron" },
+        ],
+      },
+      "dom_cards",
+    );
+
+    expect(products).toHaveLength(2);
+    // No product should receive the page-level Omron/Nhật Bản values just
+    // because it was missing them.
+    for (const product of products) {
+      expect(product.manufacturer).toBeNull();
+      expect(product.originCountry).toBeNull();
+    }
+  });
+
+  it("extracts NCC/Xuất xứ from JSON-LD additionalProperty", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/product/khoi-dong-tu-ls",
+      title: "Khởi động từ LS",
+      jsonLdTexts: [
+        JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Product",
+          name: "Khởi động từ LS MC-12b",
+          offers: {
+            price: "320000",
+            priceCurrency: "VND",
+            url: "/product/khoi-dong-tu-ls",
+          },
+          additionalProperty: [
+            { "@type": "PropertyValue", name: "Nhà cung cấp", value: "LS" },
+            { "@type": "PropertyValue", name: "Xuất xứ", value: "Hàn Quốc" },
+            { "@type": "PropertyValue", name: "Mã SP", value: "MC-12B" },
+          ],
+        }),
+      ],
+      cards: [],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      name: "Khởi động từ LS MC-12b",
+      manufacturer: "LS",
+      originCountry: "Hàn Quốc",
+      sku: "MC-12B",
+    });
+  });
+
+  it("recognizes expanded labels and stops a label value at the next field", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/product/aptomat-ls/",
+      title: "Aptomat LS",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Aptomat LS ABE53b",
+          href: "https://shop.example.com/product/aptomat-ls/",
+          imageUrl: null,
+          category: null,
+          text: "Aptomat LS ABE53b Made in Hàn Quốc Nhãn hiệu LS Sản xuất tại Hàn Quốc Bảo hành 12 tháng 450.000 đ",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    // "Nhãn hiệu LS" must not bleed into the warranty / origin fragments.
+    expect(products[0]?.manufacturer).toBe("LS");
+    expect(products[0]?.originCountry).toBe("Hàn Quốc");
+  });
+});
+
+describe("attribute normalization", () => {
+  it("maps high-confidence origin synonyms", () => {
+    expect(normalizeOriginCountry("tq")).toBe("Trung Quốc");
+    expect(normalizeOriginCountry("Trung Quoc")).toBe("Trung Quốc");
+    expect(normalizeOriginCountry("vn")).toBe("Việt Nam");
+    expect(normalizeOriginCountry("made in china")).toBe("Trung Quốc");
+  });
+
+  it("strips leading origin label residue and title-cases plain values", () => {
+    expect(normalizeOriginCountry("Xuất xứ: nhật bản")).toBe("Nhật Bản");
+    expect(normalizeOriginCountry("made in malaysia")).toBe("Malaysia");
+  });
+
+  it("passes through unknown origins without over-normalizing", () => {
+    expect(normalizeOriginCountry(null)).toBeNull();
+    expect(normalizeOriginCountry("Liên minh Châu Âu (EU)")).toBe(
+      "Liên minh Châu Âu (EU)",
+    );
+  });
+
+  it("cleans manufacturer residue but preserves brand casing", () => {
+    expect(normalizeManufacturer("  Schneider   Electric ")).toBe(
+      "Schneider Electric",
+    );
+    expect(normalizeManufacturer("Thương hiệu: LS")).toBe("LS");
+    expect(normalizeManufacturer("Bosch 1.200.000 đ")).toBe("Bosch");
+    expect(normalizeManufacturer(null)).toBeNull();
+  });
+
+  it("normalizes scraped origin synonyms on extracted products", () => {
+    const products = extractProductsFromPageSnapshot(
+      {
+        pageUrl: "https://shop.example.com/product/tu-dien/",
+        title: "Tủ điện",
+        jsonLdTexts: [],
+        cards: [
+          {
+            name: "Tủ điện công nghiệp",
+            href: "https://shop.example.com/product/tu-dien/",
+            imageUrl: null,
+            category: null,
+            text: "Tủ điện công nghiệp 5.000.000 đ",
+            specPairs: [{ label: "Xuất xứ", value: "TQ" }],
+          },
+        ],
+        nextLinks: [],
+      },
+      "dom_cards",
+    );
+
+    expect(products[0]?.originCountry).toBe("Trung Quốc");
+  });
+
+  it("enriches detail products from page-level spec pairs", () => {
+    const sparse = {
+      name: "Bộ nguồn Omron S8VK",
+      unit: null,
+      category: null,
+      specText: "",
+      manufacturer: null,
+      originCountry: null,
+      price: 980000,
+      priceText: "980.000 đ",
+      currency: "VND",
+      sourceUrl: "https://shop.example.com/bo-nguon-omron-s8vk",
+      imageUrl: null,
+      sku: null,
+      model: null,
+      availability: null,
+      shopCategory: null,
+      catalogPdfUrls: [],
+    };
+
+    expect(
+      enrichProductWithPageText(sparse, "Bộ nguồn Omron S8VK", [
+        { label: "Thương hiệu", value: "Omron" },
+        { label: "Xuất xứ", value: "Nhật Bản" },
+      ]),
+    ).toMatchObject({
+      manufacturer: "Omron",
+      originCountry: "Nhật Bản",
+    });
   });
 });
 

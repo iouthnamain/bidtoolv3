@@ -13,6 +13,7 @@ import {
 } from "~/server/api/tenant-scope";
 import {
   approveRow,
+  assertJobInScope,
   bulkApproveRows,
   cancelJob,
   createJob,
@@ -24,6 +25,7 @@ import {
   listRowResults,
   pauseJob,
   rejectRow,
+  restartJob,
   startJob,
 } from "~/server/services/excel-research-jobs";
 import { processJobBatchDetailed } from "~/server/services/excel-research/process-batch";
@@ -205,6 +207,14 @@ export const excelResearchRouter = createTRPCRouter({
       ),
     ),
 
+  restartJob: requirePermission("excelResearch:run")
+    .input(jobIdInput)
+    .mutation(({ ctx, input }) =>
+      withExcelResearchErrors(() =>
+        restartJob(input.jobId, tenantScopeValue(ctx)),
+      ),
+    ),
+
   listRowResults: publicProcedure
     .input(
       jobIdInput.extend({
@@ -250,6 +260,8 @@ export const excelResearchRouter = createTRPCRouter({
       rowNumberInput.extend({
         materialId: z.number().int().positive().optional(),
         acceptedFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+        overwriteFields: z.array(z.enum(FILLABLE_FIELDS)).optional(),
+        editedValues: z.record(z.enum(FILLABLE_FIELDS), z.string()).optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -259,6 +271,8 @@ export const excelResearchRouter = createTRPCRouter({
           rowNumber: input.rowNumber,
           materialId: input.materialId,
           acceptedFields: input.acceptedFields,
+          overwriteFields: input.overwriteFields,
+          editedValues: input.editedValues,
           scope: tenantScopeValue(ctx),
         }),
       ),
@@ -315,9 +329,12 @@ export const excelResearchRouter = createTRPCRouter({
         batchId: z.string().uuid().optional(),
       }),
     )
-    .mutation(({ input }) =>
+    .mutation(({ ctx, input }) =>
       withExcelResearchErrors(async () => {
         void input.batchId;
+        // Tenant-scope guard: fail-closed if the job is outside the caller's
+        // tenant so a customer cannot drive another tenant's job.
+        await assertJobInScope(input.jobId, tenantScopeValue(ctx));
         return processJobBatchDetailed(input.jobId);
       }),
     ),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CheckCheck, Download, ImageOff, ThumbsDown, ThumbsUp } from "lucide-react";
 
@@ -8,16 +8,27 @@ import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import {
   type ExcelResearchRowStatus,
 } from "~/app/_components/research-enrich/excel-research-types";
+import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
+import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
 import {
-  FIELD_LABELS,
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
-import { type RouterOutputs } from "~/trpc/react";
+import { api, type RouterOutputs } from "~/trpc/react";
 
 type ExcelResearchRowSummary =
   RouterOutputs["excelResearch"]["listRowResults"]["items"][number];
 type ExcelResearchRowEvidence =
   RouterOutputs["excelResearch"]["getRowResult"]["evidence"][number];
+type ExcelResearchCompare =
+  RouterOutputs["excelResearch"]["getRowResult"]["compare"];
+
+/** The decision payload an approved row carries to the server. */
+export type ResearchApproveDecision = {
+  materialId?: number;
+  acceptedFields: FillableField[];
+  overwriteFields: FillableField[];
+  editedValues: Partial<Record<FillableField, string>>;
+};
 
 export const ROW_STATUS_META: Record<
   ExcelResearchRowStatus,
@@ -31,10 +42,6 @@ export const ROW_STATUS_META: Record<
   skipped: { label: "Đã bỏ qua", tone: "critical" },
   error: { label: "Lỗi", tone: "critical" },
 };
-
-function fieldLabel(field: string) {
-  return FIELD_LABELS[field as FillableField] ?? field;
-}
 
 const BULK_MIN_CONFIDENCE = 0.85;
 
@@ -58,6 +65,7 @@ export function ExcelResearchReviewPanel({
   setSelectedRowNumber,
   selectedRow,
   evidence,
+  compare,
   isDetailLoading,
   isApproving,
   isRejecting,
@@ -65,6 +73,7 @@ export function ExcelResearchReviewPanel({
   onReject,
   onBulkApprove,
   isBulkApproving = false,
+  listTotal,
   onPrimaryAction,
   onSecondaryAction,
   primaryActionLabel = "Tiếp tục xuất file",
@@ -87,10 +96,11 @@ export function ExcelResearchReviewPanel({
   setSelectedRowNumber: (value: number | null) => void;
   selectedRow: ExcelResearchRowSummary | null;
   evidence: ExcelResearchRowEvidence[];
+  compare: ExcelResearchCompare | null;
   isDetailLoading: boolean;
   isApproving: boolean;
   isRejecting: boolean;
-  onApprove: (rowNumber: number) => void;
+  onApprove: (rowNumber: number, decision: ResearchApproveDecision) => void;
   onReject: (rowNumber: number) => void;
   /**
    * Bulk approve. `rowIds` approves an explicit set of rows; when omitted the
@@ -98,6 +108,12 @@ export function ExcelResearchReviewPanel({
    */
   onBulkApprove?: (args: { rowIds?: string[]; minConfidence?: number }) => void;
   isBulkApproving?: boolean;
+  /**
+   * Total rows matching the active filter on the server. When it exceeds the
+   * number of rows actually returned (`rows.length`, capped at the page
+   * limit) the list is truncated and we surface a notice.
+   */
+  listTotal?: number;
   onPrimaryAction: () => void;
   onSecondaryAction: () => void;
   primaryActionLabel?: string;
@@ -106,6 +122,13 @@ export function ExcelResearchReviewPanel({
   emptyContinueLabel?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+
+  // Selecting a different filter changes which rows are visible; carrying the
+  // old selection over would let a user bulk-approve rows they can't see and
+  // desync the select-all checkbox. Clear it whenever the filter changes.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter]);
 
   if (rows.length === 0) {
     return (
@@ -126,12 +149,12 @@ export function ExcelResearchReviewPanel({
   const bulkApprovableRows = rows.filter((row) =>
     BULK_APPROVABLE_STATUSES.includes(row.status),
   );
-  const confidentNeedsReview = bulkApprovableRows.filter(
-    (row) =>
-      row.status === "needs_review" &&
-      row.confidenceScore != null &&
-      row.confidenceScore >= BULK_MIN_CONFIDENCE,
-  );
+  // The confident-approve button approves server-side across the WHOLE job
+  // (bulkApproveRows with minConfidence, no rowIds), so its enabled state must
+  // reflect the job-wide needs_review + matched totals — not just visible rows
+  // (capped at the page limit) or just needs_review. Threshold filtering then
+  // happens on the server.
+  const jobConfidentCandidates = summary.needsReview + summary.matched;
   const selectedApprovable = bulkApprovableRows.filter((row) =>
     selectedIds.has(row.id),
   );
@@ -162,7 +185,7 @@ export function ExcelResearchReviewPanel({
   };
 
   const approveConfident = () => {
-    if (!onBulkApprove || confidentNeedsReview.length === 0) return;
+    if (!onBulkApprove || jobConfidentCandidates === 0) return;
     onBulkApprove({ minConfidence: BULK_MIN_CONFIDENCE });
     setSelectedIds(new Set());
   };
@@ -170,6 +193,8 @@ export function ExcelResearchReviewPanel({
   const allApprovableSelected =
     bulkApprovableRows.length > 0 &&
     bulkApprovableRows.every((row) => selectedIds.has(row.id));
+
+  const isTruncated = listTotal != null && listTotal > rows.length;
 
   const filters: Array<{
     id: ExcelResearchRowStatus | "all";
@@ -266,14 +291,11 @@ export function ExcelResearchReviewPanel({
               size="sm"
               leftIcon={<CheckCheck className="h-3.5 w-3.5" />}
               isLoading={isBulkApproving}
-              disabled={confidentNeedsReview.length === 0}
+              disabled={jobConfidentCandidates === 0}
               onClick={approveConfident}
             >
-              Duyệt tất cả đủ tin cậy (≥ {Math.round(BULK_MIN_CONFIDENCE * 100)}%
-              {confidentNeedsReview.length > 0
-                ? ` · ${confidentNeedsReview.length.toLocaleString("vi-VN")}`
-                : ""}
-              )
+              Duyệt các dòng đủ tin cậy (≥{" "}
+              {Math.round(BULK_MIN_CONFIDENCE * 100)}%)
             </Button>
           </div>
         </div>
@@ -281,6 +303,13 @@ export function ExcelResearchReviewPanel({
 
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-200 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
+          {isTruncated ? (
+            <p className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+              Hiển thị {rows.length.toLocaleString("vi-VN")}/
+              {listTotal.toLocaleString("vi-VN")} dòng. Lọc theo trạng thái để
+              xem các dòng còn lại.
+            </p>
+          ) : null}
           {rows.map((row) => {
             const meta = ROW_STATUS_META[row.status];
             const isSelected = row.rowNumber === selectedRowNumber;
@@ -341,10 +370,13 @@ export function ExcelResearchReviewPanel({
             <ExcelResearchRowDetailPanel
               row={selectedRow}
               evidence={evidence}
+              compare={compare}
               isDetailLoading={isDetailLoading}
               isApproving={isApproving}
               isRejecting={isRejecting}
-              onApprove={() => onApprove(selectedRow.rowNumber)}
+              onApprove={(decision) =>
+                onApprove(selectedRow.rowNumber, decision)
+              }
               onReject={() => onReject(selectedRow.rowNumber)}
             />
           ) : (
@@ -362,6 +394,7 @@ export function ExcelResearchReviewPanel({
 function ExcelResearchRowDetailPanel({
   row,
   evidence,
+  compare,
   isDetailLoading,
   isApproving,
   isRejecting,
@@ -370,17 +403,128 @@ function ExcelResearchRowDetailPanel({
 }: {
   row: ExcelResearchRowSummary;
   evidence: ExcelResearchRowEvidence[];
+  compare: ExcelResearchCompare | null;
   isDetailLoading: boolean;
   isApproving: boolean;
   isRejecting: boolean;
-  onApprove: () => void;
+  onApprove: (decision: ResearchApproveDecision) => void;
   onReject: () => void;
 }) {
   const meta = ROW_STATUS_META[row.status];
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const canDecide =
     row.status === "needs_review" ||
     row.status === "matched" ||
     row.status === "pending";
+
+  // Local decision state, seeded from the persisted compare payload whenever the
+  // selected row changes. The web-research row already stored found values +
+  // accepted/overwrite/edited sets, so re-entering a row restores prior edits.
+  const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(
+    null,
+  );
+  const [accepted, setAccepted] = useState<Set<FillableField>>(() => new Set());
+  const [overwrite, setOverwrite] = useState<Set<FillableField>>(
+    () => new Set(),
+  );
+  const [editedValues, setEditedValues] = useState<
+    Partial<Record<FillableField, string>>
+  >({});
+
+  // Manual catalog re-pick: same debounced search the step-2 chooser uses.
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+  const searchQuery = api.material.enrichSearchMaterials.useQuery(
+    { query: debounced },
+    { enabled: debounced.length > 0 },
+  );
+
+  // Re-seed whenever we switch rows or the server returns fresh compare data.
+  // Keyed on rowNumber so editing one row, then returning, restores its state.
+  useEffect(() => {
+    setSelectedMaterialId(compare?.matchedMaterialId ?? null);
+    setAccepted(new Set(compare?.acceptedFields ?? []));
+    setOverwrite(new Set(compare?.overwriteFields ?? []));
+    setEditedValues({ ...(compare?.editedFields ?? {}) });
+    setSearchTerm("");
+    setDebounced("");
+  }, [row.rowNumber, compare]);
+
+  const sheetFields = compare?.sheetFields ?? {};
+  const foundFields = compare?.foundFields ?? {};
+
+  const showingSearch = debounced.length > 0;
+  const candidates = (searchQuery.data?.candidates ?? []) as EnrichCandidate[];
+
+  const toggleField = (field: FillableField) => {
+    setAccepted((prev) => {
+      const next = new Set(prev);
+      if (next.has(field)) {
+        next.delete(field);
+        setOverwrite((o) => {
+          if (!o.has(field)) return o;
+          const no = new Set(o);
+          no.delete(field);
+          return no;
+        });
+      } else {
+        next.add(field);
+      }
+      return next;
+    });
+  };
+
+  const toggleOverwrite = (field: FillableField) => {
+    setOverwrite((prev) => {
+      const next = new Set(prev);
+      if (next.has(field)) {
+        next.delete(field);
+        setAccepted((a) => {
+          if (!a.has(field)) return a;
+          const na = new Set(a);
+          na.delete(field);
+          return na;
+        });
+      } else {
+        next.add(field);
+        setAccepted((a) => new Set(a).add(field));
+      }
+      return next;
+    });
+  };
+
+  const editValue = (field: FillableField, value: string) => {
+    setEditedValues((prev) => ({ ...prev, [field]: value }));
+    setAccepted((a) => new Set(a).add(field));
+  };
+
+  const choose = (candidate: EnrichCandidate) => {
+    setSelectedMaterialId(candidate.materialId);
+    // Re-pick keeps the user's accepted/edited choices; the editor recomputes
+    // the plan against the new candidate's fields.
+  };
+
+  const clear = () => {
+    setSelectedMaterialId(null);
+    setAccepted(new Set());
+    setOverwrite(new Set());
+    setEditedValues({});
+  };
+
+  const approve = () => {
+    onApprove({
+      materialId: selectedMaterialId ?? undefined,
+      acceptedFields: Array.from(accepted),
+      overwriteFields: Array.from(overwrite),
+      editedValues,
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -401,9 +545,40 @@ function ExcelResearchRowDetailPanel({
         ) : null}
       </div>
 
+      {/* Compare + per-field accept / overwrite / inline edit. Manual catalog
+          re-pick swaps the fill base to the chosen material; with no pick the
+          plan is driven by the web-found values. */}
       {isDetailLoading ? (
-        <p className="text-xs text-slate-500">Đang tải bằng chứng…</p>
-      ) : evidence.length > 0 ? (
+        <p className="text-xs text-slate-500">Đang tải kết quả…</p>
+      ) : (
+        <FieldCompareEditor
+          sheetLabel={`Dòng Excel ${row.rowNumber}`}
+          sheetName={row.productName ?? ""}
+          sheetFields={sheetFields}
+          proposedFields={foundFields}
+          selectedMaterialId={selectedMaterialId}
+          accepted={accepted}
+          overwrite={overwrite}
+          editedValues={editedValues}
+          onToggleField={toggleField}
+          onToggleOverwrite={toggleOverwrite}
+          onEditValue={editValue}
+          onClear={clear}
+          enableCandidateGrid
+          candidates={candidates}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
+          isSearching={searchQuery.isLoading}
+          showingSearch={showingSearch}
+          onChoose={choose}
+          enableInlineEdit
+          clearLabel="Bỏ ghép catalog (giữ giá trị web)"
+        />
+      )}
+
+      {/* Evidence stays a read-only gallery — evidence rows lack the full
+          material fields needed to act as fill candidates. */}
+      {!isDetailLoading && evidence.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs font-bold text-slate-700">Bằng chứng</p>
           {evidence.map((item) => (
@@ -412,13 +587,22 @@ function ExcelResearchRowDetailPanel({
               className="flex gap-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
             >
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-                {item.imageUrl ? (
+                {item.imageUrl && !failedImageIds.has(item.id) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={item.imageUrl}
-                    alt=""
+                    alt={item.title ?? ""}
+                    referrerPolicy="no-referrer"
                     className="h-full w-full object-contain"
                     loading="lazy"
+                    onError={() =>
+                      setFailedImageIds((prev) => {
+                        if (prev.has(item.id)) return prev;
+                        const next = new Set(prev);
+                        next.add(item.id);
+                        return next;
+                      })
+                    }
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-300">
@@ -449,33 +633,6 @@ function ExcelResearchRowDetailPanel({
         </div>
       ) : null}
 
-      {row.fillPlan.length > 0 ? (
-        <div className="rounded-xl border border-slate-200 p-3">
-          <p className="text-xs font-bold text-slate-700">Kế hoạch điền</p>
-          <div className="mt-2 grid gap-1">
-            {row.fillPlan.map((cell) => (
-              <div
-                key={cell.field}
-                className="flex gap-2 text-xs text-slate-600"
-              >
-                <span className="w-24 shrink-0 font-semibold">
-                  {fieldLabel(cell.field)}
-                </span>
-                <span className="truncate">{cell.before || "(trống)"}</span>
-                {cell.action === "filled" ? (
-                  <>
-                    <span>→</span>
-                    <span className="truncate font-medium text-emerald-700">
-                      {cell.after}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       {canDecide ? (
         <div className="flex flex-wrap gap-2">
           <Button
@@ -484,7 +641,7 @@ function ExcelResearchRowDetailPanel({
             leftIcon={<ThumbsUp className="h-3.5 w-3.5" />}
             isLoading={isApproving}
             disabled={isRejecting}
-            onClick={onApprove}
+            onClick={approve}
           >
             Duyệt
           </Button>

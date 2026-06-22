@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { inArray } from "drizzle-orm";
+import { and, inArray, isNull } from "drizzle-orm";
 
 import type { db as appDb } from "~/server/db";
 import { materials } from "~/server/db/schema";
@@ -15,57 +15,43 @@ import {
   type ColumnMapping,
   type ParsedWorkbookSheet,
 } from "~/server/services/excel-workbook";
+import {
+  FILLABLE_FIELDS,
+  FIELD_TO_COLUMN_KEY,
+  NUMERIC_FIELDS,
+  ENRICH_THRESHOLDS,
+  MAX_ENRICH_ROWS,
+  FIELD_LABELS,
+  classifyStatus,
+  buildFillPlan as buildFillPlanPure,
+  type FillableField,
+  type FillAction,
+  type FillPlanCell,
+  type EnrichStatus,
+} from "~/lib/materials/excel-enrich-fields";
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
 
 // ---------------------------------------------------------------------------
-// Field model
+// Field model — single source of truth lives in the client-safe lib. We import
+// the pure pieces and re-export them here for back-compat with existing server
+// imports. There must be exactly ONE definition of each of these.
 // ---------------------------------------------------------------------------
 
-/** Fields that can be filled into the uploaded sheet from a matched material. */
-export const FILLABLE_FIELDS = [
-  "code",
-  "unit",
-  "category",
-  "specText",
-  "manufacturer",
-  "originCountry",
-  "defaultUnitPrice",
-  "currency",
-  "sourceUrl",
-] as const;
-
-export type FillableField = (typeof FILLABLE_FIELDS)[number];
-
-/** Maps a fillable material field to the Excel column key used for mapping. */
-export const FIELD_TO_COLUMN_KEY: Record<FillableField, ColumnKey> = {
-  code: "code",
-  unit: "unit",
-  category: "category",
-  specText: "specText",
-  manufacturer: "vendorHint",
-  originCountry: "originHint",
-  defaultUnitPrice: "unitPrice",
-  currency: "unit", // currency has no dedicated column; never auto-filled into a column
-  sourceUrl: "sourceUrl",
+export {
+  FILLABLE_FIELDS,
+  FIELD_TO_COLUMN_KEY,
+  NUMERIC_FIELDS,
+  ENRICH_THRESHOLDS,
+  MAX_ENRICH_ROWS,
+  FIELD_LABELS,
+  classifyStatus,
 };
+export type { FillableField, FillAction, FillPlanCell, EnrichStatus };
+export type { ColumnMapping };
 
-const NUMERIC_FIELDS = new Set<FillableField>(["defaultUnitPrice"]);
-
-// ---------------------------------------------------------------------------
-// Thresholds (single tunable block)
-// ---------------------------------------------------------------------------
-
-export const ENRICH_THRESHOLDS = {
-  auto: 0.85,
-  review: 0.5,
-} as const;
-
-export const MAX_ENRICH_ROWS = 2000;
 export const MATCH_CONCURRENCY = 10;
-
-export type EnrichStatus = "auto" | "review" | "unmatched";
 
 export type EnrichCandidate = {
   materialId: number;
@@ -82,15 +68,6 @@ export type EnrichCandidate = {
   specSnippet: string;
   score: number;
   breakdown: ScoreBreakdown | null;
-};
-
-export type FillAction = "filled" | "kept" | "missing-both" | "overwritten";
-
-export type FillPlanCell = {
-  field: FillableField;
-  before: string;
-  after: string;
-  action: FillAction;
 };
 
 export type EnrichRowInput = {
@@ -183,7 +160,7 @@ async function hydrateCandidates(
   const rows = await db
     .select()
     .from(materials)
-    .where(inArray(materials.id, ids));
+    .where(and(inArray(materials.id, ids), isNull(materials.deletedAt)));
   return new Map(rows.map((row) => [row.id, row]));
 }
 
@@ -202,44 +179,32 @@ function materialFieldValue(
   return "";
 }
 
+/** Project a material row onto the fillable-field string map the pure planner expects. */
+function materialToFields(
+  material: MaterialRow,
+): Partial<Record<FillableField, string>> {
+  const fields: Partial<Record<FillableField, string>> = {};
+  for (const field of FILLABLE_FIELDS) {
+    fields[field] = materialFieldValue(material, field);
+  }
+  return fields;
+}
+
+/**
+ * Server wrapper over the canonical pure `buildFillPlan` in the lib. Maps the
+ * DB row to the field-map shape the pure planner expects and delegates, so the
+ * fill logic has exactly one implementation.
+ */
 export function buildFillPlan(
   rowFields: Partial<Record<FillableField, string>>,
   material: MaterialRow | null,
   forceOverwrite = new Set<FillableField>(),
 ): FillPlanCell[] {
-  const plan: FillPlanCell[] = [];
-
-  for (const field of FILLABLE_FIELDS) {
-    const sheetRaw = rowFields[field]?.trim() ?? "";
-    const materialRaw = material ? materialFieldValue(material, field) : "";
-
-    const sheetHasValue = sheetRaw.length > 0;
-    const materialHasValue = materialRaw.length > 0;
-
-    let action: FillAction;
-    let after = sheetRaw;
-
-    if (forceOverwrite.has(field) && materialHasValue) {
-      action = sheetHasValue ? "overwritten" : "filled";
-      after = materialRaw;
-    } else if (!sheetHasValue && materialHasValue) {
-      action = "filled";
-      after = materialRaw;
-    } else if (sheetHasValue) {
-      action = "kept";
-      after = sheetRaw;
-    } else {
-      action = "missing-both";
-      after = "";
-    }
-
-    // Only surface fields that have something interesting to show.
-    if (action === "missing-both") continue;
-
-    plan.push({ field, before: sheetRaw, after, action });
-  }
-
-  return plan;
+  return buildFillPlanPure(
+    rowFields,
+    material ? materialToFields(material) : null,
+    forceOverwrite,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +212,7 @@ export function buildFillPlan(
 // ---------------------------------------------------------------------------
 
 function classify(score: number | undefined): EnrichStatus {
-  if (score != null && score >= ENRICH_THRESHOLDS.auto) return "auto";
-  if (score != null && score >= ENRICH_THRESHOLDS.review) return "review";
-  return "unmatched";
+  return classifyStatus(score);
 }
 
 async function mapWithConcurrency<T, R>(
@@ -351,6 +314,19 @@ export type ExportDecision = {
   materialId: number | null;
   /** Accepted fills, keyed to fillable fields the user kept ticked. */
   fields: FillableField[];
+  /**
+   * Fields to write even when the target cell already has a value (write-through).
+   * Fields not listed here keep the fill-blanks-only behavior. Defined here as
+   * the server contract; the catalog UI sends this under the same name.
+   */
+  overwriteFields?: FillableField[];
+  /**
+   * Per-field user-typed values that take precedence over the matched material's
+   * value (inline edits). Lets a row write a value not present on any catalog
+   * material — including web-research rows that never matched a material
+   * (`materialId == null`), so long as the override covers the accepted field.
+   */
+  valueOverrides?: Partial<Record<FillableField, string>>;
 };
 
 export type ExportMode = "preserve" | "clean";
@@ -362,7 +338,10 @@ function decodeBase64(workbookBase64: string): Buffer {
   return Buffer.from(base64, "base64");
 }
 
-function columnKeyForField(field: FillableField): ColumnKey {
+/** Test-only re-export of the internal base64 decoder. */
+export const decodeBase64ForTest = decodeBase64;
+
+function columnKeyForField(field: FillableField): ColumnKey | null {
   return FIELD_TO_COLUMN_KEY[field];
 }
 
@@ -423,8 +402,9 @@ async function writePreservedWorkbook(
   const columnForField = new Map<FillableField, number>();
 
   for (const field of FILLABLE_FIELDS) {
-    if (field === "currency") continue; // not written as its own column
-    const mappedHeader = opts.mapping[columnKeyForField(field)];
+    const columnKey = columnKeyForField(field);
+    if (columnKey == null) continue; // e.g. currency: not written as its own column
+    const mappedHeader = opts.mapping[columnKey];
     if (mappedHeader && headerColumnByText.has(mappedHeader)) {
       columnForField.set(field, headerColumnByText.get(mappedHeader)!);
     }
@@ -440,27 +420,38 @@ async function writePreservedWorkbook(
     if (existing != null) return existing;
     const colNumber = nextColumn++;
     const headerCell = headerRow.getCell(colNumber);
-    headerCell.value = APPENDED_HEADER_LABEL[field];
+    headerCell.value = FIELD_LABELS[field];
     columnForField.set(field, colNumber);
     return colNumber;
   };
 
   for (const [rowIndex, decision] of decisionByRow) {
-    if (decision.materialId == null || decision.fields.length === 0) continue;
-    const material = opts.materialsById.get(decision.materialId);
-    if (!material) continue;
+    if (decision.fields.length === 0) continue;
+    // A catalog match supplies values for un-edited fields; web-only rows carry
+    // all their values in `valueOverrides` and have no material.
+    const material =
+      decision.materialId == null
+        ? undefined
+        : opts.materialsById.get(decision.materialId);
+    if (decision.materialId != null && !material) continue;
 
+    const overwriteFields = new Set(decision.overwriteFields ?? []);
     const row = sheet.getRow(rowIndex);
     for (const field of decision.fields) {
-      if (field === "currency") continue;
-      const value = materialCellValue(material, field);
+      if (columnKeyForField(field) == null) continue; // currency has no column
+      const value = resolveCellValue(material, field, decision.valueOverrides);
       if (value == null || value === "") continue;
       const colNumber = ensureColumnForField(field);
-      // Preserve mode never destroys existing data: only fill cells that are
-      // currently blank. The review UI offers fills only for blank fields, but
-      // we guard here too so the sheet stays the source of truth.
       const targetCell = row.getCell(colNumber);
-      if (cellToText(targetCell.value).length > 0) continue;
+      // Preserve mode keeps the sheet as the source of truth: blank cells are
+      // filled. A cell that already has a value is only replaced when its field
+      // was explicitly force-overwritten in this decision; otherwise sheet wins.
+      if (
+        cellToText(targetCell.value).length > 0 &&
+        !overwriteFields.has(field)
+      ) {
+        continue;
+      }
       targetCell.value = value;
     }
     row.commit();
@@ -497,35 +488,28 @@ async function writeCleanWorkbook(
 
   sheet.addRow([
     "Tên vật tư",
-    ...CLEAN_COLUMN_ORDER.map((field) => APPENDED_HEADER_LABEL[field]),
+    ...CLEAN_COLUMN_ORDER.map((field) => FIELD_LABELS[field]),
   ]);
 
   for (const decision of opts.decisions) {
-    if (decision.materialId == null) continue;
-    const material = opts.materialsById.get(decision.materialId);
-    if (!material) continue;
+    if (decision.fields.length === 0) continue;
+    const material =
+      decision.materialId == null
+        ? undefined
+        : opts.materialsById.get(decision.materialId);
+    if (decision.materialId != null && !material) continue;
 
     sheet.addRow([
-      material.name,
-      ...CLEAN_COLUMN_ORDER.map((field) => materialCellValue(material, field) ?? ""),
+      material?.name ?? "",
+      ...CLEAN_COLUMN_ORDER.map(
+        (field) => resolveCellValue(material, field, decision.valueOverrides) ?? "",
+      ),
     ]);
   }
 
   const out = await workbook.xlsx.writeBuffer();
   return Buffer.from(out);
 }
-
-const APPENDED_HEADER_LABEL: Record<FillableField, string> = {
-  code: "Mã vật tư",
-  unit: "ĐVT",
-  category: "Nhóm",
-  specText: "Thông số",
-  manufacturer: "Nhà sản xuất",
-  originCountry: "Xuất xứ",
-  defaultUnitPrice: "Đơn giá",
-  currency: "Tiền tệ",
-  sourceUrl: "Nguồn",
-};
 
 function materialCellValue(
   material: MaterialRow,
@@ -540,6 +524,28 @@ function materialCellValue(
   if (typeof raw === "number") return raw;
   if (typeof raw === "string") return raw;
   return null;
+}
+
+/**
+ * Resolve the value to write for a field: a user inline-edit override wins over
+ * the matched material's value. Numeric fields are coerced to numbers so Excel
+ * formats them. `material` may be undefined for web-only rows that carry their
+ * values entirely in `valueOverrides`.
+ */
+function resolveCellValue(
+  material: MaterialRow | undefined,
+  field: FillableField,
+  valueOverrides: Partial<Record<FillableField, string>> | undefined,
+): string | number | null {
+  const override = valueOverrides?.[field];
+  if (override != null && override.trim().length > 0) {
+    if (NUMERIC_FIELDS.has(field)) {
+      const num = Number(override.replace(/[^\d.-]/g, ""));
+      return Number.isFinite(num) ? num : null;
+    }
+    return override;
+  }
+  return material ? materialCellValue(material, field) : null;
 }
 
 function cellToText(value: ExcelJS.CellValue): string {
@@ -592,8 +598,9 @@ export function extractRowFields(
 
       const fields: Partial<Record<FillableField, string>> = {};
       for (const field of FILLABLE_FIELDS) {
-        if (field === "currency") continue;
-        fields[field] = valueOf(columnKeyForField(field));
+        const columnKey = columnKeyForField(field);
+        if (columnKey == null) continue; // currency has no source column
+        fields[field] = valueOf(columnKey);
       }
 
       return {

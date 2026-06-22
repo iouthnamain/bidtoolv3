@@ -4,6 +4,7 @@ export const CATALOG_DOCUMENT_SOURCE_TYPES = [
   "uploaded",
   "detected",
   "manual_url",
+  "generated",
 ] as const;
 export type CatalogDocumentSourceType =
   (typeof CATALOG_DOCUMENT_SOURCE_TYPES)[number];

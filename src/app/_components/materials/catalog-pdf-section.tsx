@@ -33,6 +33,7 @@ const sourceTypeLabel: Record<LinkedDocument["sourceType"], string> = {
   uploaded: "Đã upload",
   detected: "Tự phát hiện",
   manual_url: "URL thủ công",
+  generated: "Tạo tự động",
 };
 
 function fileToBase64(file: File) {
