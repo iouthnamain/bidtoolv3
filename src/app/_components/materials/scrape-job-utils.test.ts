@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { progressPercent, progressWidth } from "./scrape-job-utils";
+import {
+  canImportJob,
+  progressPercent,
+  progressWidth,
+  type ScrapeJob,
+} from "./scrape-job-utils";
+
+const importableJob = {
+  id: "00000000-0000-4000-8000-000000000001",
+  status: "completed",
+  isExpired: false,
+  products: [{ sourceUrl: "https://shop.example/a" }],
+} as ScrapeJob;
+
+describe("canImportJob", () => {
+  it("allows import for terminal jobs with visible products", () => {
+    expect(canImportJob(importableJob, 1)).toBe(true);
+  });
+
+  it("blocks import while scrape is still active even if products exist", () => {
+    expect(
+      canImportJob(
+        {
+          ...importableJob,
+          status: "running",
+        },
+        1,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("scrape progress helpers", () => {
   it("reports bounded percentages for known limits", () => {

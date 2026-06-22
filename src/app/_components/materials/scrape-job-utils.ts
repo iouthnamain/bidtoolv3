@@ -58,14 +58,18 @@ export function isImportJobActive(
   return job?.status === "queued" || job?.status === "running";
 }
 
-export function canImportJob(job: ScrapeJob | null | undefined) {
+export function canImportJob(
+  job: ScrapeJob | null | undefined,
+  visibleProductCount = job?.products.length ?? 0,
+) {
   return (
     !!job &&
     !job.isExpired &&
+    !isJobActive(job) &&
     IMPORTABLE_SCRAPE_STATUSES.includes(
       job.status as (typeof IMPORTABLE_SCRAPE_STATUSES)[number],
     ) &&
-    job.products.length > 0
+    visibleProductCount > 0
   );
 }
 

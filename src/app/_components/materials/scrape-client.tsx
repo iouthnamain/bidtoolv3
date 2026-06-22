@@ -2541,29 +2541,32 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     jobListQuery.data?.find((job) => job.id === focusedJobId) ?? null;
   const progressSeedJob =
     (startedJob?.id === focusedJobId ? startedJob : null) ?? focusedListJob;
-  const shouldPollJobProgress =
+  const listSaysPollJobProgress =
     focusedJobId !== null &&
     (pendingScrapeJob !== null || isJobActive(progressSeedJob));
 
   const jobProgressQuery = api.material.getShopScrapeJobProgress.useQuery(
     { jobId: focusedJobId ?? EMPTY_UUID },
     {
-      enabled: shouldPollJobProgress,
-      refetchInterval: shouldPollJobProgress ? SCRAPE_POLL_MS : false,
+      enabled: listSaysPollJobProgress,
+      refetchInterval: listSaysPollJobProgress ? SCRAPE_POLL_MS : false,
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
+  const shouldPollJobProgress =
+    focusedJobId !== null &&
+    (pendingScrapeJob !== null ||
+      (isJobActive(progressSeedJob) &&
+        (jobProgressQuery.data?.id !== focusedJobId ||
+          isJobActive(jobProgressQuery.data))));
 
   const jobQuery = api.material.getShopScrapeJob.useQuery(
     { jobId: focusedJobId ?? EMPTY_UUID },
     {
-      enabled:
-        focusedJobId !== null &&
-        !shouldPollJobProgress &&
-        !isJobActive(jobProgressQuery.data),
+      enabled: focusedJobId !== null && !shouldPollJobProgress,
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
@@ -2587,27 +2590,29 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const importProgressSeedJob =
     (startedImportJob?.id === importJobId ? startedImportJob : null) ??
     (importJobsQuery.data?.find((job) => job.id === importJobId) ?? null);
-  const shouldPollImportProgress =
+  const listSaysPollImportProgress =
     importJobId !== null && isImportJobActive(importProgressSeedJob);
 
   const importJobProgressQuery = api.material.getShopImportJobProgress.useQuery(
     { jobId: importJobId ?? EMPTY_UUID },
     {
-      enabled: shouldPollImportProgress,
-      refetchInterval: shouldPollImportProgress ? IMPORT_POLL_MS : false,
+      enabled: listSaysPollImportProgress,
+      refetchInterval: listSaysPollImportProgress ? IMPORT_POLL_MS : false,
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
+  const shouldPollImportProgress =
+    importJobId !== null &&
+    isImportJobActive(importProgressSeedJob) &&
+    (importJobProgressQuery.data?.id !== importJobId ||
+      isImportJobActive(importJobProgressQuery.data));
   const importJobQuery = api.material.getShopImportJob.useQuery(
     { jobId: importJobId ?? EMPTY_UUID },
     {
-      enabled:
-        importJobId !== null &&
-        !shouldPollImportProgress &&
-        !isImportJobActive(importJobProgressQuery.data),
+      enabled: importJobId !== null && !shouldPollImportProgress,
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
@@ -2618,6 +2623,11 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     const fullJob =
       jobQuery.data ?? (startedJob?.id === focusedJobId ? startedJob : null);
     const progressJob = jobProgressQuery.data;
+
+    if (fullJob && !isJobActive(fullJob)) {
+      return fullJob;
+    }
+
     if (shouldPollJobProgress && progressJob) {
       return {
         ...progressJob,
@@ -2625,6 +2635,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         productsEditable: fullJob?.productsEditable ?? false,
       } as ScrapeJob;
     }
+
     return fullJob;
   }, [
     focusedJobId,
@@ -2638,12 +2649,18 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       importJobQuery.data ??
       (startedImportJob?.id === importJobId ? startedImportJob : null);
     const progressJob = importJobProgressQuery.data;
+
+    if (fullJob && !isImportJobActive(fullJob)) {
+      return fullJob;
+    }
+
     if (shouldPollImportProgress && progressJob) {
       return {
         ...progressJob,
         items: fullJob?.items ?? [],
       } as ImportJob;
     }
+
     return fullJob;
   }, [
     importJobId,
@@ -2697,8 +2714,11 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     filteredProductKeys.size > 0 &&
     Array.from(filteredProductKeys).every((key) => selectedSourceUrls.has(key));
   const canImportSelected =
-    canImportJob(activeJob) && selectedCount > 0 && !isImportActive;
-  const canImportAll = canImportJob(activeJob) && !isImportActive;
+    canImportJob(activeJob, scrapeProducts.length) &&
+    selectedCount > 0 &&
+    !isImportActive;
+  const canImportAll =
+    canImportJob(activeJob, scrapeProducts.length) && !isImportActive;
   const canEditScrapeProducts =
     !!activeJob && activeJob.productsEditable && !isImportActive;
   const canDeleteSelected = canEditScrapeProducts && selectedCount > 0;
@@ -2733,20 +2753,18 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       : null);
 
   useEffect(() => {
-    const progress = jobProgressQuery.data;
-    if (!focusedJobId || !progress || isJobActive(progress)) {
+    if (!focusedJobId || shouldPollJobProgress) {
       return;
     }
     void jobQuery.refetch();
-  }, [focusedJobId, jobProgressQuery.data, jobQuery]);
+  }, [focusedJobId, shouldPollJobProgress, jobQuery]);
 
   useEffect(() => {
-    const progress = importJobProgressQuery.data;
-    if (!importJobId || !progress || isImportJobActive(progress)) {
+    if (!importJobId || shouldPollImportProgress) {
       return;
     }
     void importJobQuery.refetch();
-  }, [importJobId, importJobProgressQuery.data, importJobQuery]);
+  }, [importJobId, shouldPollImportProgress, importJobQuery]);
 
   useEffect(() => {
     setProductPageIndex(0);
@@ -2892,7 +2910,6 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       setSelectedSourceUrls(new Set());
       utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
       void utils.material.listShopScrapeJobs.invalidate();
-      router.push(`/materials/scrape/jobs/${job.id}`);
       toast.success("Đã bắt đầu job scrape shop.");
     },
     onError: (error) => {
