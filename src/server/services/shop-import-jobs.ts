@@ -59,6 +59,7 @@ export type ShopImportJobSnapshot = ShopImportJobProgress & {
 };
 
 export type ShopImportJobListItem = Omit<ShopImportJobSnapshot, "items">;
+export type ShopImportJobProgressSnapshot = ShopImportJobListItem;
 
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 
@@ -194,6 +195,24 @@ async function _getShopImportJob(jobId: string, scope?: TenantScopeValue) {
   return job ? toImportJobSnapshot(job) : null;
 }
 
+async function _getShopImportJobProgress(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const [job] = await db
+    .select()
+    .from(shopImportJobs)
+    .where(
+      and(
+        eq(shopImportJobs.id, jobId),
+        tenantConditionForValue(scope, shopImportJobs.tenantId),
+      ),
+    )
+    .limit(1);
+
+  return job ? toImportJobListItem(job) : null;
+}
+
 async function _cancelShopImportJob(
   jobId: string,
   scope?: TenantScopeValue,
@@ -319,4 +338,9 @@ function requireRow(row: ShopImportJobRow | undefined) {
 export const startShopImportJob = traceFn(log, "startShopImportJob", _startShopImportJob);
 export const listShopImportJobs = traceFn(log, "listShopImportJobs", _listShopImportJobs);
 export const getShopImportJob = traceFn(log, "getShopImportJob", _getShopImportJob);
+export const getShopImportJobProgress = traceFn(
+  log,
+  "getShopImportJobProgress",
+  _getShopImportJobProgress,
+);
 export const cancelShopImportJob = traceFn(log, "cancelShopImportJob", _cancelShopImportJob);

@@ -589,7 +589,7 @@ async function scrapePageSnapshot({
     siteProfile,
     labeledValueDefinitions,
   );
-  return page.evaluate(collectShopPageSnapshot, {
+  return page.evaluate(_collectShopPageSnapshot, {
     promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
     specLabelPrefixes,
     extraCardSelectors: siteProfile.extraCardSelectors ?? [],
@@ -826,7 +826,7 @@ async function enrichProductsFromDetailPages({
       await page.waitForTimeout(150).catch(() => undefined);
       await assertSafeScrapeUrl(page.url(), expectedHostname);
 
-      const snapshot = await page.evaluate(collectShopPageSnapshot, {
+      const snapshot = await page.evaluate(_collectShopPageSnapshot, {
         promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
         specLabelPrefixes,
         extraCardSelectors: siteProfile.extraCardSelectors ?? [],
@@ -2968,5 +2968,6 @@ export const closeShopScraperBrowser = traceFn(log, "closeShopScraperBrowser", _
 export const extractProductsFromPageSnapshot = traceFn(log, "extractProductsFromPageSnapshot", _extractProductsFromPageSnapshot);
 export const extractProductsWithDiagnosticsFromPageSnapshot = traceFn(log, "extractProductsWithDiagnosticsFromPageSnapshot", _extractProductsWithDiagnosticsFromPageSnapshot);
 export const mergeScrapedProductData = traceFn(log, "mergeScrapedProductData", _mergeScrapedProductData);
-export const collectShopPageSnapshot = traceFn(log, "collectShopPageSnapshot", _collectShopPageSnapshot);
+// Must stay unwrapped: Playwright serializes this function into the browser.
+export const collectShopPageSnapshot = _collectShopPageSnapshot;
 export const enrichProductWithPageText = traceFn(log, "enrichProductWithPageText", _enrichProductWithPageText);

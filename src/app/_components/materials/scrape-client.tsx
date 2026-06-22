@@ -51,6 +51,8 @@ import {
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
 import { MatchCompareDrawer } from "~/app/_components/materials/match-compare-drawer";
+import { ScrapeProgressBar } from "~/app/_components/materials/scrape-progress-bar";
+import { ScrapeProductReviewCard } from "~/app/_components/materials/scrape-product-review-card";
 import {
   ACTIVE_CLOCK_MS,
   canImportJob,
@@ -71,7 +73,6 @@ import {
   MAX_PRODUCT_LIMIT,
   productKey,
   progressPercent,
-  progressWidth,
   readStoredJobId,
   SCRAPE_JOBS_LIST_CAP,
   SCRAPE_POLL_MS,
@@ -333,6 +334,8 @@ function ScrapeProductDetailDialog({
     <dialog
       ref={dialogRef}
       className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,920px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      aria-labelledby="scrape-product-detail-title"
+      aria-describedby="scrape-product-detail-description"
       onCancel={(event) => {
         event.preventDefault();
         if (!isSaving && !isDeleting) {
@@ -351,7 +354,10 @@ function ScrapeProductDetailDialog({
             <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
               Chi tiết sản phẩm scrape
             </p>
-            <h3 className="mt-1 text-lg font-bold text-slate-950">
+            <h3
+              id="scrape-product-detail-title"
+              className="mt-1 text-lg font-bold text-slate-950"
+            >
               {product.name || "Sản phẩm mới"}
             </h3>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -360,7 +366,10 @@ function ScrapeProductDetailDialog({
               <Badge tone="neutral">{hostFromUrl(job.url)}</Badge>
               <Badge tone={statusTone[job.status]}>{statusLabel[job.status]}</Badge>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
+            <p
+              id="scrape-product-detail-description"
+              className="mt-2 text-xs text-slate-500"
+            >
               {scrapeModeLabel[job.scrapeMode]} · {scrapeMethodLabel[job.method]}{" "}
               · {detailEnrichmentLabel[job.detailEnrichment]}
             </p>
@@ -815,10 +824,7 @@ function ScrapeJobConfigBadges({ job }: { job: ScrapeJobListItem }) {
 const SCRAPE_JOBS_COLUMN_VISIBILITY_KEY = "bidtool:scrape-jobs-columns:v1";
 const SCRAPE_JOBS_DENSITY_KEY = "bidtool:scrape-jobs-density:v1";
 const SCRAPE_JOBS_VIEW_MODE_KEY = "bidtool:scrape-jobs-view-mode:v1";
-const SCRAPE_JOBS_VIEW_ALL_PAGE_SIZE = 10_000;
-const SCRAPE_JOBS_PAGE_SIZE_OPTIONS = [
-  25, 50, 80, 100, SCRAPE_JOBS_VIEW_ALL_PAGE_SIZE,
-] as const;
+const SCRAPE_JOBS_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
 const DEFAULT_SCRAPE_JOBS_PAGE_SIZE = 25;
 const scrapeJobControlClass =
   "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
@@ -1777,9 +1783,7 @@ function ScrapeJobsList({
           >
             {SCRAPE_JOBS_PAGE_SIZE_OPTIONS.map((pageSize) => (
               <option key={pageSize} value={pageSize}>
-                {pageSize === SCRAPE_JOBS_VIEW_ALL_PAGE_SIZE
-                  ? "Tất cả"
-                  : pageSize.toLocaleString("vi-VN")}
+                {pageSize.toLocaleString("vi-VN")}
               </option>
             ))}
           </select>
@@ -2492,6 +2496,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [qualityFilter, setQualityFilter] =
     useState<ScrapeProductQualityFilter>("all");
   const [hideMissingNameProducts, setHideMissingNameProducts] = useState(true);
+  const [missingJobMessage, setMissingJobMessage] = useState<string | null>(
+    null,
+  );
   const [productPageIndex, setProductPageIndex] = useState(0);
   const [productPageSize, setProductPageSize] = useState(
     DEFAULT_PRODUCT_PAGE_SIZE,
@@ -2501,11 +2508,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const toast = useToast();
 
   useEffect(() => {
-    if (routeJobId == null) {
+    setMissingJobMessage(null);
+    if (routeJobId != null) {
+      setFocusedJobId(routeJobId);
+    } else {
       const storedJobId = readStoredJobId(SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY);
-      if (storedJobId) {
-        setFocusedJobId(storedJobId);
-      }
+      setFocusedJobId(storedJobId);
     }
     writeStoredJobId("bidtool:shop-scrape-job:v1", null);
     writeStoredJobId("bidtool:shop-import-job:v1", null);
@@ -2576,14 +2584,30 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       gcTime: SHOP_JOB_CACHE_MS,
     },
   );
+  const importProgressSeedJob =
+    (startedImportJob?.id === importJobId ? startedImportJob : null) ??
+    (importJobsQuery.data?.find((job) => job.id === importJobId) ?? null);
+  const shouldPollImportProgress =
+    importJobId !== null && isImportJobActive(importProgressSeedJob);
+
+  const importJobProgressQuery = api.material.getShopImportJobProgress.useQuery(
+    { jobId: importJobId ?? EMPTY_UUID },
+    {
+      enabled: shouldPollImportProgress,
+      refetchInterval: shouldPollImportProgress ? IMPORT_POLL_MS : false,
+      refetchOnWindowFocus: false,
+      retry: false,
+      staleTime: 0,
+      gcTime: SHOP_JOB_CACHE_MS,
+    },
+  );
   const importJobQuery = api.material.getShopImportJob.useQuery(
     { jobId: importJobId ?? EMPTY_UUID },
     {
-      enabled: importJobId !== null,
-      refetchInterval: (query) => {
-        const job = query.state.data;
-        return isImportJobActive(job) ? IMPORT_POLL_MS : false;
-      },
+      enabled:
+        importJobId !== null &&
+        !shouldPollImportProgress &&
+        !isImportJobActive(importJobProgressQuery.data),
       refetchOnWindowFocus: false,
       retry: false,
       staleTime: 0,
@@ -2609,9 +2633,25 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     shouldPollJobProgress,
     startedJob,
   ]);
-  const activeImportJob =
-    importJobQuery.data ??
-    (startedImportJob?.id === importJobId ? startedImportJob : null);
+  const activeImportJob = useMemo(() => {
+    const fullJob =
+      importJobQuery.data ??
+      (startedImportJob?.id === importJobId ? startedImportJob : null);
+    const progressJob = importJobProgressQuery.data;
+    if (shouldPollImportProgress && progressJob) {
+      return {
+        ...progressJob,
+        items: fullJob?.items ?? [],
+      } as ImportJob;
+    }
+    return fullJob;
+  }, [
+    importJobId,
+    importJobProgressQuery.data,
+    importJobQuery.data,
+    shouldPollImportProgress,
+    startedImportJob,
+  ]);
   const jobRows = jobListQuery.data ?? [];
   const hasActiveListJob = jobRows.some(isJobActive);
   const isActive = isJobActive(activeJob);
@@ -2649,9 +2689,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     () => new Set(scrapeProducts.map(productKey)),
     [scrapeProducts],
   );
+  const filteredProductKeys = useMemo(
+    () => new Set(filteredScrapeProducts.map(productKey)),
+    [filteredScrapeProducts],
+  );
   const allSelected =
-    allProductKeys.size > 0 &&
-    Array.from(allProductKeys).every((key) => selectedSourceUrls.has(key));
+    filteredProductKeys.size > 0 &&
+    Array.from(filteredProductKeys).every((key) => selectedSourceUrls.has(key));
   const canImportSelected =
     canImportJob(activeJob) && selectedCount > 0 && !isImportActive;
   const canImportAll = canImportJob(activeJob) && !isImportActive;
@@ -2671,11 +2715,22 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     (jobQuery.isError && !isNotFoundTRPCError(jobQuery.error)
       ? (jobQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
       : null);
+  const isJobDetailLoading =
+    isJobPage &&
+    missingJobMessage == null &&
+    focusedJobId !== null &&
+    !activeJob &&
+    (jobQuery.isLoading || jobProgressQuery.isLoading);
   const importJobPollingError =
-    importJobQuery.isError && !isNotFoundTRPCError(importJobQuery.error)
+    (importJobProgressQuery.isError &&
+    !isNotFoundTRPCError(importJobProgressQuery.error)
+      ? (importJobProgressQuery.error.message ??
+        "Không cập nhật được tiến độ nhập catalog.")
+      : null) ??
+    (importJobQuery.isError && !isNotFoundTRPCError(importJobQuery.error)
       ? (importJobQuery.error.message ??
         "Không cập nhật được tiến độ nhập catalog.")
-      : null;
+      : null);
 
   useEffect(() => {
     const progress = jobProgressQuery.data;
@@ -2684,6 +2739,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     }
     void jobQuery.refetch();
   }, [focusedJobId, jobProgressQuery.data, jobQuery]);
+
+  useEffect(() => {
+    const progress = importJobProgressQuery.data;
+    if (!importJobId || !progress || isImportJobActive(progress)) {
+      return;
+    }
+    void importJobQuery.refetch();
+  }, [importJobId, importJobProgressQuery.data, importJobQuery]);
 
   useEffect(() => {
     setProductPageIndex(0);
@@ -2756,17 +2819,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       return;
     }
 
-    setFocusedJobId(null);
-    setStartedJob(null);
-    setPendingScrapeJob(null);
-    setFinalizedScrapeJobId(null);
-    setSelectedSourceUrls(new Set());
-    toast.warning("Job scrape đã hết hạn trên server, đã xóa trạng thái cũ.");
-  }, [focusedJobId, jobQuery.error, jobQuery.isError, toast]);
-
-  useEffect(() => {
-    const job = jobQuery.data;
-    if (!focusedJobId || !job?.isExpired) {
+    const message = "Không tìm thấy job scrape shop hoặc job đã hết hạn.";
+    if (isJobPage) {
+      setMissingJobMessage(message);
+      setFocusedJobId(null);
+      setStartedJob(null);
+      setPendingScrapeJob(null);
+      setFinalizedScrapeJobId(null);
+      setSelectedSourceUrls(new Set());
       return;
     }
 
@@ -2775,8 +2835,33 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     setPendingScrapeJob(null);
     setFinalizedScrapeJobId(null);
     setSelectedSourceUrls(new Set());
-    toast.warning(job.error ?? "Job scrape đã hết hạn trên server.");
-  }, [focusedJobId, jobQuery.data, toast]);
+    toast.warning("Job scrape đã hết hạn trên server, đã xóa trạng thái cũ.");
+  }, [focusedJobId, isJobPage, jobQuery.error, jobQuery.isError, toast]);
+
+  useEffect(() => {
+    const job = jobQuery.data;
+    if (!focusedJobId || !job?.isExpired) {
+      return;
+    }
+
+    const message = job.error ?? "Job scrape đã hết hạn trên server.";
+    if (isJobPage) {
+      setMissingJobMessage(message);
+      setFocusedJobId(null);
+      setStartedJob(null);
+      setPendingScrapeJob(null);
+      setFinalizedScrapeJobId(null);
+      setSelectedSourceUrls(new Set());
+      return;
+    }
+
+    setFocusedJobId(null);
+    setStartedJob(null);
+    setPendingScrapeJob(null);
+    setFinalizedScrapeJobId(null);
+    setSelectedSourceUrls(new Set());
+    toast.warning(message);
+  }, [focusedJobId, isJobPage, jobQuery.data, toast]);
 
   useEffect(() => {
     if (
@@ -2807,6 +2892,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       setSelectedSourceUrls(new Set());
       utils.material.getShopScrapeJob.setData({ jobId: job.id }, job);
       void utils.material.listShopScrapeJobs.invalidate();
+      router.push(`/materials/scrape/jobs/${job.id}`);
       toast.success("Đã bắt đầu job scrape shop.");
     },
     onError: (error) => {
@@ -3183,9 +3269,19 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   };
 
   const selectAllProducts = () => {
-    setSelectedSourceUrls(
-      allSelected ? new Set() : new Set(scrapeProducts.map(productKey)),
-    );
+    setSelectedSourceUrls((previous) => {
+      const next = new Set(previous);
+      if (allSelected) {
+        for (const key of filteredProductKeys) {
+          next.delete(key);
+        }
+      } else {
+        for (const key of filteredProductKeys) {
+          next.add(key);
+        }
+      }
+      return next;
+    });
   };
 
   const importAll = () => {
@@ -3500,7 +3596,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 leftIcon={<RotateCcw className="h-4 w-4" />}
                 onClick={resetJob}
               >
-                Xóa trạng thái
+                Bỏ chọn job
               </Button>
             </div>
             <div className="flex flex-wrap gap-1.5 rounded-lg bg-slate-50 px-3 py-2">
@@ -3515,7 +3611,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               ) : null}
               {isScrapeAll ? (
                 <Badge tone="info">
-                  Scrape hết — không giới hạn trang/sản phẩm
+                  Scrape hết — áp giới hạn an toàn 100 trang / 2.000 sản phẩm
                 </Badge>
               ) : null}
             </div>
@@ -3601,6 +3697,48 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         </section>
       ) : null}
 
+      {missingJobMessage ? (
+        <section className="panel border-amber-200 bg-amber-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="section-title text-amber-800">Không mở được job</p>
+              <h2 className="mt-1 text-base font-bold text-amber-950">
+                Job scrape không còn khả dụng
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-amber-900">
+                {missingJobMessage} Quay lại danh sách để chọn job khác hoặc tạo
+                job mới.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push("/materials/scrape")}
+            >
+              Quay lại danh sách
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {isJobDetailLoading ? (
+        <section className="panel p-4 sm:p-5" aria-live="polite">
+          <div className="flex items-start gap-3">
+            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-sky-600" aria-hidden />
+            <div>
+              <p className="section-title">Đang mở job scrape</p>
+              <h2 className="mt-1 text-base font-bold text-slate-950">
+                Tải trạng thái và preview sản phẩm…
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Trang sẽ tự cập nhật khi lấy được dữ liệu từ server.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {pendingScrapeJob && !activeJob ? (
         <section className="panel p-4 sm:p-5" aria-live="polite">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3631,18 +3769,24 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 <span>Trang</span>
                 <span>{formatLimit(pendingScrapeJob.maxPages)}</span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-sky-600" />
-              </div>
+              <ScrapeProgressBar
+                label="Tiến độ tạo job scrape theo trang"
+                percent={null}
+                active
+                tone="sky"
+              />
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-700">
                 <span>Sản phẩm</span>
                 <span>{formatLimit(pendingScrapeJob.maxProducts)}</span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-600" />
-              </div>
+              <ScrapeProgressBar
+                label="Tiến độ tạo job scrape theo sản phẩm"
+                percent={null}
+                active
+                tone="emerald"
+              />
             </div>
           </div>
 
@@ -3720,16 +3864,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   {formatLimit(activeJob.maxPages)}
                 </span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className={
-                    pagePercent == null && isActive
-                      ? "h-full animate-pulse rounded-full bg-sky-600"
-                      : "h-full rounded-full bg-sky-600"
-                  }
-                  style={{ width: progressWidth(pagePercent, isActive) }}
-                />
-              </div>
+              <ScrapeProgressBar
+                label="Tiến độ đọc trang của job scrape"
+                percent={pagePercent}
+                active={isActive}
+                tone="sky"
+              />
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
@@ -3739,16 +3879,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   {formatLimit(activeJob.maxProducts)}
                 </span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className={
-                    productPercent == null && isActive
-                      ? "h-full animate-pulse rounded-full bg-emerald-600"
-                      : "h-full rounded-full bg-emerald-600"
-                  }
-                  style={{ width: progressWidth(productPercent, isActive) }}
-                />
-              </div>
+              <ScrapeProgressBar
+                label="Tiến độ tìm sản phẩm của job scrape"
+                percent={productPercent}
+                active={isActive}
+                tone="emerald"
+              />
             </div>
           </div>
 
@@ -3813,10 +3949,39 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           ) : null}
 
           {activeJob.failedPages.length > 0 ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-              {activeJob.failedPages.length.toLocaleString("vi-VN")} trang không
-              đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
-            </div>
+            <details className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+              <summary className="cursor-pointer font-semibold">
+                {activeJob.failedPages.length.toLocaleString("vi-VN")} trang không
+                đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {activeJob.failedPages.slice(0, 10).map((page, index) => (
+                  <li
+                    key={`${page.url}-${index}`}
+                    className="rounded-md border border-amber-200 bg-white/80 px-2 py-1.5"
+                  >
+                    <a
+                      href={page.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all font-semibold text-amber-950 hover:underline"
+                    >
+                      {page.url}
+                    </a>
+                    <p className="mt-1 break-words text-amber-800">
+                      {page.message}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {activeJob.failedPages.length > 10 ? (
+                <p className="mt-2 text-amber-800">
+                  Còn{" "}
+                  {(activeJob.failedPages.length - 10).toLocaleString("vi-VN")}{" "}
+                  trang lỗi khác.
+                </p>
+              ) : null}
+            </details>
           ) : null}
 
           {activeJob.maxPages != null &&
@@ -3982,7 +4147,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={scrapeProducts.length === 0 || isImportActive}
+                disabled={filteredScrapeProducts.length === 0 || isImportActive}
                 leftIcon={
                   allSelected ? (
                     <CheckSquare className="h-3.5 w-3.5" />
@@ -3992,7 +4157,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 }
                 onClick={selectAllProducts}
               >
-                {allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                {allSelected ? "Bỏ chọn sau lọc" : "Chọn sau lọc"}
               </Button>
               {canEditScrapeProducts ? (
                 <Button
@@ -4038,50 +4203,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
-                    Quá trình scrape
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm từ{" "}
-                    {activeJob.pagesVisited.length.toLocaleString("vi-VN")}{" "}
-                    trang
-                  </p>
-                </div>
-                <Badge tone={statusTone[activeJob.status]}>
-                  {isActive ? (
-                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                  ) : null}
-                  {statusLabel[activeJob.status]}
-                </Badge>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
-                <span>Sản phẩm scrape</span>
-                <span>
-                  {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
-                  {formatLimit(activeJob.maxProducts)}
-                </span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className={
-                    productPercent == null && isActive
-                      ? "h-full animate-pulse rounded-full bg-emerald-600"
-                      : "h-full rounded-full bg-emerald-600"
-                  }
-                  style={{ width: progressWidth(productPercent, isActive) }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-                {formatLimit(activeJob.maxPages)} trang trong{" "}
-                {formatDuration(activeJob.durationMs)}.
-              </p>
-            </div>
-
+          <div className="mt-4">
             <div
               className={
                 isImportActive
@@ -4136,14 +4258,12 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 <span>Tiến độ ghi DB</span>
                 <span>{activeImportJob ? `${importPercent ?? 0}%` : "0%"}</span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-sky-600"
-                  style={{
-                    width: progressWidth(importPercent, isImportActive),
-                  }}
-                />
-              </div>
+              <ScrapeProgressBar
+                label="Tiến độ nhập catalog"
+                percent={importPercent}
+                active={isImportActive}
+                tone="sky"
+              />
 
               {activeImportJob ? (
                 <>
@@ -4203,6 +4323,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         current === filter ? "all" : filter,
                       )
                     }
+                    aria-pressed={qualityFilter === filter}
                   >
                     {SCRAPE_QUALITY_FLAG_LABELS[filter]}
                   </button>
@@ -4229,7 +4350,44 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             ) : null}
 
           {scrapeProducts.length > 0 ? (
-            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+            <>
+            <div className="mt-4 grid gap-3 lg:hidden">
+              {pagedScrapeProducts.map((item, index) => {
+                const key = productKey(item);
+                const selected = selectedSourceUrls.has(key);
+                const missingLabels = productMissingLabels(item);
+                const rowQualityFlags = qualityFlags(item);
+                const infoSummary = productInfoSummary(item);
+                const globalIndex = productPageIndex * productPageSize + index;
+
+                return (
+                  <ScrapeProductReviewCard
+                    key={`${key}-${index}-card`}
+                    name={item.name}
+                    displayId={productDisplayId(activeJob.id, globalIndex)}
+                    selected={selected}
+                    disabled={isImportActive}
+                    infoSummary={infoSummary}
+                    priceText={formatMoney(item.price, item.currency)}
+                    unit={item.unit ?? "-"}
+                    manufacturer={item.manufacturer ?? "-"}
+                    originCountry={item.originCountry ?? "-"}
+                    missingLabels={missingLabels}
+                    suspiciousName={rowQualityFlags.includes("suspiciousName")}
+                    missingPrice={rowQualityFlags.includes("missingPrice")}
+                    catalogPdfCount={item.catalogPdfUrls.length}
+                    sourceUrl={item.sourceUrl}
+                    canEdit={canEditScrapeProducts}
+                    isDeleting={deleteShopScrapeJobProduct.isPending}
+                    onToggle={() => toggleProduct(item)}
+                    onOpen={() => openProductDetail(item)}
+                    onDelete={() => setDeleteProductTarget(item)}
+                  />
+                );
+              })}
+            </div>
+
+            <div className="mt-4 hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
               <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
                 <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
                   <tr>
@@ -4427,6 +4585,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 </tbody>
               </table>
             </div>
+            </>
           ) : null}
 
             {filteredScrapeProducts.length > 0 ? (
@@ -4450,6 +4609,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                     <select
                       className="rounded-md border border-slate-300 bg-white px-2 py-1"
                       value={productPageSize}
+                      aria-label="Số sản phẩm mỗi trang"
                       onChange={(event) => {
                         setProductPageSize(Number(event.target.value));
                         setProductPageIndex(0);

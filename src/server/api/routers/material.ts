@@ -65,6 +65,7 @@ import {
 } from "~/server/services/shop-material-scraper";
 import {
   cancelShopImportJob,
+  getShopImportJobProgress,
   getShopImportJob,
   listShopImportJobs,
   startShopImportJob,
@@ -105,6 +106,9 @@ const sourceStatusInput = z.enum(["all", "with", "without"]).default("all");
 const catalogStatusInput = z.enum(["all", "with", "without"]).default("all");
 const MATERIAL_FILTER_OPTION_LIMIT = 200;
 const MATERIAL_EXPORT_LIMIT = 10_000;
+const SHOP_SCRAPE_EXPORT_LIMIT = 10_000;
+const SHOP_SCRAPE_ALL_MAX_PAGES = 100;
+const SHOP_SCRAPE_ALL_MAX_PRODUCTS = 2_000;
 
 const materialInput = z.object({
   code: z.string().trim().optional(),
@@ -142,8 +146,14 @@ const shopScrapeInput = z
   })
   .transform((input) => ({
     ...input,
-    maxPages: input.scrapeMode === "all" ? null : (input.maxPages ?? 25),
-    maxProducts: input.scrapeMode === "all" ? null : (input.maxProducts ?? 500),
+    maxPages:
+      input.scrapeMode === "all"
+        ? SHOP_SCRAPE_ALL_MAX_PAGES
+        : (input.maxPages ?? 25),
+    maxProducts:
+      input.scrapeMode === "all"
+        ? SHOP_SCRAPE_ALL_MAX_PRODUCTS
+        : (input.maxProducts ?? 500),
   }));
 
 const shopScrapeJobInput = z.object({
@@ -1116,13 +1126,13 @@ export const materialRouter = createTRPCRouter({
       ),
     ),
 
-  listShopScrapeJobs: publicProcedure
+  listShopScrapeJobs: requirePermission("scrape:run")
     .input(listShopJobsInput)
     .query(({ ctx, input }) =>
       listShopScrapeJobs(input, tenantScopeValue(ctx)),
     ),
 
-  getShopScrapeJob: publicProcedure
+  getShopScrapeJob: requirePermission("scrape:run")
     .input(shopScrapeJobInput)
     .query(async ({ ctx, input }) => {
       const job = await getShopScrapeJob(input.jobId, tenantScopeValue(ctx));
@@ -1135,7 +1145,7 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  getShopScrapeJobProgress: publicProcedure
+  getShopScrapeJobProgress: requirePermission("scrape:run")
     .input(z.object({ jobId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const job = await getShopScrapeJobProgress(
@@ -1227,13 +1237,13 @@ export const materialRouter = createTRPCRouter({
       ),
     ),
 
-  listShopImportJobs: publicProcedure
+  listShopImportJobs: requirePermission("scrape:run")
     .input(listShopImportJobsInput)
     .query(({ ctx, input }) =>
       listShopImportJobs(input, tenantScopeValue(ctx)),
     ),
 
-  getShopImportJob: publicProcedure
+  getShopImportJob: requirePermission("scrape:run")
     .input(shopImportJobInput)
     .query(async ({ ctx, input }) => {
       const job = await getShopImportJob(input.jobId, tenantScopeValue(ctx));
@@ -1246,7 +1256,23 @@ export const materialRouter = createTRPCRouter({
       return job;
     }),
 
-  exportShopScrapeJobCsv: publicProcedure
+  getShopImportJobProgress: requirePermission("scrape:run")
+    .input(shopImportJobInput)
+    .query(async ({ ctx, input }) => {
+      const job = await getShopImportJobProgress(
+        input.jobId,
+        tenantScopeValue(ctx),
+      );
+      if (!job) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Không tìm thấy job nhập catalog.",
+        });
+      }
+      return job;
+    }),
+
+  exportShopScrapeJobCsv: requirePermission("scrape:run")
     .input(z.object({ jobId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const job = await getShopScrapeJob(input.jobId, tenantScopeValue(ctx));
@@ -1256,10 +1282,12 @@ export const materialRouter = createTRPCRouter({
           message: "Không tìm thấy job scrape shop.",
         });
       }
-      const csv = Papa.unparse(job.products.map(scrapeProductExportCsvRow));
+      const rows = job.products.slice(0, SHOP_SCRAPE_EXPORT_LIMIT);
+      const csv = Papa.unparse(rows.map(scrapeProductExportCsvRow));
       return {
         csv,
-        count: job.products.length,
+        count: rows.length,
+        truncated: job.products.length > rows.length,
       };
     }),
 

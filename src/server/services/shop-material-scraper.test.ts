@@ -6,6 +6,7 @@ import {
   normalizeMaterialMetadata,
 } from "~/lib/material-price-sources";
 import {
+  collectShopPageSnapshot,
   enrichProductWithPageText,
   extractProductsFromPageSnapshot,
   extractProductsWithDiagnosticsFromPageSnapshot,
@@ -72,6 +73,15 @@ const CODIENHAIAU_EXPECTED_PRODUCTS = [
     cardName: "Đồng hồ đo tần số Selec MA316 96x96mm",
   },
 ] as const;
+
+describe("collectShopPageSnapshot", () => {
+  it("stays serializable for Playwright browser evaluation", () => {
+    const source = collectShopPageSnapshot.toString();
+
+    expect(source).not.toContain("function_started");
+    expect(source).not.toContain("logger");
+  });
+});
 
 describe("extractProductsFromPageSnapshot", () => {
   it("extracts all 8 codienhaiau category products and ignores sidebar duplicates", () => {

@@ -418,6 +418,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
+      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
       return;
     }
 
@@ -457,6 +458,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
+      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
       return;
     }
 
@@ -509,6 +511,7 @@ async function runImportJob(job: ShopImportJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
+      await persistLatestImportProgressItems(job.id, progressWriter.latest());
       return;
     }
 
@@ -550,6 +553,7 @@ async function runImportJob(job: ShopImportJobRow) {
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
+      await persistLatestImportProgressItems(job.id, progressWriter.latest());
       return;
     }
 
@@ -560,6 +564,7 @@ async function runImportJob(job: ShopImportJobRow) {
       .update(shopImportJobs)
       .set({
         status: "failed",
+        items: progressWriter.latest()?.items ?? job.items,
         currentProductName: null,
         currentSourceUrl: null,
         error: message,
@@ -661,6 +666,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
 
 function createScrapeProgressWriter(jobId: string) {
   let pendingProgress: ShopScrapeProgress | null = null;
+  let latestProgress: ShopScrapeProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -688,9 +694,7 @@ function createScrapeProgressWriter(jobId: string) {
             currentUrls: progress.currentUrls,
             pagesVisited: progress.pagesVisited,
             failedPages: progress.failedPages,
-            products: sanitizeScrapedProductList(progress.products ?? []),
-            productCount: sanitizeScrapedProductList(progress.products ?? [])
-              .length,
+            productCount: progress.productCount,
             queueLength: progress.queueLength,
             durationMs: progress.elapsedMs,
             stopReason: progress.stopReason,
@@ -712,6 +716,7 @@ function createScrapeProgressWriter(jobId: string) {
   return {
     queue(progress: ShopScrapeProgress) {
       pendingProgress = progress;
+      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -724,11 +729,35 @@ function createScrapeProgressWriter(jobId: string) {
       }
     },
     flush,
+    latest() {
+      return latestProgress;
+    },
   };
+}
+
+async function persistLatestScrapeProgressProducts(
+  jobId: string,
+  progress: ShopScrapeProgress | null,
+) {
+  if (!progress?.products?.length) {
+    return;
+  }
+
+  const products = sanitizeScrapedProductList(progress.products);
+  const now = new Date().toISOString();
+  await db
+    .update(shopScrapeJobs)
+    .set({
+      products,
+      productCount: products.length,
+      updatedAt: now,
+    })
+    .where(eq(shopScrapeJobs.id, jobId));
 }
 
 function createImportProgressWriter(jobId: string) {
   let pendingProgress: ShopImportJobProgress | null = null;
+  let latestProgress: ShopImportJobProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -759,7 +788,6 @@ function createImportProgressWriter(jobId: string) {
             updated: progress.updated,
             skipped: progress.skipped,
             failed: progress.failed,
-            items: progress.items,
             currentProductName: progress.currentProductName,
             currentSourceUrl: progress.currentSourceUrl,
             durationMs: elapsedSql(now, shopImportJobs.startedAt),
@@ -780,6 +808,7 @@ function createImportProgressWriter(jobId: string) {
   return {
     queue(progress: ShopImportJobProgress) {
       pendingProgress = progress;
+      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -792,7 +821,28 @@ function createImportProgressWriter(jobId: string) {
       }
     },
     flush,
+    latest() {
+      return latestProgress;
+    },
   };
+}
+
+async function persistLatestImportProgressItems(
+  jobId: string,
+  progress: ShopImportJobProgress | null,
+) {
+  if (!progress?.items?.length) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(shopImportJobs)
+    .set({
+      items: progress.items,
+      updatedAt: now,
+    })
+    .where(eq(shopImportJobs.id, jobId));
 }
 
 function createEnrichmentProgressWriter(jobId: string) {

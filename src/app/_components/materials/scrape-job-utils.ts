@@ -8,6 +8,8 @@ export type ScrapeMode = ScrapeJob["scrapeMode"];
 export type ScrapeMethod = ScrapeJob["method"];
 export type DetailEnrichmentMode = ScrapeJob["detailEnrichment"];
 export type ImportJob = RouterOutputs["material"]["getShopImportJob"];
+export type ImportJobProgress =
+  RouterOutputs["material"]["getShopImportJobProgress"];
 export type ImportShopItem = ImportJob["items"][number];
 
 export const SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY =

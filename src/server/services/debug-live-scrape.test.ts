@@ -23,6 +23,11 @@ const EXPECTED_PRODUCTS = [
   "Đồng hồ đo tần số Selec MA316 96x96mm",
 ];
 
+const USER_REPORTED_URLS = [
+  "https://codienhaiau.com/category/quat-cong-nghiep/",
+  "https://www.thegioiic.com/san-pham/mach-cam-bien",
+] as const;
+
 const LIVE_SCRAPE = process.env.LIVE_SCRAPE === "1";
 
 describe.skipIf(!LIVE_SCRAPE)("live codienhaiau scrape", () => {
@@ -83,4 +88,22 @@ describe.skipIf(!LIVE_SCRAPE)("live codienhaiau scrape", () => {
 
     await closeShopScraperBrowser();
   }, 120_000);
+
+  it.each(USER_REPORTED_URLS)(
+    "returns products from reported URL %s",
+    async (url) => {
+      const result = await scrapeShopMaterialsFromUrl({
+        url,
+        maxPages: 1,
+        maxProducts: 100,
+        method: "auto",
+      });
+
+      expect(result.failedPages).toEqual([]);
+      expect(result.products.length).toBeGreaterThan(0);
+
+      await closeShopScraperBrowser();
+    },
+    120_000,
+  );
 });
