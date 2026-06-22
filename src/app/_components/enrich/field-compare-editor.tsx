@@ -8,6 +8,7 @@ import {
   ProductCandidateCard,
   type EnrichCandidate,
 } from "~/app/_components/enrich/product-candidate-card";
+import { mergeWebGapFill } from "~/lib/materials/enrich-gap-fill";
 import {
   buildFillPlanWithEdits,
   candidateToFields,
@@ -127,9 +128,13 @@ export function FieldCompareEditor({
       ? (candidates.find((c) => c.materialId === selectedMaterialId) ?? null)
       : null;
 
-  const baseFields: Partial<Record<FillableField, string>> = selectedCandidate
+  const catalogFields = selectedCandidate
     ? candidateToFields(selectedCandidate)
-    : (proposedFields ?? {});
+    : null;
+  const baseFields: Partial<Record<FillableField, string>> =
+    catalogFields != null
+      ? mergeWebGapFill(sheetFields, catalogFields, proposedFields ?? {})
+      : (proposedFields ?? {});
 
   // Plan reflects edits overlaid on the base, honoring force-overwrite.
   const plan = buildFillPlanWithEdits(
