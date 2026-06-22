@@ -2446,12 +2446,15 @@ function ScrapeJobsList({
 
 function normalizeImportPreviewSummary(
   summary:
-    | Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]>
+    | (Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]> & {
+        skipReview?: number;
+      })
     | null
     | undefined,
 ): RouterOutputs["material"]["previewShopImportJob"]["summary"] {
   const create = Number(summary?.create ?? 0);
-  const update = Number(summary?.update ?? 0);
+  const update =
+    Number(summary?.update ?? 0) + Number(summary?.skipReview ?? 0);
   const skipNoName = Number(summary?.skipNoName ?? 0);
   const total = Number(summary?.total ?? create + update + skipNoName);
 
@@ -2462,7 +2465,9 @@ function ImportPreviewSummaryPanel({
   summary,
 }: {
   summary:
-    | Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]>
+    | (Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]> & {
+        skipReview?: number;
+      })
     | null
     | undefined;
 }) {
