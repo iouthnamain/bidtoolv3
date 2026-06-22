@@ -13,6 +13,8 @@ import {
 } from "~/lib/release-manifest";
 import { env } from "~/env";
 import { canApplyInAppOnPremUpdates } from "~/server/services/onprem-update";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-version-info");
 
 export type VersionStatus = {
   current: string;
@@ -184,7 +186,7 @@ function resolveUpdateCommand(
   return `BIDTOOL_IMAGE_TAG=${latestVersion} bun run onprem:update`;
 }
 
-export async function getVersionStatus(): Promise<VersionStatus> {
+async function _getVersionStatus(): Promise<VersionStatus> {
   const current = resolveCurrentVersion();
   const buildMetadata = resolveBuildMetadata();
   const surface = resolveSurface();
@@ -213,6 +215,9 @@ export async function getVersionStatus(): Promise<VersionStatus> {
   };
 }
 
-export function compareVersionStrings(left: string, right: string): number {
+function _compareVersionStrings(left: string, right: string): number {
   return compareSemver(left, right);
 }
+
+export const getVersionStatus = traceFn(log, "getVersionStatus", _getVersionStatus);
+export const compareVersionStrings = traceFn(log, "compareVersionStrings", _compareVersionStrings);

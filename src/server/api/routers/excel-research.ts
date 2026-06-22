@@ -139,6 +139,7 @@ export const excelResearchRouter = createTRPCRouter({
         sheetName: z.string().min(1),
         headerRowIndex: z.number().int().min(1),
         mapping: z.record(z.string(), z.string().nullable()),
+        rowNumbers: z.array(z.number().int().min(1)).optional(),
         name: z.string().optional(),
         config: excelResearchJobConfigSchema.partial().optional(),
       }),

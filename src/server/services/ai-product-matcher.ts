@@ -7,6 +7,8 @@ import { materialMatchDecisions } from "~/server/db/schema";
 import type { materials } from "~/server/db/schema";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import { stripShopPromoBadgePrefix } from "~/lib/materials/shop-promo-badges";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-ai-product-matcher");
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
@@ -54,12 +56,12 @@ const WEIGHTS = {
   dimensionMatch: 0.1,
 };
 
-export function hashScrapedProduct(product: ScrapedShopProduct): string {
+function _hashScrapedProduct(product: ScrapedShopProduct): string {
   const input = `${product.sourceUrl}|${product.name}|${product.unit ?? ""}`;
   return createHash("sha256").update(input).digest("hex").slice(0, 40);
 }
 
-export async function getCachedDecision(
+async function _getCachedDecision(
   db: AppDb,
   hash: string,
 ): Promise<MatchDecision | null> {
@@ -79,7 +81,7 @@ export async function getCachedDecision(
   };
 }
 
-export async function findFuzzyCandidates(
+async function _findFuzzyCandidates(
   db: AppDb,
   product: ScrapedShopProduct,
   minSimilarity = 0.1,
@@ -120,7 +122,7 @@ export async function findFuzzyCandidates(
   return candidates;
 }
 
-export function computeScoreBreakdown(
+function _computeScoreBreakdown(
   product: ScrapedShopProduct,
   candidate: MaterialRow,
 ): ScoreBreakdown {
@@ -157,7 +159,7 @@ export function computeScoreBreakdown(
   };
 }
 
-export function computeWeightedScore(breakdown: ScoreBreakdown): number {
+function _computeWeightedScore(breakdown: ScoreBreakdown): number {
   let score = 0;
   for (const [key, weight] of Object.entries(WEIGHTS)) {
     score += (breakdown[key as keyof ScoreBreakdown] ?? 0) * weight;
@@ -321,7 +323,7 @@ function canonicalBrand(normalized: string): string | null {
   return null;
 }
 
-export function computeManufacturerMatch(
+function _computeManufacturerMatch(
   a: string | null | undefined,
   b: string | null | undefined,
 ): number {
@@ -385,7 +387,7 @@ function normalizeOrigin(value: string | null | undefined): string | null {
   return normalized; // unknown country: compare the normalized string directly
 }
 
-export function computeOriginMatch(
+function _computeOriginMatch(
   a: string | null | undefined,
   b: string | null | undefined,
 ): number {
@@ -639,7 +641,7 @@ function tokenize(text: string): Set<string> {
   );
 }
 
-export async function saveMatchDecision(
+async function _saveMatchDecision(
   db: AppDb,
   product: ScrapedShopProduct,
   candidates: MatchCandidate[],
@@ -724,3 +726,12 @@ function buildReasoning(candidate: MatchCandidate): string {
 
   return parts.length > 0 ? parts.join(", ") : "điểm tổng hợp đạt ngưỡng";
 }
+
+export const hashScrapedProduct = traceFn(log, "hashScrapedProduct", _hashScrapedProduct);
+export const getCachedDecision = traceFn(log, "getCachedDecision", _getCachedDecision);
+export const findFuzzyCandidates = traceFn(log, "findFuzzyCandidates", _findFuzzyCandidates);
+export const computeScoreBreakdown = traceFn(log, "computeScoreBreakdown", _computeScoreBreakdown);
+export const computeWeightedScore = traceFn(log, "computeWeightedScore", _computeWeightedScore);
+export const computeManufacturerMatch = traceFn(log, "computeManufacturerMatch", _computeManufacturerMatch);
+export const computeOriginMatch = traceFn(log, "computeOriginMatch", _computeOriginMatch);
+export const saveMatchDecision = traceFn(log, "saveMatchDecision", _saveMatchDecision);

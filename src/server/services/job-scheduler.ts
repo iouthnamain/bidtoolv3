@@ -30,6 +30,9 @@ import {
   processEnrichmentJob,
   type MaterialEnrichmentJobProgress,
 } from "~/server/services/material-enrichment-runner";
+import { createLogger, traceFn } from "~/server/lib/logger";
+
+const log = createLogger("job-scheduler");
 
 type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
@@ -49,7 +52,7 @@ let pollTimer: TimerHandle | null = null;
 let cleanupTimer: TimerHandle | null = null;
 let pollInFlight = false;
 
-export function startJobScheduler() {
+function _startJobScheduler() {
   if (schedulerStarted) {
     return;
   }
@@ -58,6 +61,10 @@ export function startJobScheduler() {
   }
 
   schedulerStarted = true;
+  log.info("scheduler_started", {
+    pollIntervalMs: SCHEDULER_POLL_MS,
+    cleanupIntervalMs: CLEANUP_POLL_MS,
+  });
   void initializeScheduler();
   pollTimer = setInterval(() => {
     void pollScheduler();
@@ -69,7 +76,7 @@ export function startJobScheduler() {
   cleanupTimer.unref?.();
 }
 
-export function stopJobSchedulerForTests() {
+function _stopJobSchedulerForTests() {
   if (pollTimer) {
     clearInterval(pollTimer);
   }
@@ -95,23 +102,23 @@ export function stopJobSchedulerForTests() {
   schedulerStarted = false;
 }
 
-export function abortShopScrapeJob(jobId: string) {
+function _abortShopScrapeJob(jobId: string) {
   activeScrapeRuns.get(jobId)?.abort();
 }
 
-export function isShopScrapeJobActivelyRunning(jobId: string) {
+function _isShopScrapeJobActivelyRunning(jobId: string) {
   return activeScrapeRuns.has(jobId);
 }
 
-export function abortShopImportJob(jobId: string) {
+function _abortShopImportJob(jobId: string) {
   activeImportRuns.get(jobId)?.abort();
 }
 
-export function abortMaterialEnrichmentJob(jobId: string) {
+function _abortMaterialEnrichmentJob(jobId: string) {
   activeEnrichmentRuns.get(jobId)?.abort();
 }
 
-export async function runJobSchedulerTickForTests() {
+async function _runJobSchedulerTickForTests() {
   await pollScheduler();
 }
 
@@ -122,7 +129,7 @@ async function initializeScheduler() {
     await cleanupExpiredJobs();
     await pollScheduler();
   } catch (error) {
-    console.error("[job-scheduler] Failed to initialize:", error);
+    log.error("scheduler_init_failed", { error });
   }
 }
 
@@ -140,7 +147,7 @@ async function pollScheduler() {
       fillExcelResearchSlots(),
     ]);
   } catch (error) {
-    console.error("[job-scheduler] Poll failed:", error);
+    log.error("scheduler_poll_failed", { error });
   } finally {
     pollInFlight = false;
   }
@@ -207,6 +214,7 @@ async function claimNextExcelResearchJob() {
 
 async function runExcelResearchJob(jobId: string) {
   activeExcelResearchRuns.add(jobId);
+  log.info("job_started", { jobType: "excel_research", jobId });
   try {
     while (true) {
       const [job] = await db
@@ -248,12 +256,18 @@ async function runExcelResearchJob(jobId: string) {
             lastProgressAt: now,
           })
           .where(eq(excelResearchJobs.id, jobId));
+        log.info("job_completed", {
+          jobType: "excel_research",
+          jobId,
+          status: nextStatus,
+        });
         break;
       }
     }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Lỗi không xác định.";
+    log.warn("job_failed", { jobType: "excel_research", jobId, error });
     await db
       .update(excelResearchJobs)
       .set({
@@ -380,6 +394,7 @@ async function claimNextEnrichmentJob() {
 async function runScrapeJob(job: ShopScrapeJobRow) {
   const controller = new AbortController();
   activeScrapeRuns.set(job.id, controller);
+  log.info("job_started", { jobType: "scrape", jobId: job.id, url: job.url });
   const progressWriter = createScrapeProgressWriter(job.id);
   const concurrentPages = await resolveScrapeMaxConcurrentPages();
 
@@ -403,6 +418,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
+      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
       return;
     }
 
@@ -432,14 +448,23 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
           eq(shopScrapeJobs.status, "running"),
         ),
       );
+    log.info("job_completed", {
+      jobType: "scrape",
+      jobId: job.id,
+      productCount: result.products.length,
+      durationMs: result.durationMs,
+      stopReason: result.stopReason,
+    });
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
+      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
       return;
     }
 
     const finishedAt = new Date().toISOString();
     const message = errorMessage(error, "Không thể scrape shop URL.");
+    log.warn("job_failed", { jobType: "scrape", jobId: job.id, error });
     await db
       .update(shopScrapeJobs)
       .set({
@@ -468,6 +493,11 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
 async function runImportJob(job: ShopImportJobRow) {
   const controller = new AbortController();
   activeImportRuns.set(job.id, controller);
+  log.info("job_started", {
+    jobType: "import",
+    jobId: job.id,
+    scrapeJobId: job.scrapeJobId,
+  });
   const progressWriter = createImportProgressWriter(job.id);
 
   try {
@@ -481,6 +511,7 @@ async function runImportJob(job: ShopImportJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
+      await persistLatestImportProgressItems(job.id, progressWriter.latest());
       return;
     }
 
@@ -511,18 +542,29 @@ async function runImportJob(job: ShopImportJobRow) {
           eq(shopImportJobs.status, "running"),
         ),
       );
+    log.info("job_completed", {
+      jobType: "import",
+      jobId: job.id,
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      failed: result.failed,
+    });
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
+      await persistLatestImportProgressItems(job.id, progressWriter.latest());
       return;
     }
 
     const finishedAt = new Date().toISOString();
     const message = errorMessage(error, "Không thể nhập catalog.");
+    log.warn("job_failed", { jobType: "import", jobId: job.id, error });
     await db
       .update(shopImportJobs)
       .set({
         status: "failed",
+        items: progressWriter.latest()?.items ?? job.items,
         currentProductName: null,
         currentSourceUrl: null,
         error: message,
@@ -546,6 +588,7 @@ async function runImportJob(job: ShopImportJobRow) {
 async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
   const controller = new AbortController();
   activeEnrichmentRuns.set(job.id, controller);
+  log.info("job_started", { jobType: "enrichment", jobId: job.id });
   const progressWriter = createEnrichmentProgressWriter(job.id);
 
   try {
@@ -584,6 +627,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
           eq(materialEnrichmentJobs.status, "running"),
         ),
       );
+    log.info("job_completed", { jobType: "enrichment", jobId: job.id });
   } catch (error) {
     await progressWriter.flush();
     if (
@@ -595,6 +639,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
 
     const finishedAt = new Date().toISOString();
     const message = errorMessage(error, "Không thể enrichment vật liệu.");
+    log.warn("job_failed", { jobType: "enrichment", jobId: job.id, error });
     await db
       .update(materialEnrichmentJobs)
       .set({
@@ -621,6 +666,7 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
 
 function createScrapeProgressWriter(jobId: string) {
   let pendingProgress: ShopScrapeProgress | null = null;
+  let latestProgress: ShopScrapeProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -648,9 +694,7 @@ function createScrapeProgressWriter(jobId: string) {
             currentUrls: progress.currentUrls,
             pagesVisited: progress.pagesVisited,
             failedPages: progress.failedPages,
-            products: sanitizeScrapedProductList(progress.products ?? []),
-            productCount: sanitizeScrapedProductList(progress.products ?? [])
-              .length,
+            productCount: progress.productCount,
             queueLength: progress.queueLength,
             durationMs: progress.elapsedMs,
             stopReason: progress.stopReason,
@@ -672,6 +716,7 @@ function createScrapeProgressWriter(jobId: string) {
   return {
     queue(progress: ShopScrapeProgress) {
       pendingProgress = progress;
+      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -684,11 +729,35 @@ function createScrapeProgressWriter(jobId: string) {
       }
     },
     flush,
+    latest() {
+      return latestProgress;
+    },
   };
+}
+
+async function persistLatestScrapeProgressProducts(
+  jobId: string,
+  progress: ShopScrapeProgress | null,
+) {
+  if (!progress?.products?.length) {
+    return;
+  }
+
+  const products = sanitizeScrapedProductList(progress.products);
+  const now = new Date().toISOString();
+  await db
+    .update(shopScrapeJobs)
+    .set({
+      products,
+      productCount: products.length,
+      updatedAt: now,
+    })
+    .where(eq(shopScrapeJobs.id, jobId));
 }
 
 function createImportProgressWriter(jobId: string) {
   let pendingProgress: ShopImportJobProgress | null = null;
+  let latestProgress: ShopImportJobProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -719,7 +788,6 @@ function createImportProgressWriter(jobId: string) {
             updated: progress.updated,
             skipped: progress.skipped,
             failed: progress.failed,
-            items: progress.items,
             currentProductName: progress.currentProductName,
             currentSourceUrl: progress.currentSourceUrl,
             durationMs: elapsedSql(now, shopImportJobs.startedAt),
@@ -740,6 +808,7 @@ function createImportProgressWriter(jobId: string) {
   return {
     queue(progress: ShopImportJobProgress) {
       pendingProgress = progress;
+      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -752,7 +821,28 @@ function createImportProgressWriter(jobId: string) {
       }
     },
     flush,
+    latest() {
+      return latestProgress;
+    },
   };
+}
+
+async function persistLatestImportProgressItems(
+  jobId: string,
+  progress: ShopImportJobProgress | null,
+) {
+  if (!progress?.items?.length) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(shopImportJobs)
+    .set({
+      items: progress.items,
+      updatedAt: now,
+    })
+    .where(eq(shopImportJobs.id, jobId));
 }
 
 function createEnrichmentProgressWriter(jobId: string) {
@@ -994,3 +1084,11 @@ function shopScrapeStopReasonMessage(stopReason: string) {
       return "Job scrape đã hoàn tất.";
   }
 }
+
+export const startJobScheduler = traceFn(log, "startJobScheduler", _startJobScheduler);
+export const stopJobSchedulerForTests = traceFn(log, "stopJobSchedulerForTests", _stopJobSchedulerForTests);
+export const abortShopScrapeJob = traceFn(log, "abortShopScrapeJob", _abortShopScrapeJob);
+export const isShopScrapeJobActivelyRunning = traceFn(log, "isShopScrapeJobActivelyRunning", _isShopScrapeJobActivelyRunning);
+export const abortShopImportJob = traceFn(log, "abortShopImportJob", _abortShopImportJob);
+export const abortMaterialEnrichmentJob = traceFn(log, "abortMaterialEnrichmentJob", _abortMaterialEnrichmentJob);
+export const runJobSchedulerTickForTests = traceFn(log, "runJobSchedulerTickForTests", _runJobSchedulerTickForTests);

@@ -802,8 +802,10 @@ export const shopScrapeJobs = pgTable(
       table.status,
       table.startedAt,
     ),
-    activeUrlUnique: uniqueIndex("shop_scrape_jobs_active_url_unique")
-      .on(table.normalizedUrl)
+    activeTenantUrlUnique: uniqueIndex(
+      "shop_scrape_jobs_active_tenant_url_unique",
+    )
+      .on(table.tenantId, table.normalizedUrl)
       .where(sql`${table.status} in ('queued', 'running')`),
     shopScrapeJobsTenantIdx: index("shop_scrape_jobs_tenant_id_idx").on(
       table.tenantId,

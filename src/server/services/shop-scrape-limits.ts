@@ -1,10 +1,13 @@
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-scrape-limits");
+
 const SCRAPE_BASE_TIMEOUT_MS = 15_000;
 const SCRAPE_PAGE_TIMEOUT_MS = 8_000;
 const SCRAPE_MAX_TIMEOUT_PAGES = 100;
 export const SCRAPE_ALL_TIMEOUT_MS = 20 * 60_000;
 export const SCRAPE_MIN_SINGLE_PAGE_TIMEOUT_MS = 45_000;
 
-export function scrapeTimeoutMs(maxPages: number | null) {
+function _scrapeTimeoutMs(maxPages: number | null) {
   if (maxPages == null) {
     return SCRAPE_ALL_TIMEOUT_MS;
   }
@@ -17,3 +20,5 @@ export function scrapeTimeoutMs(maxPages: number | null) {
   }
   return calculated;
 }
+
+export const scrapeTimeoutMs = traceFn(log, "scrapeTimeoutMs", _scrapeTimeoutMs);

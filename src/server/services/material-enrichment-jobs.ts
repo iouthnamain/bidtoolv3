@@ -26,6 +26,8 @@ import { commitEnrichmentItem } from "~/server/services/material-enrichment-comm
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortMaterialEnrichmentJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-material-enrichment-jobs");
 
 export type MaterialEnrichmentJobStatus =
   | "queued"
@@ -170,7 +172,7 @@ async function loadFilterOptionsSnapshot(
   };
 }
 
-export async function startMaterialEnrichmentJob(input: {
+async function _startMaterialEnrichmentJob(input: {
   materialIds: number[];
   options?: MaterialEnrichmentJobOptions;
   filterOptions?: MaterialEnrichmentFilterOptions;
@@ -230,7 +232,7 @@ export async function startMaterialEnrichmentJob(input: {
   return toJobSnapshot(requireRow(job));
 }
 
-export async function listMaterialEnrichmentJobs(
+async function _listMaterialEnrichmentJobs(
   input: { limit?: number; offset?: number } = {},
   scope?: TenantScopeValue,
 ) {
@@ -249,7 +251,7 @@ export async function listMaterialEnrichmentJobs(
   return rows.map(toJobListItem);
 }
 
-export async function getMaterialEnrichmentJob(
+async function _getMaterialEnrichmentJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -303,7 +305,7 @@ async function assertItemInScope(itemId: number, scope: TenantScopeValue) {
   await assertJobInScope(item.jobId, scope);
 }
 
-export async function cancelMaterialEnrichmentJob(
+async function _cancelMaterialEnrichmentJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -336,7 +338,7 @@ export async function cancelMaterialEnrichmentJob(
   return cancelled ? toJobSnapshot(cancelled) : getMaterialEnrichmentJob(jobId);
 }
 
-export async function deleteMaterialEnrichmentJob(
+async function _deleteMaterialEnrichmentJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -359,7 +361,7 @@ export async function deleteMaterialEnrichmentJob(
   return deleted ? toJobSnapshot(deleted) : existing;
 }
 
-export async function getMaterialEnrichmentItem(
+async function _getMaterialEnrichmentItem(
   itemId: number,
   scope?: TenantScopeValue,
 ) {
@@ -391,7 +393,7 @@ export async function getMaterialEnrichmentItem(
   return toItemSnapshot(item, material?.imageUrl ?? null);
 }
 
-export async function listMaterialEnrichmentItems(
+async function _listMaterialEnrichmentItems(
   input: string | { jobId: string; limit?: number; offset?: number },
   scope?: TenantScopeValue,
 ) {
@@ -422,7 +424,7 @@ export async function listMaterialEnrichmentItems(
  * item via `getMaterialEnrichmentItem`. Keeps bulk-commit eligibility checks
  * (which read only status + confidence) working on the lighter payload.
  */
-export async function listMaterialEnrichmentItemSummaries(
+async function _listMaterialEnrichmentItemSummaries(
   input: string | { jobId: string; limit?: number; offset?: number },
   scope?: TenantScopeValue,
 ) {
@@ -430,7 +432,7 @@ export async function listMaterialEnrichmentItemSummaries(
   return items.map(trimItemSnapshotForList);
 }
 
-export async function listMaterialWebCandidates(itemId: number) {
+async function _listMaterialWebCandidates(itemId: number) {
   const rows = await db
     .select()
     .from(materialWebCandidates)
@@ -445,7 +447,7 @@ export async function listMaterialWebCandidates(itemId: number) {
  * tenant-scoped via its parent job. Avoids re-downloading the full export
  * report on every dialog open.
  */
-export async function getMaterialEnrichmentItemCandidates(
+async function _getMaterialEnrichmentItemCandidates(
   itemId: number,
   scope?: TenantScopeValue,
 ) {
@@ -457,7 +459,7 @@ export async function getMaterialEnrichmentItemCandidates(
   return listMaterialWebCandidates(itemId);
 }
 
-export async function selectWebCandidate(
+async function _selectWebCandidate(
   itemId: number,
   candidateId: number,
   scope?: TenantScopeValue,
@@ -525,7 +527,7 @@ export async function selectWebCandidate(
  * patch-and-return shape. Passing `undefined` for a key leaves it unchanged;
  * passing an empty array/object clears it (commit reverts to writing all fields).
  */
-export async function setEnrichmentItemDecision(
+async function _setEnrichmentItemDecision(
   itemId: number,
   decision: {
     acceptedFields?: EnrichableField[];
@@ -567,7 +569,7 @@ export async function setEnrichmentItemDecision(
   return { item: toItemSnapshot(requireItemRow(updated)) };
 }
 
-export async function commitMaterialEnrichmentItem(
+async function _commitMaterialEnrichmentItem(
   itemId: number,
   scope?: TenantScopeValue,
 ) {
@@ -589,7 +591,7 @@ export async function commitMaterialEnrichmentItem(
   return toItemSnapshot(requireItemRow(committed));
 }
 
-export async function bulkCommitMaterialEnrichment(
+async function _bulkCommitMaterialEnrichment(
   input: {
     jobId: string;
     itemIds?: number[];
@@ -627,9 +629,11 @@ export async function bulkCommitMaterialEnrichment(
       failed += 1;
       const message =
         error instanceof Error ? error.message : "Lỗi không xác định.";
-      console.error(
-        `[material-enrichment] bulkCommit failed job=${input.jobId} item=${item.id}: ${message}`,
-      );
+      log.error("bulk_commit_item_failed", {
+        jobId: input.jobId,
+        itemId: item.id,
+        error,
+      });
       errors.push(`#${item.id}: ${message}`);
     }
   }
@@ -637,7 +641,7 @@ export async function bulkCommitMaterialEnrichment(
   return { committed, failed, items: results, errors };
 }
 
-export async function rejectMaterialEnrichmentItem(
+async function _rejectMaterialEnrichmentItem(
   itemId: number,
   scope?: TenantScopeValue,
 ) {
@@ -658,7 +662,7 @@ export async function rejectMaterialEnrichmentItem(
   return toItemSnapshot(updated);
 }
 
-export async function exportMaterialEnrichmentReport(
+async function _exportMaterialEnrichmentReport(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -849,3 +853,20 @@ function requireItemRow(row: ItemRow | undefined) {
   }
   return row;
 }
+
+export const startMaterialEnrichmentJob = traceFn(log, "startMaterialEnrichmentJob", _startMaterialEnrichmentJob);
+export const listMaterialEnrichmentJobs = traceFn(log, "listMaterialEnrichmentJobs", _listMaterialEnrichmentJobs);
+export const getMaterialEnrichmentJob = traceFn(log, "getMaterialEnrichmentJob", _getMaterialEnrichmentJob);
+export const cancelMaterialEnrichmentJob = traceFn(log, "cancelMaterialEnrichmentJob", _cancelMaterialEnrichmentJob);
+export const deleteMaterialEnrichmentJob = traceFn(log, "deleteMaterialEnrichmentJob", _deleteMaterialEnrichmentJob);
+export const getMaterialEnrichmentItem = traceFn(log, "getMaterialEnrichmentItem", _getMaterialEnrichmentItem);
+export const listMaterialEnrichmentItems = traceFn(log, "listMaterialEnrichmentItems", _listMaterialEnrichmentItems);
+export const listMaterialEnrichmentItemSummaries = traceFn(log, "listMaterialEnrichmentItemSummaries", _listMaterialEnrichmentItemSummaries);
+export const listMaterialWebCandidates = traceFn(log, "listMaterialWebCandidates", _listMaterialWebCandidates);
+export const getMaterialEnrichmentItemCandidates = traceFn(log, "getMaterialEnrichmentItemCandidates", _getMaterialEnrichmentItemCandidates);
+export const selectWebCandidate = traceFn(log, "selectWebCandidate", _selectWebCandidate);
+export const setEnrichmentItemDecision = traceFn(log, "setEnrichmentItemDecision", _setEnrichmentItemDecision);
+export const commitMaterialEnrichmentItem = traceFn(log, "commitMaterialEnrichmentItem", _commitMaterialEnrichmentItem);
+export const bulkCommitMaterialEnrichment = traceFn(log, "bulkCommitMaterialEnrichment", _bulkCommitMaterialEnrichment);
+export const rejectMaterialEnrichmentItem = traceFn(log, "rejectMaterialEnrichmentItem", _rejectMaterialEnrichmentItem);
+export const exportMaterialEnrichmentReport = traceFn(log, "exportMaterialEnrichmentReport", _exportMaterialEnrichmentReport);

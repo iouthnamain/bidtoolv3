@@ -12,13 +12,15 @@ import {
   materialCatalogDocuments,
 } from "~/server/db/schema";
 import { saveCatalogPdfFile } from "~/server/services/catalog-pdf-storage";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-catalog-documents");
 
 type AppDb = typeof appDb;
 
 export type CatalogDocumentRow =
   typeof materialCatalogDocuments.$inferSelect;
 
-export async function findCatalogDocumentByUrl(db: AppDb, url: string) {
+async function _findCatalogDocumentByUrl(db: AppDb, url: string) {
   const normalized = normalizeCatalogPdfUrl(url);
   if (!normalized) {
     return null;
@@ -36,7 +38,7 @@ export async function findCatalogDocumentByUrl(db: AppDb, url: string) {
   return existing ?? null;
 }
 
-export async function getOrCreateCatalogDocumentByUrl(
+async function _getOrCreateCatalogDocumentByUrl(
   db: AppDb,
   url: string,
   options: {
@@ -80,7 +82,7 @@ export async function getOrCreateCatalogDocumentByUrl(
 }
 
 /** Idempotently link documents to a material. Returns number of new links. */
-export async function linkCatalogDocumentsToMaterial(
+async function _linkCatalogDocumentsToMaterial(
   db: AppDb,
   documentIds: number[],
   materialId: number,
@@ -110,7 +112,7 @@ export async function linkCatalogDocumentsToMaterial(
  * Create-or-reuse documents for a list of PDF URLs and link them to a
  * material. Used by scrape import and CSV/XLSX import.
  */
-export async function attachCatalogPdfUrlsToMaterial(
+async function _attachCatalogPdfUrlsToMaterial(
   db: AppDb,
   urls: string[],
   materialId: number,
@@ -155,7 +157,7 @@ export async function attachCatalogPdfUrlsToMaterial(
   return { documentIds, createdDocuments, linked };
 }
 
-export async function listCatalogDocumentsForMaterial(
+async function _listCatalogDocumentsForMaterial(
   db: AppDb,
   materialId: number,
 ) {
@@ -179,7 +181,7 @@ export async function listCatalogDocumentsForMaterial(
     .orderBy(materialCatalogDocumentLinks.createdAt);
 }
 
-export async function countCatalogDocumentLinks(
+async function _countCatalogDocumentLinks(
   db: AppDb,
   documentIds: number[],
 ) {
@@ -209,7 +211,7 @@ export async function countCatalogDocumentLinks(
  * it. `normalizedSourceUrl` stays "" so the row is excluded from the URL dedupe
  * index. Returns the created document id.
  */
-export async function createLocalCatalogDocument(
+async function _createLocalCatalogDocument(
   db: AppDb,
   input: {
     materialId: number;
@@ -263,3 +265,11 @@ export async function createLocalCatalogDocument(
 
   return row.id;
 }
+
+export const findCatalogDocumentByUrl = traceFn(log, "findCatalogDocumentByUrl", _findCatalogDocumentByUrl);
+export const getOrCreateCatalogDocumentByUrl = traceFn(log, "getOrCreateCatalogDocumentByUrl", _getOrCreateCatalogDocumentByUrl);
+export const linkCatalogDocumentsToMaterial = traceFn(log, "linkCatalogDocumentsToMaterial", _linkCatalogDocumentsToMaterial);
+export const attachCatalogPdfUrlsToMaterial = traceFn(log, "attachCatalogPdfUrlsToMaterial", _attachCatalogPdfUrlsToMaterial);
+export const listCatalogDocumentsForMaterial = traceFn(log, "listCatalogDocumentsForMaterial", _listCatalogDocumentsForMaterial);
+export const countCatalogDocumentLinks = traceFn(log, "countCatalogDocumentLinks", _countCatalogDocumentLinks);
+export const createLocalCatalogDocument = traceFn(log, "createLocalCatalogDocument", _createLocalCatalogDocument);

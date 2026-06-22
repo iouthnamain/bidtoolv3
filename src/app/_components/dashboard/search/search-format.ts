@@ -1,10 +1,8 @@
+import {
+  formatDateShort,
+  formatDateTimeShort,
+} from "~/lib/datetime";
 import type { SearchItem } from "./search-types";
-
-const dateFormatter = new Intl.DateTimeFormat("vi-VN");
-const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
 
 export function formatCurrency(value: number) {
   return `${Number(value).toLocaleString("vi-VN")} VNĐ`;
@@ -27,31 +25,11 @@ export function formatCompactCurrency(value: number) {
 }
 
 export function formatDate(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return dateFormatter.format(parsed);
+  return formatDateShort(value);
 }
 
 export function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return dateTimeFormatter.format(parsed);
+  return formatDateTimeShort(value);
 }
 
 export function summarizeSelected(values: string[], fallback: string): string {

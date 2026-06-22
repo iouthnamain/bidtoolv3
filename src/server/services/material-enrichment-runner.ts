@@ -28,6 +28,8 @@ import { listCatalogDocumentsForMaterial } from "~/server/services/catalog-docum
 import { runWithConcurrency } from "~/server/services/concurrency";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-material-enrichment-runner");
 import {
   extractPdfUrlsFromResults,
   fetchKnownSourceCandidates,
@@ -382,7 +384,7 @@ function isMaterialWellFilled(
   return considered.every((field) => (valueFor(field) ?? "").trim().length > 0);
 }
 
-export async function processEnrichmentItem(
+async function _processEnrichmentItem(
   job: JobRow,
   item: ItemRow,
   signal?: AbortSignal,
@@ -627,7 +629,7 @@ async function refreshJobCounters(jobId: string) {
     .where(eq(materialEnrichmentJobs.id, jobId));
 }
 
-export async function processEnrichmentJob(
+async function _processEnrichmentJob(
   jobId: string,
   options: {
     signal?: AbortSignal;
@@ -703,3 +705,6 @@ export async function processEnrichmentJob(
     options.onProgress?.(await loadJobProgress(jobId));
   });
 }
+
+export const processEnrichmentItem = traceFn(log, "processEnrichmentItem", _processEnrichmentItem);
+export const processEnrichmentJob = traceFn(log, "processEnrichmentJob", _processEnrichmentJob);

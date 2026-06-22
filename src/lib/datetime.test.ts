@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatDateTime, formatNumber } from "./datetime";
+import {
+  formatDate,
+  formatDateTime,
+  formatDateTimeShort,
+  formatLogTimestamp,
+  formatNumber,
+} from "./datetime";
 
 describe("formatDateTime", () => {
   it("returns 'Chưa có' for null/undefined/empty", () => {
@@ -17,6 +23,21 @@ describe("formatDateTime", () => {
     const result = formatDateTime("2026-05-07T10:30:00.000Z");
     expect(result).not.toBe("Chưa có");
     expect(result.length).toBeGreaterThan(0);
+  });
+});
+
+describe("formatLogTimestamp", () => {
+  it("uses local time with milliseconds", () => {
+    const date = new Date("2026-05-07T10:30:45.123Z");
+    const result = formatLogTimestamp(date);
+    expect(result).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
+  });
+});
+
+describe("formatDateTimeShort", () => {
+  it("returns dash for empty values", () => {
+    expect(formatDateTimeShort(null)).toBe("-");
+    expect(formatDateTimeShort("")).toBe("-");
   });
 });
 

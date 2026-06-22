@@ -14,6 +14,8 @@ import {
   type ExtractedProductFields,
 } from "~/server/services/material-enrichment-extract";
 import { parseEnrichmentPrice } from "~/server/services/material-enrichment-commit";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-enrich-web-row");
 import {
   rankSearchResults,
   searchWebForProduct,
@@ -35,7 +37,7 @@ export type EnrichWebRowResult = {
   evidence: MaterialEnrichmentEvidence[];
 };
 
-export function mapExtractedToFillable(
+function _mapExtractedToFillable(
   extracted: ExtractedProductFields,
   sourceUrls: string[],
 ): EnrichWebRowResult {
@@ -66,7 +68,7 @@ export function mapExtractedToFillable(
   return { fields, sourceUrls, evidence };
 }
 
-export function webHitsToSearchResults(
+function _webHitsToSearchResults(
   hits: Array<{
     title: string;
     url: string;
@@ -86,7 +88,7 @@ export function webHitsToSearchResults(
   }));
 }
 
-export async function enrichRowFromWeb(
+async function _enrichRowFromWeb(
   input: EnrichWebRowInput,
   signal?: AbortSignal,
 ): Promise<EnrichWebRowResult> {
@@ -151,3 +153,7 @@ export async function enrichRowFromWeb(
 
   return mapExtractedToFillable(extracted, sourceUrls);
 }
+
+export const mapExtractedToFillable = traceFn(log, "mapExtractedToFillable", _mapExtractedToFillable);
+export const webHitsToSearchResults = traceFn(log, "webHitsToSearchResults", _webHitsToSearchResults);
+export const enrichRowFromWeb = traceFn(log, "enrichRowFromWeb", _enrichRowFromWeb);

@@ -8,6 +8,7 @@ import {
   ProductCandidateCard,
   type EnrichCandidate,
 } from "~/app/_components/enrich/product-candidate-card";
+import { mergeWebGapFill } from "~/lib/materials/enrich-gap-fill";
 import {
   buildFillPlanWithEdits,
   candidateToFields,
@@ -127,9 +128,13 @@ export function FieldCompareEditor({
       ? (candidates.find((c) => c.materialId === selectedMaterialId) ?? null)
       : null;
 
-  const baseFields: Partial<Record<FillableField, string>> = selectedCandidate
+  const catalogFields = selectedCandidate
     ? candidateToFields(selectedCandidate)
-    : (proposedFields ?? {});
+    : null;
+  const baseFields: Partial<Record<FillableField, string>> =
+    catalogFields != null
+      ? mergeWebGapFill(sheetFields, catalogFields, proposedFields ?? {})
+      : (proposedFields ?? {});
 
   // Plan reflects edits overlaid on the base, honoring force-overwrite.
   const plan = buildFillPlanWithEdits(
@@ -257,29 +262,34 @@ export function FieldCompareEditor({
               : "Không có ứng viên ghép tự động — hãy tìm thủ công ở trên."}
           </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {candidates.map((candidate, index) => (
-              <ProductCandidateCard
-                key={candidate.materialId}
-                candidate={candidate}
-                isSelected={candidate.materialId === selectedMaterialId}
-                isRecommended={
-                  !showingSearch &&
-                  index === 0 &&
-                  recommendedMaterialId === candidate.materialId
-                }
-                fillCount={
-                  buildFillPlanWithEdits(
-                    sheetFields,
-                    candidateToFields(candidate),
-                    {},
-                    new Set(),
-                  ).filter((cell) => cell.action === "filled").length
-                }
-                onChoose={() => onChoose?.(candidate)}
-                hotkeyIndex={index + 1}
-              />
-            ))}
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-500">
+              Mẹo: bấm phím 1-9 để chọn nhanh ứng viên tương ứng.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {candidates.map((candidate, index) => (
+                <ProductCandidateCard
+                  key={candidate.materialId}
+                  candidate={candidate}
+                  isSelected={candidate.materialId === selectedMaterialId}
+                  isRecommended={
+                    !showingSearch &&
+                    index === 0 &&
+                    recommendedMaterialId === candidate.materialId
+                  }
+                  fillCount={
+                    buildFillPlanWithEdits(
+                      sheetFields,
+                      candidateToFields(candidate),
+                      {},
+                      new Set(),
+                    ).filter((cell) => cell.action === "filled").length
+                  }
+                  onChoose={() => onChoose?.(candidate)}
+                  hotkeyIndex={index + 1}
+                />
+              ))}
+            </div>
           </div>
         )
       ) : null}

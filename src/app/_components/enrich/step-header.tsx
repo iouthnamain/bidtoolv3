@@ -29,7 +29,14 @@ export function StepHeader({
       className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]"
     >
       {/* Brand gradient progress bar */}
-      <div className="h-1.5 w-full bg-slate-100">
+      <div
+        className="h-1.5 w-full bg-slate-100"
+        role="progressbar"
+        aria-label="Tiến độ làm giàu Excel"
+        aria-valuemin={1}
+        aria-valuemax={STEPS.length}
+        aria-valuenow={current}
+      >
         <div
           className="brand-rule h-full transition-all duration-500 ease-out"
           style={{ width: `${progressPercent}%` }}
@@ -49,6 +56,9 @@ export function StepHeader({
                 disabled={!isReachable}
                 onClick={() => isReachable && onJump(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
+                aria-label={`Bước ${step.id}: ${step.label}${
+                  isReachable ? "" : " (chưa mở)"
+                }`}
                 className={`inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed sm:text-sm ${
                   isCurrent
                     ? "bg-sky-700 text-white"
@@ -69,6 +79,7 @@ export function StepHeader({
                   {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
                 </span>
                 <span className="hidden sm:inline text-balance">{step.label}</span>
+                <span className="sr-only sm:hidden">{step.label}</span>
               </button>
               {index < STEPS.length - 1 ? (
                 <span className="h-px w-3 bg-slate-300 sm:w-6" aria-hidden />

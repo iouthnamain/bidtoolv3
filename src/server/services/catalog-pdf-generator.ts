@@ -5,6 +5,8 @@ import { existsSync } from "node:fs";
 import type { Browser } from "playwright";
 
 import { isServerlessRuntime } from "~/server/runtime";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-catalog-pdf-generator");
 
 /**
  * Generates a simple one-page catalog PDF for a material from its (enriched)
@@ -165,7 +167,7 @@ function buildCatalogHtml(material: CatalogPdfMaterialInput): string {
  * should treat a failure as non-fatal (the field enrichment commit is
  * independent).
  */
-export async function generateCatalogPdf(
+async function _generateCatalogPdf(
   material: CatalogPdfMaterialInput,
 ): Promise<Buffer> {
   const browser = await launchBrowser();
@@ -193,3 +195,5 @@ export async function generateCatalogPdf(
 /** Test-only: exposes the pure HTML builder so escaping/field logic can be
  * verified without launching a browser. */
 export const buildCatalogHtmlForTest = buildCatalogHtml;
+
+export const generateCatalogPdf = traceFn(log, "generateCatalogPdf", _generateCatalogPdf);

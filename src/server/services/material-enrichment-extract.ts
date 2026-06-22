@@ -9,6 +9,8 @@ import {
 import { callAiProvider } from "~/server/services/ai-dispatch";
 import type { ResolvedAiProvider } from "~/server/services/app-settings";
 import type { WebSearchResult } from "~/server/services/material-web-search";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-material-enrichment-extract");
 
 export type ExtractedProductFields = Partial<
   Record<
@@ -157,7 +159,7 @@ function parseFieldResult(
   };
 }
 
-export function parseExtractionResponse(content: string): ExtractedProductFields {
+function _parseExtractionResponse(content: string): ExtractedProductFields {
   const parsed = JSON.parse(extractJsonObject(content)) as Record<string, unknown>;
   const fields: ExtractedProductFields = {};
   const rawFields =
@@ -182,7 +184,7 @@ export function parseExtractionResponse(content: string): ExtractedProductFields
   return fields;
 }
 
-export async function extractProductFromSources(
+async function _extractProductFromSources(
   input: MaterialEnrichmentInput,
   candidates: WebSearchResult[],
   provider: ResolvedAiProvider,
@@ -203,3 +205,6 @@ export async function extractProductFromSources(
 
   return parseExtractionResponse(completion.content);
 }
+
+export const parseExtractionResponse = traceFn(log, "parseExtractionResponse", _parseExtractionResponse);
+export const extractProductFromSources = traceFn(log, "extractProductFromSources", _extractProductFromSources);

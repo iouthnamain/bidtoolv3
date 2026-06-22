@@ -1,3 +1,6 @@
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-bidwinner-page-cache");
+
 /**
  * Short-lived in-memory cache for BidWinner public HTML responses.
  *
@@ -50,7 +53,7 @@ function pruneExpired(reference: number): void {
  * caches the result, and returns it. Concurrent callers with the same key
  * share a single in-flight fetch. A rejected fetch is never cached.
  */
-export async function fetchHtmlWithCache(
+async function _fetchHtmlWithCache(
   key: string,
   fetcher: () => Promise<string>,
   ttlMs: number = DEFAULT_TTL_MS,
@@ -84,7 +87,10 @@ export async function fetchHtmlWithCache(
 }
 
 /** Test-only: clear all cached entries and in-flight promises. */
-export function __clearBidWinnerPageCache(): void {
+function ___clearBidWinnerPageCache(): void {
   htmlCache.clear();
   inFlight.clear();
 }
+
+export const fetchHtmlWithCache = traceFn(log, "fetchHtmlWithCache", _fetchHtmlWithCache);
+export const __clearBidWinnerPageCache = traceFn(log, "__clearBidWinnerPageCache", ___clearBidWinnerPageCache);

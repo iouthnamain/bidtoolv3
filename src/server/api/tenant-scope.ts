@@ -17,6 +17,8 @@
 import { eq, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Role } from "~/lib/permissions";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("api-tenant-scope");
 
 /**
  * The minimal slice of tRPC context these helpers need. Structurally matches
@@ -43,7 +45,7 @@ export type TenantScopeValue = string | null | undefined;
  * meaning of each return. Only customers are ever restricted; everyone else
  * (and auth-off) sees all rows.
  */
-export function tenantScopeValue(ctx: TenantScopeContext): TenantScopeValue {
+function _tenantScopeValue(ctx: TenantScopeContext): TenantScopeValue {
   // Auth disabled: behave exactly as the pre-rollout single-tenant app — no filter.
   if (!ctx.authEnabled) {
     return undefined;
@@ -65,7 +67,7 @@ export function tenantScopeValue(ctx: TenantScopeContext): TenantScopeValue {
  * into `and(...)` / `.where(...)` safely). A null value (customer without a
  * tenant) yields `sql\`false\`` — fail closed, never open.
  */
-export function tenantConditionForValue(
+function _tenantConditionForValue(
   value: TenantScopeValue,
   column: AnyPgColumn,
 ): SQL | undefined {
@@ -83,7 +85,7 @@ export function tenantConditionForValue(
  * Router convenience: resolve the scope from `ctx` and build the condition for
  * `column` in one step. Returns `undefined` when scoping does not apply.
  */
-export function withTenant(
+function _withTenant(
   ctx: TenantScopeContext,
   column: AnyPgColumn,
 ): SQL | undefined {
@@ -95,7 +97,7 @@ export function withTenant(
  * own tenant: null for internal users, the customer's tenant for customers.
  * Threaded into service insert functions that cannot read `ctx`.
  */
-export function creatorTenantId(ctx: TenantScopeContext): string | null {
+function _creatorTenantId(ctx: TenantScopeContext): string | null {
   return ctx.tenantId ?? null;
 }
 
@@ -108,9 +110,15 @@ export function creatorTenantId(ctx: TenantScopeContext): string | null {
  * rule that keeps created rows correctly owned and never mis-attributes a row
  * to a tenant the creator does not belong to.
  */
-export function stampTenant<T extends Record<string, unknown>>(
+function _stampTenant<T extends Record<string, unknown>>(
   ctx: TenantScopeContext,
   values: T,
 ): T & { tenantId: string | null } {
   return { ...values, tenantId: ctx.tenantId ?? null };
 }
+
+export const tenantScopeValue = traceFn(log, "tenantScopeValue", _tenantScopeValue);
+export const tenantConditionForValue = traceFn(log, "tenantConditionForValue", _tenantConditionForValue);
+export const withTenant = traceFn(log, "withTenant", _withTenant);
+export const creatorTenantId = traceFn(log, "creatorTenantId", _creatorTenantId);
+export const stampTenant = traceFn(log, "stampTenant", _stampTenant);

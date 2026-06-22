@@ -30,6 +30,8 @@ import {
 } from "~/server/services/catalog-documents";
 import { generateCatalogPdf } from "~/server/services/catalog-pdf-generator";
 import { parseOptionalNumber } from "~/server/services/excel-workbook";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-material-enrichment-commit");
 
 type AppDb = typeof appDb;
 /** Either the root db handle or a transaction handle (for atomic commits). */
@@ -84,7 +86,7 @@ function trimmedOrEmpty(value: string | null | undefined) {
  * column expects. Returns null when no sensible positive number can be derived,
  * so commit never zeroes out an existing price.
  */
-export function parseEnrichmentPrice(value: string | null | undefined): number | null {
+function _parseEnrichmentPrice(value: string | null | undefined): number | null {
   if (value == null) {
     return null;
   }
@@ -147,7 +149,7 @@ function applyLockedFillEmptyField(
   return proposedTrimmed ? (proposed ?? undefined) : (existing ?? undefined);
 }
 
-export function buildMaterialUpdatePlan(
+function _buildMaterialUpdatePlan(
   result: MaterialEnrichmentResult,
   fieldLocks: Partial<Record<MaterialFieldLockKey, boolean>>,
   material: MaterialRow,
@@ -252,7 +254,7 @@ async function logEnrichmentEvent(
   });
 }
 
-export async function commitEnrichmentItem(
+async function _commitEnrichmentItem(
   db: AppDb,
   itemId: number,
   options: { autoCommitHighConfidence?: boolean } = {},
@@ -542,10 +544,12 @@ async function maybeGenerateCatalogPdf(
       evidenceJson: { documentId },
     });
   } catch (error) {
-    console.error(
-      `[material-enrichment] catalog PDF generation failed for material ${input.materialId}:`,
+    log.error("catalog_pdf_generation_failed", {
+      materialId: input.materialId,
+      jobId: input.jobId,
+      itemId: input.itemId,
       error,
-    );
+    });
     await logEnrichmentEvent(db, {
       jobId: input.jobId,
       itemId: input.itemId,
@@ -560,3 +564,7 @@ async function maybeGenerateCatalogPdf(
     }).catch(() => undefined);
   }
 }
+
+export const parseEnrichmentPrice = traceFn(log, "parseEnrichmentPrice", _parseEnrichmentPrice);
+export const buildMaterialUpdatePlan = traceFn(log, "buildMaterialUpdatePlan", _buildMaterialUpdatePlan);
+export const commitEnrichmentItem = traceFn(log, "commitEnrichmentItem", _commitEnrichmentItem);

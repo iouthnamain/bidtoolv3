@@ -255,7 +255,10 @@ test("material mobile controls keep touch targets usable", async ({ page }) => {
     page.getByLabel("Bổ sung dữ liệu từ trang chi tiết sản phẩm"),
     40,
   );
-  await expect(page.getByText("NCC / xuất xứ có thể thiếu")).toBeVisible();
+  await expect(
+    page.getByLabel("Bổ sung dữ liệu từ trang chi tiết sản phẩm"),
+  ).toHaveValue("missing_fields");
+  await expect(page.getByText(/Bổ sung thiếu|mở trang sản phẩm/i)).toBeVisible();
   await expectMinTouchTarget(
     page.getByLabel("Số sản phẩm tối đa cần scrape"),
     40,

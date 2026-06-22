@@ -6,6 +6,7 @@ import {
   normalizeMaterialMetadata,
 } from "~/lib/material-price-sources";
 import {
+  collectShopPageSnapshot,
   enrichProductWithPageText,
   extractProductsFromPageSnapshot,
   extractProductsWithDiagnosticsFromPageSnapshot,
@@ -72,6 +73,15 @@ const CODIENHAIAU_EXPECTED_PRODUCTS = [
     cardName: "Đồng hồ đo tần số Selec MA316 96x96mm",
   },
 ] as const;
+
+describe("collectShopPageSnapshot", () => {
+  it("stays serializable for Playwright browser evaluation", () => {
+    const source = collectShopPageSnapshot.toString();
+
+    expect(source).not.toContain("function_started");
+    expect(source).not.toContain("logger");
+  });
+});
 
 describe("extractProductsFromPageSnapshot", () => {
   it("extracts all 8 codienhaiau category products and ignores sidebar duplicates", () => {
@@ -1268,5 +1278,53 @@ describe("sparse product extraction", () => {
 
     expect(products[0]?.specText).not.toMatch(/\bKH\b/i);
     expect(products[0]?.specText).toContain("Thông số");
+  });
+
+  it("extracts NSX and XX shorthand labels from card text", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/tools",
+      title: "Tools",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Cảm biến nhiệt",
+          href: "https://shop.example.com/cam-bien",
+          imageUrl: null,
+          category: null,
+          text: "Cảm biến nhiệt NSX: Omron XX: Nhật Bản 1.200.000 đ",
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]).toMatchObject({
+      manufacturer: "Omron",
+      originCountry: "Nhật Bản",
+    });
+  });
+
+  it("populates specText from structured spec pairs", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/product/item",
+      title: "Item",
+      jsonLdTexts: [],
+      cards: [
+        {
+          name: "Van điện từ",
+          href: "https://shop.example.com/product/van",
+          imageUrl: null,
+          category: null,
+          text: "Van điện từ",
+          specPairs: [
+            { label: "Thông số kỹ thuật", value: "DN50, PN16" },
+            { label: "NCC", value: "Cadivi" },
+          ],
+        },
+      ],
+      nextLinks: [],
+    });
+
+    expect(products[0]?.specText).toContain("DN50");
+    expect(products[0]?.manufacturer).toBe("Cadivi");
   });
 });

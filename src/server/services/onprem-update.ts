@@ -4,12 +4,14 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { normalizeReleaseVersion } from "~/lib/release-manifest";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-onprem-update");
 
-export function canApplyInAppOnPremUpdates(): boolean {
+function _canApplyInAppOnPremUpdates(): boolean {
   return process.env.BIDTOOL_ALLOW_IN_APP_UPDATES === "true";
 }
 
-export async function applyOnPremUpdate(targetVersion: string): Promise<{
+async function _applyOnPremUpdate(targetVersion: string): Promise<{
   message: string;
   version: string;
 }> {
@@ -72,3 +74,6 @@ export async function applyOnPremUpdate(targetVersion: string): Promise<{
     version,
   };
 }
+
+export const canApplyInAppOnPremUpdates = traceFn(log, "canApplyInAppOnPremUpdates", _canApplyInAppOnPremUpdates);
+export const applyOnPremUpdate = traceFn(log, "applyOnPremUpdate", _applyOnPremUpdate);

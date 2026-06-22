@@ -6,6 +6,9 @@ import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { tenant, user } from "~/server/db/schema";
+import { createLogger, traceFn } from "~/server/lib/logger";
+
+const log = createLogger("auth-bootstrap");
 
 /**
  * Desktop auto-admin bootstrap (Phase 7, Task B).
@@ -97,7 +100,7 @@ async function ensureHostTenant(): Promise<string> {
  *   - no-op if ANY user already exists
  *   - never throws (catches + logs)
  */
-export async function ensureDesktopAdmin(): Promise<void> {
+async function _ensureDesktopAdmin(): Promise<void> {
   try {
     if (resolveSurface() !== "desktop-bundled") {
       return;
@@ -146,12 +149,10 @@ export async function ensureDesktopAdmin(): Promise<void> {
     // so owned data has a coherent tenant to attribute to.
     void hostTenantId;
 
-    console.log(
-      `[auth-bootstrap] Created local desktop admin (${DESKTOP_ADMIN_EMAIL}).`,
-    );
+    log.info("desktop_admin_created", { email: DESKTOP_ADMIN_EMAIL });
   } catch (error) {
-    // Never crash startup: log and continue.
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[auth-bootstrap] ensureDesktopAdmin failed: ${message}`);
+    log.error("desktop_admin_bootstrap_failed", { error });
   }
 }
+
+export const ensureDesktopAdmin = traceFn(log, "ensureDesktopAdmin", _ensureDesktopAdmin);

@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { CATALOG_PDF_MAX_FILE_SIZE } from "~/lib/materials/catalog-pdf";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-catalog-pdf-storage");
 
 const PDF_MAGIC = "%PDF-";
 const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -16,7 +18,7 @@ function storageRoot() {
     : path.join(process.cwd(), "data", "catalog-pdfs");
 }
 
-export function sanitizeCatalogPdfFileName(fileName: string) {
+function _sanitizeCatalogPdfFileName(fileName: string) {
   const base = path.basename(fileName.trim() || "catalog.pdf");
   const cleaned = base
     .replace(/[^\p{L}\p{N}._\- ]+/gu, "_")
@@ -27,7 +29,7 @@ export function sanitizeCatalogPdfFileName(fileName: string) {
   return /\.pdf$/i.test(withName) ? withName : `${withName}.pdf`;
 }
 
-export function assertValidCatalogPdf(buffer: Buffer) {
+function _assertValidCatalogPdf(buffer: Buffer) {
   if (buffer.byteLength === 0) {
     throw new CatalogPdfStorageError("Tệp PDF rỗng.");
   }
@@ -51,7 +53,7 @@ export type StoredCatalogPdf = {
   checksum: string;
 };
 
-export async function saveCatalogPdfFile(
+async function _saveCatalogPdfFile(
   documentId: number,
   fileName: string,
   buffer: Buffer,
@@ -73,7 +75,7 @@ export async function saveCatalogPdfFile(
   };
 }
 
-export async function readCatalogPdfFile(localFilePath: string) {
+async function _readCatalogPdfFile(localFilePath: string) {
   const root = storageRoot();
   const absolute = path.resolve(root, localFilePath);
   if (!absolute.startsWith(root + path.sep)) {
@@ -82,12 +84,12 @@ export async function readCatalogPdfFile(localFilePath: string) {
   return readFile(absolute);
 }
 
-export async function deleteCatalogPdfFiles(documentId: number) {
+async function _deleteCatalogPdfFiles(documentId: number) {
   const absoluteDir = path.join(storageRoot(), String(documentId));
   await rm(absoluteDir, { recursive: true, force: true });
 }
 
-export function decodeCatalogPdfBase64(value: string) {
+function _decodeCatalogPdfBase64(value: string) {
   const base64 = value.includes(",") ? (value.split(",").pop() ?? "") : value;
   const buffer = Buffer.from(base64, "base64");
   if (buffer.byteLength === 0) {
@@ -96,7 +98,7 @@ export function decodeCatalogPdfBase64(value: string) {
   return buffer;
 }
 
-export async function downloadCatalogPdfFromUrl(url: string): Promise<Buffer> {
+async function _downloadCatalogPdfFromUrl(url: string): Promise<Buffer> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -143,3 +145,11 @@ export async function downloadCatalogPdfFromUrl(url: string): Promise<Buffer> {
   assertValidCatalogPdf(buffer);
   return buffer;
 }
+
+export const sanitizeCatalogPdfFileName = traceFn(log, "sanitizeCatalogPdfFileName", _sanitizeCatalogPdfFileName);
+export const assertValidCatalogPdf = traceFn(log, "assertValidCatalogPdf", _assertValidCatalogPdf);
+export const saveCatalogPdfFile = traceFn(log, "saveCatalogPdfFile", _saveCatalogPdfFile);
+export const readCatalogPdfFile = traceFn(log, "readCatalogPdfFile", _readCatalogPdfFile);
+export const deleteCatalogPdfFiles = traceFn(log, "deleteCatalogPdfFiles", _deleteCatalogPdfFiles);
+export const decodeCatalogPdfBase64 = traceFn(log, "decodeCatalogPdfBase64", _decodeCatalogPdfBase64);
+export const downloadCatalogPdfFromUrl = traceFn(log, "downloadCatalogPdfFromUrl", _downloadCatalogPdfFromUrl);

@@ -150,6 +150,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     description: "Preview URL shop rồi nhập sản phẩm vào catalog.",
     icon: "search",
     tone: "violet",
+    match: "prefix",
   },
   {
     href: "/materials/enrich",

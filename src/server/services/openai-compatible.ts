@@ -1,3 +1,6 @@
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-openai-compatible");
+
 /**
  * OpenAI-compatible provider service.
  * Works with any provider that supports the /chat/completions endpoint
@@ -92,7 +95,7 @@ function formatError(status: number, body: string) {
   return `OpenAI Compatible error (${status}): ${body.slice(0, 300)}`;
 }
 
-export async function createOpenAICompatibleChatCompletion(input: {
+async function _createOpenAICompatibleChatCompletion(input: {
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -140,3 +143,5 @@ export async function createOpenAICompatibleChatCompletion(input: {
     usage: data.usage,
   };
 }
+
+export const createOpenAICompatibleChatCompletion = traceFn(log, "createOpenAICompatibleChatCompletion", _createOpenAICompatibleChatCompletion);

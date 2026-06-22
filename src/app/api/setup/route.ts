@@ -7,6 +7,8 @@ import { db } from "~/server/db";
 import { user } from "~/server/db/schema";
 import { eq } from "drizzle-orm";
 
+import { logApiRoute } from "~/server/lib/trpc-request-log";
+
 export const dynamic = "force-dynamic";
 
 interface SetupBody {
@@ -43,6 +45,14 @@ function badRequest(message: string, status = 400) {
  *   avoids leaking whether a specific email exists.
  */
 export async function POST(request: Request) {
+  return logApiRoute({
+    route: "/api/setup",
+    method: "POST",
+    handler: async () => handleSetup(request),
+  });
+}
+
+async function handleSetup(request: Request) {
   const configuredToken = env.AUTH_BOOTSTRAP_TOKEN?.trim();
   if (!configuredToken) {
     return badRequest(

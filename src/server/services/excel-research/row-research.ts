@@ -16,6 +16,8 @@ import { searchWeb } from "~/server/services/excel-research/web-search";
 import { resolveAiProvider } from "~/server/services/app-settings";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import type { MaterialEnrichmentInput } from "~/lib/materials/material-enrichment-types";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-row-research");
 
 type AppDb = typeof appDb;
 
@@ -48,7 +50,7 @@ export type RowResearchOutput = {
   }>;
 };
 
-export async function processSingleRow(
+async function _processSingleRow(
   db: AppDb,
   input: RowResearchInput,
   config: ExcelResearchJobConfig,
@@ -87,7 +89,10 @@ export async function processSingleRow(
   const webEvidence: RowResearchOutput["webEvidence"] = [];
   let bestWebRank = 0;
 
-  if (config.enableWebSearch) {
+  const shouldSearchWeb =
+    config.enableWebSearch && catalogScore < config.autoThreshold;
+
+  if (shouldSearchWeb) {
     const queries = buildSearchQueries({
       name: input.productName,
       manufacturer: fields.manufacturer,
@@ -95,13 +100,12 @@ export async function processSingleRow(
       specText: fields.specText,
     });
 
-    for (const q of queries) {
-      const { hits } = await searchWeb(q.query, 5);
-      const ranked = rankSearchHits(
-        hits,
-        input.productName,
-        fields.manufacturer,
-      );
+    const searchResults = await Promise.all(
+      queries.map((q) => searchWeb(q.query, 5)),
+    );
+
+    for (const { hits } of searchResults) {
+      const ranked = rankSearchHits(hits, input.productName, fields.manufacturer);
       for (const hit of ranked.slice(0, 3)) {
         webEvidence.push({
           title: hit.title,
@@ -156,7 +160,7 @@ export async function processSingleRow(
 
   const webAcceptedFields: FillableField[] = [];
 
-  if (config.enableWebSearch && webEvidence.length > 0) {
+  if (shouldSearchWeb && webEvidence.length > 0) {
     try {
       const provider = await resolveAiProvider("enrichment");
       const rankedHits = webHitsToSearchResults(webEvidence);
@@ -297,3 +301,5 @@ export async function processSingleRow(
     webEvidence,
   };
 }
+
+export const processSingleRow = traceFn(log, "processSingleRow", _processSingleRow);

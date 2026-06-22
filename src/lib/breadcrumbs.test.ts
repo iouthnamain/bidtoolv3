@@ -109,4 +109,14 @@ describe("buildBreadcrumbs", () => {
       "Chi tiết job",
     ]);
   });
+
+  it("resolves material enrichment routes", () => {
+    const crumbs = buildBreadcrumbs("/materials/enrich/jobs/job-1");
+    expect(crumbs.map((c) => c.label)).toEqual([
+      "Tổng quan",
+      "Sản phẩm / vật tư",
+      "Làm giàu vật tư",
+      "Chi tiết job làm giàu",
+    ]);
+  });
 });

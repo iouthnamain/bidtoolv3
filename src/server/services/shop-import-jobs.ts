@@ -12,6 +12,8 @@ import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortShopImportJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-import-jobs");
 
 export type ShopImportJobStatus =
   | "queued"
@@ -57,14 +59,20 @@ export type ShopImportJobSnapshot = ShopImportJobProgress & {
 };
 
 export type ShopImportJobListItem = Omit<ShopImportJobSnapshot, "items">;
+export type ShopImportJobProgressSnapshot = ShopImportJobListItem;
 
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 
 const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
+const IMPORTABLE_SCRAPE_JOB_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
 
-export async function startShopImportJob(
+async function _startShopImportJob(
   input: {
     scrapeJobId: string;
     productSourceUrls?: string[];
@@ -77,6 +85,7 @@ export async function startShopImportJob(
       status: shopScrapeJobs.status,
       products: shopScrapeJobs.products,
       tenantId: shopScrapeJobs.tenantId,
+      expiresAt: shopScrapeJobs.expiresAt,
     })
     .from(shopScrapeJobs)
     .where(
@@ -93,11 +102,21 @@ export async function startShopImportJob(
       "Không tìm thấy job scrape shop.",
     );
   }
-  if (scrapeJob.status !== "completed") {
+  if (
+    !IMPORTABLE_SCRAPE_JOB_STATUSES.includes(
+      scrapeJob.status as (typeof IMPORTABLE_SCRAPE_JOB_STATUSES)[number],
+    )
+  ) {
     throw new ShopJobServiceError(
       "BAD_REQUEST",
-      "Chỉ có thể nhập catalog từ job scrape đã hoàn tất.",
+      "Chỉ có thể nhập catalog từ job scrape đã dừng (hoàn tất, lỗi hoặc hủy).",
     );
+  }
+  if (
+    scrapeJob.expiresAt &&
+    new Date(scrapeJob.expiresAt).getTime() < Date.now()
+  ) {
+    throw new ShopJobServiceError("BAD_REQUEST", "Job scrape đã hết hạn.");
   }
 
   const products = filterProductsBySourceUrls(
@@ -131,7 +150,7 @@ export async function startShopImportJob(
   return toImportJobSnapshot(requireRow(job));
 }
 
-export async function listShopImportJobs(
+async function _listShopImportJobs(
   input: {
     scrapeJobId?: string;
     limit?: number;
@@ -161,7 +180,7 @@ export async function listShopImportJobs(
   return rows.map(toImportJobListItem);
 }
 
-export async function getShopImportJob(jobId: string, scope?: TenantScopeValue) {
+async function _getShopImportJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
     .from(shopImportJobs)
@@ -176,7 +195,25 @@ export async function getShopImportJob(jobId: string, scope?: TenantScopeValue) 
   return job ? toImportJobSnapshot(job) : null;
 }
 
-export async function cancelShopImportJob(
+async function _getShopImportJobProgress(
+  jobId: string,
+  scope?: TenantScopeValue,
+) {
+  const [job] = await db
+    .select()
+    .from(shopImportJobs)
+    .where(
+      and(
+        eq(shopImportJobs.id, jobId),
+        tenantConditionForValue(scope, shopImportJobs.tenantId),
+      ),
+    )
+    .limit(1);
+
+  return job ? toImportJobListItem(job) : null;
+}
+
+async function _cancelShopImportJob(
   jobId: string,
   scope?: TenantScopeValue,
 ) {
@@ -297,3 +334,13 @@ function requireRow(row: ShopImportJobRow | undefined) {
   }
   return row;
 }
+
+export const startShopImportJob = traceFn(log, "startShopImportJob", _startShopImportJob);
+export const listShopImportJobs = traceFn(log, "listShopImportJobs", _listShopImportJobs);
+export const getShopImportJob = traceFn(log, "getShopImportJob", _getShopImportJob);
+export const getShopImportJobProgress = traceFn(
+  log,
+  "getShopImportJobProgress",
+  _getShopImportJobProgress,
+);
+export const cancelShopImportJob = traceFn(log, "cancelShopImportJob", _cancelShopImportJob);

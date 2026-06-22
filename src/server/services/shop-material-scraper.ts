@@ -16,11 +16,20 @@ import {
   stripKhauHaoFromSpecText,
 } from "~/lib/materials/shop-promo-badges";
 import {
+  mergeExtraSpecSelectors,
+  profileListingPathPatterns,
+  profileProductPathPatterns,
+  resolveShopSiteProfile,
+  buildHostSpecLabelPrefixes,
+} from "~/lib/materials/shop-site-profiles";
+import {
   normalizeManufacturer,
   normalizeOriginCountry,
 } from "~/lib/materials/shop-attribute-normalize";
 import { isServerlessRuntime } from "~/server/runtime";
 import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-shop-material-scraper");
 
 export { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
 
@@ -168,9 +177,11 @@ let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
 type ShopScrapePageConfig = {
   promoBadgeLabels: readonly string[];
   specLabelPrefixes?: readonly string[];
+  extraCardSelectors?: readonly string[];
+  extraSpecSelectors?: readonly string[];
 };
 
-export async function scrapeShopMaterialsFromUrl({
+async function _scrapeShopMaterialsFromUrl({
   url,
   maxPages = DEFAULT_MAX_PAGES,
   maxProducts = DEFAULT_MAX_PRODUCTS,
@@ -379,6 +390,7 @@ export async function scrapeShopMaterialsFromUrl({
             notifyWorkers();
           }
         };
+        const visitedDetailUrls = new Set<string>();
         const scrapeWorker = async (workerIndex: number) => {
           const page = await context.newPage();
           try {
@@ -411,6 +423,7 @@ export async function scrapeShopMaterialsFromUrl({
                         method,
                         scrapeDeadline,
                         signal,
+                        visitedDetailUrls,
                         reportProgress: (currentUrl) => {
                           currentUrlsByWorker.set(workerIndex, currentUrl);
                           reportProgress("reading");
@@ -571,9 +584,16 @@ async function scrapePageSnapshot({
   await autoScrollPageForLazyProducts(page, scrapeDeadline);
 
   await assertSafeScrapeUrl(page.url(), expectedHostname);
-  return page.evaluate(collectShopPageSnapshot, {
+  const siteProfile = resolveShopSiteProfile(expectedHostname);
+  const specLabelPrefixes = buildHostSpecLabelPrefixes(
+    siteProfile,
+    labeledValueDefinitions,
+  );
+  return page.evaluate(_collectShopPageSnapshot, {
     promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
-    specLabelPrefixes: [...ALL_SPEC_LABELS],
+    specLabelPrefixes,
+    extraCardSelectors: siteProfile.extraCardSelectors ?? [],
+    extraSpecSelectors: mergeExtraSpecSelectors(siteProfile),
   });
 }
 
@@ -604,7 +624,7 @@ function throwIfAborted(signal: AbortSignal | undefined) {
   }
 }
 
-export async function closeShopScraperBrowser() {
+async function _closeShopScraperBrowser() {
   const browserPromise = SHARED_BROWSER_PROMISE;
   SHARED_BROWSER_PROMISE = null;
   if (!browserPromise) {
@@ -626,7 +646,7 @@ export async function closeShopScraperBrowser() {
   }
 }
 
-export function extractProductsFromPageSnapshot(
+function _extractProductsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
 ): ScrapedShopProduct[] {
@@ -634,7 +654,7 @@ export function extractProductsFromPageSnapshot(
     .products;
 }
 
-export function extractProductsWithDiagnosticsFromPageSnapshot(
+function _extractProductsWithDiagnosticsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
 ): {
@@ -685,7 +705,9 @@ export function extractProductsWithDiagnosticsFromPageSnapshot(
   // manufacturer/origin onto the others.
   const pageLabels =
     mergedProducts.length <= 1
-      ? extractLabelsFromPairs(snapshot.specPairs)
+      ? extractLabelsFromPairs(snapshot.specPairs, {
+          includeUnmatchedSpec: true,
+        })
       : null;
   const products = sanitizeScrapedProductList(
     pageLabels
@@ -704,6 +726,7 @@ function applyLabelFields(
   return {
     ...product,
     category: product.category ?? labels.category,
+    specText: mergeSpecText(product.specText, labels.specText),
     manufacturer:
       product.manufacturer ?? normalizeManufacturer(labels.manufacturer),
     originCountry:
@@ -715,6 +738,26 @@ function applyLabelFields(
   };
 }
 
+function mergeSpecText(
+  current: string | null | undefined,
+  incoming: string | null | undefined,
+) {
+  const currentText = current?.trim() ?? "";
+  const incomingText = incoming?.trim() ?? "";
+  if (!incomingText) {
+    return currentText;
+  }
+  if (!currentText) {
+    return incomingText;
+  }
+  if (currentText.includes(incomingText)) {
+    return currentText;
+  }
+  return incomingText.length > currentText.length
+    ? incomingText
+    : currentText;
+}
+
 type DetailEnrichmentInput = {
   page: Page;
   products: ScrapedShopProduct[];
@@ -723,6 +766,7 @@ type DetailEnrichmentInput = {
   method: ShopScrapeMethod;
   scrapeDeadline: number;
   signal?: AbortSignal;
+  visitedDetailUrls: Set<string>;
   reportProgress: (currentUrl: string) => void;
   onFailedPage: (url: string, message: string) => void;
 };
@@ -735,10 +779,16 @@ async function enrichProductsFromDetailPages({
   method,
   scrapeDeadline,
   signal,
+  visitedDetailUrls,
   reportProgress,
   onFailedPage,
 }: DetailEnrichmentInput) {
   const enrichedProducts: ScrapedShopProduct[] = [];
+  const siteProfile = resolveShopSiteProfile(expectedHostname);
+  const specLabelPrefixes = buildHostSpecLabelPrefixes(
+    siteProfile,
+    labeledValueDefinitions,
+  );
 
   for (const product of products) {
     throwIfAborted(signal);
@@ -746,6 +796,11 @@ async function enrichProductsFromDetailPages({
       enrichedProducts.push(product);
       continue;
     }
+    if (visitedDetailUrls.has(product.sourceUrl)) {
+      enrichedProducts.push(product);
+      continue;
+    }
+    visitedDetailUrls.add(product.sourceUrl);
 
     try {
       const detailUrl = await assertSafeScrapeUrl(
@@ -771,9 +826,11 @@ async function enrichProductsFromDetailPages({
       await page.waitForTimeout(150).catch(() => undefined);
       await assertSafeScrapeUrl(page.url(), expectedHostname);
 
-      const snapshot = await page.evaluate(collectShopPageSnapshot, {
+      const snapshot = await page.evaluate(_collectShopPageSnapshot, {
         promoBadgeLabels: [...SHOP_PROMO_BADGE_LABELS],
-        specLabelPrefixes: [...ALL_SPEC_LABELS],
+        specLabelPrefixes,
+        extraCardSelectors: siteProfile.extraCardSelectors ?? [],
+        extraSpecSelectors: mergeExtraSpecSelectors(siteProfile),
       });
       const detailProducts = extractProductsFromPageSnapshot(snapshot, method);
       const detailProduct =
@@ -813,12 +870,20 @@ function shouldEnrichFromDetailPage(
   if (!product.sourceUrl || product.sourceUrl === currentPageUrl) {
     return false;
   }
+  const manufacturerLooksLikeResidue =
+    !!product.manufacturer &&
+    /^(?:nsx|ncc|hãng|hang|brand|manufacturer)\b/i.test(product.manufacturer);
+  const originLooksLikeResidue =
+    !!product.originCountry &&
+    /^(?:xx|xuất xứ|xuat xu|origin|made in)\b/i.test(product.originCountry);
   return Boolean(
     !product.manufacturer ||
-    !product.originCountry ||
-    !product.category ||
-    !product.unit ||
-    !product.specText.trim(),
+      manufacturerLooksLikeResidue ||
+      !product.originCountry ||
+      originLooksLikeResidue ||
+      !product.category ||
+      !product.unit ||
+      !product.specText.trim(),
   );
 }
 
@@ -843,7 +908,7 @@ function findBestDetailProduct(
   );
 }
 
-export function mergeScrapedProductData(
+function _mergeScrapedProductData(
   base: ScrapedShopProduct | undefined,
   incoming: ScrapedShopProduct,
 ): ScrapedShopProduct {
@@ -1145,7 +1210,7 @@ function isPrivateIpv4(address: string) {
   );
 }
 
-export function collectShopPageSnapshot(
+function _collectShopPageSnapshot(
   config: ShopScrapePageConfig = { promoBadgeLabels: [] },
 ): ShopPageSnapshot {
   const promoBadgeLabels = config.promoBadgeLabels ?? [];
@@ -1373,6 +1438,30 @@ export function collectShopPageSnapshot(
         pushSpecPair(pairs, seen, match[1], match[2]);
       }
     }
+    for (const selector of config.extraSpecSelectors ?? []) {
+      if (pairs.length >= SPEC_PAIR_CAP) break;
+      for (const container of Array.from(root.querySelectorAll(selector))) {
+        if (pairs.length >= SPEC_PAIR_CAP) break;
+        for (const row of Array.from(container.querySelectorAll("tr"))) {
+          if (pairs.length >= SPEC_PAIR_CAP) break;
+          const cells = Array.from(row.querySelectorAll("th, td"));
+          if (cells.length < 2) continue;
+          pushSpecPair(pairs, seen, text(cells[0]), cells.slice(1).map((cell) => text(cell)).filter(Boolean).join(" "));
+        }
+        for (const dl of Array.from(container.querySelectorAll("dl"))) {
+          if (pairs.length >= SPEC_PAIR_CAP) break;
+          const children = Array.from(dl.children);
+          for (let i = 0; i < children.length; i += 1) {
+            const node = children[i];
+            if (node?.tagName?.toLowerCase() !== "dt") continue;
+            const next = children[i + 1];
+            if (next?.tagName?.toLowerCase() === "dd") {
+              pushSpecPair(pairs, seen, text(node), text(next));
+            }
+          }
+        }
+      }
+    }
     return pairs;
   };
   const isWidgetProductNode = (node: Element) =>
@@ -1585,10 +1674,16 @@ export function collectShopPageSnapshot(
       extractSource,
     };
   };
+  const defaultCardSelectors =
+    ".catepage .motsanpham, ul.products li.product, li.product.type-product";
+  const extraCardSelectors = (config.extraCardSelectors ?? [])
+    .filter(Boolean)
+    .join(", ");
+  const cardSelector = extraCardSelectors
+    ? `${defaultCardSelectors}, ${extraCardSelectors}`
+    : defaultCardSelectors;
   const wooNodes = Array.from(
-    document.querySelectorAll(
-      ".catepage .motsanpham, ul.products li.product, li.product.type-product",
-    ),
+    document.querySelectorAll(cardSelector),
   ).filter((node) => !isWidgetProductNode(node));
   const cardsByHref = new Map<
     string,
@@ -1880,11 +1975,15 @@ function productCandidateFromCardSnapshot(
   // Structured spec rows (tables / <dl> / labeled lists) are more reliable than
   // flattened-text regex, so prefer them and fall back to the text labels.
   const pairLabels = extractLabelsFromPairs(card.specPairs);
+  const cardSpecText = mergeSpecText(
+    pairLabels.specText,
+    cleanDescription(card.text, name),
+  );
   const product: ScrapedShopProduct = {
     name,
     unit: detectUnit(`${name} ${card.text}`),
     category: card.category ?? pairLabels.category ?? labels.category,
-    specText: cleanDescription(card.text, name),
+    specText: cardSpecText,
     manufacturer: pairLabels.manufacturer ?? labels.manufacturer,
     originCountry: pairLabels.originCountry ?? labels.originCountry,
     price: priceResult.price,
@@ -2260,24 +2359,8 @@ function absoluteUrl(value: string | null | undefined, baseUrl: string) {
 }
 
 const PRODUCT_DETAIL_PATH_PATTERN = /\/(?:product|products|san-pham|p|item)\//i;
-const STRONG_PRODUCT_DETAIL_PATH_PATTERN =
-  /\/(?:product|products|p|item|show)(?:\/|$)|_p\d+\.aspx$/i;
 const LISTING_PATH_PATTERN =
   /\/(?:category|categories|product-category|danh-muc|collections?|search|tag|tags|archive|account|login|register|cart|checkout)\b/i;
-const SHOP_URL_PROFILES = [
-  {
-    hostPattern: /(?:^|\.)thegioiic\.com$/i,
-    listingPathPatterns: [/^\/san-pham(?:\/|$)/i],
-  },
-  {
-    hostPattern: /(?:^|\.)dientutuonglai\.com$/i,
-    listingPathPatterns: [/^\/san-pham(?:\/|$)/i],
-  },
-  {
-    hostPattern: /(?:^|\.)linhkienchatluong\.vn$/i,
-    listingPathPatterns: [/_s\d+\.aspx$/i],
-  },
-] as const;
 
 function normalizeProductSourceUrl(
   value: string | null | undefined,
@@ -2335,7 +2418,10 @@ function isLikelyProductDetailUrl(value: string) {
     if (matchesShopListingProfile(url)) {
       return false;
     }
-    if (PRODUCT_DETAIL_PATH_PATTERN.test(`${path}/`)) {
+    if (
+      PRODUCT_DETAIL_PATH_PATTERN.test(`${path}/`) ||
+      matchesShopProductProfile(url)
+    ) {
       return true;
     }
     return path !== "/" && !isLikelyListingOnlyUrl(value);
@@ -2380,16 +2466,31 @@ function isLikelyListingOnlyUrl(value: string) {
 
 function matchesShopListingProfile(url: URL) {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
-  return SHOP_URL_PROFILES.some(
-    (profile) =>
-      profile.hostPattern.test(hostname) &&
-      profile.listingPathPatterns.some((pattern) => pattern.test(url.pathname)),
-  );
+  const profile = resolveShopSiteProfile(hostname);
+  const listingPatterns = profileListingPathPatterns(profile);
+  if (listingPatterns.length === 0) {
+    return false;
+  }
+  return listingPatterns.some((pattern) => pattern.test(url.pathname));
+}
+
+function matchesShopProductProfile(url: URL) {
+  const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+  const profile = resolveShopSiteProfile(hostname);
+  const productPatterns = profileProductPathPatterns(profile);
+  if (productPatterns.length === 0) {
+    return false;
+  }
+  return productPatterns.some((pattern) => pattern.test(url.pathname));
 }
 
 function hasStrongProductUrlSignal(value: string) {
   try {
-    return STRONG_PRODUCT_DETAIL_PATH_PATTERN.test(new URL(value).pathname);
+    const url = new URL(value);
+    return (
+      PRODUCT_DETAIL_PATH_PATTERN.test(`${url.pathname}/`) ||
+      matchesShopProductProfile(url)
+    );
   } catch {
     return false;
   }
@@ -2475,6 +2576,7 @@ function cleanDescription(text: string, name: string) {
 
 const labeledValueDefinitions = {
   manufacturer: [
+    "nsx",
     "ncc",
     "nhà cung cấp",
     "nha cung cap",
@@ -2482,16 +2584,26 @@ const labeledValueDefinitions = {
     "nha san xuat",
     "nhà sx",
     "nha sx",
+    "hãng sx",
+    "hang sx",
     "hãng",
     "hang",
+    "thương hiệu sx",
+    "thuong hieu sx",
     "thương hiệu",
     "thuong hieu",
     "nhãn hiệu",
     "nhan hieu",
+    "công ty",
+    "cong ty",
+    "cty",
     "brand",
     "manufacturer",
   ],
   originCountry: [
+    "xx",
+    "xuất xứ sx",
+    "xuat xu sx",
     "xuất xứ",
     "xuat xu",
     "xuất sứ",
@@ -2499,11 +2611,14 @@ const labeledValueDefinitions = {
     "noi san xuat",
     "nước sản xuất",
     "nuoc san xuat",
+    "quốc gia",
+    "quoc gia",
     "sản xuất tại",
     "san xuat tai",
     "made in",
     "origin",
     "country of origin",
+    "country",
   ],
   category: ["nhóm", "nhom", "danh mục", "danh muc", "category"],
   sku: [
@@ -2522,6 +2637,14 @@ const labeledValueDefinitions = {
     "thong so ky thuat",
     "thông số",
     "thong so",
+    "quy cách",
+    "quy cach",
+    "thông tin sp",
+    "thong tin sp",
+    "mô tả chi tiết",
+    "mo ta chi tiet",
+    "đặc tính",
+    "dac tinh",
     "specs",
   ],
 } as const;
@@ -2599,12 +2722,35 @@ type ExtractedLabelFields = {
   sku: string | null;
   model: string | null;
   availability: string | null;
+  specText: string | null;
 };
+
+function aggregateUnmatchedSpecPairs(
+  pairs: ReadonlyArray<{ label: string; value: string }> | undefined,
+) {
+  if (!pairs?.length) {
+    return null;
+  }
+  const chunks: string[] = [];
+  for (const pair of pairs) {
+    const field = matchLabeledFieldName(pair.label);
+    if (field) {
+      continue;
+    }
+    const cleaned = cleanLabeledValue(pair.value);
+    if (!cleaned) {
+      continue;
+    }
+    chunks.push(`${pair.label.trim()}: ${cleaned}`);
+  }
+  return chunks.length > 0 ? chunks.join("\n") : null;
+}
 
 // Maps structured spec pairs (from tables / <dl> / labeled list rows) onto the
 // known product fields. The first non-empty value for a field wins.
 function extractLabelsFromPairs(
   pairs: ReadonlyArray<{ label: string; value: string }> | undefined,
+  options?: { includeUnmatchedSpec?: boolean },
 ): ExtractedLabelFields {
   const fields: ExtractedLabelFields = {
     manufacturer: null,
@@ -2613,13 +2759,22 @@ function extractLabelsFromPairs(
     sku: null,
     model: null,
     availability: null,
+    specText: null,
   };
   if (!pairs?.length) {
     return fields;
   }
+  const specTextParts: string[] = [];
   for (const pair of pairs) {
     const field = matchLabeledFieldName(pair.label);
-    if (!field || field === "specText") {
+    if (field === "specText") {
+      const cleaned = cleanLabeledValue(pair.value);
+      if (cleaned) {
+        specTextParts.push(cleaned);
+      }
+      continue;
+    }
+    if (!field) {
       continue;
     }
     if (fields[field] != null) {
@@ -2629,6 +2784,11 @@ function extractLabelsFromPairs(
     if (cleaned) {
       fields[field] = cleaned;
     }
+  }
+  if (specTextParts.length > 0) {
+    fields.specText = specTextParts.join("\n");
+  } else if (options?.includeUnmatchedSpec) {
+    fields.specText = aggregateUnmatchedSpecPairs(pairs);
   }
   return fields;
 }
@@ -2644,14 +2804,32 @@ function extractLabelsFromAdditionalProperty(
       : [];
   const pairs: Array<{ label: string; value: string }> = [];
   for (const record of records) {
-    const label = stringValue(record.name) ?? stringValue(record.propertyID);
+    let label = stringValue(record.name) ?? stringValue(record.propertyID);
     const propValue =
       stringValue(record.value) ?? stringValue(record.unitText);
+    if (label) {
+      const alias = normalizeAdditionalPropertyLabel(label);
+      if (alias) {
+        label = alias;
+      }
+    }
     if (label && propValue) {
       pairs.push({ label, value: propValue });
     }
   }
   return extractLabelsFromPairs(pairs);
+}
+
+const ADDITIONAL_PROPERTY_LABEL_ALIASES: Record<string, string> = {
+  nsx: "NCC",
+  xx: "Xuất xứ",
+  "nha sx": "NCC",
+  "hang sx": "NCC",
+};
+
+function normalizeAdditionalPropertyLabel(label: string) {
+  const key = normalizeKey(label);
+  return ADDITIONAL_PROPERTY_LABEL_ALIASES[key] ?? null;
 }
 
 
@@ -2697,22 +2875,24 @@ function cleanLabeledValue(value: string | undefined) {
   return cleaned.slice(0, 160);
 }
 
-export function enrichProductWithPageText(
+function _enrichProductWithPageText(
   product: ScrapedShopProduct,
   pageText: string,
   specPairs?: ReadonlyArray<{ label: string; value: string }>,
 ): ScrapedShopProduct {
   const labels = extractProductLabels(pageText);
   // Prefer structured spec rows from the detail page over flattened-text regex.
-  const pairLabels = extractLabelsFromPairs(specPairs);
+  const pairLabels = extractLabelsFromPairs(specPairs, {
+    includeUnmatchedSpec: true,
+  });
   return {
     ...product,
     unit: product.unit ?? detectUnit(`${product.name} ${pageText}`),
     category: product.category ?? pairLabels.category ?? labels.category,
-    specText:
-      product.specText.trim().length > 0
-        ? product.specText
-        : cleanDescription(pageText, product.name),
+    specText: mergeSpecText(
+      product.specText,
+      pairLabels.specText ?? cleanDescription(pageText, product.name),
+    ),
     manufacturer:
       product.manufacturer ?? pairLabels.manufacturer ?? labels.manufacturer,
     originCountry:
@@ -2782,3 +2962,12 @@ function normalizeKey(value: string) {
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+export const scrapeShopMaterialsFromUrl = traceFn(log, "scrapeShopMaterialsFromUrl", _scrapeShopMaterialsFromUrl);
+export const closeShopScraperBrowser = traceFn(log, "closeShopScraperBrowser", _closeShopScraperBrowser);
+export const extractProductsFromPageSnapshot = traceFn(log, "extractProductsFromPageSnapshot", _extractProductsFromPageSnapshot);
+export const extractProductsWithDiagnosticsFromPageSnapshot = traceFn(log, "extractProductsWithDiagnosticsFromPageSnapshot", _extractProductsWithDiagnosticsFromPageSnapshot);
+export const mergeScrapedProductData = traceFn(log, "mergeScrapedProductData", _mergeScrapedProductData);
+// Must stay unwrapped: Playwright serializes this function into the browser.
+export const collectShopPageSnapshot = _collectShopPageSnapshot;
+export const enrichProductWithPageText = traceFn(log, "enrichProductWithPageText", _enrichProductWithPageText);

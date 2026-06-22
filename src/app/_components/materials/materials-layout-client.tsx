@@ -38,12 +38,17 @@ export function MaterialsLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const meta =
-    pathname.startsWith("/materials/enrich/jobs/")
+  const meta = pathname.startsWith("/materials/enrich/jobs/")
+    ? {
+        title: "Job làm giàu vật tư",
+        description:
+          "Theo dõi tiến độ enrichment, duyệt kết quả và commit vào catalog.",
+      }
+    : pathname.startsWith("/materials/scrape/jobs/")
       ? {
-          title: "Job làm giàu vật tư",
+          title: "Scrape job shop",
           description:
-            "Theo dõi tiến độ enrichment, duyệt kết quả và commit vào catalog.",
+            "Theo dõi tiến độ scrape, duyệt sản phẩm và nhập vào catalog.",
         }
       : (PAGE_META[pathname] ?? DEFAULT_META);
 

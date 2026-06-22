@@ -8,6 +8,8 @@ import {
   type ScoreBreakdown,
 } from "~/server/services/ai-product-matcher";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-enrich");
 import {
   columnKeys,
   parseOptionalNumber,
@@ -87,7 +89,7 @@ export type EnrichRowResult = {
 // Row → ScrapedShopProduct shape (the matcher's input)
 // ---------------------------------------------------------------------------
 
-export function rowToScrapedProduct(
+function _rowToScrapedProduct(
   fields: Partial<Record<FillableField, string>> & { name?: string },
 ): ScrapedShopProduct {
   return {
@@ -195,7 +197,7 @@ function materialToFields(
  * DB row to the field-map shape the pure planner expects and delegates, so the
  * fill logic has exactly one implementation.
  */
-export function buildFillPlan(
+function _buildFillPlan(
   rowFields: Partial<Record<FillableField, string>>,
   material: MaterialRow | null,
   forceOverwrite = new Set<FillableField>(),
@@ -238,22 +240,37 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function matchRows(
+async function _matchRows(
   db: AppDb,
   rows: Array<EnrichRowInput & { name?: string }>,
   opts: { minSimilarity?: number; limit?: number } = {},
 ): Promise<EnrichRowResult[]> {
   const minSimilarity = opts.minSimilarity ?? 0.1;
   const limit = opts.limit ?? 8;
+  const matchKeyForRow = (row: EnrichRowInput & { name?: string }) =>
+    JSON.stringify({
+      name: row.name?.trim() ?? "",
+      code: row.fields.code?.trim() ?? "",
+      unit: row.fields.unit?.trim() ?? "",
+      manufacturer: row.fields.manufacturer?.trim() ?? "",
+      originCountry: row.fields.originCountry?.trim() ?? "",
+      specText: row.fields.specText?.trim() ?? "",
+    });
+  const uniqueRows = new Map<string, EnrichRowInput & { name?: string }>();
+  const rowKeys = rows.map((row) => {
+    const key = matchKeyForRow(row);
+    if (!uniqueRows.has(key)) uniqueRows.set(key, row);
+    return key;
+  });
 
-  const rawResults = await mapWithConcurrency(
-    rows,
+  const uniqueRawResults = await mapWithConcurrency(
+    Array.from(uniqueRows.entries()),
     MATCH_CONCURRENCY,
-    async (row) => {
+    async ([key, row]) => {
       const product = rowToScrapedProduct({ ...row.fields, name: row.name });
       if (!product.name) {
         return {
-          originalRowIndex: row.originalRowIndex,
+          key,
           candidateIds: [] as number[],
           scored: [] as Array<{ id: number; score: number; breakdown: ScoreBreakdown }>,
         };
@@ -265,7 +282,7 @@ export async function matchRows(
         limit,
       );
       return {
-        originalRowIndex: row.originalRowIndex,
+        key,
         candidateIds: candidates.map((c) => c.materialId),
         scored: candidates.map((c) => ({
           id: c.materialId,
@@ -275,6 +292,8 @@ export async function matchRows(
       };
     },
   );
+  const rawByKey = new Map(uniqueRawResults.map((result) => [result.key, result]));
+  const rawResults = rowKeys.map((key) => rawByKey.get(key)!);
 
   const allIds = Array.from(
     new Set(rawResults.flatMap((r) => r.candidateIds)),
@@ -360,7 +379,7 @@ export type WriteWorkbookOptions = {
  * and filled values are written into the existing data rows. In "clean" mode a
  * fresh workbook with the canonical column order is emitted.
  */
-export async function writeEnrichedWorkbook(
+async function _writeEnrichedWorkbook(
   opts: WriteWorkbookOptions,
 ): Promise<Buffer> {
   return opts.mode === "clean"
@@ -578,7 +597,7 @@ function cellToText(value: ExcelJS.CellValue): string {
  * Resolve the row field map for a sheet given its mapping, keyed by the
  * fillable field set. The product name lives under the reserved `name` key.
  */
-export function extractRowFields(
+function _extractRowFields(
   sheet: ParsedWorkbookSheet,
   mapping: ColumnMapping,
 ): Array<EnrichRowInput & { name: string }> {
@@ -613,3 +632,9 @@ export function extractRowFields(
 }
 
 export { columnKeys };
+
+export const rowToScrapedProduct = traceFn(log, "rowToScrapedProduct", _rowToScrapedProduct);
+export const buildFillPlan = traceFn(log, "buildFillPlan", _buildFillPlan);
+export const matchRows = traceFn(log, "matchRows", _matchRows);
+export const writeEnrichedWorkbook = traceFn(log, "writeEnrichedWorkbook", _writeEnrichedWorkbook);
+export const extractRowFields = traceFn(log, "extractRowFields", _extractRowFields);

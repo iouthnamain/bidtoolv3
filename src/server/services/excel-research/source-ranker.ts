@@ -1,4 +1,6 @@
 import type { RawSearchHit } from "~/server/services/excel-research/web-search";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-excel-research-source-ranker");
 
 const MARKETPLACE_DOMAINS = new Set([
   "shopee.vn",
@@ -72,7 +74,7 @@ function tierScore(tier: SourceTier) {
   }
 }
 
-export function rankSearchHits(
+function _rankSearchHits(
   hits: RawSearchHit[],
   productName: string,
   manufacturer?: string,
@@ -105,3 +107,5 @@ export function rankSearchHits(
     })
     .sort((a, b) => b.rankScore - a.rankScore);
 }
+
+export const rankSearchHits = traceFn(log, "rankSearchHits", _rankSearchHits);

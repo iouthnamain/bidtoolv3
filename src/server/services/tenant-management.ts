@@ -4,6 +4,8 @@ import { asc, eq, sql } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import { tenant, user } from "~/server/db/schema";
+import { createLogger, traceFn } from "~/server/lib/logger";
+const log = createLogger("services-tenant-management");
 
 /**
  * Tenant management service (admin/manager governance).
@@ -63,7 +65,7 @@ async function generateUniqueSlug(name: string): Promise<string> {
 }
 
 /** List all tenants with a live count of users attributed to each. */
-export async function listTenants(): Promise<TenantRow[]> {
+async function _listTenants(): Promise<TenantRow[]> {
   const rows = await db
     .select({
       id: tenant.id,
@@ -81,7 +83,7 @@ export async function listTenants(): Promise<TenantRow[]> {
 }
 
 /** Create a tenant, deriving a unique slug from the name. */
-export async function createTenant(name: string): Promise<TenantRow> {
+async function _createTenant(name: string): Promise<TenantRow> {
   const trimmed = name.trim();
   if (!trimmed) {
     throw new Error("Tên tổ chức không được để trống.");
@@ -107,7 +109,7 @@ export async function createTenant(name: string): Promise<TenantRow> {
 
 /** Rename a tenant. The slug is intentionally left stable to avoid breaking any
  * external reference; only the display name changes. */
-export async function renameTenant(id: string, name: string): Promise<void> {
+async function _renameTenant(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) {
     throw new Error("Tên tổ chức không được để trống.");
@@ -131,7 +133,7 @@ export async function renameTenant(id: string, name: string): Promise<void> {
  * fail-closed (they would see nothing). Forcing the caller to reassign or remove
  * members first keeps the data model coherent and the intent explicit.
  */
-export async function deleteTenant(id: string): Promise<void> {
+async function _deleteTenant(id: string): Promise<void> {
   const members = await db
     .select({ value: sql<number>`count(*)::int` })
     .from(user)
@@ -153,3 +155,8 @@ export async function deleteTenant(id: string): Promise<void> {
     throw new Error("Không tìm thấy tổ chức.");
   }
 }
+
+export const listTenants = traceFn(log, "listTenants", _listTenants);
+export const createTenant = traceFn(log, "createTenant", _createTenant);
+export const renameTenant = traceFn(log, "renameTenant", _renameTenant);
+export const deleteTenant = traceFn(log, "deleteTenant", _deleteTenant);

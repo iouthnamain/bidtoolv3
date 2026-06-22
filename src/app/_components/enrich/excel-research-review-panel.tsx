@@ -248,6 +248,7 @@ export function ExcelResearchReviewPanel({
             key={filter.id}
             type="button"
             onClick={() => setStatusFilter(filter.id)}
+            aria-pressed={statusFilter === filter.id}
             className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
               statusFilter === filter.id
                 ? "bg-slate-800 text-white"
@@ -335,6 +336,7 @@ export function ExcelResearchReviewPanel({
                 <button
                   type="button"
                   onClick={() => setSelectedRowNumber(row.rowNumber)}
+                  aria-selected={isSelected}
                   className="flex min-w-0 flex-1 items-start gap-2 text-left"
                 >
                   <Badge tone={meta.tone}>{meta.label}</Badge>
