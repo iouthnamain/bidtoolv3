@@ -2444,25 +2444,44 @@ function ScrapeJobsList({
   );
 }
 
+function normalizeImportPreviewSummary(
+  summary:
+    | Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]>
+    | null
+    | undefined,
+): RouterOutputs["material"]["previewShopImportJob"]["summary"] {
+  const create = Number(summary?.create ?? 0);
+  const update = Number(summary?.update ?? 0);
+  const skipNoName = Number(summary?.skipNoName ?? 0);
+  const total = Number(summary?.total ?? create + update + skipNoName);
+
+  return { create, update, skipNoName, total };
+}
+
 function ImportPreviewSummaryPanel({
   summary,
 }: {
-  summary: RouterOutputs["material"]["previewShopImportJob"]["summary"];
+  summary:
+    | Partial<RouterOutputs["material"]["previewShopImportJob"]["summary"]>
+    | null
+    | undefined;
 }) {
+  const normalized = normalizeImportPreviewSummary(summary);
+
   return (
     <div className="mt-4 space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <PreviewCountCard label="Tạo mới" value={summary.create} tone="success" />
-        <PreviewCountCard label="Cập nhật" value={summary.update} tone="info" />
+        <PreviewCountCard label="Tạo mới" value={normalized.create} tone="success" />
+        <PreviewCountCard label="Cập nhật" value={normalized.update} tone="info" />
         <PreviewCountCard
           label="Thiếu tên"
-          value={summary.skipNoName}
+          value={normalized.skipNoName}
           tone="neutral"
         />
       </div>
       <p className="text-xs text-slate-500">
-        Tổng {(summary.total ?? 0).toLocaleString("vi-VN")} sản phẩm trong lần
-        nhập này. Các sản phẩm trùng catalog sẽ được ghép tự động khi nhập.
+        Tổng {normalized.total.toLocaleString("vi-VN")} sản phẩm trong lần nhập
+        này. Các sản phẩm trùng catalog sẽ được ghép tự động khi nhập.
       </p>
     </div>
   );
@@ -2474,9 +2493,10 @@ function PreviewCountCard({
   tone,
 }: {
   label: string;
-  value: number;
+  value?: number | null;
   tone: "success" | "info" | "warning" | "neutral";
 }) {
+  const displayValue = Number.isFinite(value) ? Number(value) : 0;
   const toneClass =
     tone === "success"
       ? "border-emerald-200 bg-emerald-50 text-emerald-900"
@@ -2492,7 +2512,7 @@ function PreviewCountCard({
         {label}
       </p>
       <p className="mt-1 text-lg font-bold tabular-nums">
-        {(value ?? 0).toLocaleString("vi-VN")}
+        {displayValue.toLocaleString("vi-VN")}
       </p>
     </div>
   );
@@ -3386,7 +3406,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         scrapeJobId: activeJob.id,
         productSourceUrls,
       });
-      setImportPreviewData(preview);
+      setImportPreviewData({
+        ...preview,
+        summary: normalizeImportPreviewSummary(preview.summary),
+      });
       setImportPreviewTarget({ productSourceUrls });
       setImportPreviewOpen(true);
     } catch (error) {
@@ -3508,7 +3531,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           setImportPreviewData(null);
         }}
       >
-        {importPreviewData ? (
+        {importPreviewData?.summary ? (
           <ImportPreviewSummaryPanel summary={importPreviewData.summary} />
         ) : null}
       </ConfirmDialog>

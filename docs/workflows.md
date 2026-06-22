@@ -187,24 +187,11 @@ sequenceDiagram
   Sch->>DB: runImportJob → materials rows
 ```
 
-After import, fuzzy matches are merged into the catalog automatically during import.
+Fuzzy matches above the candidate threshold are merged into the catalog during import. Accepted matches are logged to `materialMatchDecisions` via `saveMatchDecision` in `ai-product-matcher.ts` (audit only — no review UI or API).
 
 ---
 
-## 5. Match decisions (audit log)
-
-**Purpose:** Record of scrape→catalog fuzzy matches (auto-accepted on import).
-
-| | |
-|--|--|
-| **Service** | `ai-product-matcher.ts` (pg_trgm scoring) |
-| **Table** | `materialMatchDecisions` |
-
-Import writes `accepted` decisions when a candidate exceeds the candidate threshold. No manual review step.
-
----
-
-## 6. Excel enrich — sync catalog match
+## 5. Excel enrich — sync catalog match
 
 **Purpose:** Upload an Excel BOQ, map columns, match rows to the local catalog, fill missing fields, export.
 
@@ -238,7 +225,7 @@ See [temp/enrich.md](./temp/enrich.md) and [temp/excel-enrich-export-plan.md](./
 
 ---
 
-## 7. Excel research jobs — async web + AI
+## 6. Excel research jobs — async web + AI
 
 **Purpose:** Batch web and AI research per Excel row with review workflow and evidence.
 
@@ -262,7 +249,7 @@ See [temp/excel-product-research.md](./temp/excel-product-research.md) for row p
 
 ---
 
-## 8. Material enrichment jobs — enrich existing catalog items
+## 7. Material enrichment jobs — enrich existing catalog items
 
 **Purpose:** Enrich existing catalog materials from the web (specs, PDFs, manufacturer, etc.).
 
@@ -285,7 +272,7 @@ See [temp/material-enrichment.md](./temp/material-enrichment.md) for fill-empty 
 
 ---
 
-## 9. Catalog PDF library
+## 8. Catalog PDF library
 
 **Purpose:** Store and link manufacturer catalog PDFs to materials.
 
@@ -301,13 +288,13 @@ Flow: upload PDF / URL / download from source → store on disk → link to mate
 
 ---
 
-## 10. Unified jobs list
+## 9. Unified jobs list
 
 **Route:** `/jobs` — aggregates all four job families in `jobs-list-client.tsx`.
 
 ---
 
-## 11. Supporting surfaces
+## 10. Supporting surfaces
 
 | Surface | Route | Notes |
 |---------|-------|-------|

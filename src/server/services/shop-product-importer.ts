@@ -3,14 +3,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
-import {
-  buildMergePreview as buildMergePreviewFields,
-  computeMergedMaterialValues,
-  type MergePreviewField,
-} from "~/lib/materials/shop-import-merge-preview";
+import { computeMergedMaterialValues } from "~/lib/materials/shop-import-merge-preview";
 import type { db as appDb } from "~/server/db";
-import type { materialMatchDecisions } from "~/server/db/schema";
-import { materials, shopScrapeJobs } from "~/server/db/schema";
+import { materials } from "~/server/db/schema";
 import {
   findFuzzyCandidates,
   getCachedDecision,
@@ -40,7 +35,6 @@ const log = createLogger("services-shop-product-importer");
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
-type MaterialMatchDecisionRow = typeof materialMatchDecisions.$inferSelect;
 
 type MaterialInput = {
   code?: string | null;
@@ -60,8 +54,6 @@ type MaterialLookupIndexes = {
   bySku: Map<string, MaterialRow>;
   byNameUnit: Map<string, MaterialRow>;
 };
-
-export type { MergePreviewField };
 
 export type ImportPreviewAction = "create" | "update" | "skip_no_name";
 
@@ -351,44 +343,6 @@ async function _applyScrapedProductToMaterial(
   const updatedRow = requireUpdatedMaterial(row);
   await linkScrapedCatalogPdfs(db, updatedRow.id, product);
   return updatedRow;
-}
-
-function _buildMergePreview(
-  material: MaterialRow,
-  product: ScrapedShopProduct,
-): MergePreviewField[] {
-  return buildMergePreviewFields(material, product);
-}
-
-async function _resolveScrapedProductForDecision(
-  db: AppDb,
-  decision: Pick<
-    MaterialMatchDecisionRow,
-    "scrapedSourceUrl" | "scrapeJobId"
-  >,
-  preferredScrapeJobId?: string | null,
-): Promise<ScrapedShopProduct | null> {
-  const scrapeJobId = decision.scrapeJobId ?? preferredScrapeJobId ?? null;
-  if (!scrapeJobId) {
-    return null;
-  }
-
-  const [scrapeJob] = await db
-    .select({ products: shopScrapeJobs.products })
-    .from(shopScrapeJobs)
-    .where(eq(shopScrapeJobs.id, scrapeJobId))
-    .limit(1);
-
-  if (!scrapeJob || !Array.isArray(scrapeJob.products)) {
-    return null;
-  }
-
-  const products = scrapeJob.products as ScrapedShopProduct[];
-  return (
-    products.find(
-      (product) => product.sourceUrl.trim() === decision.scrapedSourceUrl.trim(),
-    ) ?? null
-  );
 }
 
 function materialValues(input: MaterialInput, now: string) {
@@ -882,14 +836,4 @@ export const applyScrapedProductToMaterial = traceFn(
   log,
   "applyScrapedProductToMaterial",
   _applyScrapedProductToMaterial,
-);
-export const buildMergePreview = traceFn(
-  log,
-  "buildMergePreview",
-  _buildMergePreview,
-);
-export const resolveScrapedProductForDecision = traceFn(
-  log,
-  "resolveScrapedProductForDecision",
-  _resolveScrapedProductForDecision,
 );
