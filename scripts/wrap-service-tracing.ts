@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SERVER_ROOT = path.resolve(import.meta.dir, "../src/server");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const SERVER_ROOT = path.resolve(scriptDir, "../src/server");
 const SKIP_FILES = new Set(["app-settings.ts", "shop-job-errors.ts"]);
 
 async function collectTsFiles(dir: string): Promise<string[]> {

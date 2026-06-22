@@ -772,7 +772,7 @@ function EnrichXlsxPreviewPanel({
                         className="max-w-56 px-3 py-2 text-slate-700"
                       >
                         <span className="line-clamp-3">
-                          {row.values[header]?.trim() || "-"}
+                          {(row.values[header]?.trim() ?? "") || "-"}
                         </span>
                       </td>
                     ))}
@@ -1365,7 +1365,10 @@ function MatchChooser({
 
     const trimmedOrUndefined = (value: string | undefined) => {
       const trimmed = value?.trim();
-      return trimmed ? trimmed : undefined;
+      if (!trimmed) {
+        return undefined;
+      }
+      return trimmed;
     };
 
     upsertMaterial.mutate(

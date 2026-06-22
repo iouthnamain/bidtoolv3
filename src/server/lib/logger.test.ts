@@ -89,9 +89,9 @@ describe("traceFn", () => {
     const run = traceFn(log, "doWork", async () => "ok");
     await expect(run()).resolves.toBe("ok");
 
-    const messages = spy.mock.calls.map((call) =>
-      JSON.parse(String(call[0])),
-    ) as Array<{ msg: string; fn?: string }>;
+    const messages = spy.mock.calls.map((call) => {
+      return JSON.parse(String(call[0])) as { msg: string; fn?: string };
+    });
     expect(messages.some((entry) => entry.msg === "function_started")).toBe(
       true,
     );

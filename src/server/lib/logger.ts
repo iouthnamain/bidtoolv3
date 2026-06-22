@@ -220,8 +220,8 @@ export function traceFn<TArgs extends unknown[], TReturn>(
     try {
       const result = fn(...args);
       if (result instanceof Promise) {
-        return result
-          .then((value) => {
+        const traced = result
+          .then((value: Awaited<TReturn>) => {
             logger.debug("function_finished", {
               fn: fnName,
               durationMs: Date.now() - start,
@@ -235,7 +235,8 @@ export function traceFn<TArgs extends unknown[], TReturn>(
               error,
             });
             throw error;
-          }) as TReturn;
+          });
+        return traced as TReturn;
       }
 
       logger.debug("function_finished", {
