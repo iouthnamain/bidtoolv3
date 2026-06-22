@@ -85,6 +85,7 @@ async function _createJob(input: {
   sheetName: string;
   headerRowIndex: number;
   mapping: Record<string, string | null>;
+  rowNumbers?: number[];
   name?: string;
   config?: Partial<ExcelResearchJobConfig>;
   // Tenant attribution for the created job (creator's tenant; null for internal
@@ -106,7 +107,13 @@ async function _createJob(input: {
   }
 
   const sheet = rebuildSheetWithHeaderRow(baseSheet, input.headerRowIndex);
-  const rows = extractRowFields(sheet, input.mapping as ColumnMapping);
+  const requestedRows =
+    input.rowNumbers && input.rowNumbers.length > 0
+      ? new Set(input.rowNumbers)
+      : null;
+  const rows = extractRowFields(sheet, input.mapping as ColumnMapping).filter(
+    (row) => !requestedRows || requestedRows.has(row.originalRowIndex),
+  );
   if (rows.length === 0) {
     throw new ExcelResearchJobError(
       "BAD_REQUEST",

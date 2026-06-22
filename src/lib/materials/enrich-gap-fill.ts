@@ -225,6 +225,8 @@ export type ExportPreviewRow = {
   cells: FillPlanCell[];
 };
 
+export type SheetEdits = Record<string, Partial<Record<FillableField, string>>>;
+
 const EXPORT_PREVIEW_ROW_LIMIT = 50;
 
 /**
@@ -238,7 +240,7 @@ export function buildExportPreviewRows(
     candidates: Array<CandidateFieldSource & { materialId: number }>;
   }>,
   decisions: Map<number, RowDecisionLike>,
-  options?: { fillsOnly?: boolean; limit?: number },
+  options?: { fillsOnly?: boolean; limit?: number; sheetEdits?: SheetEdits },
 ): { rows: ExportPreviewRow[]; truncated: boolean; totalExportable: number } {
   const fillsOnly = options?.fillsOnly ?? true;
   const limit = options?.limit ?? EXPORT_PREVIEW_ROW_LIMIT;
@@ -264,7 +266,10 @@ export function buildExportPreviewRows(
     const plan = buildFillPlanWithEdits(
       row.sheetFields,
       baseFields,
-      decision.editedValues ?? {},
+      {
+        ...(decision.editedValues ?? {}),
+        ...(options?.sheetEdits?.[String(row.originalRowIndex)] ?? {}),
+      },
       decision.overwriteFields ?? new Set(),
     ).filter((cell) => decision.acceptedFields.has(cell.field));
 

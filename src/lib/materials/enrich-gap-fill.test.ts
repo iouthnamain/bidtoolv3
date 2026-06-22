@@ -244,4 +244,29 @@ describe("buildExportPreviewRows", () => {
     expect(rows[0]?.cells[0]?.field).toBe("unit");
     expect(rows[0]?.cells[0]?.action).toBe("filled");
   });
+
+  it("applies sheet edits to preview cell values", () => {
+    const { rows } = buildExportPreviewRows(
+      [
+        {
+          originalRowIndex: 5,
+          name: "Cáp điện",
+          sheetFields: { unit: "" },
+          candidates: [],
+        },
+      ],
+      new Map([
+        [
+          5,
+          {
+            materialId: null,
+            acceptedFields: new Set(["unit"]),
+            editedValues: { unit: "m" },
+          },
+        ],
+      ]),
+      { sheetEdits: { "5": { unit: "cuộn" } } },
+    );
+    expect(rows[0]?.cells[0]?.after).toBe("cuộn");
+  });
 });

@@ -45,6 +45,8 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials": "Sản phẩm / vật tư",
   "/materials/new": "Thêm thủ công",
   "/materials/import": "Nhập catalog",
+  "/materials/enrich": "Làm giàu vật tư",
+  "/materials/enrich/jobs/:jobId": "Chi tiết job làm giàu",
   "/materials/scrape": "Scrape shop",
   "/materials/scrape/jobs/:jobId": "Chi tiết job",
   "/materials/match-review": "Match review",

@@ -247,15 +247,30 @@ async function _matchRows(
 ): Promise<EnrichRowResult[]> {
   const minSimilarity = opts.minSimilarity ?? 0.1;
   const limit = opts.limit ?? 8;
+  const matchKeyForRow = (row: EnrichRowInput & { name?: string }) =>
+    JSON.stringify({
+      name: row.name?.trim() ?? "",
+      code: row.fields.code?.trim() ?? "",
+      unit: row.fields.unit?.trim() ?? "",
+      manufacturer: row.fields.manufacturer?.trim() ?? "",
+      originCountry: row.fields.originCountry?.trim() ?? "",
+      specText: row.fields.specText?.trim() ?? "",
+    });
+  const uniqueRows = new Map<string, EnrichRowInput & { name?: string }>();
+  const rowKeys = rows.map((row) => {
+    const key = matchKeyForRow(row);
+    if (!uniqueRows.has(key)) uniqueRows.set(key, row);
+    return key;
+  });
 
-  const rawResults = await mapWithConcurrency(
-    rows,
+  const uniqueRawResults = await mapWithConcurrency(
+    Array.from(uniqueRows.entries()),
     MATCH_CONCURRENCY,
-    async (row) => {
+    async ([key, row]) => {
       const product = rowToScrapedProduct({ ...row.fields, name: row.name });
       if (!product.name) {
         return {
-          originalRowIndex: row.originalRowIndex,
+          key,
           candidateIds: [] as number[],
           scored: [] as Array<{ id: number; score: number; breakdown: ScoreBreakdown }>,
         };
@@ -267,7 +282,7 @@ async function _matchRows(
         limit,
       );
       return {
-        originalRowIndex: row.originalRowIndex,
+        key,
         candidateIds: candidates.map((c) => c.materialId),
         scored: candidates.map((c) => ({
           id: c.materialId,
@@ -277,6 +292,8 @@ async function _matchRows(
       };
     },
   );
+  const rawByKey = new Map(uniqueRawResults.map((result) => [result.key, result]));
+  const rawResults = rowKeys.map((key) => rawByKey.get(key)!);
 
   const allIds = Array.from(
     new Set(rawResults.flatMap((r) => r.candidateIds)),

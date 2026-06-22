@@ -154,6 +154,7 @@ export function ManualProductForm({
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
       >
         <span>Chỉnh sửa thủ công</span>

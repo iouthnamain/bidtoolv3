@@ -89,7 +89,10 @@ async function _processSingleRow(
   const webEvidence: RowResearchOutput["webEvidence"] = [];
   let bestWebRank = 0;
 
-  if (config.enableWebSearch) {
+  const shouldSearchWeb =
+    config.enableWebSearch && catalogScore < config.autoThreshold;
+
+  if (shouldSearchWeb) {
     const queries = buildSearchQueries({
       name: input.productName,
       manufacturer: fields.manufacturer,
@@ -97,13 +100,12 @@ async function _processSingleRow(
       specText: fields.specText,
     });
 
-    for (const q of queries) {
-      const { hits } = await searchWeb(q.query, 5);
-      const ranked = rankSearchHits(
-        hits,
-        input.productName,
-        fields.manufacturer,
-      );
+    const searchResults = await Promise.all(
+      queries.map((q) => searchWeb(q.query, 5)),
+    );
+
+    for (const { hits } of searchResults) {
+      const ranked = rankSearchHits(hits, input.productName, fields.manufacturer);
       for (const hit of ranked.slice(0, 3)) {
         webEvidence.push({
           title: hit.title,
@@ -158,7 +160,7 @@ async function _processSingleRow(
 
   const webAcceptedFields: FillableField[] = [];
 
-  if (config.enableWebSearch && webEvidence.length > 0) {
+  if (shouldSearchWeb && webEvidence.length > 0) {
     try {
       const provider = await resolveAiProvider("enrichment");
       const rankedHits = webHitsToSearchResults(webEvidence);

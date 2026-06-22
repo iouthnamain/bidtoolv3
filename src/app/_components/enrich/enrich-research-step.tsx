@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Loader2,
   Play,
@@ -31,6 +32,7 @@ export function EnrichResearchStep({
   headerRowIndex,
   mapping,
   unmatchedCount,
+  unresolvedRowNumbers,
   jobId,
   onJobIdChange,
   onContinue,
@@ -43,6 +45,7 @@ export function EnrichResearchStep({
   headerRowIndex: number;
   mapping: Record<string, string | null>;
   unmatchedCount: number;
+  unresolvedRowNumbers: number[];
   jobId: string | null;
   onJobIdChange: (jobId: string | null) => void;
   onContinue: () => void;
@@ -54,6 +57,9 @@ export function EnrichResearchStep({
     "all",
   );
   const [selectedRowNumber, setSelectedRowNumber] = useState<number | null>(null);
+  const [scope, setScope] = useState<"unresolved" | "all">(
+    unresolvedRowNumbers.length > 0 ? "unresolved" : "all",
+  );
 
   const createJob = api.excelResearch.createJob.useMutation();
   const startJob = api.excelResearch.startJob.useMutation();
@@ -157,6 +163,7 @@ export function EnrichResearchStep({
         sheetName,
         headerRowIndex,
         mapping,
+        rowNumbers: scope === "unresolved" ? unresolvedRowNumbers : undefined,
       },
       {
         onSuccess: (result) => {
@@ -283,6 +290,48 @@ export function EnrichResearchStep({
             </p>
           </div>
 
+          <fieldset className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+            <legend className="px-1 text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              Phạm vi nghiên cứu
+            </legend>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="excel-research-scope"
+                  value="unresolved"
+                  checked={scope === "unresolved"}
+                  disabled={unresolvedRowNumbers.length === 0 || isWorking}
+                  onChange={() => setScope("unresolved")}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block font-semibold">Chỉ dòng chưa xử lý</span>
+                  <span className="text-xs text-slate-500">
+                    {unresolvedRowNumbers.length.toLocaleString("vi-VN")} dòng cần web
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
+                <input
+                  type="radio"
+                  name="excel-research-scope"
+                  value="all"
+                  checked={scope === "all"}
+                  disabled={isWorking}
+                  onChange={() => setScope("all")}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block font-semibold">Tất cả dòng có tên</span>
+                  <span className="text-xs text-slate-500">
+                    Dùng khi muốn xác minh web toàn bộ file.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
           {isWorking ? (
             <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
               <div className="flex items-center justify-between text-xs font-semibold text-violet-900">
@@ -297,7 +346,14 @@ export function EnrichResearchStep({
                   </span>
                 ) : null}
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-200">
+              <div
+                className="mt-2 h-2 overflow-hidden rounded-full bg-violet-200"
+                role="progressbar"
+                aria-label="Tiến độ nghiên cứu web"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={isJobRunning ? progressPct : undefined}
+              >
                 <div
                   className={`h-full rounded-full bg-violet-600 transition-all ${
                     isJobRunning ? "" : "animate-pulse"
@@ -313,6 +369,14 @@ export function EnrichResearchStep({
                 <p className="mt-2 text-[11px] text-violet-700">
                   Đang chuẩn bị — quá trình nghiên cứu sẽ bắt đầu trong giây lát.
                 </p>
+              ) : null}
+              {jobId ? (
+                <Link
+                  href={`/enrich/jobs/${jobId}`}
+                  className="mt-2 inline-block text-xs font-semibold text-violet-800 underline-offset-2 hover:underline"
+                >
+                  Mở trang job nghiên cứu
+                </Link>
               ) : null}
             </div>
           ) : null}
@@ -368,6 +432,7 @@ export function EnrichResearchStep({
       onReject={handleReject}
       onBulkApprove={handleBulkApprove}
       isBulkApproving={bulkApproveRows.isPending}
+      listTotal={rowData.total}
       onPrimaryAction={onContinue}
       onSecondaryAction={onSkip}
     />

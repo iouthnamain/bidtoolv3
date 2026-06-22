@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   Globe,
   Loader2,
+  RotateCcw,
   Search,
   Upload,
 } from "lucide-react";
@@ -42,6 +43,7 @@ import {
 } from "~/lib/materials/enrich-gap-fill";
 import {
   buildFillPlan,
+  buildFillPlanWithEdits,
   candidateToFields,
   FIELD_LABELS,
   type FillableField,
@@ -49,6 +51,7 @@ import {
 } from "~/lib/materials/excel-enrich-fields";
 import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrichment-types";
 import { parseOptionalNumber } from "~/lib/materials/format";
+import type { ColumnKey } from "~/server/services/excel-workbook";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type EnrichPreview = RouterOutputs["material"]["enrichPreviewXlsx"];
@@ -56,6 +59,28 @@ type EnrichPreviewSheet = EnrichPreview["sheets"][number];
 type MatchResponse = RouterOutputs["material"]["enrichMatchRows"];
 type MatchRow = MatchResponse["results"][number];
 type FillPlanCell = MatchRow["fillPlan"][number];
+type EnrichColumnMapping = Record<string, string | null>;
+type SheetEdits = Record<string, Partial<Record<FillableField, string>>>;
+
+const MAPPING_FIELDS: Array<{
+  key: ColumnKey;
+  label: string;
+  required?: boolean;
+}> = [
+  { key: "materialName", label: "Tên vật tư", required: true },
+  { key: "code", label: "Mã vật tư" },
+  { key: "unit", label: "ĐVT" },
+  { key: "category", label: "Nhóm" },
+  { key: "specText", label: "Thông số" },
+  { key: "vendorHint", label: "Nhà sản xuất" },
+  { key: "originHint", label: "Xuất xứ" },
+  { key: "unitPrice", label: "Đơn giá" },
+  { key: "sourceUrl", label: "Nguồn" },
+];
+
+function rowEditKey(rowIndex: number) {
+  return String(rowIndex);
+}
 
 const STATUS_META: Record<
   MatchRow["status"],
@@ -174,11 +199,22 @@ export function MaterialEnrichClient() {
   const [researchExportSummary, setResearchExportSummary] = useState<{
     needsReview: number;
   } | null>(null);
+  const [mappingBySheet, setMappingBySheet] = useState<Record<string, EnrichColumnMapping>>(
+    {},
+  );
+  const [sheetEdits, setSheetEdits] = useState<SheetEdits>({});
 
   const previewRequestRef = useRef(0);
 
   const activeSheet: EnrichPreviewSheet | undefined =
     preview?.sheets.find((s) => s.name === sheetName) ?? preview?.sheets[0];
+  const activeMapping = useMemo<EnrichColumnMapping>(() => {
+    if (!activeSheet) return {};
+    return {
+      ...(activeSheet.suggestedMapping as EnrichColumnMapping),
+      ...(mappingBySheet[activeSheet.name] ?? {}),
+    };
+  }, [activeSheet, mappingBySheet]);
 
   const previewXlsx = api.material.enrichPreviewXlsx.useMutation();
   const matchRowsMutation = api.material.enrichMatchRows.useMutation();
@@ -211,6 +247,8 @@ export function MaterialEnrichClient() {
     setConfirmUnmatchedOpen(false);
     setResearchExportSummary(null);
     setResearchJobId(null);
+    setMappingBySheet({});
+    setSheetEdits({});
     setError(null);
     setSheetName("");
     setStep(1);
@@ -236,6 +274,14 @@ export function MaterialEnrichClient() {
             if (requestId !== previewRequestRef.current) return;
             setPreview(result);
             setSheetName(result.selectedSheetName);
+            setMappingBySheet(
+              Object.fromEntries(
+                result.sheets.map((sheet) => [
+                  sheet.name,
+                  sheet.suggestedMapping as EnrichColumnMapping,
+                ]),
+              ),
+            );
           },
           onError: (err) =>
             setError(err.message || "Không tạo được preview Excel."),
@@ -255,7 +301,7 @@ export function MaterialEnrichClient() {
         workbookBase64: base64,
         sheetName: activeSheet.name,
         headerRowIndex: activeSheet.activeHeaderRowIndex,
-        mapping: activeSheet.suggestedMapping as Record<string, string | null>,
+        mapping: activeMapping,
       },
       {
         onSuccess: (result) => {
@@ -336,12 +382,144 @@ export function MaterialEnrichClient() {
     () => countResolvedRows(decisions.values()),
     [decisions],
   );
+  const unresolvedRowNumbers = useMemo(() => {
+    if (!matchData) return [];
+    return matchData.results
+      .filter((row) => {
+        const decision = decisions.get(row.originalRowIndex);
+        if (decision?.skipped) return false;
+        return !isExportableDecision(
+          decision ?? { materialId: null, acceptedFields: new Set() },
+        );
+      })
+      .map((row) => row.originalRowIndex);
+  }, [matchData, decisions]);
 
   const updateDecision = (rowIndex: number, next: RowDecision) => {
     setDecisions((prev) => {
       const map = new Map(prev);
       map.set(rowIndex, next);
       return map;
+    });
+  };
+
+  const updateMapping = (sheet: EnrichPreviewSheet, key: ColumnKey, value: string | null) => {
+    setMappingBySheet((prev) => ({
+      ...prev,
+      [sheet.name]: {
+        ...(prev[sheet.name] ?? (sheet.suggestedMapping as EnrichColumnMapping)),
+        [key]: value,
+      },
+    }));
+  };
+
+  const resetMapping = (sheet: EnrichPreviewSheet) => {
+    setMappingBySheet((prev) => ({
+      ...prev,
+      [sheet.name]: sheet.suggestedMapping as EnrichColumnMapping,
+    }));
+  };
+
+  const clearMapping = (sheet: EnrichPreviewSheet) => {
+    setMappingBySheet((prev) => ({
+      ...prev,
+      [sheet.name]: Object.fromEntries(
+        MAPPING_FIELDS.map((field) => [field.key, null]),
+      ) as EnrichColumnMapping,
+    }));
+  };
+
+  const updateSheetEdit = (
+    rowIndex: number,
+    field: FillableField,
+    value: string | null,
+  ) => {
+    const key = rowEditKey(rowIndex);
+    setSheetEdits((prev) => {
+      const rowEdits = { ...(prev[key] ?? {}) };
+      if (value == null) {
+        delete rowEdits[field];
+      } else {
+        rowEdits[field] = value;
+      }
+      const next = { ...prev };
+      if (Object.keys(rowEdits).length === 0) {
+        delete next[key];
+      } else {
+        next[key] = rowEdits;
+      }
+      return next;
+    });
+  };
+
+  const resetRowSheetEdits = (rowIndex: number) => {
+    const key = rowEditKey(rowIndex);
+    setSheetEdits((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const toggleSheetOverwrite = (rowIndex: number, field: FillableField) => {
+    setDecisions((prev) => {
+      const current =
+        prev.get(rowIndex) ?? { materialId: null, acceptedFields: new Set() };
+      const overwriteFields = new Set(current.overwriteFields ?? []);
+      if (overwriteFields.has(field)) {
+        overwriteFields.delete(field);
+      } else {
+        overwriteFields.add(field);
+      }
+      const acceptedFields = new Set(current.acceptedFields);
+      acceptedFields.add(field);
+      const next = new Map(prev);
+      next.set(rowIndex, {
+        ...current,
+        acceptedFields,
+        overwriteFields,
+        skipped: false,
+      });
+      return next;
+    });
+  };
+
+  const skipSheetField = (rowIndex: number, field: FillableField) => {
+    updateSheetEdit(rowIndex, field, null);
+    setDecisions((prev) => {
+      const current = prev.get(rowIndex);
+      if (!current) return prev;
+      const acceptedFields = new Set(current.acceptedFields);
+      const overwriteFields = new Set(current.overwriteFields ?? []);
+      acceptedFields.delete(field);
+      overwriteFields.delete(field);
+      const editedValues = { ...(current.editedValues ?? {}) };
+      delete editedValues[field];
+      const next = new Map(prev);
+      next.set(rowIndex, {
+        ...current,
+        acceptedFields,
+        overwriteFields,
+        editedValues,
+      });
+      return next;
+    });
+  };
+
+  const skipSheetRow = (rowIndex: number) => {
+    resetRowSheetEdits(rowIndex);
+    setDecisions((prev) => {
+      const current = prev.get(rowIndex);
+      if (!current) return prev;
+      const next = new Map(prev);
+      next.set(rowIndex, {
+        ...current,
+        acceptedFields: new Set(),
+        overwriteFields: new Set(),
+        editedValues: {},
+        skipped: true,
+      });
+      return next;
     });
   };
 
@@ -353,7 +531,10 @@ export function MaterialEnrichClient() {
         materialId: decision.materialId,
         fields: Array.from(decision.acceptedFields),
         overwriteFields: Array.from(decision.overwriteFields ?? []),
-        valueOverrides: decision.editedValues ?? {},
+        valueOverrides: {
+          ...(decision.editedValues ?? {}),
+          ...(sheetEdits[rowEditKey(originalRowIndex)] ?? {}),
+        },
       }))
       // A row exports when it has accepted fields AND a source for their values:
       // either a matched catalog material, or per-field overrides (manual entry
@@ -371,7 +552,7 @@ export function MaterialEnrichClient() {
         workbookBase64: base64,
         sheetName: activeSheet.name,
         headerRowIndex: activeSheet.activeHeaderRowIndex,
-        mapping: activeSheet.suggestedMapping as Record<string, string | null>,
+        mapping: activeMapping,
         mode,
         decisions: exportDecisions,
       },
@@ -435,10 +616,14 @@ export function MaterialEnrichClient() {
           file={file}
           preview={preview}
           activeSheet={activeSheet}
+          activeMapping={activeMapping}
           isPreviewLoading={previewXlsx.isPending}
           isMatching={matchRowsMutation.isPending}
           onFile={handleFile}
           onSheetChange={setSheetName}
+          onMappingChange={updateMapping}
+          onResetMapping={resetMapping}
+          onClearMapping={clearMapping}
           onMatch={runMatch}
         />
       ) : null}
@@ -457,6 +642,7 @@ export function MaterialEnrichClient() {
           matchedCount={matchedCount}
           pendingUnmatched={pendingUnmatched}
           onContinue={() => reach(3)}
+          onSkipToExport={() => reach(4)}
         />
       ) : null}
 
@@ -466,10 +652,9 @@ export function MaterialEnrichClient() {
           workbookBase64={base64}
           sheetName={activeSheet.name}
           headerRowIndex={activeSheet.activeHeaderRowIndex}
-          mapping={
-            activeSheet.suggestedMapping as Record<string, string | null>
-          }
+          mapping={activeMapping}
           unmatchedCount={pendingUnmatched}
+          unresolvedRowNumbers={unresolvedRowNumbers}
           jobId={researchJobId}
           onJobIdChange={setResearchJobId}
           onContinue={() => reach(4)}
@@ -482,6 +667,12 @@ export function MaterialEnrichClient() {
         <ExportStep
           matchData={matchData}
           decisions={decisions}
+          sheetEdits={sheetEdits}
+          onSheetEdit={updateSheetEdit}
+          onResetRowSheetEdits={resetRowSheetEdits}
+          onToggleSheetOverwrite={toggleSheetOverwrite}
+          onSkipSheetField={skipSheetField}
+          onSkipSheetRow={skipSheetRow}
           fieldsToFill={fieldsToFill}
           matchedCount={matchedCount}
           pendingUnmatched={pendingUnmatched}
@@ -542,22 +733,52 @@ function UploadStep({
   file,
   preview,
   activeSheet,
+  activeMapping,
   isPreviewLoading,
   isMatching,
   onFile,
   onSheetChange,
+  onMappingChange,
+  onResetMapping,
+  onClearMapping,
   onMatch,
 }: {
   file: File | null;
   preview: EnrichPreview | null;
   activeSheet: EnrichPreviewSheet | undefined;
+  activeMapping: EnrichColumnMapping;
   isPreviewLoading: boolean;
   isMatching: boolean;
   onFile: (file: File | null) => void;
   onSheetChange: (name: string) => void;
+  onMappingChange: (
+    sheet: EnrichPreviewSheet,
+    key: ColumnKey,
+    value: string | null,
+  ) => void;
+  onResetMapping: (sheet: EnrichPreviewSheet) => void;
+  onClearMapping: (sheet: EnrichPreviewSheet) => void;
   onMatch: () => void;
 }) {
-  const hasNameColumn = Boolean(activeSheet?.suggestedMapping.materialName);
+  const hasNameColumn = Boolean(activeMapping.materialName);
+  const mappedOptionalCount = MAPPING_FIELDS.filter(
+    (field) => !field.required && Boolean(activeMapping[field.key]),
+  ).length;
+  const checklist = [
+    { label: "Đã chọn file", done: Boolean(file) },
+    { label: "Đã chọn sheet", done: Boolean(activeSheet) },
+    { label: "Đã map tên vật tư", done: hasNameColumn },
+    {
+      label: `${mappedOptionalCount}/${MAPPING_FIELDS.length - 1} cột phụ`,
+      done: mappedOptionalCount > 0,
+    },
+    {
+      label: activeSheet
+        ? `${activeSheet.rowCount.toLocaleString("vi-VN")} dòng`
+        : "Chưa có dòng",
+      done: Boolean(activeSheet && activeSheet.rowCount > 0),
+    },
+  ];
 
   return (
     <section className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]">
@@ -631,34 +852,87 @@ function UploadStep({
           )}
 
           {activeSheet ? (
-            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-[var(--shadow-flat)]">
-              <p className="font-extrabold text-slate-900">Cột nhận diện</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["Tên", activeSheet.suggestedMapping.materialName],
-                    ["Mã", activeSheet.suggestedMapping.code],
-                    ["ĐVT", activeSheet.suggestedMapping.unit],
-                    ["Nhóm", activeSheet.suggestedMapping.category],
-                    ["Thông số", activeSheet.suggestedMapping.specText],
-                    ["NSX", activeSheet.suggestedMapping.vendorHint],
-                    ["Xuất xứ", activeSheet.suggestedMapping.originHint],
-                    ["Đơn giá", activeSheet.suggestedMapping.unitPrice],
-                  ] as Array<[string, string | null | undefined]>
-                )
-                  .filter(([, value]) => Boolean(value))
-                  .map(([label, value]) => (
-                    <span
-                      key={label}
-                      className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600"
-                    >
-                      {label}: {value}
-                    </span>
-                  ))}
+            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-[var(--shadow-flat)]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-extrabold text-slate-900">Map cột Excel</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onResetMapping(activeSheet)}
+                  >
+                    Auto map lại
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onClearMapping(activeSheet)}
+                  >
+                    Xóa mapping
+                  </Button>
+                </div>
               </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {MAPPING_FIELDS.map((field) => {
+                  const id = `mapping-${activeSheet.name}-${field.key}`;
+                  return (
+                    <label key={field.key} htmlFor={id} className="grid gap-1">
+                      <span className="font-semibold text-slate-600">
+                        {field.label}
+                        {field.required ? (
+                          <span className="text-rose-600"> *</span>
+                        ) : null}
+                      </span>
+                      <select
+                        id={id}
+                        name={id}
+                        value={activeMapping[field.key] ?? ""}
+                        onChange={(event) =>
+                          onMappingChange(
+                            activeSheet,
+                            field.key,
+                            event.target.value || null,
+                          )
+                        }
+                        className={`rounded-lg border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+                          field.required && !activeMapping[field.key]
+                            ? "border-amber-300 bg-amber-50"
+                            : "border-slate-300 bg-white"
+                        }`}
+                      >
+                        <option value="">Không map</option>
+                        {activeSheet.headers.map((header) => (
+                          <option key={`${field.key}-${header}`} value={header}>
+                            {header}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {checklist.map((item) => (
+                  <span
+                    key={item.label}
+                    className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                      item.done
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-white text-slate-500"
+                    }`}
+                  >
+                    {item.done ? "✓ " : ""}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+
               {!hasNameColumn ? (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
-                  Chưa nhận diện được cột tên vật tư — không thể đối chiếu.
+                  Chưa map cột tên vật tư. Chọn cột ở trường “Tên vật tư” để
+                  tiếp tục đối chiếu.
                 </p>
               ) : null}
             </div>
@@ -804,6 +1078,7 @@ function ReviewStep({
   matchedCount,
   pendingUnmatched,
   onContinue,
+  onSkipToExport,
 }: {
   matchData: MatchResponse;
   decisions: Map<number, RowDecision>;
@@ -819,6 +1094,7 @@ function ReviewStep({
   matchedCount: number;
   pendingUnmatched: number;
   onContinue: () => void;
+  onSkipToExport: () => void;
 }) {
   const toast = useToast();
   const webSearch = api.material.enrichWebSearchRow.useMutation();
@@ -867,6 +1143,12 @@ function ReviewStep({
 
   const selectedRow =
     rows.find((row) => row.originalRowIndex === selectedRowIndex) ?? null;
+  const webPendingCount = Array.from(decisions.values()).filter(
+    (decision) => decision.webSearchStatus === "pending",
+  ).length;
+  const savedToMaterialsCount = Array.from(decisions.values()).filter(
+    (decision) => decision.materialId != null,
+  ).length;
 
   const catalogFieldsForRow = (
     row: MatchRow,
@@ -1023,17 +1305,33 @@ function ReviewStep({
             <span className="tabular-nums">
               {pendingUnmatched.toLocaleString("vi-VN")} chưa khớp
             </span>
+            <span className="tabular-nums">
+              {webPendingCount.toLocaleString("vi-VN")} đang tìm web
+            </span>
+            <span className="tabular-nums">
+              {savedToMaterialsCount.toLocaleString("vi-VN")} đã lưu vật tư
+            </span>
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          leftIcon={<Download className="h-3.5 w-3.5" />}
-          disabled={rows.length === 0}
-          onClick={onContinue}
-        >
-          Tiếp tục xuất file
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={rows.length === 0}
+            onClick={onSkipToExport}
+          >
+            Bỏ qua web → xuất file
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<Globe className="h-3.5 w-3.5" />}
+            disabled={rows.length === 0}
+            onClick={onContinue}
+          >
+            Tiếp tục nghiên cứu web
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
@@ -1043,6 +1341,7 @@ function ReviewStep({
               key={filter.id}
               type="button"
               onClick={() => setStatusFilter(filter.id)}
+              aria-pressed={statusFilter === filter.id}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
                 statusFilter === filter.id
                   ? "bg-slate-800 text-white"
@@ -1089,6 +1388,7 @@ function ReviewStep({
                 key={row.originalRowIndex}
                 type="button"
                 onClick={() => setSelectedRowIndex(row.originalRowIndex)}
+                aria-selected={isSelected}
                 className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
                   isSelected ? "bg-sky-50" : "hover:bg-slate-50"
                 }`}
@@ -1555,13 +1855,25 @@ function MatchChooser({
 function EnrichExportPreviewPanel({
   matchData,
   decisions,
+  sheetEdits,
   fillsOnly,
   onFillsOnlyChange,
+  onSheetEdit,
+  onResetRowSheetEdits,
+  onToggleSheetOverwrite,
+  onSkipSheetField,
+  onSkipSheetRow,
 }: {
   matchData: MatchResponse;
   decisions: Map<number, RowDecision>;
+  sheetEdits: SheetEdits;
   fillsOnly: boolean;
   onFillsOnlyChange: (value: boolean) => void;
+  onSheetEdit: (rowIndex: number, field: FillableField, value: string | null) => void;
+  onResetRowSheetEdits: (rowIndex: number) => void;
+  onToggleSheetOverwrite: (rowIndex: number, field: FillableField) => void;
+  onSkipSheetField: (rowIndex: number, field: FillableField) => void;
+  onSkipSheetRow: (rowIndex: number) => void;
 }) {
   const preview = useMemo(
     () =>
@@ -1573,9 +1885,13 @@ function EnrichExportPreviewPanel({
           candidates: row.candidates,
         })),
         decisions,
-        { fillsOnly },
+        { fillsOnly, sheetEdits },
       ),
-    [matchData.results, decisions, fillsOnly],
+    [matchData.results, decisions, fillsOnly, sheetEdits],
+  );
+  const editedCellCount = Object.values(sheetEdits).reduce(
+    (count, row) => count + Object.keys(row).length,
+    0,
   );
 
   const actionLabels: Record<string, string> = {
@@ -1596,6 +1912,9 @@ function EnrichExportPreviewPanel({
             {preview.totalExportable.toLocaleString("vi-VN")} dòng sẽ được xuất
             {preview.truncated
               ? ` · hiển thị ${preview.rows.length.toLocaleString("vi-VN")} dòng đầu`
+              : ""}
+            {editedCellCount > 0
+              ? ` · ${editedCellCount.toLocaleString("vi-VN")} ô đã sửa`
               : ""}
           </p>
         </div>
@@ -1622,14 +1941,19 @@ function EnrichExportPreviewPanel({
                 <th className="px-3 py-2 whitespace-nowrap">Sản phẩm</th>
                 <th className="px-3 py-2 whitespace-nowrap">Trường</th>
                 <th className="px-3 py-2 whitespace-nowrap">Trước</th>
-                <th className="px-3 py-2 whitespace-nowrap">Sau</th>
+                <th className="px-3 py-2 whitespace-nowrap">Sau / chỉnh sửa</th>
                 <th className="px-3 py-2 whitespace-nowrap">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {preview.rows.flatMap((row) =>
-                row.cells.map((cell) => (
-                  <tr key={`${row.originalRowIndex}-${cell.field}`}>
+                row.cells.map((cell, cellIndex) => {
+                  const rowEdits = sheetEdits[rowEditKey(row.originalRowIndex)];
+                  const decision = decisions.get(row.originalRowIndex);
+                  const isForced = decision?.overwriteFields?.has(cell.field) ?? false;
+                  const currentValue = rowEdits?.[cell.field] ?? cell.after;
+                  return (
+                    <tr key={`${row.originalRowIndex}-${cell.field}`}>
                     <td className="px-3 py-2 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
                       {row.originalRowIndex}
                     </td>
@@ -1642,19 +1966,130 @@ function EnrichExportPreviewPanel({
                     <td className="max-w-32 truncate px-3 py-2 text-slate-500">
                       {cell.before || "(trống)"}
                     </td>
-                    <td className="max-w-32 truncate px-3 py-2 font-medium text-emerald-700">
-                      {cell.after || "—"}
+                    <td className="min-w-48 px-3 py-2">
+                      <input
+                        type={cell.field === "defaultUnitPrice" ? "number" : "text"}
+                        inputMode={
+                          cell.field === "defaultUnitPrice" ? "decimal" : undefined
+                        }
+                        value={currentValue}
+                        onChange={(event) =>
+                          onSheetEdit(
+                            row.originalRowIndex,
+                            cell.field,
+                            event.target.value,
+                          )
+                        }
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        aria-label={`Chỉnh ${FIELD_LABELS[cell.field]} dòng ${row.originalRowIndex}`}
+                      />
                     </td>
                     <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
-                      {actionLabels[cell.action] ?? cell.action}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{isForced ? "Ghi đè bắt buộc" : (actionLabels[cell.action] ?? cell.action)}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSheetEdit(row.originalRowIndex, cell.field, null)
+                          }
+                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        >
+                          Reset ô
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSheetEdit(row.originalRowIndex, cell.field, "")
+                          }
+                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        >
+                          Xóa giá trị
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onToggleSheetOverwrite(row.originalRowIndex, cell.field)
+                          }
+                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        >
+                          {isForced ? "Bỏ ghi đè" : "Force overwrite"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSkipSheetField(row.originalRowIndex, cell.field)
+                          }
+                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        >
+                          Bỏ qua field
+                        </button>
+                        {cellIndex === 0 ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => onResetRowSheetEdits(row.originalRowIndex)}
+                              className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                            >
+                              Reset dòng
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onSkipSheetRow(row.originalRowIndex)}
+                              className="rounded border border-rose-200 px-1.5 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                            >
+                              Bỏ qua dòng
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            preview.rows.forEach((targetRow) => {
+                              const targetCell = targetRow.cells.find(
+                                (item) => item.field === cell.field,
+                              );
+                              if (!targetCell || targetCell.before.trim()) return;
+                              onSheetEdit(
+                                targetRow.originalRowIndex,
+                                cell.field,
+                                currentValue,
+                              );
+                            })
+                          }
+                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        >
+                          Áp dụng ô trống
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                )),
+                  );
+                }),
               )}
             </tbody>
           </table>
         </div>
       )}
+      {preview.rows.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2">
+          <p className="text-xs text-slate-500">
+            Chỉnh trực tiếp giá trị cuối cùng trước khi xuất. Giá trị sửa ở đây
+            sẽ ưu tiên hơn kết quả catalog/web.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={editedCellCount === 0}
+            onClick={() =>
+              preview.rows.forEach((row) =>
+                onResetRowSheetEdits(row.originalRowIndex),
+              )
+            }
+          >
+            Reset các ô đang hiển thị
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1662,6 +2097,12 @@ function EnrichExportPreviewPanel({
 function ExportStep({
   matchData,
   decisions,
+  sheetEdits,
+  onSheetEdit,
+  onResetRowSheetEdits,
+  onToggleSheetOverwrite,
+  onSkipSheetField,
+  onSkipSheetRow,
   fieldsToFill,
   matchedCount,
   pendingUnmatched,
@@ -1677,6 +2118,12 @@ function ExportStep({
 }: {
   matchData: MatchResponse;
   decisions: Map<number, RowDecision>;
+  sheetEdits: SheetEdits;
+  onSheetEdit: (rowIndex: number, field: FillableField, value: string | null) => void;
+  onResetRowSheetEdits: (rowIndex: number) => void;
+  onToggleSheetOverwrite: (rowIndex: number, field: FillableField) => void;
+  onSkipSheetField: (rowIndex: number, field: FillableField) => void;
+  onSkipSheetRow: (rowIndex: number) => void;
   fieldsToFill: number;
   matchedCount: number;
   pendingUnmatched: number;
@@ -1705,6 +2152,10 @@ function ExportStep({
     { label: "Chưa khớp", value: pendingUnmatched },
   ];
   const nothingToExport = fieldsToFill === 0;
+  const editedCellCount = Object.values(sheetEdits).reduce(
+    (count, row) => count + Object.keys(row).length,
+    0,
+  );
 
   const researchApprovedCount =
     researchRowsQuery.data?.items.filter(
@@ -1739,9 +2190,26 @@ function ExportStep({
         <EnrichExportPreviewPanel
           matchData={matchData}
           decisions={decisions}
+          sheetEdits={sheetEdits}
           fillsOnly={fillsOnly}
           onFillsOnlyChange={setFillsOnly}
+          onSheetEdit={onSheetEdit}
+          onResetRowSheetEdits={onResetRowSheetEdits}
+          onToggleSheetOverwrite={onToggleSheetOverwrite}
+          onSkipSheetField={onSkipSheetField}
+          onSkipSheetRow={onSkipSheetRow}
         />
+
+        <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+          <span className="font-semibold text-slate-800">
+            Sẵn sàng xuất: {nothingToExport ? "chưa" : "có"}
+          </span>
+          <span>{editedCellCount.toLocaleString("vi-VN")} ô đã sửa tay</span>
+          <span>
+            {(pendingUnmatched + pendingReview).toLocaleString("vi-VN")} dòng còn cảnh báo
+          </span>
+          <span>{fieldsToFill.toLocaleString("vi-VN")} ô được chọn điền</span>
+        </div>
 
         {hasResearchJob ? (
           <p className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
