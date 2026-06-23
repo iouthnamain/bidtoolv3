@@ -54,6 +54,10 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials/:id/documents": "Catalog PDFs",
   "/materials/:id/edit": "Chỉnh sửa",
 
+  // Material profiles
+  "/material-profiles": "Hồ sơ vật tư",
+  "/material-profiles/:id": "Chi tiết hồ sơ",
+
   // Enrich
   "/enrich": "Đối chiếu & điền Excel",
   "/enrich/jobs": "Job nghiên cứu",
@@ -210,7 +214,12 @@ export function buildBreadcrumbs(pathname: string): Breadcrumb[] {
   crumbs[crumbs.length - 1]!.isCurrent = true;
 
   return [
-    { href: HOME.href, label: HOME.label, isCurrent: false, pattern: "/dashboard" },
+    {
+      href: HOME.href,
+      label: HOME.label,
+      isCurrent: false,
+      pattern: "/dashboard",
+    },
     ...crumbs,
   ];
 }

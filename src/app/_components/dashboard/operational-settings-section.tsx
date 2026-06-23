@@ -26,7 +26,8 @@ export type OperationalSettingKey =
   | "excelResearchBatchSize"
   | "excelResearchJobTtlDays"
   | "searxngBaseUrl"
-  | "excelResearchDir";
+  | "excelResearchDir"
+  | "materialProfileExportDir";
 
 export type OperationalFieldDef = {
   key: OperationalSettingKey;
@@ -90,7 +91,9 @@ export function OperationalSettingsSection({
 
   // Local draft values keyed by setting key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [activeKey, setActiveKey] = useState<OperationalSettingKey | null>(null);
+  const [activeKey, setActiveKey] = useState<OperationalSettingKey | null>(
+    null,
+  );
 
   // Seed drafts from server config whenever it loads/changes.
   useEffect(() => {

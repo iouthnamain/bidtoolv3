@@ -34,6 +34,7 @@ export const SETTING_KEYS = {
   searxngBaseUrl: "searxng_base_url",
   enrichmentItemConcurrency: "enrichment_item_concurrency",
   excelResearchDir: "bidtool_excel_research_dir",
+  materialProfileExportDir: "bidtool_material_profile_export_dir",
 } as const;
 
 export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
@@ -255,11 +256,15 @@ export async function getOpenaiCompatibleConfig() {
   const envKey = env.OPENAI_COMPATIBLE_API_KEY?.trim();
   const dbKey = await getSetting(SETTING_KEYS.openaiCompatibleApiKey);
   const apiKey = envKey ?? dbKey ?? null;
-  
+
   const envUrl = env.OPENAI_COMPATIBLE_BASE_URL?.trim();
   const dbUrl = await getSetting(SETTING_KEYS.openaiCompatibleBaseUrl);
   const baseUrl = envUrl ?? dbUrl ?? null;
-  const baseUrlSource = envUrl ? ("env" as const) : dbUrl ? ("database" as const) : ("none" as const);
+  const baseUrlSource = envUrl
+    ? ("env" as const)
+    : dbUrl
+      ? ("database" as const)
+      : ("none" as const);
 
   const source = envKey
     ? ("env" as const)
@@ -312,7 +317,8 @@ export type OperationalSettingKey =
   | "excelResearchJobTtlDays"
   | "searxngBaseUrl"
   | "enrichmentItemConcurrency"
-  | "excelResearchDir";
+  | "excelResearchDir"
+  | "materialProfileExportDir";
 
 type OperationalSettingDefinition = {
   /** Key into SETTING_KEYS / appSettings table. */
@@ -472,6 +478,12 @@ export const OPERATIONAL_SETTINGS: Record<
     type: "path",
     defaultValue: null,
   },
+  materialProfileExportDir: {
+    settingKey: SETTING_KEYS.materialProfileExportDir,
+    envVar: "BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR",
+    type: "path",
+    defaultValue: null,
+  },
 };
 
 function rawEnvValue(envVar: string): string | undefined {
@@ -521,7 +533,9 @@ export function validateOperationalSettingValue(
     }
     case "boolean": {
       if (trimmed !== "true" && trimmed !== "false") {
-        throw new OperationalSettingError('Giá trị phải là "true" hoặc "false".');
+        throw new OperationalSettingError(
+          'Giá trị phải là "true" hoặc "false".',
+        );
       }
       return trimmed;
     }
@@ -642,11 +656,11 @@ export async function getOperationalSettingConfig(
 export async function getAllOperationalSettingConfigs(): Promise<
   Record<OperationalSettingKey, OperationalSettingConfig>
 > {
-  const keys = Object.keys(
-    OPERATIONAL_SETTINGS,
-  ) as OperationalSettingKey[];
+  const keys = Object.keys(OPERATIONAL_SETTINGS) as OperationalSettingKey[];
   const entries = await Promise.all(
-    keys.map(async (key) => [key, await getOperationalSettingConfig(key)] as const),
+    keys.map(
+      async (key) => [key, await getOperationalSettingConfig(key)] as const,
+    ),
   );
   return Object.fromEntries(entries) as Record<
     OperationalSettingKey,
@@ -755,3 +769,8 @@ export async function resolveExcelResearchDir(): Promise<string | null> {
   return resolveOperationalSetting("excelResearchDir");
 }
 
+export async function resolveMaterialProfileExportDir(): Promise<
+  string | null
+> {
+  return resolveOperationalSetting("materialProfileExportDir");
+}

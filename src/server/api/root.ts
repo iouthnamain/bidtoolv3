@@ -3,6 +3,7 @@ import { aiRouter } from "~/server/api/routers/ai";
 import { appConfigRouter } from "~/server/api/routers/app-config";
 import { excelResearchRouter } from "~/server/api/routers/excel-research";
 import { materialEnrichmentRouter } from "~/server/api/routers/material-enrichment";
+import { materialProfileRouter } from "~/server/api/routers/material-profile";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchRouter } from "~/server/api/routers/search";
@@ -25,6 +26,7 @@ export const appRouter = createTRPCRouter({
   excelResearch: excelResearchRouter,
   material: materialRouter,
   materialEnrichment: materialEnrichmentRouter,
+  materialProfile: materialProfileRouter,
   notification: notificationRouter,
   search: searchRouter,
   tenant: tenantRouter,

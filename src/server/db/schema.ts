@@ -550,8 +550,10 @@ export const excelWorkspaces = pgTable(
   {
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
+    noticeNumber: text("notice_number"),
     status: excelWorkspaceStatusEnum("status").notNull().default("draft"),
     sourceFileName: text("source_file_name"),
+    sourceWorkbookPath: text("source_workbook_path"),
     sourceSheetName: text("source_sheet_name"),
     rowCount: integer("row_count").notNull().default(0),
     columnMappingJson: jsonb("column_mapping_json")
@@ -560,6 +562,10 @@ export const excelWorkspaces = pgTable(
       .default({}),
     workbookJson: jsonb("workbook_json")
       .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    editStateJson: jsonb("edit_state_json")
+      .$type<Record<string, Record<string, string>>>()
       .notNull()
       .default({}),
     templateConfigJson: jsonb("template_config_json")
@@ -595,6 +601,7 @@ export const excelWorkspaces = pgTable(
         "evidence",
       ]),
     exportFileName: text("export_file_name"),
+    outputDirPath: text("output_dir_path"),
     exportedAt: timestamp("exported_at", {
       mode: "string",
       withTimezone: true,
@@ -1030,7 +1037,10 @@ export const excelResearchJobRows = pgTable(
     ),
     selectedCandidateId: integer("selected_candidate_id"),
     confidenceScore: numeric("confidence_score", { precision: 4, scale: 3 }),
-    fillPlanJson: jsonb("fill_plan_json").$type<unknown[]>().notNull().default([]),
+    fillPlanJson: jsonb("fill_plan_json")
+      .$type<unknown[]>()
+      .notNull()
+      .default([]),
     excelUpdatesJson: jsonb("excel_updates_json")
       .$type<unknown[]>()
       .notNull()
@@ -1366,9 +1376,9 @@ export const materialWebCandidates = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    enrichmentItemIdx: index(
-      "material_web_candidates_enrichment_item_idx",
-    ).on(table.enrichmentItemId),
+    enrichmentItemIdx: index("material_web_candidates_enrichment_item_idx").on(
+      table.enrichmentItemId,
+    ),
     materialIdx: index("material_web_candidates_material_idx").on(
       table.materialId,
     ),

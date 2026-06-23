@@ -123,6 +123,11 @@ const navSections: NavSection[] = [
         ],
       },
       {
+        href: "/material-profiles",
+        label: "Hồ sơ vật tư",
+        icon: "materials",
+      },
+      {
         href: "/enrich",
         label: "Đối chiếu Excel",
         icon: "enrich",
@@ -281,7 +286,7 @@ function NavLink({
       <div
         className={`group relative flex items-center rounded-md text-sm font-medium transition-colors duration-150 ${
           isActive
-            ? "bg-gradient-to-r from-sky-50 to-transparent border-r-2 border-r-sky-600 text-sky-900 font-bold"
+            ? "border-r-2 border-r-sky-600 bg-gradient-to-r from-sky-50 to-transparent font-bold text-sky-900"
             : "text-slate-700 hover:bg-slate-100"
         } ${collapsed ? "justify-center" : ""}`}
       >
@@ -306,7 +311,9 @@ function NavLink({
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
                 className={`absolute -top-1.5 -right-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 py-0.5 text-xs leading-none font-bold ${
-                  isActive ? "bg-sky-700 text-white" : "bg-rose-500 text-white font-bold"
+                  isActive
+                    ? "bg-sky-700 text-white"
+                    : "bg-rose-500 font-bold text-white"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
               >
@@ -554,7 +561,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         <MobileBanner />
         <AdminUpdateBanner />
-        <main id="main-content" className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
+        <main
+          id="main-content"
+          className="min-h-0 flex-1 overflow-y-auto bg-slate-50"
+        >
           <div className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}
           </div>
