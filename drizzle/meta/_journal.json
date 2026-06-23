@@ -183,6 +183,13 @@
       "when": 1782300000000,
       "tag": "0025_reset_stale_match_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782400000000,
+      "tag": "0026_material_profile_workspaces",
+      "breakpoints": true
     }
   ]
 }
