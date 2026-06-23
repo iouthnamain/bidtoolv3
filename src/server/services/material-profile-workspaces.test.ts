@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildOpenFolderCommand,
   buildMaterialProfileOutputPrefix,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
   sanitizeMaterialProfilePathSegment,
@@ -54,5 +55,12 @@ describe("material profile workspace helpers", () => {
       "BT - Nguồn",
       "BT - Catalog files",
     ]);
+  });
+
+  it("builds a platform-specific open-folder command", () => {
+    const command = buildOpenFolderCommand("/tmp/bidtool-output");
+
+    expect(command.command.length).toBeGreaterThan(0);
+    expect(command.args).toContain("/tmp/bidtool-output");
   });
 });

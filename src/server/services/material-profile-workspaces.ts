@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
@@ -211,10 +212,12 @@ function cloneSheetWithEdits(
 function applyCellEdits(
   workbook: ExcelJS.Workbook,
   edits: MaterialProfileCellEdits,
+  maxColumnBySheet?: Map<string, number>,
 ) {
   for (const [sheetName, sheetEdits] of Object.entries(edits)) {
     const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) continue;
+    const maxColumn = maxColumnBySheet?.get(sheetName);
     for (const [key, value] of Object.entries(sheetEdits)) {
       const [rowPart, colPart] = key.split(":");
       const rowNumber = Number(rowPart);
@@ -227,6 +230,9 @@ function applyCellEdits(
       ) {
         continue;
       }
+      if (maxColumn != null && colNumber > maxColumn) {
+        continue;
+      }
       const cell = sheet.getRow(rowNumber).getCell(colNumber);
       const existing = cell.value;
       const numeric = Number(value.replace(/[,\s]/g, ""));
@@ -236,6 +242,39 @@ function applyCellEdits(
           : value;
     }
   }
+}
+
+function cellToPreviewText(value: ExcelJS.CellValue): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    const record = value as unknown as Record<string, unknown>;
+    if (typeof record.text === "string") return record.text;
+    if ("result" in record)
+      return cellToPreviewText(record.result as ExcelJS.CellValue);
+    if (Array.isArray(record.richText)) {
+      return record.richText
+        .map((part) => {
+          if (typeof part !== "object" || part === null) return "";
+          const text = (part as { text?: unknown }).text;
+          return typeof text === "string" ? text : "";
+        })
+        .join("");
+    }
+  }
+  return "";
+}
+
+function editValueForCell(
+  edits: MaterialProfileCellEdits,
+  sheetName: string,
+  rowNumber: number,
+  colNumber: number,
+) {
+  return edits[sheetName]?.[`${rowNumber}:${colNumber}`];
 }
 
 function materialValue(
@@ -662,6 +701,262 @@ async function writeRowsWorkbook(
   await writeFile(filePath, Buffer.from(await workbook.xlsx.writeBuffer()));
 }
 
+async function loadMaterialRows(db: AppDb, materialIds: number[]) {
+  return materialIds.length > 0
+    ? await db
+        .select()
+        .from(materials)
+        .where(
+          and(inArray(materials.id, materialIds), isNull(materials.deletedAt)),
+        )
+    : [];
+}
+
+function materialIdsFromItems(items: WorkspaceItem[]) {
+  return Array.from(
+    new Set(
+      items
+        .map((item) => item.materialId)
+        .filter((id): id is number => id != null),
+    ),
+  );
+}
+
+function materialProfileSheetMeta(workspace: Workspace) {
+  const parsed = parseWorkbookJson(workspace.workbookJson);
+  return parsed.sheets.find(
+    (sheet) => sheet.name === workspace.sourceSheetName,
+  );
+}
+
+function originalColumnCountBySheet(workbook: ExcelJS.Workbook) {
+  return new Map(
+    workbook.worksheets.map((sheet) => [
+      sheet.name,
+      Math.max(sheet.columnCount, 1),
+    ]),
+  );
+}
+
+function worksheetToRows(sheet: ExcelJS.Worksheet, columnCount: number) {
+  const rowCount = Math.max(sheet.rowCount, 1);
+  const rows: string[][] = [];
+  for (let rowNumber = 1; rowNumber <= rowCount; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    const values: string[] = [];
+    for (let colNumber = 1; colNumber <= columnCount; colNumber += 1) {
+      values.push(cellToPreviewText(row.getCell(colNumber).value));
+    }
+    rows.push(values);
+  }
+  return rows;
+}
+
+function ensurePreviewCell(
+  rows: string[][],
+  rowNumber: number,
+  colNumber: number,
+) {
+  const rowIndex = rowNumber - 1;
+  const colIndex = colNumber - 1;
+  rows[rowIndex] ??= [];
+  const row = rows[rowIndex];
+  while (row.length <= colIndex) {
+    row.push("");
+  }
+  return row;
+}
+
+function applyMaterialOutputColumnsToRows(input: {
+  rows: string[][];
+  startColumn: number;
+  headerRowIndex: number;
+  items: WorkspaceItem[];
+  materialsById: Map<number, MaterialRow>;
+  catalogFilesByMaterial: Map<number, string[]>;
+  edits: MaterialProfileCellEdits;
+  sheetName: string;
+}) {
+  const headerRow = ensurePreviewCell(
+    input.rows,
+    input.headerRowIndex,
+    input.startColumn + MATERIAL_PROFILE_EXPORT_COLUMNS.length - 1,
+  );
+  MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
+    const colNumber = input.startColumn + index;
+    headerRow[colNumber - 1] =
+      editValueForCell(
+        input.edits,
+        input.sheetName,
+        input.headerRowIndex,
+        colNumber,
+      ) ?? column.header;
+  });
+
+  for (const item of input.items) {
+    if (!item.includedInExport) continue;
+    const material =
+      item.materialId == null
+        ? undefined
+        : input.materialsById.get(item.materialId);
+    const catalogFiles =
+      item.materialId == null
+        ? []
+        : (input.catalogFilesByMaterial.get(item.materialId) ?? []);
+    const row = ensurePreviewCell(
+      input.rows,
+      item.originalRowIndex,
+      input.startColumn + MATERIAL_PROFILE_EXPORT_COLUMNS.length - 1,
+    );
+    MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
+      const colNumber = input.startColumn + index;
+      const edited = editValueForCell(
+        input.edits,
+        input.sheetName,
+        item.originalRowIndex,
+        colNumber,
+      );
+      row[colNumber - 1] =
+        edited ??
+        String(materialValue(material, column.key, item, catalogFiles) ?? "");
+    });
+  }
+}
+
+function catalogPreviewFilesByMaterial(
+  docsByMaterial: Map<number, CatalogDocumentRow[]>,
+) {
+  const files = new Map<number, string[]>();
+  for (const [materialId, docs] of docsByMaterial) {
+    files.set(
+      materialId,
+      docs.map(
+        (doc) =>
+          doc.fileName ??
+          (doc.sourceUrl
+            ? catalogPdfFileNameFromUrl(doc.sourceUrl)
+            : "catalog.pdf"),
+      ),
+    );
+  }
+  return files;
+}
+
+export async function previewMaterialProfileExportWorkbook(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
+    .orderBy(excelWorkspaceItems.sortOrder);
+  const materialIds = materialIdsFromItems(items);
+  const materialRows = await loadMaterialRows(db, materialIds);
+  const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+  const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+  const catalogFilesByMaterial = catalogPreviewFilesByMaterial(docsByMaterial);
+
+  const workbook = new ExcelJS.Workbook();
+  const sourceBuffer = await readWorkspaceWorkbook(workspace);
+  await workbook.xlsx.load(
+    sourceBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0],
+  );
+  const maxColumnBySheet = originalColumnCountBySheet(workbook);
+  applyCellEdits(workbook, workspace.editStateJson, maxColumnBySheet);
+
+  const targetSheetName =
+    workspace.sourceSheetName ?? workbook.worksheets[0]?.name ?? "";
+  const selectedMeta = materialProfileSheetMeta(workspace);
+
+  return {
+    selectedSheetName: targetSheetName,
+    sheets: workbook.worksheets.map((sheet) => {
+      const originalColumnCount =
+        maxColumnBySheet.get(sheet.name) ?? sheet.columnCount;
+      const isMaterialSheet = sheet.name === targetSheetName;
+      const startColumn = isMaterialSheet ? originalColumnCount + 1 : null;
+      const rows = worksheetToRows(
+        sheet,
+        isMaterialSheet
+          ? originalColumnCount + MATERIAL_PROFILE_EXPORT_COLUMNS.length
+          : originalColumnCount,
+      );
+      if (isMaterialSheet && startColumn != null) {
+        applyMaterialOutputColumnsToRows({
+          rows,
+          startColumn,
+          headerRowIndex: selectedMeta?.activeHeaderRowIndex ?? 1,
+          items,
+          materialsById,
+          catalogFilesByMaterial,
+          edits: workspace.editStateJson,
+          sheetName: sheet.name,
+        });
+      }
+      return {
+        name: sheet.name,
+        isMaterialSheet,
+        headerRowIndex: isMaterialSheet
+          ? (selectedMeta?.activeHeaderRowIndex ?? 1)
+          : 1,
+        originalColumnCount,
+        appendedStartColumn: startColumn,
+        rowCount: rows.length,
+        columnCount: Math.max(...rows.map((row) => row.length), 0),
+        rows,
+      };
+    }),
+  };
+}
+
+export function buildOpenFolderCommand(outputDirPath: string) {
+  if (process.platform === "darwin") {
+    return { command: "open", args: [outputDirPath] };
+  }
+  if (process.platform === "win32") {
+    return { command: "cmd", args: ["/c", "start", "", outputDirPath] };
+  }
+  return { command: "xdg-open", args: [outputDirPath] };
+}
+
+async function assertOutputDirPathAllowed(outputDirPath: string) {
+  const root = path.resolve(await materialProfileRoot());
+  const output = path.resolve(outputDirPath);
+  if (output !== root && !output.startsWith(root + path.sep)) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Đường dẫn output không nằm trong thư mục hồ sơ vật tư.",
+    );
+  }
+  await access(output);
+  return output;
+}
+
+export async function openMaterialProfileOutputFolder(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  if (!workspace.outputDirPath) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Chưa có folder output. Hãy export trước.",
+    );
+  }
+  const outputDirPath = await assertOutputDirPathAllowed(
+    workspace.outputDirPath,
+  );
+  const { command, args } = buildOpenFolderCommand(outputDirPath);
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return { outputDirPath };
+}
+
 export async function exportMaterialProfileWorkspace(
   db: AppDb,
   workspaceId: number,
@@ -673,25 +968,8 @@ export async function exportMaterialProfileWorkspace(
     .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
     .orderBy(excelWorkspaceItems.sortOrder);
   const exportItems = items.filter((item) => item.includedInExport);
-  const materialIds = Array.from(
-    new Set(
-      exportItems
-        .map((item) => item.materialId)
-        .filter((id): id is number => id != null),
-    ),
-  );
-  const materialRows =
-    materialIds.length > 0
-      ? await db
-          .select()
-          .from(materials)
-          .where(
-            and(
-              inArray(materials.id, materialIds),
-              isNull(materials.deletedAt),
-            ),
-          )
-      : [];
+  const materialIds = materialIdsFromItems(exportItems);
+  const materialRows = await loadMaterialRows(db, materialIds);
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
   const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
 
@@ -805,7 +1083,8 @@ export async function exportMaterialProfileWorkspace(
   await workbook.xlsx.load(
     sourceBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0],
   );
-  applyCellEdits(workbook, workspace.editStateJson);
+  const maxColumnBySheet = originalColumnCountBySheet(workbook);
+  applyCellEdits(workbook, workspace.editStateJson, maxColumnBySheet);
 
   const targetSheet =
     workbook.getWorksheet(workspace.sourceSheetName ?? "") ??
@@ -820,9 +1099,17 @@ export async function exportMaterialProfileWorkspace(
     (sheet) => sheet.name === targetSheet.name,
   );
   const headerRow = targetSheet.getRow(selectedMeta?.activeHeaderRowIndex ?? 1);
-  const startColumn = targetSheet.columnCount + 1;
+  const startColumn =
+    (maxColumnBySheet.get(targetSheet.name) ?? targetSheet.columnCount) + 1;
   MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
-    headerRow.getCell(startColumn + index).value = column.header;
+    const colNumber = startColumn + index;
+    headerRow.getCell(colNumber).value =
+      editValueForCell(
+        workspace.editStateJson,
+        targetSheet.name,
+        selectedMeta?.activeHeaderRowIndex ?? 1,
+        colNumber,
+      ) ?? column.header;
   });
   headerRow.commit();
 
@@ -835,12 +1122,14 @@ export async function exportMaterialProfileWorkspace(
         : (catalogFilesByMaterial.get(item.materialId) ?? []);
     const row = targetSheet.getRow(item.originalRowIndex);
     MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
-      row.getCell(startColumn + index).value = materialValue(
-        material,
-        column.key,
-        item,
-        catalogFiles,
-      );
+      const colNumber = startColumn + index;
+      row.getCell(colNumber).value =
+        editValueForCell(
+          workspace.editStateJson,
+          targetSheet.name,
+          item.originalRowIndex,
+          colNumber,
+        ) ?? materialValue(material, column.key, item, catalogFiles);
     });
     row.commit();
   }

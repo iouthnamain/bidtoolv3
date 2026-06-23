@@ -13,6 +13,8 @@ import {
   listMaterialProfileWorkspaces,
   matchMaterialProfileWorkspace,
   MaterialProfileWorkspaceError,
+  openMaterialProfileOutputFolder,
+  previewMaterialProfileExportWorkbook,
   updateMaterialProfileItem,
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
@@ -140,6 +142,22 @@ export const materialProfileRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         exportMaterialProfileWorkspace(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  previewExportWorkbook: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        previewMaterialProfileExportWorkbook(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  openOutputFolder: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        openMaterialProfileOutputFolder(ctx.db, input.workspaceId),
       ),
     ),
 });
