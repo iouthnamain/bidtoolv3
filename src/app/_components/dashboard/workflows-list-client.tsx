@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
+import { PermissionGate } from "~/app/_components/dashboard/permission-gate";
 import { WorkflowCard } from "~/app/_components/dashboard/workflow-card";
 import { Button, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
@@ -115,23 +116,25 @@ export function WorkflowsListClient() {
           <span className="text-xs text-slate-500 ml-1">workflow</span>
         </div>
 
-        <Button
-          variant="primary"
-          size="sm"
-          isLoading={createWorkflow.isPending}
-          leftIcon={<Plus className="h-3.5 w-3.5" />}
-          onClick={() => {
-            createWorkflow.mutate({
-              name: `Workflow mới ${workflows.length + 1}`,
-              triggerType: "new_search_result",
-              actionType: "in_app",
-              triggerConfig: {},
-              actionConfig: {},
-            });
-          }}
-        >
-          {createWorkflow.isPending ? "Đang tạo…" : "Tạo workflow"}
-        </Button>
+        <PermissionGate permission="workflow:write">
+          <Button
+            variant="primary"
+            size="sm"
+            isLoading={createWorkflow.isPending}
+            leftIcon={<Plus className="h-3.5 w-3.5" />}
+            onClick={() => {
+              createWorkflow.mutate({
+                name: `Workflow mới ${workflows.length + 1}`,
+                triggerType: "new_search_result",
+                actionType: "in_app",
+                triggerConfig: {},
+                actionConfig: {},
+              });
+            }}
+          >
+            {createWorkflow.isPending ? "Đang tạo…" : "Tạo workflow"}
+          </Button>
+        </PermissionGate>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">

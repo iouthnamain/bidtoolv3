@@ -56,6 +56,7 @@ import {
   EmptyState,
   SearchableSelect,
 } from "~/app/_components/ui";
+import { PermissionGate } from "~/app/_components/dashboard/permission-gate";
 import { Skeleton, SkeletonCard } from "~/app/_components/ui/skeleton";
 import { useToast } from "~/app/_components/ui/toast";
 import {
@@ -1570,20 +1571,22 @@ export function MaterialsListClient() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/materials/new"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Thêm thủ công
-            </Link>
-            <Link
-              href="/materials/import"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-            >
-              <FileSpreadsheet className="h-4 w-4" aria-hidden />
-              Nhập sheet
-            </Link>
+            <PermissionGate permission="material:write">
+              <Link
+                href="/materials/new"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                Thêm thủ công
+              </Link>
+              <Link
+                href="/materials/import"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+              >
+                <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                Nhập sheet
+              </Link>
+            </PermissionGate>
             <Button
               variant="secondary"
               size="sm"
@@ -1595,13 +1598,15 @@ export function MaterialsListClient() {
             >
               Xuất CSV
             </Button>
-            <Link
-              href="/materials/scrape"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-            >
-              <Search className="h-4 w-4" aria-hidden />
-              Scrape shop
-            </Link>
+            <PermissionGate permission="scrape:run">
+              <Link
+                href="/materials/scrape"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+              >
+                <Search className="h-4 w-4" aria-hidden />
+                Scrape shop
+              </Link>
+            </PermissionGate>
           </div>
         </div>
 

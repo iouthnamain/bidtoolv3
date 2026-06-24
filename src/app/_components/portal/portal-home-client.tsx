@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BookmarkCheck, FileSpreadsheet, Layers } from "lucide-react";
+import { Bell, BookmarkCheck, Eye, FileSpreadsheet, Layers } from "lucide-react";
 
 import { Badge } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
@@ -330,8 +330,78 @@ function SavedFiltersSection() {
  * return FORBIDDEN.
  */
 export function PortalHomeClient() {
+  const unreadQuery = api.notification.unreadCount.useQuery();
+  const researchQuery = api.excelResearch.listJobs.useQuery({ limit: 5 });
+  const enrichmentQuery =
+    api.materialEnrichment.listMaterialEnrichmentJobs.useQuery({ limit: 5 });
+  const watchlistQuery = api.watchlist.listItems.useQuery({});
+  const filtersQuery = api.search.listSavedFilters.useQuery();
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700">
+              <Eye className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-bold">Cổng khách hàng chỉ xem</h2>
+                <Badge tone="warning">Chỉ xem</Badge>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-amber-800">
+                Bạn có thể xem thông báo, tiến độ nghiên cứu, job làm giàu,
+                watchlist và bộ lọc đã lưu thuộc tổ chức của mình. Mọi thao tác
+                tạo, sửa, chạy job hoặc quản trị hệ thống được ẩn khỏi portal.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {[
+          {
+            label: "Thông báo",
+            value: unreadQuery.data ?? 0,
+            hint: "chưa đọc",
+          },
+          {
+            label: "Nghiên cứu",
+            value: researchQuery.data?.length ?? 0,
+            hint: "job gần đây",
+          },
+          {
+            label: "Làm giàu",
+            value: enrichmentQuery.data?.length ?? 0,
+            hint: "job gần đây",
+          },
+          {
+            label: "Watchlist",
+            value: watchlistQuery.data?.length ?? 0,
+            hint: "mục theo dõi",
+          },
+          {
+            label: "Bộ lọc",
+            value: filtersQuery.data?.length ?? 0,
+            hint: "đã lưu",
+          },
+        ].map((metric) => (
+          <article
+            key={metric.label}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
+          >
+            <p className="text-[11px] font-bold tracking-[0.14em] text-slate-500 uppercase">
+              {metric.label}
+            </p>
+            <p className="mt-1 text-xl font-extrabold text-slate-950 tabular-nums">
+              {metric.value}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">{metric.hint}</p>
+          </article>
+        ))}
+      </section>
       <NotificationsSection />
       <div className="grid gap-4 lg:grid-cols-2">
         <ResearchJobsSection />

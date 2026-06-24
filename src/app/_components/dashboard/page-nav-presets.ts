@@ -1,5 +1,6 @@
 import type { PageSectionNavItem } from "~/app/_components/dashboard/page-section-nav";
 
+import type { Permission, Role } from "~/lib/permissions";
 import { getSearchPathForMode } from "~/lib/search-routes";
 
 export const searchSectionNavItems: PageSectionNavItem[] = [
@@ -355,6 +356,47 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
   },
 ];
 
+const settingsNavRules: Record<
+  string,
+  { roles?: readonly Role[]; permission?: Permission }
+> = {
+  "/settings/ai": {
+    roles: ["admin", "manager"],
+    permission: "settings:manage",
+  },
+  "/settings/users": {
+    roles: ["admin", "manager"],
+    permission: "users:manage",
+  },
+  "/settings/tenants": {
+    roles: ["admin", "manager"],
+    permission: "users:manage",
+  },
+  "/settings/desktop": {
+    roles: ["admin"],
+  },
+  "/settings/updates": {
+    roles: ["admin"],
+    permission: "onprem:admin",
+  },
+};
+
+export function getSettingsSectionNavItems(
+  role: Role | null | undefined,
+  can: (permission: Permission) => boolean,
+): PageSectionNavItem[] {
+  if (!role) return settingsSectionNavItems;
+
+  return settingsSectionNavItems.filter((item) => {
+    const rule = settingsNavRules[item.href];
+    if (!rule) return true;
+    return (
+      (!rule.roles || rule.roles.includes(role)) &&
+      (!rule.permission || can(rule.permission))
+    );
+  });
+}
+
 export const sourceDetailSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/search/packages",
@@ -400,6 +442,12 @@ export const helpSectionNavItems: PageSectionNavItem[] = [
     label: "Bắt đầu",
     description: "Cài đặt, mở app và kiểm tra dashboard.",
     icon: "home",
+  },
+  {
+    href: "/help/vai-tro",
+    label: "Vai trò & quyền",
+    description: "Ranh giới admin, manager, staff và customer.",
+    icon: "clipboard",
   },
   {
     href: "/help/tim-kiem",

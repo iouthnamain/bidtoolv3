@@ -30,6 +30,7 @@ import {
   ConfirmDialog,
   EmptyState,
 } from "~/app/_components/ui";
+import { PermissionGate } from "~/app/_components/dashboard/permission-gate";
 import { useToast } from "~/app/_components/ui/toast";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -474,14 +475,16 @@ export function CatalogPdfLibraryClient({
                   count={selectedIds.size}
                   onClear={() => setSelectedIds(new Set())}
                 >
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                    onClick={() => setBulkDeleteOpen(true)}
-                  >
-                    Xóa đã chọn
-                  </Button>
+                  <PermissionGate permission="catalog:write">
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => setBulkDeleteOpen(true)}
+                    >
+                      Xóa đã chọn
+                    </Button>
+                  </PermissionGate>
                 </BulkActionBar>
               </div>
             ) : null}
@@ -495,13 +498,15 @@ export function CatalogPdfLibraryClient({
                 description="Thêm tài liệu từ URL PDF hoặc upload tệp."
                 icon={<FileText className="h-5 w-5" aria-hidden />}
                 cta={
-                  <Button
-                    size="sm"
-                    leftIcon={<Upload className="h-3.5 w-3.5" />}
-                    onClick={() => router.push("/catalog-pdfs/new")}
-                  >
-                    Thêm tài liệu
-                  </Button>
+                  <PermissionGate permission="catalog:write">
+                    <Button
+                      size="sm"
+                      leftIcon={<Upload className="h-3.5 w-3.5" />}
+                      onClick={() => router.push("/catalog-pdfs/new")}
+                    >
+                      Thêm tài liệu
+                    </Button>
+                  </PermissionGate>
                 }
               />
             ) : visibleDocuments.length === 0 ? (
@@ -648,14 +653,16 @@ export function CatalogPdfLibraryClient({
                               >
                                 Chi tiết
                               </Button>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                                onClick={() => setDeleteTarget(document)}
-                              >
-                                Xóa
-                              </Button>
+                              <PermissionGate permission="catalog:write">
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                                  onClick={() => setDeleteTarget(document)}
+                                >
+                                  Xóa
+                                </Button>
+                              </PermissionGate>
                             </div>
                           </td>
                         </tr>
@@ -875,15 +882,17 @@ function NewDocumentView({
               value={uploadTitle}
               onChange={(event) => setUploadTitle(event.target.value)}
             />
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              isLoading={isUploading}
-              disabled={!uploadFile}
-            >
-              Upload PDF
-            </Button>
+            <PermissionGate permission="catalog:write">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={isUploading}
+                disabled={!uploadFile}
+              >
+                Upload PDF
+              </Button>
+            </PermissionGate>
           </div>
         </form>
       </div>

@@ -30,3 +30,16 @@ export async function requirePagePermission(
     redirect("/settings");
   }
 }
+
+export async function requireAdminRole(): Promise<void> {
+  if (env.AUTH_ENABLED !== "true") {
+    return;
+  }
+
+  const session = await auth.api.getSession({ headers: await headers() });
+  const role = session?.user?.role as Role | undefined;
+
+  if (role !== "admin") {
+    redirect("/settings");
+  }
+}

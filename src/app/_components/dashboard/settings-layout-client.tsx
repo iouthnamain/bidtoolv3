@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
-import { settingsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
+import { getSettingsSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
+import { usePermissions } from "~/lib/use-permissions";
 
 const PAGE_META: Record<string, { title: string; description: string }> = {
   "/settings": {
@@ -35,13 +36,15 @@ export function SettingsLayoutClient({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { role, can } = usePermissions();
   const meta = PAGE_META[pathname] ?? DEFAULT_META;
+  const sectionNavItems = getSettingsSectionNavItems(role, can);
 
   return (
     <DashboardShell
       title={meta.title}
       description={meta.description}
-      sectionNavItems={settingsSectionNavItems}
+      sectionNavItems={sectionNavItems}
       sectionNavTitle="Cài đặt"
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">

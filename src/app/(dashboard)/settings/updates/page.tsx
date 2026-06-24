@@ -1,5 +1,6 @@
 import { createPageMetadata } from "~/app/_lib/seo";
 import { AboutVersionSection } from "~/app/_components/dashboard/about-version-section";
+import { requirePagePermission } from "../require-page-permission";
 
 export const metadata = createPageMetadata({
   title: "Cập nhật BidTool",
@@ -8,6 +9,8 @@ export const metadata = createPageMetadata({
   noIndex: true,
 });
 
-export default function SettingsUpdatesPage() {
+export default async function SettingsUpdatesPage() {
+  await requirePagePermission("onprem:admin");
+
   return <AboutVersionSection />;
 }

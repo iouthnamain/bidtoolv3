@@ -10,6 +10,8 @@ import {
   type Permission,
   type Role,
 } from "~/lib/permissions";
+import { ROLE_LABELS } from "~/lib/role-surfaces";
+import { useRolePreview } from "~/lib/use-role-preview";
 
 /**
  * Narrow an unknown role string from the session into our canonical {@link Role}
@@ -38,6 +40,10 @@ export interface UsePermissionsResult {
   user: SessionUser | null;
   /** True while the session is still loading (avoid flashing gated UI). */
   isPending: boolean;
+  /** True when a development-only synthetic role is driving the UI. */
+  isPreview: boolean;
+  /** True when the development-only role preview control can be shown. */
+  previewAvailable: boolean;
 }
 
 /**
@@ -50,8 +56,23 @@ export interface UsePermissionsResult {
  */
 export function usePermissions(): UsePermissionsResult {
   const { data, isPending } = useSession();
+  const preview = useRolePreview();
   const user = data?.user ?? null;
-  const role = normalizeRole(user?.role);
+  const sessionRole = normalizeRole(user?.role);
+  const previewRole = preview.role;
+  const role = sessionRole ?? previewRole;
+  const isPreview = !sessionRole && !!previewRole;
+  const effectiveUser =
+    user ??
+    (isPreview && previewRole
+      ? ({
+          id: `preview-${previewRole}`,
+          name: `${ROLE_LABELS[previewRole]} preview`,
+          email: `${previewRole}@preview.local`,
+          role: previewRole,
+          tenantId: previewRole === "customer" ? "preview-tenant" : null,
+        } as unknown as SessionUser)
+      : null);
 
   const can = useMemo(() => {
     return (permission: Permission) => canPure(role, permission);
@@ -61,7 +82,9 @@ export function usePermissions(): UsePermissionsResult {
     role,
     can,
     isInternal: isInternalRole(role),
-    user,
+    user: effectiveUser,
     isPending,
+    isPreview,
+    previewAvailable: preview.available,
   };
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { PauseCircle, Play, Settings, ToggleRight } from "lucide-react";
 
+import { PermissionGate } from "~/app/_components/dashboard/permission-gate";
 import { Badge, Button } from "~/app/_components/ui";
 import { formatDateTime } from "~/lib/datetime";
 
@@ -143,31 +144,33 @@ export function WorkflowCard({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          isLoading={isRunningNow}
-          disabled={!isActive}
-          leftIcon={<Play className="h-3.5 w-3.5" />}
-          onClick={onRunNow}
-        >
-          Chạy ngay
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          isLoading={isToggling}
-          leftIcon={
-            isActive ? (
-              <PauseCircle className="h-3.5 w-3.5" />
-            ) : (
-              <ToggleRight className="h-3.5 w-3.5" />
-            )
-          }
-          onClick={() => onToggleActive(!isActive)}
-        >
-          {isActive ? "Tạm dừng" : "Kích hoạt"}
-        </Button>
+        <PermissionGate permission="workflow:write">
+          <Button
+            variant="primary"
+            size="sm"
+            isLoading={isRunningNow}
+            disabled={!isActive}
+            leftIcon={<Play className="h-3.5 w-3.5" />}
+            onClick={onRunNow}
+          >
+            Chạy ngay
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            isLoading={isToggling}
+            leftIcon={
+              isActive ? (
+                <PauseCircle className="h-3.5 w-3.5" />
+              ) : (
+                <ToggleRight className="h-3.5 w-3.5" />
+              )
+            }
+            onClick={() => onToggleActive(!isActive)}
+          >
+            {isActive ? "Tạm dừng" : "Kích hoạt"}
+          </Button>
+        </PermissionGate>
       </div>
     </article>
   );

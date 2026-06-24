@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Bell,
@@ -20,54 +20,33 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  ShieldCheck,
   Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { AdminUpdateBanner } from "~/app/_components/dashboard/admin-update-banner";
+import { Badge } from "~/app/_components/ui";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
+import { RolePreviewBanner } from "~/app/_components/dashboard/role-preview-banner";
 import { SidebarUpdatePill } from "~/app/_components/dashboard/sidebar-update-pill";
 import { UserControl } from "~/app/_components/dashboard/user-control";
+import {
+  buildNavSections,
+  canAccessRoute,
+  getRoleLandingPath,
+  ROLE_LABELS,
+  type NavIconName as IconName,
+  type RoleSurfaceNavItem,
+  type RoleSurfaceSubNavItem,
+} from "~/lib/role-surfaces";
 import { STORAGE_KEYS } from "~/lib/storage-keys";
+import { usePermissions } from "~/lib/use-permissions";
 import { api } from "~/trpc/react";
 
 const SIDEBAR_COLLAPSE_KEY = STORAGE_KEYS.sidebarCollapsed;
 const UNREAD_COUNT_POLL_MS = 30_000;
-
-type IconName =
-  | "dashboard"
-  | "search"
-  | "excel"
-  | "enrich"
-  | "documents"
-  | "materials"
-  | "jobs"
-  | "saved"
-  | "workflow"
-  | "notification"
-  | "help"
-  | "chat"
-  | "settings";
-
-type SubNavItem = {
-  href: string;
-  label: string;
-};
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: IconName;
-  badgeCount?: number;
-  subItems?: SubNavItem[];
-};
-
-type NavSection = {
-  id: string;
-  title: string;
-  items: NavItem[];
-};
 
 function readLocalStorageValue(key: string) {
   try {
@@ -85,141 +64,8 @@ function writeLocalStorageValue(key: string, value: string) {
   }
 }
 
-const navSections: NavSection[] = [
-  {
-    id: "home",
-    title: "Tổng quan",
-    items: [{ href: "/dashboard", label: "Tổng quan", icon: "dashboard" }],
-  },
-  {
-    id: "work",
-    title: "Tác vụ",
-    items: [
-      {
-        href: "/search/packages",
-        label: "Tìm kiếm",
-        icon: "search",
-        subItems: [
-          { href: "/search/packages", label: "Gói thầu" },
-          { href: "/search/packages/location", label: "Theo địa phương" },
-          { href: "/search/packages/area", label: "Ngành & địa phương" },
-          { href: "/search/plans", label: "KHLCNT" },
-          { href: "/search/projects", label: "Dự án" },
-        ],
-      },
-      {
-        href: "/documents",
-        label: "Documents",
-        icon: "documents",
-      },
-      {
-        href: "/materials",
-        label: "Sản phẩm / vật tư",
-        icon: "materials",
-        subItems: [
-          { href: "/materials", label: "Danh mục" },
-          { href: "/materials/new", label: "Thêm thủ công" },
-          { href: "/materials/scrape", label: "Scrape shop" },
-        ],
-      },
-      {
-        href: "/material-profiles",
-        label: "Hồ sơ vật tư",
-        icon: "materials",
-      },
-      {
-        href: "/enrich",
-        label: "Đối chiếu Excel",
-        icon: "enrich",
-        subItems: [
-          { href: "/enrich", label: "Đối chiếu & điền" },
-          { href: "/enrich/jobs", label: "Job nghiên cứu" },
-        ],
-      },
-      {
-        href: "/jobs",
-        label: "Danh sách job",
-        icon: "jobs",
-      },
-      {
-        href: "/catalog-pdfs",
-        label: "Catalog PDFs",
-        icon: "documents",
-        subItems: [
-          { href: "/catalog-pdfs", label: "Thư viện" },
-          { href: "/catalog-pdfs/new", label: "Thêm tài liệu" },
-        ],
-      },
-      {
-        href: "/saved-items",
-        label: "Bộ lọc & Watchlist",
-        icon: "saved",
-        subItems: [
-          { href: "/saved-items/smart-views", label: "Smart Views" },
-          { href: "/saved-items/watchlist", label: "Watchlist" },
-        ],
-      },
-      {
-        href: "/workflows",
-        label: "Quy trình",
-        icon: "workflow",
-        subItems: [
-          { href: "/workflows", label: "Danh sách" },
-          { href: "/workflows/health", label: "Trạng thái" },
-          { href: "/workflows/alerts", label: "Thông báo" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "activity",
-    title: "Hoạt động",
-    items: [
-      { href: "/notifications", label: "Thông báo", icon: "notification" },
-    ],
-  },
-  {
-    id: "support",
-    title: "Hỗ trợ",
-    items: [
-      {
-        href: "/help",
-        label: "Trợ giúp",
-        icon: "help",
-        subItems: [
-          { href: "/help/bat-dau", label: "Bắt đầu" },
-          { href: "/help/cap-nhat-hang-ngay", label: "Vận hành" },
-          { href: "/help/tim-kiem", label: "Tìm kiếm" },
-          { href: "/help/smart-view", label: "Smart Views" },
-          { href: "/help/quy-trinh", label: "Quy trình" },
-          { href: "/help/thong-bao", label: "Thông báo" },
-          { href: "/help/import-mapping", label: "Import & Mapping" },
-          { href: "/help/vat-tu", label: "Vật tư" },
-          { href: "/help/khac-phuc-loi", label: "Khắc phục lỗi" },
-        ],
-      },
-      {
-        href: "/chat",
-        label: "Chat sandbox",
-        icon: "chat",
-      },
-      {
-        href: "/settings",
-        label: "Cài đặt",
-        icon: "settings",
-        subItems: [
-          { href: "/settings/ai", label: "OpenRouter" },
-          { href: "/settings/users", label: "Người dùng" },
-          { href: "/settings/tenants", label: "Tổ chức" },
-          { href: "/settings/desktop", label: "Desktop client" },
-          { href: "/settings/updates", label: "Cập nhật" },
-        ],
-      },
-    ],
-  },
-];
-
 const navIconMap: Record<IconName, LucideIcon> = {
+  admin: ShieldCheck,
   dashboard: LayoutDashboard,
   search: Search,
   excel: FileSpreadsheet,
@@ -271,7 +117,7 @@ function NavLink({
   expanded,
   onToggleExpand,
 }: {
-  item: NavItem;
+  item: RoleSurfaceNavItem;
   collapsed: boolean;
   onNavigate?: () => void;
   isActive: boolean;
@@ -296,18 +142,18 @@ function NavLink({
           title={collapsed ? item.label : undefined}
           aria-current={isActive ? "page" : undefined}
           aria-label={collapsed ? item.label : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
             collapsed ? "justify-center" : ""
           }`}
         >
           <span
-            className={`relative flex h-7 w-7 shrink-0 items-center justify-center ${
+            className={`relative flex h-6 w-6 shrink-0 items-center justify-center ${
               isActive
                 ? "text-sky-700"
                 : "text-slate-500 group-hover:text-slate-700"
             }`}
           >
-            <NavItemIcon icon={item.icon} className="h-5 w-5" />
+            <NavItemIcon icon={item.icon} className="h-4 w-4" />
             {item.badgeCount && item.badgeCount > 0 ? (
               <span
                 className={`absolute -top-1.5 -right-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 py-0.5 text-xs leading-none font-bold ${
@@ -329,7 +175,7 @@ function NavLink({
             onClick={onToggleExpand}
             aria-label={expanded ? "Thu gọn mục con" : "Mở rộng mục con"}
             aria-expanded={expanded}
-            className={`mr-1 flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:h-7 sm:w-7 ${
+            className={`mr-1 flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:h-6 sm:w-6 ${
               isActive
                 ? "text-sky-700 hover:bg-sky-100"
                 : "text-slate-500 hover:bg-slate-200"
@@ -341,13 +187,13 @@ function NavLink({
       </div>
 
       {hasSubItems && !collapsed && expanded ? (
-        <ul className="mt-0.5 ml-7 flex flex-col gap-0.5 border-l border-slate-200 pl-2">
-          {item.subItems!.map((sub) => (
+        <ul className="mt-0.5 ml-6 flex flex-col gap-0.5 border-l border-slate-200 pl-2">
+          {item.subItems!.map((sub: RoleSurfaceSubNavItem) => (
             <li key={sub.href}>
               <Link
                 href={sub.href}
                 onClick={onNavigate}
-                className="flex min-h-10 touch-manipulation items-center rounded-md px-2 py-2 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:min-h-0 sm:py-1.5"
+                className="flex min-h-9 touch-manipulation items-center rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:min-h-0 sm:py-1"
               >
                 {sub.label}
               </Link>
@@ -367,6 +213,8 @@ function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
+  const { role, can } = usePermissions();
+  const navSections = buildNavSections(role, can);
   const shouldReadUnreadCount = !pathname.startsWith("/help");
   const unreadCountQuery = api.notification.unreadCount.useQuery(undefined, {
     enabled: shouldReadUnreadCount,
@@ -379,7 +227,7 @@ function SidebarNav({
   );
   const unreadCount = shouldReadUnreadCount ? (unreadCountQuery.data ?? 0) : 0;
 
-  const isItemActive = (item: NavItem) =>
+  const isItemActive = (item: RoleSurfaceNavItem) =>
     pathname === item.href ||
     (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
@@ -389,13 +237,13 @@ function SidebarNav({
 
   return (
     <nav
-      className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1"
+      className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1"
       aria-label="Điều hướng bảng điều khiển"
     >
       {navSections.map((section) => (
         <div key={section.id} className="flex flex-col gap-1">
           {!collapsed ? (
-            <p className="px-2.5 pt-1 pb-1 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">
+            <p className="px-2 pt-1 pb-0.5 text-[10px] font-bold tracking-[0.16em] text-slate-400 uppercase">
               {section.title}
             </p>
           ) : (
@@ -457,7 +305,64 @@ function CollapseToggle({
 }
 
 function BrandHeader({ collapsed }: { collapsed: boolean }) {
-  return <Logo collapsed={collapsed} />;
+  const { role, isPreview } = usePermissions();
+
+  return (
+    <div
+      className={`flex min-w-0 ${collapsed ? "flex-col items-center gap-1" : "flex-col items-start gap-1"}`}
+    >
+      <Logo collapsed={collapsed} />
+      {!collapsed && role ? (
+        <Badge
+          tone={isPreview ? "warning" : "info"}
+          className={`ml-11 max-w-[9.5rem] gap-1.5 border ${
+            isPreview
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-sky-200 bg-sky-50 text-sky-700"
+          } px-2 py-0.5 text-[10px] tracking-[0.08em] uppercase shadow-sm`}
+        >
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              isPreview ? "bg-amber-500" : "bg-sky-500"
+            }`}
+            aria-hidden="true"
+          />
+          <span className="truncate">
+            {ROLE_LABELS[role]}
+            {isPreview ? " preview" : ""}
+          </span>
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function RoleRouteGuard() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { role, can } = usePermissions();
+
+  useEffect(() => {
+    if (!role) return;
+
+    if (role === "customer") {
+      router.replace("/portal");
+      return;
+    }
+
+    const landingPath = getRoleLandingPath(role);
+
+    if (pathname === "/dashboard" && landingPath !== pathname) {
+      router.replace(landingPath);
+      return;
+    }
+
+    if (!canAccessRoute(role, pathname, can)) {
+      router.replace(landingPath);
+    }
+  }, [can, pathname, role, router]);
+
+  return null;
 }
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -505,6 +410,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden text-slate-900 sm:flex-row">
+      <RoleRouteGuard />
       <a
         href="#main-content"
         className="pointer-events-none fixed top-3 left-3 z-[60] inline-flex min-h-10 -translate-y-20 items-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white opacity-0 transition-[opacity,transform] duration-150 focus:pointer-events-auto focus:translate-y-0 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -514,7 +420,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <aside
         className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
           hasLoadedSidebarPreference ? "transition-[width]" : "transition-none"
-        } ${sidebarCollapsed ? "sm:w-16" : "sm:w-64"}`}
+        } ${sidebarCollapsed ? "sm:w-16" : "sm:w-60"}`}
         aria-label="Thanh điều hướng chính"
       >
         <div
@@ -531,7 +437,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           />
         </div>
 
-        <div className="flex flex-1 flex-col gap-3 overflow-hidden px-2 py-3">
+        <div className="flex flex-1 flex-col gap-2 overflow-hidden px-2 py-2.5">
           <SidebarNav collapsed={sidebarCollapsed} />
         </div>
 
@@ -560,6 +466,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <MobileBanner />
+        <RolePreviewBanner />
         <AdminUpdateBanner />
         <main
           id="main-content"
