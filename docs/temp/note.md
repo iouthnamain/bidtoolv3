@@ -24,3 +24,12 @@ on enrich jobs should have mass commit or some how match the easiness of looking
 with Duyệt enrichment should also embed the img for comparasions
 
 in step 3 nguyen cuu web should also match the logic of enrich jobs
+
+
+make demo files - flows - scenerios - email - openrouter account
+
+goi thau ửokspace
+
+---
+
+two side compare search step 3 

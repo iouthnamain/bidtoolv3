@@ -4,8 +4,12 @@ import {
   buildOpenFolderCommand,
   buildMaterialProfileOutputPrefix,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
+  isMaterialProfileExportRowDeleted,
+  parseMaterialProfileExportEditState,
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
+  shouldBulkApplyMaterialProfileCandidate,
+  summarizeMaterialProfileExportEditState,
 } from "~/server/services/material-profile-workspaces";
 
 describe("material profile workspace helpers", () => {
@@ -62,5 +66,53 @@ describe("material profile workspace helpers", () => {
 
     expect(command.command.length).toBeGreaterThan(0);
     expect(command.args).toContain("/tmp/bidtool-output");
+  });
+
+  it("normalizes export edit state and summarizes workbook edits", () => {
+    const state = parseMaterialProfileExportEditState({
+      cellEdits: {
+        "Sheet 1": {
+          "1:2": "Tên mới",
+          bad: "ignored",
+        },
+      },
+      deletedRows: {
+        "Sheet 1": [3, 3, "4", -1],
+      },
+      deletedColumns: {
+        "Sheet 1": [2, 7],
+      },
+      updatedAt: "2026-06-23T10:30:00.000Z",
+    });
+
+    expect(state.cellEdits["Sheet 1"]).toEqual({ "1:2": "Tên mới" });
+    expect(state.deletedRows["Sheet 1"]).toEqual([3, 4]);
+    expect(state.deletedColumns["Sheet 1"]).toEqual([2, 7]);
+    expect(summarizeMaterialProfileExportEditState(state, "Sheet 1")).toEqual({
+      editedCellCount: 1,
+      deletedRowCount: 2,
+      deletedColumnCount: 2,
+      deletedMaterialRowCount: 2,
+    });
+  });
+
+  it("detects deleted material rows for export/catalog alignment", () => {
+    const state = parseMaterialProfileExportEditState({
+      deletedRows: {
+        Materials: [5],
+      },
+    });
+
+    expect(isMaterialProfileExportRowDeleted("Materials", 5, state)).toBe(true);
+    expect(isMaterialProfileExportRowDeleted("Materials", 6, state)).toBe(
+      false,
+    );
+  });
+
+  it("uses the bulk apply threshold for high-confidence matches", () => {
+    expect(shouldBulkApplyMaterialProfileCandidate(0.85)).toBe(true);
+    expect(shouldBulkApplyMaterialProfileCandidate(0.849)).toBe(false);
+    expect(shouldBulkApplyMaterialProfileCandidate(0.8, 0.8)).toBe(true);
+    expect(shouldBulkApplyMaterialProfileCandidate("0.95")).toBe(false);
   });
 });

@@ -37,6 +37,31 @@ type CatalogDocumentRow = typeof materialCatalogDocuments.$inferSelect;
 
 export type MaterialProfileCellEdits = Record<string, Record<string, string>>;
 
+export type MaterialProfileExportEditState = {
+  cellEdits: MaterialProfileCellEdits;
+  deletedRows: Record<string, number[]>;
+  deletedColumns: Record<string, number[]>;
+  updatedAt?: string;
+};
+
+export type MaterialProfileBulkApplySnapshot = {
+  workspaceId: number;
+  createdAt: string;
+  itemIds: number[];
+  previousItems: Array<{
+    itemId: number;
+    materialId: number | null;
+    matchStatus: WorkspaceItem["matchStatus"];
+    includedInExport: boolean;
+  }>;
+  summary: {
+    selectedCount: number;
+    appliedCount: number;
+    reviewCount: number;
+    unchangedCount: number;
+  };
+};
+
 export const MATERIAL_PROFILE_EXPORT_COLUMNS = [
   { key: "matchStatus", header: "BT - Match status" },
   { key: "name", header: "BT - Tên vật tư" },
@@ -185,6 +210,123 @@ function parseWorkbookJson(value: Record<string, unknown>) {
   };
 }
 
+function uniquePositiveIntegers(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function parseSheetNumberMap(value: unknown) {
+  if (!value || typeof value !== "object") return {};
+  const parsed: Record<string, number[]> = {};
+  for (const [sheetName, numbers] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    const values = uniquePositiveIntegers(numbers);
+    if (sheetName && values.length > 0) {
+      parsed[sheetName] = values;
+    }
+  }
+  return parsed;
+}
+
+function parseCellEdits(value: unknown): MaterialProfileCellEdits {
+  if (!value || typeof value !== "object") return {};
+  const edits: MaterialProfileCellEdits = {};
+  for (const [sheetName, sheetEdits] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (!sheetName || !sheetEdits || typeof sheetEdits !== "object") continue;
+    const cleanSheetEdits: Record<string, string> = {};
+    for (const [key, cellValue] of Object.entries(
+      sheetEdits as Record<string, unknown>,
+    )) {
+      if (/^\d+:\d+$/.test(key)) {
+        cleanSheetEdits[key] =
+          typeof cellValue === "string" ||
+          typeof cellValue === "number" ||
+          typeof cellValue === "boolean"
+            ? String(cellValue)
+            : "";
+      }
+    }
+    if (Object.keys(cleanSheetEdits).length > 0) {
+      edits[sheetName] = cleanSheetEdits;
+    }
+  }
+  return edits;
+}
+
+export function parseMaterialProfileExportEditState(
+  value: Record<string, unknown> | null | undefined,
+): MaterialProfileExportEditState {
+  const record = value && typeof value === "object" ? value : {};
+  return {
+    cellEdits: parseCellEdits(record.cellEdits),
+    deletedRows: parseSheetNumberMap(record.deletedRows),
+    deletedColumns: parseSheetNumberMap(record.deletedColumns),
+    updatedAt:
+      typeof record.updatedAt === "string" ? record.updatedAt : undefined,
+  };
+}
+
+function materialProfileExportEditStateJson(
+  state: MaterialProfileExportEditState,
+) {
+  return {
+    cellEdits: state.cellEdits,
+    deletedRows: state.deletedRows,
+    deletedColumns: state.deletedColumns,
+    updatedAt: state.updatedAt,
+  };
+}
+
+export function summarizeMaterialProfileExportEditState(
+  state: MaterialProfileExportEditState,
+  materialSheetName?: string,
+) {
+  const editedCellCount = Object.values(state.cellEdits).reduce(
+    (sum, sheetEdits) => sum + Object.keys(sheetEdits).length,
+    0,
+  );
+  const deletedRowCount = Object.values(state.deletedRows).reduce(
+    (sum, rows) => sum + rows.length,
+    0,
+  );
+  const deletedColumnCount = Object.values(state.deletedColumns).reduce(
+    (sum, columns) => sum + columns.length,
+    0,
+  );
+  return {
+    editedCellCount,
+    deletedRowCount,
+    deletedColumnCount,
+    deletedMaterialRowCount: materialSheetName
+      ? (state.deletedRows[materialSheetName]?.length ?? 0)
+      : 0,
+  };
+}
+
+export function isMaterialProfileExportRowDeleted(
+  sheetName: string,
+  rowNumber: number,
+  state: MaterialProfileExportEditState,
+) {
+  return (state.deletedRows[sheetName] ?? []).includes(rowNumber);
+}
+
+export function shouldBulkApplyMaterialProfileCandidate(
+  score: unknown,
+  threshold = 0.85,
+) {
+  return typeof score === "number" && score >= threshold;
+}
+
 function cloneSheetWithEdits(
   sheet: ParsedWorkbookSheet,
   edits: MaterialProfileCellEdits,
@@ -277,6 +419,78 @@ function editValueForCell(
   return edits[sheetName]?.[`${rowNumber}:${colNumber}`];
 }
 
+function applyExportCellEdits(
+  workbook: ExcelJS.Workbook,
+  state: MaterialProfileExportEditState,
+) {
+  applyCellEdits(workbook, state.cellEdits);
+}
+
+function filterPreviewRowsAndColumns(
+  rows: string[][],
+  sheetName: string,
+  state: MaterialProfileExportEditState,
+) {
+  const deletedRows = new Set(state.deletedRows[sheetName] ?? []);
+  const deletedColumns = new Set(state.deletedColumns[sheetName] ?? []);
+  const columnNumbers =
+    rows[0]?.map((_, colIndex) => colIndex + 1) ??
+    Array.from({ length: Math.max(...rows.map((row) => row.length), 0) }).map(
+      (_, colIndex) => colIndex + 1,
+    );
+  const visibleColumnNumbers = columnNumbers.filter(
+    (colNumber) => !deletedColumns.has(colNumber),
+  );
+  const visibleRows: string[][] = [];
+  const rowNumbers: number[] = [];
+  rows.forEach((row, rowIndex) => {
+    const rowNumber = rowIndex + 1;
+    if (deletedRows.has(rowNumber)) return;
+    rowNumbers.push(rowNumber);
+    visibleRows.push(
+      visibleColumnNumbers.map((colNumber) => row[colNumber - 1] ?? ""),
+    );
+  });
+  return {
+    rows: visibleRows,
+    rowNumbers,
+    columnNumbers: visibleColumnNumbers,
+  };
+}
+
+function applyDeletedRowsAndColumnsToWorkbook(
+  workbook: ExcelJS.Workbook,
+  state: MaterialProfileExportEditState,
+) {
+  for (const sheet of workbook.worksheets) {
+    const deletedColumns = [...(state.deletedColumns[sheet.name] ?? [])].sort(
+      (a, b) => b - a,
+    );
+    for (const colNumber of deletedColumns) {
+      sheet.spliceColumns(colNumber, 1);
+    }
+
+    const deletedRows = [...(state.deletedRows[sheet.name] ?? [])].sort(
+      (a, b) => b - a,
+    );
+    for (const rowNumber of deletedRows) {
+      sheet.spliceRows(rowNumber, 1);
+    }
+  }
+}
+
+function isMaterialRowDeleted(
+  item: WorkspaceItem,
+  materialSheetName: string,
+  state: MaterialProfileExportEditState,
+) {
+  return isMaterialProfileExportRowDeleted(
+    materialSheetName,
+    item.originalRowIndex,
+    state,
+  );
+}
+
 function materialValue(
   material: MaterialRow | undefined,
   key: (typeof MATERIAL_PROFILE_EXPORT_COLUMNS)[number]["key"],
@@ -309,6 +523,91 @@ function materialValue(
     case "catalogFiles":
       return catalogFiles.join("\n");
   }
+}
+
+function topCandidateFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const candidates = (snapshot as { candidates?: unknown }).candidates;
+  if (!Array.isArray(candidates)) return null;
+  return (
+    candidates
+      .map((candidate) =>
+        candidate && typeof candidate === "object"
+          ? (candidate as { materialId?: unknown; score?: unknown })
+          : null,
+      )
+      .filter(
+        (candidate): candidate is { materialId: number; score?: unknown } =>
+          typeof candidate?.materialId === "number",
+      )
+      .sort(
+        (a, b) =>
+          (typeof b.score === "number" ? b.score : 0) -
+          (typeof a.score === "number" ? a.score : 0),
+      )[0] ?? null
+  );
+}
+
+function parseLastBulkApplySnapshot(
+  value: Record<string, unknown>,
+): MaterialProfileBulkApplySnapshot | null {
+  const snapshot = value.materialProfileLastBulkApply;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const record = snapshot as Record<string, unknown>;
+  if (typeof record.workspaceId !== "number") return null;
+  if (!Array.isArray(record.previousItems)) return null;
+  const previousItems = record.previousItems
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const itemRecord = item as Record<string, unknown>;
+      const matchStatus = itemRecord.matchStatus;
+      if (
+        !["unmatched", "candidates_found", "matched", "manual"].includes(
+          String(matchStatus),
+        )
+      ) {
+        return null;
+      }
+      return {
+        itemId: Number(itemRecord.itemId),
+        materialId:
+          itemRecord.materialId == null ? null : Number(itemRecord.materialId),
+        matchStatus: matchStatus as WorkspaceItem["matchStatus"],
+        includedInExport: Boolean(itemRecord.includedInExport),
+      };
+    })
+    .filter(
+      (
+        item,
+      ): item is MaterialProfileBulkApplySnapshot["previousItems"][number] =>
+        item !== null &&
+        Number.isInteger(item.itemId) &&
+        (item.materialId == null || Number.isInteger(item.materialId)),
+    );
+  if (previousItems.length === 0) return null;
+  const summaryRecord =
+    record.summary && typeof record.summary === "object"
+      ? (record.summary as Record<string, unknown>)
+      : {};
+  return {
+    workspaceId: record.workspaceId,
+    createdAt:
+      typeof record.createdAt === "string"
+        ? record.createdAt
+        : new Date().toISOString(),
+    itemIds: Array.isArray(record.itemIds)
+      ? record.itemIds.map(Number).filter((item) => Number.isInteger(item))
+      : previousItems.map((item) => item.itemId),
+    previousItems,
+    summary: {
+      selectedCount: Number(
+        summaryRecord.selectedCount ?? previousItems.length,
+      ),
+      appliedCount: Number(summaryRecord.appliedCount ?? 0),
+      reviewCount: Number(summaryRecord.reviewCount ?? 0),
+      unchangedCount: Number(summaryRecord.unchangedCount ?? 0),
+    },
+  };
 }
 
 async function requireWorkspace(db: AppDb, workspaceId: number) {
@@ -392,6 +691,36 @@ export async function listMaterialProfileWorkspaces(
     .offset(input.offset ?? 0);
 }
 
+export async function updateMaterialProfileWorkspace(
+  db: AppDb,
+  input: { workspaceId: number; noticeNumber: string },
+) {
+  await requireWorkspace(db, input.workspaceId);
+  const noticeNumber = input.noticeNumber.trim();
+  if (!noticeNumber) {
+    throw new MaterialProfileWorkspaceError("BAD_REQUEST", "Nhập Số TBMT.");
+  }
+  const [updated] = await db
+    .update(excelWorkspaces)
+    .set({
+      name: noticeNumber,
+      noticeNumber,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(excelWorkspaces.id, input.workspaceId))
+    .returning();
+  return updated ?? requireWorkspace(db, input.workspaceId);
+}
+
+export async function deleteMaterialProfileWorkspace(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  await db.delete(excelWorkspaces).where(eq(excelWorkspaces.id, workspace.id));
+  return { id: workspace.id };
+}
+
 export async function getMaterialProfileWorkspace(
   db: AppDb,
   workspaceId: number,
@@ -455,6 +784,7 @@ export async function uploadMaterialProfileWorkbook(
       columnMappingJson: selectedSheet.suggestedMapping,
       workbookJson: workbookJsonFromSheets(parsed.sheets),
       editStateJson: {},
+      exportEditStateJson: {},
       updatedAt: now,
     })
     .where(eq(excelWorkspaces.id, workspace.id))
@@ -643,6 +973,201 @@ export async function updateMaterialProfileItem(
     .where(eq(excelWorkspaceItems.id, input.itemId))
     .returning();
   return updated;
+}
+
+export async function updateMaterialProfileExportEditState(
+  db: AppDb,
+  input: {
+    workspaceId: number;
+    exportEditState: MaterialProfileExportEditState;
+  },
+) {
+  await requireWorkspace(db, input.workspaceId);
+  const nextState = {
+    ...parseMaterialProfileExportEditState(input.exportEditState),
+    updatedAt: new Date().toISOString(),
+  };
+  const [updated] = await db
+    .update(excelWorkspaces)
+    .set({
+      exportEditStateJson: materialProfileExportEditStateJson(nextState),
+      updatedAt: nextState.updatedAt,
+    })
+    .where(eq(excelWorkspaces.id, input.workspaceId))
+    .returning();
+  return updated ?? requireWorkspace(db, input.workspaceId);
+}
+
+export async function bulkUpdateMaterialProfileItems(
+  db: AppDb,
+  input: {
+    workspaceId: number;
+    itemIds: number[];
+    includedInExport?: boolean;
+    clearMaterialId?: boolean;
+  },
+) {
+  const itemIds = Array.from(new Set(input.itemIds)).filter((id) => id > 0);
+  if (itemIds.length === 0) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Chọn ít nhất một dòng để cập nhật.",
+    );
+  }
+  await requireWorkspace(db, input.workspaceId);
+  const patch: Partial<typeof excelWorkspaceItems.$inferInsert> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (input.includedInExport !== undefined) {
+    patch.includedInExport = input.includedInExport;
+  }
+  if (input.clearMaterialId) {
+    patch.materialId = null;
+    patch.matchStatus = "unmatched";
+  }
+  const updated = await db
+    .update(excelWorkspaceItems)
+    .set(patch)
+    .where(
+      and(
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+        inArray(excelWorkspaceItems.id, itemIds),
+      ),
+    )
+    .returning();
+  return { updatedCount: updated.length };
+}
+
+export async function bulkApplyMaterialProfileMatches(
+  db: AppDb,
+  input: {
+    workspaceId: number;
+    itemIds: number[];
+    threshold?: number;
+  },
+) {
+  const workspace = await requireWorkspace(db, input.workspaceId);
+  const itemIds = Array.from(new Set(input.itemIds)).filter((id) => id > 0);
+  if (itemIds.length === 0) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Chọn ít nhất một dòng để bulk apply.",
+    );
+  }
+  const threshold = input.threshold ?? 0.85;
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.workspaceId, workspace.id),
+        inArray(excelWorkspaceItems.id, itemIds),
+      ),
+    )
+    .orderBy(excelWorkspaceItems.sortOrder);
+
+  const now = new Date().toISOString();
+  let appliedCount = 0;
+  let reviewCount = 0;
+  let unchangedCount = 0;
+  for (const item of items) {
+    const candidate = topCandidateFromSnapshot(item.enrichedSnapshotJson);
+    if (
+      !candidate ||
+      !shouldBulkApplyMaterialProfileCandidate(candidate.score, threshold)
+    ) {
+      reviewCount += 1;
+      continue;
+    }
+    if (
+      item.materialId === candidate.materialId &&
+      item.matchStatus === "matched"
+    ) {
+      unchangedCount += 1;
+      continue;
+    }
+    appliedCount += 1;
+    await db
+      .update(excelWorkspaceItems)
+      .set({
+        materialId: candidate.materialId,
+        matchStatus: "matched",
+        updatedAt: now,
+      })
+      .where(eq(excelWorkspaceItems.id, item.id));
+  }
+
+  const summary = {
+    selectedCount: items.length,
+    appliedCount,
+    reviewCount,
+    unchangedCount,
+  };
+  const snapshot: MaterialProfileBulkApplySnapshot = {
+    workspaceId: workspace.id,
+    createdAt: now,
+    itemIds: items.map((item) => item.id),
+    previousItems: items.map((item) => ({
+      itemId: item.id,
+      materialId: item.materialId,
+      matchStatus: item.matchStatus,
+      includedInExport: item.includedInExport,
+    })),
+    summary,
+  };
+  await db
+    .update(excelWorkspaces)
+    .set({
+      templateConfigJson: {
+        ...workspace.templateConfigJson,
+        materialProfileLastBulkApply: snapshot,
+      },
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaces.id, workspace.id));
+
+  return { summary, undoAvailable: items.length > 0 };
+}
+
+export async function undoLastMaterialProfileBulkApply(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const snapshot = parseLastBulkApplySnapshot(workspace.templateConfigJson);
+  if (snapshot?.workspaceId !== workspace.id) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Không có bulk apply gần nhất để undo.",
+    );
+  }
+  const now = new Date().toISOString();
+  for (const previous of snapshot.previousItems) {
+    await db
+      .update(excelWorkspaceItems)
+      .set({
+        materialId: previous.materialId,
+        matchStatus: previous.matchStatus,
+        includedInExport: previous.includedInExport,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(excelWorkspaceItems.workspaceId, workspace.id),
+          eq(excelWorkspaceItems.id, previous.itemId),
+        ),
+      );
+  }
+  const templateConfigJson = { ...workspace.templateConfigJson };
+  delete templateConfigJson.materialProfileLastBulkApply;
+  await db
+    .update(excelWorkspaces)
+    .set({ templateConfigJson, updatedAt: now })
+    .where(eq(excelWorkspaces.id, workspace.id));
+  return {
+    restoredCount: snapshot.previousItems.length,
+    summary: snapshot.summary,
+  };
 }
 
 async function catalogDocumentsByMaterial(db: AppDb, materialIds: number[]) {
@@ -842,6 +1367,35 @@ function catalogPreviewFilesByMaterial(
   return files;
 }
 
+function materialProfileMatchCounts(
+  items: WorkspaceItem[],
+  docsByMaterial: Map<number, CatalogDocumentRow[]>,
+  materialRowsById: Map<number, MaterialRow>,
+  materialSheetName: string,
+  exportEditState: MaterialProfileExportEditState,
+) {
+  const exportItems = items.filter(
+    (item) =>
+      item.includedInExport &&
+      !isMaterialRowDeleted(item, materialSheetName, exportEditState),
+  );
+  return {
+    matchedCount: items.filter(
+      (item) => item.matchStatus === "matched" || item.matchStatus === "manual",
+    ).length,
+    reviewCount: items.filter((item) => item.matchStatus === "candidates_found")
+      .length,
+    unmatchedCount: items.filter((item) => item.matchStatus === "unmatched")
+      .length,
+    exportRowCount: exportItems.length,
+    missingCatalogCount: exportItems.filter((item) => {
+      if (item.materialId == null) return true;
+      if (!materialRowsById.has(item.materialId)) return true;
+      return (docsByMaterial.get(item.materialId) ?? []).length === 0;
+    }).length,
+  };
+}
+
 export async function previewMaterialProfileExportWorkbook(
   db: AppDb,
   workspaceId: number,
@@ -857,6 +1411,9 @@ export async function previewMaterialProfileExportWorkbook(
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
   const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
   const catalogFilesByMaterial = catalogPreviewFilesByMaterial(docsByMaterial);
+  const exportEditState = parseMaterialProfileExportEditState(
+    workspace.exportEditStateJson,
+  );
 
   const workbook = new ExcelJS.Workbook();
   const sourceBuffer = await readWorkspaceWorkbook(workspace);
@@ -872,6 +1429,18 @@ export async function previewMaterialProfileExportWorkbook(
 
   return {
     selectedSheetName: targetSheetName,
+    exportEditState,
+    editSummary: summarizeMaterialProfileExportEditState(
+      exportEditState,
+      targetSheetName,
+    ),
+    matchCounts: materialProfileMatchCounts(
+      items,
+      docsByMaterial,
+      materialsById,
+      targetSheetName,
+      exportEditState,
+    ),
     sheets: workbook.worksheets.map((sheet) => {
       const originalColumnCount =
         maxColumnBySheet.get(sheet.name) ?? sheet.columnCount;
@@ -891,10 +1460,15 @@ export async function previewMaterialProfileExportWorkbook(
           items,
           materialsById,
           catalogFilesByMaterial,
-          edits: workspace.editStateJson,
+          edits: exportEditState.cellEdits,
           sheetName: sheet.name,
         });
       }
+      const visible = filterPreviewRowsAndColumns(
+        rows,
+        sheet.name,
+        exportEditState,
+      );
       return {
         name: sheet.name,
         isMaterialSheet,
@@ -903,9 +1477,14 @@ export async function previewMaterialProfileExportWorkbook(
           : 1,
         originalColumnCount,
         appendedStartColumn: startColumn,
-        rowCount: rows.length,
-        columnCount: Math.max(...rows.map((row) => row.length), 0),
-        rows,
+        rowCount: visible.rows.length,
+        columnCount:
+          visible.rows.length > 0
+            ? Math.max(...visible.rows.map((row) => row.length), 0)
+            : 0,
+        rowNumbers: visible.rowNumbers,
+        columnNumbers: visible.columnNumbers,
+        rows: visible.rows,
       };
     }),
   };
@@ -967,7 +1546,15 @@ export async function exportMaterialProfileWorkspace(
     .from(excelWorkspaceItems)
     .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
     .orderBy(excelWorkspaceItems.sortOrder);
-  const exportItems = items.filter((item) => item.includedInExport);
+  const exportEditState = parseMaterialProfileExportEditState(
+    workspace.exportEditStateJson,
+  );
+  const materialSheetName = workspace.sourceSheetName ?? "";
+  const exportItems = items.filter(
+    (item) =>
+      item.includedInExport &&
+      !isMaterialRowDeleted(item, materialSheetName, exportEditState),
+  );
   const materialIds = materialIdsFromItems(exportItems);
   const materialRows = await loadMaterialRows(db, materialIds);
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
@@ -1103,13 +1690,7 @@ export async function exportMaterialProfileWorkspace(
     (maxColumnBySheet.get(targetSheet.name) ?? targetSheet.columnCount) + 1;
   MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
     const colNumber = startColumn + index;
-    headerRow.getCell(colNumber).value =
-      editValueForCell(
-        workspace.editStateJson,
-        targetSheet.name,
-        selectedMeta?.activeHeaderRowIndex ?? 1,
-        colNumber,
-      ) ?? column.header;
+    headerRow.getCell(colNumber).value = column.header;
   });
   headerRow.commit();
 
@@ -1123,16 +1704,18 @@ export async function exportMaterialProfileWorkspace(
     const row = targetSheet.getRow(item.originalRowIndex);
     MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
       const colNumber = startColumn + index;
-      row.getCell(colNumber).value =
-        editValueForCell(
-          workspace.editStateJson,
-          targetSheet.name,
-          item.originalRowIndex,
-          colNumber,
-        ) ?? materialValue(material, column.key, item, catalogFiles);
+      row.getCell(colNumber).value = materialValue(
+        material,
+        column.key,
+        item,
+        catalogFiles,
+      );
     });
     row.commit();
   }
+
+  applyExportCellEdits(workbook, exportEditState);
+  applyDeletedRowsAndColumnsToWorkbook(workbook, exportEditState);
 
   const excelFileName = `${prefix}.xlsx`;
   const excelPath = path.join(outputDir, excelFileName);

@@ -568,6 +568,10 @@ export const excelWorkspaces = pgTable(
       .$type<Record<string, Record<string, string>>>()
       .notNull()
       .default({}),
+    exportEditStateJson: jsonb("export_edit_state_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     templateConfigJson: jsonb("template_config_json")
       .$type<Record<string, unknown>>()
       .notNull()

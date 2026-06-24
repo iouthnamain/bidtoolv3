@@ -11,7 +11,9 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
@@ -23,6 +25,10 @@ type WorkspaceItem = WorkspaceDetail["items"][number];
 type Sheet = WorkspaceDetail["workbook"]["sheets"][number];
 type PreviewResult = RouterOutputs["materialProfile"]["previewExportWorkbook"];
 type PreviewSheet = PreviewResult["sheets"][number];
+type ExportEditState = PreviewResult["exportEditState"];
+type MaterialSearchCandidate =
+  RouterOutputs["material"]["enrichSearchMaterials"]["candidates"][number];
+type MaterialDetail = NonNullable<RouterOutputs["material"]["getById"]>;
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
 
@@ -143,6 +149,40 @@ function statusTone(status: WorkspaceItem["matchStatus"]) {
   if (status === "matched" || status === "manual") return "success";
   if (status === "candidates_found") return "warning";
   return "neutral";
+}
+
+function emptyExportEditState(): ExportEditState {
+  return {
+    cellEdits: {},
+    deletedRows: {},
+    deletedColumns: {},
+    updatedAt: undefined,
+  };
+}
+
+function normalizeExportEditState(value: unknown): ExportEditState {
+  if (!value || typeof value !== "object") return emptyExportEditState();
+  const record = value as Partial<ExportEditState>;
+  return {
+    cellEdits: record.cellEdits ?? {},
+    deletedRows: record.deletedRows ?? {},
+    deletedColumns: record.deletedColumns ?? {},
+    updatedAt: record.updatedAt,
+  };
+}
+
+function hasLastBulkApply(config: Record<string, unknown>) {
+  return Boolean(config.materialProfileLastBulkApply);
+}
+
+function formatCandidateScore(score: unknown) {
+  return typeof score === "number" ? `${Math.round(score * 100)}%` : "-";
+}
+
+function toggleNumber(values: number[], value: number) {
+  return values.includes(value)
+    ? values.filter((item) => item !== value)
+    : [...values, value].sort((a, b) => a - b);
 }
 
 function MaterialProfileStepHeader({
@@ -529,23 +569,47 @@ function WorkbookMappingStep({
 
 function MaterialReviewStep({
   items,
+  workspace,
   isUpdating,
+  isBulkUpdating,
+  isBulkApplying,
+  isUndoing,
   onUpdateItem,
+  onBulkUpdate,
+  onBulkApply,
+  onUndoBulk,
   onContinue,
 }: {
   items: WorkspaceItem[];
+  workspace: WorkspaceDetail["workspace"];
   isUpdating: boolean;
+  isBulkUpdating: boolean;
+  isBulkApplying: boolean;
+  isUndoing: boolean;
   onUpdateItem: (input: {
     itemId: number;
     materialId?: number | null;
     includedInExport?: boolean;
   }) => void;
+  onBulkUpdate: (input: {
+    itemIds: number[];
+    includedInExport?: boolean;
+    clearMaterialId?: boolean;
+  }) => void;
+  onBulkApply: (itemIds: number[]) => void;
+  onUndoBulk: () => void;
   onContinue: () => void;
 }) {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | WorkspaceItem["matchStatus"]
   >("all");
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [drawerItemId, setDrawerItemId] = useState<number | null>(null);
+  const [drawerSearch, setDrawerSearch] = useState("");
+  const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(
+    null,
+  );
   const counts = useMemo(
     () =>
       items.reduce(
@@ -575,6 +639,61 @@ function MaterialReviewStep({
         .includes(normalized);
     });
   }, [items, keyword, statusFilter]);
+  const drawerItem =
+    items.find((item) => item.id === drawerItemId) ?? visibleItems[0] ?? null;
+  const drawerCandidates = drawerItem ? candidatesFromItem(drawerItem) : [];
+  const selectedCandidate = drawerItem
+    ? selectedCandidateForItem(drawerItem)
+    : null;
+  const selectedCount = selectedItemIds.length;
+  const allVisibleSelected =
+    visibleItems.length > 0 &&
+    visibleItems.every((item) => selectedItemIds.includes(item.id));
+  const materialSearch = api.material.enrichSearchMaterials.useQuery(
+    { query: drawerSearch, limit: 8 },
+    { enabled: drawerSearch.trim().length >= 2 },
+  );
+  const materialDetail = api.material.getById.useQuery(
+    { id: selectedMaterialId ?? 0 },
+    { enabled: selectedMaterialId != null },
+  );
+
+  useEffect(() => {
+    if (!drawerItem) return;
+    setSelectedMaterialId(
+      drawerItem.materialId ?? selectedCandidate?.materialId ?? null,
+    );
+    setDrawerSearch(drawerItem.productName);
+  }, [drawerItem, selectedCandidate?.materialId]);
+
+  const toggleSelectedItem = (itemId: number) => {
+    setSelectedItemIds((current) => toggleNumber(current, itemId));
+  };
+
+  const setVisibleSelection = () => {
+    setSelectedItemIds((current) =>
+      allVisibleSelected
+        ? current.filter((id) => !visibleItems.some((item) => item.id === id))
+        : Array.from(
+            new Set([...current, ...visibleItems.map((item) => item.id)]),
+          ),
+    );
+  };
+
+  const runBulkUpdate = (input: {
+    includedInExport?: boolean;
+    clearMaterialId?: boolean;
+  }) => {
+    if (selectedItemIds.length === 0) return;
+    onBulkUpdate({ itemIds: selectedItemIds, ...input });
+  };
+
+  const material = materialDetail.data as MaterialDetail | null | undefined;
+  const originalFields =
+    drawerItem?.originalDataJson &&
+    typeof drawerItem.originalDataJson === "object"
+      ? Object.entries(drawerItem.originalDataJson)
+      : [];
 
   if (items.length === 0) {
     return (
@@ -639,12 +758,70 @@ function MaterialReviewStep({
             Chưa match
           </Badge>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <span className="text-xs font-bold text-slate-600">
+            {selectedCount} dòng đã chọn
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={selectedCount === 0}
+            isLoading={isBulkApplying}
+            onClick={() => onBulkApply(selectedItemIds)}
+          >
+            Bulk auto-apply ≥ 85%
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={selectedCount === 0}
+            isLoading={isBulkUpdating}
+            onClick={() => runBulkUpdate({ includedInExport: true })}
+          >
+            Include export
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={selectedCount === 0}
+            isLoading={isBulkUpdating}
+            onClick={() => runBulkUpdate({ includedInExport: false })}
+          >
+            Exclude export
+          </Button>
+          <Button
+            size="sm"
+            variant="warning"
+            disabled={selectedCount === 0}
+            isLoading={isBulkUpdating}
+            onClick={() => runBulkUpdate({ clearMaterialId: true })}
+          >
+            Clear material
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!hasLastBulkApply(workspace.templateConfigJson)}
+            isLoading={isUndoing}
+            onClick={onUndoBulk}
+          >
+            Undo bulk apply
+          </Button>
+        </div>
       </div>
 
       <div className="max-h-[620px] overflow-auto">
         <table className="w-full min-w-[1180px] divide-y divide-slate-200 text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-500 uppercase">
             <tr>
+              <th className="px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={setVisibleSelection}
+                  aria-label="Chọn tất cả dòng đang hiển thị"
+                />
+              </th>
               <th className="px-3 py-2">Dòng</th>
               <th className="px-3 py-2">Vật tư Excel</th>
               <th className="px-3 py-2">Trạng thái</th>
@@ -665,6 +842,14 @@ function MaterialReviewStep({
               const candidates = candidatesFromItem(item);
               return (
                 <tr key={item.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedItemIds.includes(item.id)}
+                      onChange={() => toggleSelectedItem(item.id)}
+                      aria-label={`Chọn dòng ${item.originalRowIndex}`}
+                    />
+                  </td>
                   <td className="px-3 py-3 font-semibold tabular-nums">
                     {item.originalRowIndex}
                   </td>
@@ -758,6 +943,13 @@ function MaterialReviewStep({
                             : ""}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setDrawerItemId(item.id)}
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Compare/search
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -766,6 +958,153 @@ function MaterialReviewStep({
           </tbody>
         </table>
       </div>
+      {drawerItem ? (
+        <div className="border-t border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="section-title">Compare & search</p>
+              <h3 className="text-base font-bold text-slate-950">
+                Dòng {drawerItem.originalRowIndex}: {drawerItem.productName}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDrawerItemId(null)}
+              className="rounded-full p-2 text-slate-500 hover:bg-white hover:text-slate-900"
+              aria-label="Đóng drawer"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                Excel row
+              </p>
+              <p className="mt-2 font-bold text-slate-950">
+                {drawerItem.productName}
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                {drawerItem.specText || drawerItem.unit || "-"}
+              </p>
+              <div className="mt-3 grid max-h-52 gap-2 overflow-auto text-xs">
+                {originalFields.map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[120px_minmax(0,1fr)] gap-2 rounded-md bg-slate-50 px-2 py-1"
+                  >
+                    <span className="font-bold text-slate-500">{key}</span>
+                    <span className="break-words text-slate-800">
+                      {typeof value === "string" ||
+                      typeof value === "number" ||
+                      typeof value === "boolean"
+                        ? String(value)
+                        : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {drawerCandidates.map((candidate) => (
+                  <button
+                    key={candidate.materialId}
+                    type="button"
+                    onClick={() => setSelectedMaterialId(candidate.materialId)}
+                    className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+                      selectedMaterialId === candidate.materialId
+                        ? "border-sky-600 bg-sky-50 text-sky-800"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    #{candidate.materialId} ·{" "}
+                    {formatCandidateScore(candidate.score)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="min-w-0 flex-1">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Search material
+                  </span>
+                  <input
+                    value={drawerSearch}
+                    onChange={(event) => setDrawerSearch(event.target.value)}
+                    className="mt-1 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                    placeholder="Tên vật tư..."
+                  />
+                </label>
+                <Button
+                  disabled={!selectedMaterialId}
+                  onClick={() =>
+                    selectedMaterialId &&
+                    onUpdateItem({
+                      itemId: drawerItem.id,
+                      materialId: selectedMaterialId,
+                    })
+                  }
+                >
+                  Assign
+                </Button>
+              </div>
+              <div className="mt-3 grid max-h-44 gap-2 overflow-auto">
+                {(materialSearch.data?.candidates ?? []).map(
+                  (candidate: MaterialSearchCandidate) => (
+                    <button
+                      key={candidate.materialId}
+                      type="button"
+                      onClick={() =>
+                        setSelectedMaterialId(candidate.materialId)
+                      }
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:border-sky-300 hover:bg-sky-50"
+                    >
+                      <p className="text-sm font-bold text-slate-950">
+                        {candidate.name}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        #{candidate.materialId} · {candidate.code ?? "-"} ·{" "}
+                        {candidate.unit ?? "-"}
+                      </p>
+                    </button>
+                  ),
+                )}
+              </div>
+              <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
+                <p className="font-bold">
+                  {material?.name ??
+                    (selectedCandidate &&
+                    typeof selectedCandidate.name === "string"
+                      ? selectedCandidate.name
+                      : "Chưa chọn material")}
+                </p>
+                <p className="mt-1 text-xs">
+                  Code:{" "}
+                  {material?.code ??
+                    (typeof selectedCandidate?.code === "string"
+                      ? selectedCandidate.code
+                      : "-")}{" "}
+                  · ĐVT:{" "}
+                  {material?.unit ??
+                    (typeof selectedCandidate?.unit === "string"
+                      ? selectedCandidate.unit
+                      : "-")}
+                </p>
+                <p className="mt-1 line-clamp-3 text-xs">
+                  {material?.specText ??
+                    (typeof selectedCandidate?.manufacturer === "string"
+                      ? selectedCandidate.manufacturer
+                      : null) ??
+                    "Chọn candidate/search result để xem summary."}
+                </p>
+                <p className="mt-2 text-xs font-semibold">
+                  Catalog: xem trong Step 4/export report
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -773,6 +1112,7 @@ function MaterialReviewStep({
 function ExportPreviewStep({
   preview,
   workspace,
+  exportEditState,
   lastExport,
   isPreviewing,
   isSaving,
@@ -780,12 +1120,15 @@ function ExportPreviewStep({
   isOpening,
   onRefreshPreview,
   onPreviewEdit,
+  onDeleteSelection,
+  onRestoreDeleted,
   onSavePreview,
   onExport,
   onOpenFolder,
 }: {
   preview: PreviewResult | null;
   workspace: WorkspaceDetail["workspace"];
+  exportEditState: ExportEditState;
   lastExport: RouterOutputs["materialProfile"]["export"] | null;
   isPreviewing: boolean;
   isSaving: boolean;
@@ -794,15 +1137,27 @@ function ExportPreviewStep({
   onRefreshPreview: () => void;
   onPreviewEdit: (
     sheetName: string,
-    rowIndex: number,
-    colIndex: number,
+    rowNumber: number,
+    colNumber: number,
     value: string,
+  ) => void;
+  onDeleteSelection: (
+    sheetName: string,
+    rowNumbers: number[],
+    colNumbers: number[],
+  ) => void;
+  onRestoreDeleted: (
+    sheetName: string,
+    kind: "row" | "column",
+    value: number,
   ) => void;
   onSavePreview: () => void;
   onExport: () => void;
   onOpenFolder: () => void;
 }) {
   const [activePreviewSheetName, setActivePreviewSheetName] = useState("");
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [selectedColumns, setSelectedColumns] = useState<number[]>([]);
   const activeSheet =
     preview?.sheets.find((sheet) => sheet.name === activePreviewSheetName) ??
     preview?.sheets.find((sheet) => sheet.name === preview.selectedSheetName) ??
@@ -814,6 +1169,43 @@ function ExportPreviewStep({
       (current) => current || preview.selectedSheetName,
     );
   }, [preview]);
+
+  useEffect(() => {
+    setSelectedRows([]);
+    setSelectedColumns([]);
+  }, [activePreviewSheetName]);
+
+  const rowNumbers =
+    activeSheet?.rowNumbers ??
+    activeSheet?.rows.map((_, index) => index + 1) ??
+    [];
+  const columnNumbers =
+    activeSheet?.columnNumbers ??
+    (activeSheet
+      ? Array.from({
+          length: Math.max(...activeSheet.rows.map((row) => row.length), 0),
+        }).map((_, index) => index + 1)
+      : []);
+  const deletedRows = activeSheet
+    ? (exportEditState.deletedRows[activeSheet.name] ?? [])
+    : [];
+  const deletedColumns = activeSheet
+    ? (exportEditState.deletedColumns[activeSheet.name] ?? [])
+    : [];
+  const selectedCount = selectedRows.length + selectedColumns.length;
+  const editSummary = preview?.editSummary;
+  const matchCounts = preview?.matchCounts;
+
+  const deleteSelected = () => {
+    if (!activeSheet || selectedCount === 0) return;
+    const ok = window.confirm(
+      `Xóa ${selectedRows.length} dòng và ${selectedColumns.length} cột khỏi bản export?`,
+    );
+    if (!ok) return;
+    onDeleteSelection(activeSheet.name, selectedRows, selectedColumns);
+    setSelectedRows([]);
+    setSelectedColumns([]);
+  };
 
   return (
     <section className="space-y-4">
@@ -855,6 +1247,53 @@ function ExportPreviewStep({
             </Button>
           </div>
         </div>
+        {preview ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+              <p className="font-bold">Workbook edit warnings</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <Badge tone="warning" count={editSummary?.editedCellCount ?? 0}>
+                  Cell edits
+                </Badge>
+                <Badge tone="warning" count={editSummary?.deletedRowCount ?? 0}>
+                  Deleted rows
+                </Badge>
+                <Badge
+                  tone="warning"
+                  count={editSummary?.deletedColumnCount ?? 0}
+                >
+                  Deleted columns
+                </Badge>
+                <Badge
+                  tone="warning"
+                  count={editSummary?.deletedMaterialRowCount ?? 0}
+                >
+                  Material rows removed
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <p className="font-bold text-slate-950">Match/catalog counts</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <Badge tone="success" count={matchCounts?.matchedCount ?? 0}>
+                  Matched
+                </Badge>
+                <Badge tone="warning" count={matchCounts?.reviewCount ?? 0}>
+                  Review
+                </Badge>
+                <Badge tone="neutral" count={matchCounts?.unmatchedCount ?? 0}>
+                  Unmatched
+                </Badge>
+                <Badge
+                  tone="info"
+                  count={matchCounts?.missingCatalogCount ?? 0}
+                >
+                  Missing catalog
+                </Badge>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {!preview || !activeSheet ? (
@@ -886,14 +1325,147 @@ function ExportPreviewStep({
               </button>
             ))}
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+              <span>{selectedRows.length} row selected</span>
+              <span>{selectedColumns.length} column selected</span>
+              <span>{deletedRows.length} deleted rows</span>
+              <span>{deletedColumns.length} deleted columns</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={selectedCount === 0}
+                onClick={deleteSelected}
+                leftIcon={<Trash2 className="h-4 w-4" />}
+              >
+                Delete selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={deletedRows.length + deletedColumns.length === 0}
+                onClick={onRefreshPreview}
+              >
+                Refresh after restore
+              </Button>
+            </div>
+          </div>
+          {deletedRows.length + deletedColumns.length > 0 ? (
+            <div className="border-b border-slate-200 bg-rose-50 px-4 py-3 text-xs text-rose-950">
+              <p className="font-bold">Deleted in export preview</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {deletedRows.map((rowNumber) => (
+                  <button
+                    key={`row-${rowNumber}`}
+                    type="button"
+                    onClick={() =>
+                      onRestoreDeleted(activeSheet.name, "row", rowNumber)
+                    }
+                    className="rounded-full bg-white px-2 py-1 font-semibold text-rose-700"
+                  >
+                    Restore row {rowNumber}
+                  </button>
+                ))}
+                {deletedColumns.map((colNumber) => (
+                  <button
+                    key={`col-${colNumber}`}
+                    type="button"
+                    onClick={() =>
+                      onRestoreDeleted(activeSheet.name, "column", colNumber)
+                    }
+                    className="rounded-full bg-white px-2 py-1 font-semibold text-rose-700"
+                  >
+                    Restore col {colNumber}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="p-4">
-            <WorkbookGrid
-              sheet={activeSheet}
-              maxHeight="max-h-[640px]"
-              onEdit={(rowIndex, colIndex, value) =>
-                onPreviewEdit(activeSheet.name, rowIndex, colIndex, value)
-              }
-            />
+            <div className="max-h-[640px] overflow-auto rounded-lg border border-slate-200 bg-white">
+              <table className="min-w-full border-separate border-spacing-0 text-xs">
+                <thead>
+                  <tr>
+                    <th className="sticky top-0 left-0 z-20 border-r border-b border-slate-200 bg-slate-100 px-2 py-1 text-slate-500">
+                      #
+                    </th>
+                    {columnNumbers.map((colNumber, colIndex) => (
+                      <th
+                        key={`${activeSheet.name}-col-${colNumber}`}
+                        className={`sticky top-0 z-10 min-w-36 cursor-pointer border-r border-b border-slate-200 px-2 py-1 text-left font-bold ${
+                          selectedColumns.includes(colNumber)
+                            ? "bg-sky-100 text-sky-900"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                        onClick={() =>
+                          setSelectedColumns((current) =>
+                            toggleNumber(current, colNumber),
+                          )
+                        }
+                      >
+                        C{colNumber}
+                        {colIndex + 1 !== colNumber ? ` (${colIndex + 1})` : ""}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeSheet.rows.map((row, rowIndex) => {
+                    const rowNumber = rowNumbers[rowIndex] ?? rowIndex + 1;
+                    return (
+                      <tr key={`${activeSheet.name}-${rowNumber}`}>
+                        <th
+                          className={`sticky left-0 z-10 cursor-pointer border-r border-b border-slate-200 px-2 py-1 text-right font-semibold tabular-nums ${
+                            selectedRows.includes(rowNumber)
+                              ? "bg-sky-100 text-sky-900"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                          onClick={() =>
+                            setSelectedRows((current) =>
+                              toggleNumber(current, rowNumber),
+                            )
+                          }
+                        >
+                          {rowNumber}
+                        </th>
+                        {columnNumbers.map((colNumber, colIndex) => {
+                          const value = row[colIndex] ?? "";
+                          const edited =
+                            exportEditState.cellEdits[activeSheet.name]?.[
+                              `${rowNumber}:${colNumber}`
+                            ] !== undefined;
+                          return (
+                            <td
+                              key={`${activeSheet.name}-${rowNumber}-${colNumber}`}
+                              className="min-w-36 border-r border-b border-slate-100"
+                            >
+                              <input
+                                value={value}
+                                onChange={(event) =>
+                                  onPreviewEdit(
+                                    activeSheet.name,
+                                    rowNumber,
+                                    colNumber,
+                                    event.target.value,
+                                  )
+                                }
+                                className={`h-8 w-full px-2 text-xs outline-none focus:bg-sky-50 ${
+                                  edited
+                                    ? "bg-amber-50 font-semibold text-amber-950"
+                                    : "bg-white text-slate-700"
+                                }`}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -948,6 +1520,8 @@ export function MaterialProfileDetailClient({
   const [headerRowIndex, setHeaderRowIndex] = useState(1);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [edits, setEdits] = useState<CellEdits>({});
+  const [exportEditState, setExportEditState] =
+    useState<ExportEditState>(emptyExportEditState);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewAutoRequested, setPreviewAutoRequested] = useState(false);
   const [lastExport, setLastExport] = useState<
@@ -1007,10 +1581,50 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) => toast.error(error.message),
   });
-  const previewExport = api.materialProfile.previewExportWorkbook.useMutation({
-    onSuccess: (result) => setPreview(result),
+  const bulkUpdateItems = api.materialProfile.bulkUpdateItems.useMutation({
+    onSuccess: async (result) => {
+      await utils.materialProfile.get.invalidate({ workspaceId });
+      setPreview(null);
+      setPreviewAutoRequested(false);
+      toast.success(`Đã cập nhật ${result.updatedCount} dòng.`);
+    },
     onError: (error) => toast.error(error.message),
   });
+  const bulkApplyMatches = api.materialProfile.bulkApplyMatches.useMutation({
+    onSuccess: async (result) => {
+      await utils.materialProfile.get.invalidate({ workspaceId });
+      setPreview(null);
+      setPreviewAutoRequested(false);
+      toast.success(
+        `Bulk apply: ${result.summary.appliedCount} dòng, ${result.summary.reviewCount} cần duyệt.`,
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const undoBulkApply = api.materialProfile.undoLastBulkApply.useMutation({
+    onSuccess: async (result) => {
+      await utils.materialProfile.get.invalidate({ workspaceId });
+      setPreview(null);
+      setPreviewAutoRequested(false);
+      toast.success(`Đã undo ${result.restoredCount} dòng.`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const previewExport = api.materialProfile.previewExportWorkbook.useMutation({
+    onSuccess: (result) => {
+      setPreview(result);
+      setExportEditState(result.exportEditState);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const updateExportEditState =
+    api.materialProfile.updateExportEditState.useMutation({
+      onSuccess: async () => {
+        await utils.materialProfile.get.invalidate({ workspaceId });
+        toast.success("Đã lưu preview export.");
+      },
+      onError: (error) => toast.error(error.message),
+    });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
       setLastExport(result);
@@ -1039,6 +1653,9 @@ export function MaterialProfileDetailClient({
     setHeaderRowIndex(sheet?.activeHeaderRowIndex ?? 1);
     setMapping(detail.workspace.columnMappingJson);
     setEdits(detail.workspace.editStateJson);
+    setExportEditState(
+      normalizeExportEditState(detail.workspace.exportEditStateJson),
+    );
 
     let nextMax: MaterialProfileStep = 1;
     if (detail.workbook.sheets.length > 0) nextMax = 2;
@@ -1107,7 +1724,7 @@ export function MaterialProfileDetailClient({
     }
   };
 
-  const updateEdit = (
+  const updateSourceEdit = (
     sheetName: string,
     rowIndex: number,
     colIndex: number,
@@ -1121,6 +1738,25 @@ export function MaterialProfileDetailClient({
         [key]: value,
       },
     }));
+  };
+
+  const updateExportCellEdit = (
+    sheetName: string,
+    rowNumber: number,
+    colNumber: number,
+    value: string,
+  ) => {
+    const key = `${rowNumber}:${colNumber}`;
+    setExportEditState((prev) => ({
+      ...prev,
+      cellEdits: {
+        ...prev.cellEdits,
+        [sheetName]: {
+          ...(prev.cellEdits[sheetName] ?? {}),
+          [key]: value,
+        },
+      },
+    }));
     setPreview((current) =>
       current
         ? {
@@ -1130,11 +1766,13 @@ export function MaterialProfileDetailClient({
                 ? {
                     ...sheet,
                     rows: sheet.rows.map((row, rIndex) =>
-                      rIndex === rowIndex
+                      sheet.rowNumbers?.[rIndex] === rowNumber
                         ? Array.from({
-                            length: Math.max(row.length, colIndex + 1),
+                            length: row.length,
                           }).map((_, cIndex) =>
-                            cIndex === colIndex ? value : (row[cIndex] ?? ""),
+                            sheet.columnNumbers?.[cIndex] === colNumber
+                              ? value
+                              : (row[cIndex] ?? ""),
                           )
                         : row,
                     ),
@@ -1146,6 +1784,101 @@ export function MaterialProfileDetailClient({
     );
   };
 
+  const saveExportEditState = async () => {
+    await updateExportEditState.mutateAsync({
+      workspaceId,
+      exportEditState,
+    });
+  };
+
+  const deleteExportSelection = (
+    sheetName: string,
+    rowNumbers: number[],
+    colNumbers: number[],
+  ) => {
+    setExportEditState((prev) => ({
+      ...prev,
+      deletedRows: {
+        ...prev.deletedRows,
+        [sheetName]: Array.from(
+          new Set([...(prev.deletedRows[sheetName] ?? []), ...rowNumbers]),
+        ).sort((a, b) => a - b),
+      },
+      deletedColumns: {
+        ...prev.deletedColumns,
+        [sheetName]: Array.from(
+          new Set([...(prev.deletedColumns[sheetName] ?? []), ...colNumbers]),
+        ).sort((a, b) => a - b),
+      },
+    }));
+    setPreview((current) =>
+      current
+        ? {
+            ...current,
+            sheets: current.sheets.map((sheet) =>
+              sheet.name === sheetName
+                ? {
+                    ...sheet,
+                    rowNumbers: sheet.rowNumbers.filter(
+                      (rowNumber) => !rowNumbers.includes(rowNumber),
+                    ),
+                    columnNumbers: sheet.columnNumbers.filter(
+                      (colNumber) => !colNumbers.includes(colNumber),
+                    ),
+                    rows: sheet.rows
+                      .filter(
+                        (_, rowIndex) =>
+                          !rowNumbers.includes(
+                            sheet.rowNumbers[rowIndex] ?? -1,
+                          ),
+                      )
+                      .map((row) =>
+                        row.filter(
+                          (_, colIndex) =>
+                            !colNumbers.includes(
+                              sheet.columnNumbers[colIndex] ?? -1,
+                            ),
+                        ),
+                      ),
+                  }
+                : sheet,
+            ),
+          }
+        : current,
+    );
+  };
+
+  const restoreDeletedExportValue = (
+    sheetName: string,
+    kind: "row" | "column",
+    value: number,
+  ) => {
+    setExportEditState((prev) => ({
+      ...prev,
+      deletedRows:
+        kind === "row"
+          ? {
+              ...prev.deletedRows,
+              [sheetName]: (prev.deletedRows[sheetName] ?? []).filter(
+                (rowNumber) => rowNumber !== value,
+              ),
+            }
+          : prev.deletedRows,
+      deletedColumns:
+        kind === "column"
+          ? {
+              ...prev.deletedColumns,
+              [sheetName]: (prev.deletedColumns[sheetName] ?? []).filter(
+                (colNumber) => colNumber !== value,
+              ),
+            }
+          : prev.deletedColumns,
+    }));
+    setPreview(null);
+    setPreviewAutoRequested(false);
+    toast.info("Đã restore trong state. Lưu preview rồi refresh để hiện lại.");
+  };
+
   const exportWithSavedPreview = async () => {
     await updateState.mutateAsync({
       workspaceId,
@@ -1153,6 +1886,10 @@ export function MaterialProfileDetailClient({
       headerRowIndex,
       mapping,
       editState: edits,
+    });
+    await updateExportEditState.mutateAsync({
+      workspaceId,
+      exportEditState,
     });
     exportWorkspace.mutate({ workspaceId });
   };
@@ -1215,7 +1952,7 @@ export function MaterialProfileDetailClient({
             setMapping((prev) => ({ ...prev, [key]: value }))
           }
           onEdit={(rowIndex, colIndex, value) =>
-            updateEdit(activeSheet.name, rowIndex, colIndex, value)
+            updateSourceEdit(activeSheet.name, rowIndex, colIndex, value)
           }
           onSave={() => void saveState()}
           onRunMatch={() => void runMatch()}
@@ -1233,8 +1970,19 @@ export function MaterialProfileDetailClient({
       {step === 3 ? (
         <MaterialReviewStep
           items={detail.items}
+          workspace={workspace}
           isUpdating={updateItem.isPending}
+          isBulkUpdating={bulkUpdateItems.isPending}
+          isBulkApplying={bulkApplyMatches.isPending}
+          isUndoing={undoBulkApply.isPending}
           onUpdateItem={(input) => updateItem.mutate(input)}
+          onBulkUpdate={(input) =>
+            bulkUpdateItems.mutate({ workspaceId, ...input })
+          }
+          onBulkApply={(itemIds) =>
+            bulkApplyMatches.mutate({ workspaceId, itemIds, threshold: 0.85 })
+          }
+          onUndoBulk={() => undoBulkApply.mutate({ workspaceId })}
           onContinue={() => reach(4)}
         />
       ) : null}
@@ -1243,14 +1991,17 @@ export function MaterialProfileDetailClient({
         <ExportPreviewStep
           preview={preview}
           workspace={workspace}
+          exportEditState={exportEditState}
           lastExport={lastExport}
           isPreviewing={previewExport.isPending}
-          isSaving={updateState.isPending}
+          isSaving={updateExportEditState.isPending}
           isExporting={exportWorkspace.isPending}
           isOpening={openFolder.isPending}
           onRefreshPreview={refreshPreview}
-          onPreviewEdit={updateEdit}
-          onSavePreview={() => void saveState()}
+          onPreviewEdit={updateExportCellEdit}
+          onDeleteSelection={deleteExportSelection}
+          onRestoreDeleted={restoreDeletedExportValue}
+          onSavePreview={() => void saveExportEditState()}
           onExport={() => void exportWithSavedPreview()}
           onOpenFolder={() => openFolder.mutate({ workspaceId })}
         />

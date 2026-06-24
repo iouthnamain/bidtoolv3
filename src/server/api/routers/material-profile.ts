@@ -7,7 +7,10 @@ import {
   requirePermission,
 } from "~/server/api/trpc";
 import {
+  bulkApplyMaterialProfileMatches,
+  bulkUpdateMaterialProfileItems,
   createMaterialProfileWorkspace,
+  deleteMaterialProfileWorkspace,
   exportMaterialProfileWorkspace,
   getMaterialProfileWorkspace,
   listMaterialProfileWorkspaces,
@@ -15,6 +18,9 @@ import {
   MaterialProfileWorkspaceError,
   openMaterialProfileOutputFolder,
   previewMaterialProfileExportWorkbook,
+  undoLastMaterialProfileBulkApply,
+  updateMaterialProfileWorkspace,
+  updateMaterialProfileExportEditState,
   updateMaterialProfileItem,
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
@@ -48,6 +54,16 @@ const workspaceIdInput = z.object({
 });
 
 const cellEditsSchema = z.record(z.string(), z.record(z.string(), z.string()));
+const sheetNumberMapSchema = z.record(
+  z.string(),
+  z.array(z.number().int().positive()),
+);
+const exportEditStateSchema = z.object({
+  cellEdits: cellEditsSchema.default({}),
+  deletedRows: sheetNumberMapSchema.default({}),
+  deletedColumns: sheetNumberMapSchema.default({}),
+  updatedAt: z.string().optional(),
+});
 
 export const materialProfileRouter = createTRPCRouter({
   create: requirePermission("material:write")
@@ -80,6 +96,26 @@ export const materialProfileRouter = createTRPCRouter({
     .query(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         getMaterialProfileWorkspace(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  update: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        noticeNumber: z.string().trim().min(1).max(120),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileWorkspace(ctx.db, input),
+      ),
+    ),
+
+  delete: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        deleteMaterialProfileWorkspace(ctx.db, input.workspaceId),
       ),
     ),
 
@@ -135,6 +171,53 @@ export const materialProfileRouter = createTRPCRouter({
     )
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() => updateMaterialProfileItem(ctx.db, input)),
+    ),
+
+  bulkUpdateItems: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        includedInExport: z.boolean().optional(),
+        clearMaterialId: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        bulkUpdateMaterialProfileItems(ctx.db, input),
+      ),
+    ),
+
+  bulkApplyMatches: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        threshold: z.number().min(0).max(1).default(0.85),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        bulkApplyMaterialProfileMatches(ctx.db, input),
+      ),
+    ),
+
+  undoLastBulkApply: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        undoLastMaterialProfileBulkApply(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  updateExportEditState: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        exportEditState: exportEditStateSchema,
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileExportEditState(ctx.db, input),
+      ),
     ),
 
   export: requirePermission("material:write")
