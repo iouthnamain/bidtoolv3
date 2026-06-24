@@ -1528,7 +1528,7 @@ export function MaterialsListClient() {
   );
 
   return (
-    <div className="animate-rise space-y-4">
+    <>
       <ConfirmDialog
         open={confirmDelete}
         title={`Xóa ${selectedCount} vật tư?`}
@@ -1558,59 +1558,46 @@ export function MaterialsListClient() {
       />
 
       <section className="panel-raised p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-bold text-slate-950">
-                Catalog vật tư
-              </h2>
-              <span className="stat-value text-2xl font-extrabold text-slate-900">
-                {showSummaryLoading ? "—" : summary.total.toLocaleString("vi-VN")}
-              </span>
-              <span className="text-xs text-slate-500">sản phẩm</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <PermissionGate permission="material:write">
-              <Link
-                href="/materials/new"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-                Thêm thủ công
-              </Link>
-              <Link
-                href="/materials/import"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-              >
-                <FileSpreadsheet className="h-4 w-4" aria-hidden />
-                Nhập sheet
-              </Link>
-            </PermissionGate>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-11 sm:min-h-10"
-              leftIcon={<Download className="h-3.5 w-3.5" />}
-              isLoading={exportCsvQuery.isFetching}
-              disabled={summary.total === 0}
-              onClick={() => void downloadCatalogCsv()}
+        <div className="flex flex-wrap gap-2">
+          <PermissionGate permission="material:write">
+            <Link
+              href="/materials/new"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
             >
-              Xuất CSV
-            </Button>
-            <PermissionGate permission="scrape:run">
-              <Link
-                href="/materials/scrape"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
-              >
-                <Search className="h-4 w-4" aria-hidden />
-                Scrape shop
-              </Link>
-            </PermissionGate>
-          </div>
+              <Plus className="h-4 w-4" aria-hidden />
+              Thêm thủ công
+            </Link>
+            <Link
+              href="/materials/import"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+            >
+              <FileSpreadsheet className="h-4 w-4" aria-hidden />
+              Nhập sheet
+            </Link>
+          </PermissionGate>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="min-h-11 sm:min-h-10"
+            leftIcon={<Download className="h-3.5 w-3.5" />}
+            isLoading={exportCsvQuery.isFetching}
+            disabled={summary.total === 0}
+            onClick={() => void downloadCatalogCsv()}
+          >
+            Xuất CSV
+          </Button>
+          <PermissionGate permission="scrape:run">
+            <Link
+              href="/materials/scrape"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+            >
+              <Search className="h-4 w-4" aria-hidden />
+              Scrape shop
+            </Link>
+          </PermissionGate>
         </div>
 
-        <div className="mt-4 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <button
             type="button"
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
@@ -1766,6 +1753,7 @@ export function MaterialsListClient() {
         </div>
       </section>
 
+      <div className="animate-rise mt-4 space-y-4">
       <section id="material-catalog" className="panel scroll-mt-6 p-4">
           <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
             <div>
@@ -2717,6 +2705,7 @@ export function MaterialsListClient() {
 
           {renderPaginationBar("bottom")}
       </section>
-    </div>
+      </div>
+    </>
   );
 }
