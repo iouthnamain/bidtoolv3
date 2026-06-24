@@ -111,6 +111,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
   const [saveSelectedError, setSaveSelectedError] = useState<string | null>(
     null,
   );
+  const [watchlistSuccess, setWatchlistSuccess] = useState<string | null>(null);
   const [smartViewName, setSmartViewName] = useState("");
   const [smartViewFrequency, setSmartViewFrequency] = useState<
     "daily" | "weekly"
@@ -241,6 +242,9 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
       readSearchModeFromPathname(pathname) ??
       readSearchModeFromSearchParams(searchParams);
     const nextCriteria = readSearchCriteriaFromSearchParams(searchParams);
+    if (nextMode !== mode) {
+      setSelectedKeys(new Set<string>());
+    }
     setMode(nextMode);
     setFormState(buildFormState(nextCriteria));
     setAppliedCriteria(nextCriteria);
@@ -248,7 +252,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     setLimit(parsePositiveInt(searchParams.get("limit"), 20));
     setSortOrder(readSortOrderFromSearchParams(searchParams));
     setSavedFilterId(parsePositiveId(searchParams.get("savedFilterId")));
-  }, [currentSearchParamsKey, pathname, searchParams]);
+  }, [currentSearchParamsKey, mode, pathname, searchParams]);
 
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
@@ -284,7 +288,8 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
   });
 
   const addWatchlist = api.watchlist.addItem.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_item, variables) => {
+      setWatchlistSuccess(`Đã thêm "${variables.label}" vào danh sách theo dõi.`);
       await utils.watchlist.listItems.invalidate();
     },
   });
@@ -339,6 +344,9 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
 
     hydratedSavedFilterKeyRef.current = hydratedKey;
     const nextMode = savedFilterQuery.data.mode;
+    if (nextMode !== mode) {
+      setSelectedKeys(new Set<string>());
+    }
     setMode(nextMode);
     setFormState(buildFormState(savedFilterQuery.data.criteria));
     setAppliedCriteria(savedFilterQuery.data.criteria);
@@ -349,7 +357,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     if (pathname !== targetPath) {
       router.replace(targetPath);
     }
-  }, [pathname, router, savedFilterId, savedFilterQuery.data]);
+  }, [mode, pathname, router, savedFilterId, savedFilterQuery.data]);
 
   const selectedItems = useMemo(
     () => items.filter((item) => selectedKeys.has(selectedKey(item))),
@@ -358,7 +366,11 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
   const appliedChips = summarizeSearchCriteria(mode, appliedCriteria);
 
   const persistSmartView = () => {
-    if (budgetRangeError || publishedDateRangeError) {
+    if (
+      budgetRangeError ||
+      publishedDateRangeError ||
+      hasPendingSearchFilterChanges
+    ) {
       return;
     }
 
@@ -408,13 +420,69 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     setSmartViewSuccess(null);
     setSaveSelectedSuccess(null);
     setSaveSelectedError(null);
+    setWatchlistSuccess(null);
   };
 
   const resetFilters = () => {
     setFormState(buildFormState(emptySearchCriteria));
     setAppliedCriteria({ ...emptySearchCriteria });
     setPage(1);
+    setSavedFilterId(null);
+    setSmartViewName("");
+    setSmartViewFrequency("daily");
+    setSaveError(null);
+    setSmartViewSuccess(null);
+    setSaveSelectedSuccess(null);
+    setSaveSelectedError(null);
+    setWatchlistSuccess(null);
     setSelectedKeys(new Set<string>());
+  };
+
+  const removeAppliedChip = (chip: string) => {
+    const nextCriteria = { ...appliedCriteria };
+
+    if (chip.startsWith("Chế độ:")) {
+      setMode("package_keyword");
+      setPage(1);
+      setSelectedKeys(new Set<string>());
+      return;
+    }
+
+    if (chip.startsWith("Từ khóa:")) {
+      nextCriteria.keyword = "";
+    } else if (chip.startsWith("Tỉnh:")) {
+      nextCriteria.provinces = [];
+    } else if (chip.startsWith("Lĩnh vực gói:")) {
+      nextCriteria.packageCategories = [];
+    } else if (chip.startsWith("Ngành nghề:")) {
+      nextCriteria.classifyIds = [];
+    } else if (chip.startsWith("Lĩnh vực KHLCNT:")) {
+      nextCriteria.planFields = [];
+    } else if (chip.startsWith("HTLCNT:")) {
+      nextCriteria.procurementMethods = [];
+    } else if (chip.startsWith("Nhóm dự án:")) {
+      nextCriteria.projectGroups = [];
+    } else if (chip.startsWith("Ngân sách:")) {
+      nextCriteria.budgetMin = null;
+      nextCriteria.budgetMax = null;
+    } else if (chip.startsWith("Ngày:")) {
+      nextCriteria.publishedFrom = "";
+      nextCriteria.publishedTo = "";
+    } else if (chip.startsWith("Match tối thiểu:")) {
+      nextCriteria.minMatchScore = 0;
+    } else {
+      return;
+    }
+
+    const normalizedCriteria = normalizeSearchCriteria(nextCriteria);
+    setFormState(buildFormState(normalizedCriteria));
+    setAppliedCriteria(normalizedCriteria);
+    setPage(1);
+    setSaveError(null);
+    setSmartViewSuccess(null);
+    setSaveSelectedSuccess(null);
+    setSaveSelectedError(null);
+    setWatchlistSuccess(null);
   };
 
   return {
@@ -433,6 +501,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     smartViewSuccess,
     saveSelectedSuccess,
     saveSelectedError,
+    watchlistSuccess,
     smartViewName,
     setSmartViewName,
     smartViewFrequency,
@@ -454,6 +523,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     saveSelectedResults,
     selectedItems,
     appliedChips,
+    removeAppliedChip,
     persistSmartView,
     applyDraftFilters,
     resetFilters,

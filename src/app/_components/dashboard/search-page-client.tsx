@@ -34,6 +34,7 @@ import {
   SkeletonTable,
 } from "~/app/_components/ui";
 
+import { ClassifyMultiSelect } from "./search/classify-multi-select";
 import { MultiSelectDropdown } from "./search/multi-select-dropdown";
 import { ResultsTable } from "./search/results-table";
 import {
@@ -71,6 +72,7 @@ export function SearchPageClient({
 }: { fixedMode?: SearchMode } = {}) {
   const state = useSearchPageState({ fixedMode });
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [smartViewOpen, setSmartViewOpen] = useState(false);
   const {
     mode,
     formState,
@@ -86,6 +88,7 @@ export function SearchPageClient({
     smartViewSuccess,
     saveSelectedSuccess,
     saveSelectedError,
+    watchlistSuccess,
     smartViewName,
     setSmartViewName,
     smartViewFrequency,
@@ -106,6 +109,7 @@ export function SearchPageClient({
     saveSelectedResults,
     selectedItems,
     appliedChips,
+    removeAppliedChip,
     persistSmartView,
     applyDraftFilters,
     resetFilters,
@@ -116,6 +120,11 @@ export function SearchPageClient({
   const entityLabel = entityLabelForMode(mode);
   const isInitialResultsLoading = resultQuery.isLoading && !result;
   const isShowingPreviousResults = Boolean(resultQuery.isPlaceholderData);
+  const hasSmartViewSaveBlocker =
+    budgetRangeError ||
+    publishedDateRangeError ||
+    hasPendingSearchFilterChanges;
+  const isSmartViewPanelOpen = smartViewOpen || isEditingSmartView;
 
   const budgetMinNumber = parseOptionalNumber(formState.budgetMin) ?? 0;
   const budgetMaxNumber = parseOptionalNumber(formState.budgetMax);
@@ -143,6 +152,74 @@ export function SearchPageClient({
     event.preventDefault();
     applyDraftFilters();
   };
+
+  const resultControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        className={controlClass}
+        value={limit}
+        onChange={(event) => {
+          setLimit(parsePositiveInt(event.target.value, 20));
+          setPage(1);
+        }}
+      >
+        {PAGE_SIZE_OPTIONS.map((size) => (
+          <option key={size} value={size}>
+            {size} dòng
+          </option>
+        ))}
+      </select>
+      <div className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!result || page <= 1}
+          onClick={() => setPage((previous) => Math.max(1, previous - 1))}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+          Trước
+        </button>
+        <span className="text-xs text-slate-500">
+          {result ? `Trang ${page}/${totalPages}` : "Trang …"}
+        </span>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!result || page >= totalPages}
+          onClick={() =>
+            setPage((previous) => Math.min(totalPages, previous + 1))
+          }
+        >
+          Sau
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        isLoading={resultQuery.isFetching}
+        leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+        onClick={() => resultQuery.refetch()}
+      >
+        Tải lại
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        className="bg-emerald-600 hover:bg-emerald-700"
+        isLoading={saveSelectedResults.isPending}
+        disabled={selectedItems.length === 0 || isShowingPreviousResults}
+        leftIcon={<Save className="h-3.5 w-3.5" />}
+        onClick={() =>
+          saveSelectedResults.mutate({
+            items: selectedItems.map((item) => toSavePayload(item)),
+          })
+        }
+      >
+        {`Lưu ${selectedItems.length} ${entityLabel.toLowerCase()}`}
+      </Button>
+    </div>
+  );
 
   return (
     <div className="animate-rise space-y-4">
@@ -245,14 +322,28 @@ export function SearchPageClient({
 
         {appliedChips.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            {appliedChips.map((chip) => (
-              <span
-                key={chip}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
-              >
-                {chip}
-              </span>
-            ))}
+            {appliedChips.map((chip) => {
+              const isModeChip = chip.startsWith("Chế độ:");
+
+              return (
+                <span
+                  key={chip}
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
+                >
+                  {chip}
+                  {!isModeChip ? (
+                    <button
+                      type="button"
+                      className="-mr-0.5 rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                      aria-label={`Xóa bộ lọc ${chip}`}
+                      onClick={() => removeAppliedChip(chip)}
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  ) : null}
+                </span>
+              );
+            })}
             <button
               type="button"
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
@@ -269,41 +360,41 @@ export function SearchPageClient({
           hidden={!filtersOpen}
           className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
         >
-        <div className="grid gap-3 lg:grid-cols-2">
-          <FilterField label="Tỉnh / thành">
-            {mode === "package_location" ? (
-              <select
-                className={controlClass}
-                value={formState.provinces[0] ?? ""}
-                onChange={(event) =>
-                  setFormState((previous) => ({
-                    ...previous,
-                    provinces: event.target.value ? [event.target.value] : [],
-                  }))
-                }
-              >
-                <option value="">Chọn một tỉnh/thành</option>
-                {filterOptions.provinces.map((province) => (
-                  <option key={province} value={province}>
-                    {province}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <MultiSelectDropdown
-                ariaLabel="Tỉnh / thành"
-                options={filterOptions.provinces}
-                selected={formState.provinces}
-                onChange={(next) =>
-                  setFormState((previous) => ({
-                    ...previous,
-                    provinces: next,
-                  }))
-                }
-                emptyLabel="Tất cả tỉnh/thành"
-              />
-            )}
-          </FilterField>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <FilterField label="Tỉnh / thành">
+              {mode === "package_location" ? (
+                <select
+                  className={controlClass}
+                  value={formState.provinces[0] ?? ""}
+                  onChange={(event) =>
+                    setFormState((previous) => ({
+                      ...previous,
+                      provinces: event.target.value ? [event.target.value] : [],
+                    }))
+                  }
+                >
+                  <option value="">Chọn một tỉnh/thành</option>
+                  {filterOptions.provinces.map((province) => (
+                    <option key={province} value={province}>
+                      {province}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <MultiSelectDropdown
+                  ariaLabel="Tỉnh / thành"
+                  options={filterOptions.provinces}
+                  selected={formState.provinces}
+                  onChange={(next) =>
+                    setFormState((previous) => ({
+                      ...previous,
+                      provinces: next,
+                    }))
+                  }
+                  emptyLabel="Tất cả tỉnh/thành"
+                />
+              )}
+            </FilterField>
 
           {(mode === "package_keyword" || mode === "package_location") && (
             <FilterField label="Lĩnh vực gói">
@@ -327,27 +418,18 @@ export function SearchPageClient({
               label="Ngành nghề & địa phương"
               helper="Chọn nhiều classify public của BidWinner. Tab này tinh lọc trên cửa sổ dữ liệu đã tải."
             >
-              <select
-                multiple
-                className={`${controlClass} min-h-56`}
-                value={formState.classifyIds.map(String)}
-                onChange={(event) => {
-                  const next = Array.from(event.target.selectedOptions)
-                    .map((option) => Number.parseInt(option.value, 10))
-                    .filter((value) => Number.isInteger(value) && value > 0);
-
+              <ClassifyMultiSelect
+                ariaLabel="Ngành nghề & địa phương"
+                options={filterOptions.classifies}
+                selected={formState.classifyIds}
+                onChange={(next) =>
                   setFormState((previous) => ({
                     ...previous,
                     classifyIds: next,
-                  }));
-                }}
-              >
-                {filterOptions.classifies.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {`${"· ".repeat(entry.depth)}${entry.name}`}
-                  </option>
-                ))}
-              </select>
+                  }))
+                }
+                emptyLabel="Tất cả ngành nghề"
+              />
             </FilterField>
           )}
 
@@ -578,63 +660,102 @@ export function SearchPageClient({
                 </button>
               ))}
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Sắp xếp áp dụng ngay; bộ lọc khác cần bấm Tìm.
+            </p>
           </FilterField>
+          </div>
+
+          {budgetRangeError ? (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
+            </div>
+          ) : null}
+
+          {publishedDateRangeError ? (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              Ngày đến phải lớn hơn hoặc bằng ngày từ.
+            </div>
+          ) : null}
+
         </div>
 
-        {budgetRangeError ? (
-          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
-          </div>
-        ) : null}
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white">
+          <button
+            type="button"
+            aria-expanded={isSmartViewPanelOpen}
+            aria-controls="search-smart-view-panel"
+            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            onClick={() => setSmartViewOpen((previous) => !previous)}
+          >
+            <span className="inline-flex items-center gap-2">
+              <BookmarkCheck className="h-4 w-4 text-sky-700" aria-hidden />
+              Smart View
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-slate-500 transition-transform duration-150 ${
+                isSmartViewPanelOpen ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            />
+          </button>
 
-        {publishedDateRangeError ? (
-          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            Ngày đến phải lớn hơn hoặc bằng ngày từ.
-          </div>
-        ) : null}
-
-        <div className="mt-4 border-t border-slate-200 pt-3">
-          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
-            <FilterField label="Tên Smart View" htmlFor="smart-view-name">
-              <input
-                id="smart-view-name"
-                className={controlClass}
-                placeholder="Đặt tên cho bộ lọc đã áp dụng"
-                value={smartViewName}
-                onChange={(event) => setSmartViewName(event.target.value)}
-              />
-            </FilterField>
-            <FilterField
-              label="Tần suất thông báo"
-              htmlFor="smart-view-frequency"
-            >
-              <select
-                id="smart-view-frequency"
-                className={controlClass}
-                value={smartViewFrequency}
-                onChange={(event) =>
-                  setSmartViewFrequency(
-                    event.target.value as "daily" | "weekly",
-                  )
-                }
+          <div
+            id="search-smart-view-panel"
+            hidden={!isSmartViewPanelOpen}
+            className="border-t border-slate-200 px-3 py-3"
+          >
+            <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
+              <FilterField label="Tên Smart View" htmlFor="smart-view-name">
+                <input
+                  id="smart-view-name"
+                  className={controlClass}
+                  placeholder="Đặt tên cho bộ lọc đã áp dụng"
+                  value={smartViewName}
+                  onChange={(event) => setSmartViewName(event.target.value)}
+                />
+              </FilterField>
+              <FilterField
+                label="Tần suất thông báo"
+                htmlFor="smart-view-frequency"
               >
-                <option value="daily">Hằng ngày</option>
-                <option value="weekly">Hằng tuần</option>
-              </select>
-            </FilterField>
+                <select
+                  id="smart-view-frequency"
+                  className={controlClass}
+                  value={smartViewFrequency}
+                  onChange={(event) =>
+                    setSmartViewFrequency(
+                      event.target.value as "daily" | "weekly",
+                    )
+                  }
+                >
+                  <option value="daily">Hằng ngày</option>
+                  <option value="weekly">Hằng tuần</option>
+                </select>
+              </FilterField>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                isLoading={saveFilter.isPending || updateSavedFilter.isPending}
+                disabled={hasSmartViewSaveBlocker}
+                title={
+                  hasPendingSearchFilterChanges
+                    ? "Áp dụng bộ lọc trước khi lưu"
+                    : undefined
+                }
+                leftIcon={<BookmarkCheck className="h-4 w-4" />}
+                onClick={persistSmartView}
+              >
+                {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
+              </Button>
+              {hasPendingSearchFilterChanges ? (
+                <span className="text-xs text-amber-700">
+                  Áp dụng bộ lọc trước khi lưu Smart View.
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              isLoading={saveFilter.isPending || updateSavedFilter.isPending}
-              disabled={budgetRangeError || publishedDateRangeError}
-              leftIcon={<BookmarkCheck className="h-4 w-4" />}
-              onClick={persistSmartView}
-            >
-              {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
-            </Button>
-          </div>
-        </div>
         </div>
 
         {isEditingSmartView ? (
@@ -720,71 +841,7 @@ export function SearchPageClient({
               </p>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className={controlClass}
-              value={limit}
-              onChange={(event) => {
-                setLimit(parsePositiveInt(event.target.value, 20));
-                setPage(1);
-              }}
-            >
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size} dòng
-                </option>
-              ))}
-            </select>
-            <div className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!result || page <= 1}
-                onClick={() => setPage((previous) => Math.max(1, previous - 1))}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
-                Trước
-              </button>
-              <span className="text-xs text-slate-500">
-                {result ? `Trang ${page}/${totalPages}` : "Trang …"}
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!result || page >= totalPages}
-                onClick={() =>
-                  setPage((previous) => Math.min(totalPages, previous + 1))
-                }
-              >
-                Sau
-                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              isLoading={resultQuery.isFetching}
-              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-              onClick={() => resultQuery.refetch()}
-            >
-              Tải lại
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
-              isLoading={saveSelectedResults.isPending}
-              disabled={selectedItems.length === 0 || isShowingPreviousResults}
-              leftIcon={<Save className="h-3.5 w-3.5" />}
-              onClick={() =>
-                saveSelectedResults.mutate({
-                  items: selectedItems.map((item) => toSavePayload(item)),
-                })
-              }
-            >
-              {`Lưu ${selectedItems.length} ${entityLabel.toLowerCase()}`}
-            </Button>
-          </div>
+          {resultControls}
         </div>
 
         {saveSelectedSuccess ? (
@@ -796,6 +853,12 @@ export function SearchPageClient({
         {saveSelectedError ? (
           <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {saveSelectedError}
+          </div>
+        ) : null}
+
+        {watchlistSuccess ? (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {watchlistSuccess}
           </div>
         ) : null}
 
@@ -852,6 +915,9 @@ export function SearchPageClient({
               </>
             ) : (
               <>
+                <div className="mt-3">
+                  <SourceMetaBanner result={result} />
+                </div>
                 <div className="mt-4">
                   <ResultMatchSummary result={result} />
                 </div>
@@ -867,8 +933,8 @@ export function SearchPageClient({
                     addWatchlist={addWatchlist}
                   />
                 </div>
-                <div className="mt-3">
-                  <SourceMetaBanner result={result} />
+                <div className="mt-4 flex justify-end">
+                  {resultControls}
                 </div>
               </>
             )}

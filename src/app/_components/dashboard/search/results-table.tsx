@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, type Dispatch, type SetStateAction } from "react";
+import {
+  memo,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 
 import { type api } from "~/trpc/react";
 
@@ -15,12 +22,55 @@ import {
   ownerTextForItem,
   titleHeaderForEntity,
 } from "./search-format";
-import { ResultActions, detailHrefForItem } from "./result-actions";
+import {
+  primaryLinkForItem,
+  primaryLinkOpensExternally,
+  ResultActions,
+} from "./result-actions";
 import { selectedKey, type SearchItem } from "./search-types";
 
-import Link from "next/link";
-
 type AddWatchlist = ReturnType<typeof api.watchlist.addItem.useMutation>;
+
+function PrimaryResultLink({
+  item,
+  className,
+  children,
+}: {
+  item: SearchItem;
+  className: string;
+  children: ReactNode;
+}) {
+  const href = primaryLinkForItem(item);
+  const opensExternally = primaryLinkOpensExternally(item);
+  const content = (
+    <>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+      {opensExternally ? (
+        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : null}
+    </>
+  );
+
+  if (opensExternally) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title="Mở trên BidWinner"
+        className={className}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={href} className={className}>
+      {content}
+    </Link>
+  );
+}
 
 const ResultCard = memo(function ResultCard({
   item,
@@ -44,12 +94,18 @@ const ResultCard = memo(function ResultCard({
           aria-label={`Chọn ${item.externalId}`}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm leading-5 font-semibold [overflow-wrap:anywhere] text-slate-950">
+          <PrimaryResultLink
+            item={item}
+            className="inline-flex max-w-full items-start gap-1 text-sm leading-5 font-semibold text-slate-950 transition-colors duration-150 hover:text-sky-700 hover:underline"
+          >
             {item.title}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
+          </PrimaryResultLink>
+          <PrimaryResultLink
+            item={item}
+            className="mt-1 inline-flex max-w-full items-start gap-1 text-xs text-slate-500 transition-colors duration-150 hover:text-sky-700 hover:underline"
+          >
             {item.externalId} • {item.province}
-          </p>
+          </PrimaryResultLink>
         </div>
       </div>
 
@@ -107,7 +163,7 @@ const ResultRow = memo(function ResultRow({
   addWatchlist: AddWatchlist;
 }) {
   return (
-    <tr className="align-top">
+    <tr className="align-top transition-colors duration-150 hover:bg-slate-50/80">
       <td className="px-3 py-3">
         <input
           type="checkbox"
@@ -117,19 +173,26 @@ const ResultRow = memo(function ResultRow({
         />
       </td>
       <td className="px-3 py-3">
-        <Link
-          href={detailHrefForItem(item)}
-          className="inline-block text-sm leading-5 font-medium [overflow-wrap:anywhere] text-[#0091ff] hover:underline"
+        <PrimaryResultLink
+          item={item}
+          className="inline-flex max-w-full items-start gap-1 text-sm leading-5 font-medium text-[#0091ff] hover:underline"
         >
           {item.externalId}
-        </Link>
+        </PrimaryResultLink>
       </td>
       <td className="px-3 py-3">
         <div>
-          <p className="font-semibold text-slate-900">{item.title}</p>
+          <PrimaryResultLink
+            item={item}
+            className="inline-flex max-w-full items-start gap-1 font-semibold text-slate-900 transition-colors duration-150 hover:text-sky-700 hover:underline"
+          >
+            {item.title}
+          </PrimaryResultLink>
           {item.entityType === "package" ? (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-              <span>{item.category}</span>
+            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {item.category}
+              </span>
               <span
                 className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700"
                 title={`Match score ${item.matchScore}%`}
