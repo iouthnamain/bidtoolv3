@@ -33,6 +33,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run ./scripts/db-migrate.ts",
     "db:seed": "bun run ./scripts/db-seed.ts",
+    "demo:samples": "bun run ./scripts/generate-demo-material-samples.ts && bunx vitest run tests/demo-material-samples.test.ts",
     "db:studio": "drizzle-kit studio",
     "db:wipe": "bun run ./scripts/db-wipe.ts",
     "auth:backfill": "bun run ./scripts/auth-backfill.ts",

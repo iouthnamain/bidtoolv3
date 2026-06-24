@@ -63,14 +63,16 @@ Before running scenarios, prepare:
 | Shop URL | One e-commerce shop URL supported by scrape profiles (for scrape scenario) |
 | BidWinner access | Network access to BidWinner public pages (search scenarios) |
 
-**Suggested demo files folder** (create manually for now):
+**Demo files** (generate with `bun run demo:samples`):
 
 ```text
 docs/demo/
-  boq-incomplete.xlsx      # BOQ with blank spec/price/manufacturer columns
-  catalog-seed.csv         # 20–50 known materials for import
-  catalog-with-pdfs/       # Optional PDFs to upload in catalog library
+  demo-catalog-6.xlsx      # 6 catalog rows for /materials/import
+  demo-boq-6.xlsx          # 6 paired BOQ rows for /material-profiles
+  README.md                # Paired workflow instructions
 ```
+
+See also [docs/demo/README.md](../demo/README.md). For incomplete BOQ / enrich scenarios, use ad-hoc Excel with blank columns.
 
 ---
 

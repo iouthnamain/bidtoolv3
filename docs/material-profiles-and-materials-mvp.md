@@ -6,6 +6,27 @@ Hướng dẫn kiểm thử thủ công cho danh mục vật tư và workflow **
 
 ---
 
+## Demo files
+
+Generate paired 6-row samples for import + material profile:
+
+```bash
+bun run demo:samples
+```
+
+Output in [`docs/demo/`](../demo/):
+
+| File | Dùng ở |
+|------|--------|
+| `demo-catalog-6.xlsx` | `/materials/import` — nhập danh mục trước |
+| `demo-boq-6.xlsx` | `/material-profiles/[id]` bước 1 — upload BOQ theo TBMT |
+
+Gợi ý TBMT: `TBMT-DEMO-2026-001`. Chi tiết workflow: [docs/demo/README.md](../demo/README.md).
+
+**Test nhanh (~10 phút):** `demo:samples` → import catalog → tạo hồ sơ → upload BOQ → map/match (6 dòng) → export.
+
+---
+
 ## Routes chính
 
 | Menu (sidebar) | Route | Việc làm |

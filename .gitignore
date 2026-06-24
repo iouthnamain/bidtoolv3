@@ -60,3 +60,6 @@ bun.lockb
 
 # runtime data (uploaded/generated files — never commit)
 /data
+
+# generated demo workbooks (source: bun run demo:samples)
+/docs/demo/*.xlsx
