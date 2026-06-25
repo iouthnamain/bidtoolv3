@@ -46,6 +46,14 @@ type MaterialProfileStep = 1 | 2 | 3 | 4;
 type SearchTab = "material" | "web" | "ai";
 type CompareFieldKey = "name" | FillableField;
 type CompareValues = Partial<Record<CompareFieldKey, string>>;
+type MaterialProfileWebSearchInput = {
+  name: string;
+  code?: string;
+  manufacturer?: string;
+  specText?: string;
+  unit?: string;
+  category?: string;
+};
 
 type Candidate = {
   materialId: number;
@@ -273,6 +281,20 @@ function sheetFieldsFromItem(
     ),
     currency: stringValue(original.currency, item.currency ?? "VND"),
     sourceUrl: stringValue(original.sourceUrl),
+  };
+}
+
+function webSearchInputFromItem(
+  item: WorkspaceItem,
+): MaterialProfileWebSearchInput {
+  const fields = sheetFieldsFromItem(item);
+  return {
+    name: item.productName,
+    code: fields.code,
+    manufacturer: fields.manufacturer,
+    specText: fields.specText,
+    unit: fields.unit,
+    category: fields.category,
   };
 }
 
@@ -891,6 +913,7 @@ function MaterialReviewStep({
   );
   const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("material");
   const [rawExcelExpanded, setRawExcelExpanded] = useState(false);
+  const [isBulkAiSearching, setIsBulkAiSearching] = useState(false);
   const [webResultsByItemId, setWebResultsByItemId] = useState<
     Record<number, WebSearchResult[]>
   >({});
@@ -935,7 +958,6 @@ function MaterialReviewStep({
     items.find((item) => item.id === drawerItemId) ?? visibleItems[0] ?? null;
   const drawerItemEffectId = drawerItem?.id ?? null;
   const drawerItemMaterialId = drawerItem?.materialId ?? null;
-  const drawerItemProductName = drawerItem?.productName ?? "";
   const drawerCandidates = drawerItem ? candidatesFromItem(drawerItem) : [];
   const selectedCandidate = drawerItem
     ? selectedCandidateForItem(drawerItem)
@@ -955,7 +977,7 @@ function MaterialReviewStep({
     visibleItems.length > 0 &&
     visibleItems.every((item) => selectedItemIds.includes(item.id));
   const materialSearch = api.material.enrichSearchMaterials.useQuery(
-    { query: drawerSearch, limit: 8 },
+    { query: drawerSearch, limit: 20 },
     { enabled: drawerSearch.trim().length >= 2 },
   );
   const materialDetail = api.material.getById.useQuery(
@@ -971,15 +993,10 @@ function MaterialReviewStep({
     setSelectedMaterialId(
       drawerItemMaterialId ?? selectedCandidate?.materialId ?? null,
     );
-    setDrawerSearch(drawerItemProductName);
+    setDrawerSearch("");
     setActiveSearchTab("material");
     setRawExcelExpanded(false);
-  }, [
-    drawerItemEffectId,
-    drawerItemMaterialId,
-    drawerItemProductName,
-    selectedCandidate?.materialId,
-  ]);
+  }, [drawerItemEffectId, drawerItemMaterialId, selectedCandidate?.materialId]);
 
   const toggleSelectedItem = (itemId: number) => {
     setSelectedItemIds((current) => toggleNumber(current, itemId));
@@ -1006,6 +1023,7 @@ function MaterialReviewStep({
   const material =
     materialDetail.data?.id === selectedMaterialId ? materialDetail.data : null;
   const catalogCandidates = materialSearch.data?.candidates ?? [];
+  const hasCatalogSearch = drawerSearch.trim().length >= 2;
   const selectedCatalogCandidate =
     selectedMaterialId == null
       ? null
@@ -1030,28 +1048,45 @@ function MaterialReviewStep({
       ? Object.entries(drawerItem.originalDataJson)
       : [];
 
-  const webSearchInput = drawerItem
-    ? {
-        name: drawerItem.productName,
-        code: drawerSheetFields.code,
-        manufacturer: drawerSheetFields.manufacturer,
-        specText: drawerSheetFields.specText,
-        unit: drawerSheetFields.unit,
-        category: drawerSheetFields.category,
-      }
-    : null;
+  const webSearchInput = drawerItem ? webSearchInputFromItem(drawerItem) : null;
+
+  const applyAiSearchResult = (
+    item: WorkspaceItem,
+    result: AiSearchResult,
+    currentFields: Partial<Record<FillableField, string>>,
+  ) => {
+    const nextFields = {
+      ...result.fields,
+      sourceUrl:
+        result.fields.sourceUrl ??
+        result.sourceUrls[0] ??
+        currentFields.sourceUrl,
+    };
+    setAiFieldsByItemId((current) => ({
+      ...current,
+      [item.id]: nextFields,
+    }));
+    setAiEvidenceByItemId((current) => ({
+      ...current,
+      [item.id]: result.evidence,
+    }));
+    return nextFields;
+  };
 
   const executeWebSearch = async ({
+    item,
+    input,
     switchToWebTab,
   }: {
+    item: WorkspaceItem;
+    input: MaterialProfileWebSearchInput;
     switchToWebTab: boolean;
   }) => {
-    if (!drawerItem || !webSearchInput) return [];
     try {
-      const result = await webSearch.mutateAsync(webSearchInput);
+      const result = await webSearch.mutateAsync(input);
       setWebResultsByItemId((current) => ({
         ...current,
-        [drawerItem.id]: result.results,
+        [item.id]: result.results,
       }));
       if (switchToWebTab) {
         setActiveSearchTab("web");
@@ -1073,7 +1108,12 @@ function MaterialReviewStep({
   };
 
   const runWebSearch = () => {
-    void executeWebSearch({ switchToWebTab: true });
+    if (!drawerItem || !webSearchInput) return;
+    void executeWebSearch({
+      item: drawerItem,
+      input: webSearchInput,
+      switchToWebTab: true,
+    });
   };
 
   const runAiSearch = () => {
@@ -1082,28 +1122,22 @@ function MaterialReviewStep({
       const webResults =
         drawerWebResults.length > 0
           ? drawerWebResults
-          : await executeWebSearch({ switchToWebTab: false });
+          : await executeWebSearch({
+              item: drawerItem,
+              input: webSearchInput,
+              switchToWebTab: false,
+            });
       if (webResults.length === 0) return;
       setActiveSearchTab("ai");
       aiSearch.mutate(
         { ...webSearchInput, webResults },
         {
           onSuccess: (result) => {
-            const nextFields = {
-              ...result.fields,
-              sourceUrl:
-                result.fields.sourceUrl ??
-                result.sourceUrls[0] ??
-                drawerAiFields.sourceUrl,
-            };
-            setAiFieldsByItemId((current) => ({
-              ...current,
-              [drawerItem.id]: nextFields,
-            }));
-            setAiEvidenceByItemId((current) => ({
-              ...current,
-              [drawerItem.id]: result.evidence,
-            }));
+            const nextFields = applyAiSearchResult(
+              drawerItem,
+              result,
+              drawerAiFields,
+            );
             if (Object.keys(nextFields).length === 0) {
               toast.warning("AI chưa trích xuất được trường vật tư nào.");
               return;
@@ -1115,6 +1149,68 @@ function MaterialReviewStep({
           },
         },
       );
+    })();
+  };
+
+  const runBulkAiSearch = () => {
+    void (async () => {
+      const selectedItems = items.filter((item) =>
+        selectedItemIds.includes(item.id),
+      );
+      if (selectedItems.length === 0) return;
+      setIsBulkAiSearching(true);
+      let completed = 0;
+      let skipped = 0;
+      try {
+        for (const item of selectedItems) {
+          if (!item.productName.trim()) {
+            skipped += 1;
+            continue;
+          }
+          const input = webSearchInputFromItem(item);
+          const cachedWebResults = webResultsByItemId[item.id] ?? [];
+          const webResults =
+            cachedWebResults.length > 0
+              ? cachedWebResults
+              : await executeWebSearch({
+                  item,
+                  input,
+                  switchToWebTab: false,
+                });
+          if (webResults.length === 0) {
+            skipped += 1;
+            continue;
+          }
+          const result = await aiSearch.mutateAsync({ ...input, webResults });
+          const nextFields = applyAiSearchResult(
+            item,
+            result,
+            aiFieldsByItemId[item.id] ?? {},
+          );
+          if (Object.keys(nextFields).length === 0) {
+            skipped += 1;
+            continue;
+          }
+          completed += 1;
+        }
+        if (completed > 0) {
+          setActiveSearchTab("ai");
+          toast.success(
+            `Bulk AI đã trích xuất ${completed.toLocaleString("vi-VN")} dòng.`,
+          );
+        }
+        if (skipped > 0) {
+          toast.warning(
+            `Bulk AI bỏ qua ${skipped.toLocaleString("vi-VN")} dòng không có kết quả.`,
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Bulk AI search thất bại.";
+        toast.error(message);
+      } finally {
+        setIsBulkAiSearching(false);
+      }
     })();
   };
 
@@ -1277,6 +1373,16 @@ function MaterialReviewStep({
               onClick={() => onBulkApply(selectedItemIds)}
             >
               Tự áp dụng ≥ 85%
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={selectedCount === 0 || isBulkAiSearching}
+              isLoading={isBulkAiSearching}
+              onClick={runBulkAiSearch}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              Bulk AI search
             </Button>
             <Button
               size="sm"
@@ -1488,6 +1594,75 @@ function MaterialReviewStep({
                   expanded={rawExcelExpanded}
                   onToggle={() => setRawExcelExpanded((current) => !current)}
                 />
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                      Chỉnh sửa thủ công / AI draft
+                    </p>
+                    {aiSearch.isPending ? (
+                      <span className="flex items-center gap-1 text-xs text-slate-500">
+                        <Loader2
+                          className="h-3.5 w-3.5 animate-spin"
+                          aria-hidden
+                        />
+                        Đang trích xuất…
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 grid gap-2">
+                    {materialProfileDraftFields.map((field) => (
+                      <label
+                        key={field}
+                        className="block text-xs font-semibold text-slate-600"
+                      >
+                        {FIELD_LABELS[field]}
+                        <input
+                          value={drawerAiFields[field] ?? ""}
+                          onChange={(event) =>
+                            setAiField(field, event.target.value)
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          placeholder={
+                            field === "unit"
+                              ? firstNonEmpty(drawerSheetFields.unit, "ĐVT")
+                              : undefined
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={Object.keys(drawerAiFields).length === 0}
+                      isLoading={upsertMaterial.isPending}
+                      onClick={() => saveAiMaterial(false)}
+                    >
+                      Lưu vật tư mới
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={
+                        selectedMaterialId == null ||
+                        Object.keys(drawerAiFields).length === 0
+                      }
+                      isLoading={upsertMaterial.isPending}
+                      onClick={() => saveAiMaterial(true)}
+                    >
+                      Cập nhật vật tư hiện có
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={selectedMaterialId == null || isUpdating}
+                      isLoading={isUpdating}
+                      onClick={assignSelectedMaterial}
+                    >
+                      Gán vật tư
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white">
@@ -1516,9 +1691,10 @@ function MaterialReviewStep({
                       </span>
                       <input
                         value={drawerSearch}
-                        onChange={(event) =>
-                          setDrawerSearch(event.target.value)
-                        }
+                        onChange={(event) => {
+                          setDrawerSearch(event.target.value);
+                          setActiveSearchTab("material");
+                        }}
                         className="mt-1 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm"
                         placeholder="Tên vật tư..."
                       />
@@ -1606,11 +1782,24 @@ function MaterialReviewStep({
                         </div>
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-white p-3">
-                        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                          Danh mục
-                        </p>
-                        <div className="mt-2 grid max-h-52 gap-2 overflow-auto">
-                          {materialSearch.isLoading ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                            Kết quả Tìm vật tư
+                          </p>
+                          {hasCatalogSearch ? (
+                            <span className="text-xs font-semibold text-slate-500">
+                              {catalogCandidates.length.toLocaleString("vi-VN")}{" "}
+                              candidates
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 grid max-h-96 gap-2 overflow-auto">
+                          {!hasCatalogSearch ? (
+                            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                              Nhập từ khóa vào Tìm vật tư để chỉ hiển thị kết
+                              quả đã search.
+                            </p>
+                          ) : materialSearch.isLoading ? (
                             <p className="flex items-center gap-2 text-xs text-slate-500">
                               <Loader2
                                 className="h-4 w-4 animate-spin"
@@ -1641,11 +1830,19 @@ function MaterialReviewStep({
                                   {candidate.unit ?? "-"} ·{" "}
                                   {formatPrice(candidate)}
                                 </p>
+                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                  {firstNonEmpty(
+                                    candidate.specSnippet,
+                                    candidate.manufacturer,
+                                    candidate.sourceUrl,
+                                    "Chưa có thông tin mô tả.",
+                                  )}
+                                </p>
                               </button>
                             ))
                           ) : (
                             <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
-                              Nhập ít nhất 2 ký tự để tìm trong danh mục.
+                              Không tìm thấy vật tư phù hợp với từ khóa này.
                             </p>
                           )}
                         </div>
@@ -1750,59 +1947,10 @@ function MaterialReviewStep({
                           right={aiValues}
                         />
                       </div>
-                      <div className="grid gap-2">
-                        {materialProfileDraftFields.map((field) => (
-                          <label
-                            key={field}
-                            className="block text-xs font-semibold text-slate-600"
-                          >
-                            {FIELD_LABELS[field]}
-                            <input
-                              value={drawerAiFields[field] ?? ""}
-                              onChange={(event) =>
-                                setAiField(field, event.target.value)
-                              }
-                              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
-                              placeholder={
-                                field === "unit"
-                                  ? firstNonEmpty(drawerSheetFields.unit, "ĐVT")
-                                  : undefined
-                              }
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={Object.keys(drawerAiFields).length === 0}
-                          isLoading={upsertMaterial.isPending}
-                          onClick={() => saveAiMaterial(false)}
-                        >
-                          Lưu vật tư mới
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={
-                            selectedMaterialId == null ||
-                            Object.keys(drawerAiFields).length === 0
-                          }
-                          isLoading={upsertMaterial.isPending}
-                          onClick={() => saveAiMaterial(true)}
-                        >
-                          Cập nhật vật tư hiện có
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={selectedMaterialId == null || isUpdating}
-                          isLoading={isUpdating}
-                          onClick={assignSelectedMaterial}
-                        >
-                          Gán vật tư
-                        </Button>
-                      </div>
+                      <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        Chỉnh sửa và lưu bản nháp AI ở cột bên trái, ngay dưới
+                        Raw Excel fields.
+                      </p>
                       {drawerAiEvidence.length > 0 ? (
                         <div className="space-y-2">
                           <p className="text-xs font-bold text-slate-700">
@@ -2318,7 +2466,11 @@ export function MaterialProfileDetailClient({
   });
   const updateItem = api.materialProfile.updateItem.useMutation({
     onSuccess: async () => {
-      await utils.materialProfile.get.invalidate({ workspaceId });
+      await Promise.all([
+        utils.materialProfile.get.invalidate({ workspaceId }),
+        utils.material.getById.invalidate(),
+        utils.material.enrichSearchMaterials.invalidate(),
+      ]);
       setPreview(null);
       setPreviewAutoRequested(false);
     },
