@@ -19,6 +19,8 @@ import {
   readCatalogPdfFile,
   sanitizeCatalogPdfFileName,
 } from "~/server/services/catalog-pdf-storage";
+import { runWithConcurrency } from "~/server/services/concurrency";
+import { enrichRowFromWeb } from "~/server/services/enrich-web-row";
 import { resolveMaterialProfileExportDir } from "~/server/services/app-settings";
 import type { db as appDb } from "~/server/db";
 import {
@@ -973,6 +975,159 @@ export async function updateMaterialProfileItem(
     .where(eq(excelWorkspaceItems.id, input.itemId))
     .returning();
   return updated;
+}
+
+export async function updateMaterialProfileItemEnrichmentDraft(
+  db: AppDb,
+  input: {
+    itemId: number;
+    enrichmentStatus?: string;
+    webResults?: Record<string, unknown>[];
+    aiFields?: Record<string, unknown>;
+    aiEvidence?: Record<string, unknown>[];
+  },
+) {
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.id, input.itemId))
+    .limit(1);
+  if (!item) {
+    throw new MaterialProfileWorkspaceError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng.",
+    );
+  }
+
+  const now = new Date().toISOString();
+  const [updated] = await db
+    .update(excelWorkspaceItems)
+    .set({
+      enrichmentStatus: input.enrichmentStatus ?? item.enrichmentStatus,
+      webResultsJson: input.webResults ?? item.webResultsJson,
+      aiFieldsJson: input.aiFields ?? item.aiFieldsJson,
+      aiEvidenceJson: input.aiEvidence ?? item.aiEvidenceJson,
+      enrichmentUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaceItems.id, input.itemId))
+    .returning();
+
+  return updated;
+}
+
+function textField(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function enrichmentInputFromWorkspaceItem(item: WorkspaceItem) {
+  const original =
+    item.originalDataJson && typeof item.originalDataJson === "object"
+      ? item.originalDataJson
+      : {};
+  return {
+    name: item.productName,
+    code: textField(original.code),
+    manufacturer: textField(original.manufacturer) || (item.vendorHint ?? ""),
+    specText: textField(original.specText) || item.specText,
+    unit: textField(original.unit) || item.unit,
+    category: textField(original.category),
+  };
+}
+
+export async function bulkAiSearchMaterialProfileItems(
+  db: AppDb,
+  input: { workspaceId: number; itemIds: number[] },
+) {
+  await requireWorkspace(db, input.workspaceId);
+  const itemIds = [...new Set(input.itemIds)].slice(0, 500);
+  if (itemIds.length === 0) {
+    return { completed: 0, skipped: 0, items: [] as WorkspaceItem[] };
+  }
+
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+        inArray(excelWorkspaceItems.id, itemIds),
+      ),
+    )
+    .orderBy(excelWorkspaceItems.sortOrder);
+
+  const updatedItems: WorkspaceItem[] = [];
+  let completed = 0;
+  let skipped = 0;
+
+  await runWithConcurrency(items, 4, async (item) => {
+    if (!item.productName.trim()) {
+      skipped += 1;
+      return;
+    }
+
+    const now = new Date().toISOString();
+    await db
+      .update(excelWorkspaceItems)
+      .set({
+        enrichmentStatus: "ai_searching",
+        enrichmentUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(excelWorkspaceItems.id, item.id));
+
+    try {
+      const result = await enrichRowFromWeb(
+        enrichmentInputFromWorkspaceItem(item),
+      );
+      const sourceResults = result.sourceUrls.map((url) => ({
+        title: url,
+        url,
+        domain: "",
+        snippet: "",
+      }));
+      const [updated] = await db
+        .update(excelWorkspaceItems)
+        .set({
+          enrichmentStatus:
+            Object.keys(result.fields).length > 0 ? "ai_done" : "error",
+          webResultsJson: sourceResults,
+          aiFieldsJson: result.fields as Record<string, unknown>,
+          aiEvidenceJson: result.evidence as unknown as Record<
+            string,
+            unknown
+          >[],
+          enrichmentUpdatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(excelWorkspaceItems.id, item.id))
+        .returning();
+      if (updated) {
+        updatedItems.push(updated);
+      }
+      if (Object.keys(result.fields).length > 0) {
+        completed += 1;
+      } else {
+        skipped += 1;
+      }
+    } catch {
+      skipped += 1;
+      const [updated] = await db
+        .update(excelWorkspaceItems)
+        .set({
+          enrichmentStatus: "error",
+          enrichmentUpdatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(excelWorkspaceItems.id, item.id))
+        .returning();
+      if (updated) {
+        updatedItems.push(updated);
+      }
+    }
+  });
+
+  return { completed, skipped, items: updatedItems };
 }
 
 export async function updateMaterialProfileExportEditState(

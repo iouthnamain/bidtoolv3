@@ -1,6 +1,11 @@
 import "server-only";
 
-import { resolveSearxngBaseUrl } from "~/server/services/app-settings";
+import {
+  resolveEnrichmentSearchCacheTtlMs,
+  resolveEnrichmentWebConcurrency,
+  resolveSearxngBaseUrl,
+} from "~/server/services/app-settings";
+import { createAsyncLimiter } from "~/server/services/concurrency";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("material-web-search");
 
@@ -25,6 +30,29 @@ export type WebSearchResponse = {
   warnings: string[];
 };
 
+type CachedSearchResponse = {
+  expiresAt: number;
+  response: WebSearchResponse;
+};
+
+const searchCache = new Map<string, CachedSearchResponse>();
+const inFlightSearches = new Map<string, Promise<WebSearchResponse>>();
+let webLimiterConcurrency = 0;
+let webLimiter = createAsyncLimiter(12);
+
+function normalizeCacheKey(query: string) {
+  return query.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+async function runWithWebLimit<T>(task: () => Promise<T>): Promise<T> {
+  const concurrency = await resolveEnrichmentWebConcurrency();
+  if (concurrency !== webLimiterConcurrency) {
+    webLimiterConcurrency = concurrency;
+    webLimiter = createAsyncLimiter(concurrency);
+  }
+  return webLimiter(task);
+}
+
 function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
     throw new Error("Đã hủy tìm kiếm web.");
@@ -42,7 +70,12 @@ function decodeHtmlEntities(value: string) {
 }
 
 function stripHtmlTags(value: string) {
-  return decodeHtmlEntities(value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  return decodeHtmlEntities(
+    value
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
 }
 
 function extractDomain(url: string) {
@@ -66,7 +99,10 @@ function unwrapDuckDuckGoRedirect(url: string) {
   }
 }
 
-function parseDuckDuckGoLiteHtml(html: string, query: string): WebSearchResult[] {
+function parseDuckDuckGoLiteHtml(
+  html: string,
+  query: string,
+): WebSearchResult[] {
   const results: WebSearchResult[] = [];
   const seen = new Set<string>();
   const linkPattern =
@@ -255,7 +291,9 @@ async function searchDuckDuckGoEndpoint(
   });
 
   if (!response.ok) {
-    throw new Error(`DuckDuckGo search failed (${response.status}) for: ${query}`);
+    throw new Error(
+      `DuckDuckGo search failed (${response.status}) for: ${query}`,
+    );
   }
 
   const html = await response.text();
@@ -339,7 +377,10 @@ async function _fetchUrlAsSearchResult(
     }
 
     const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.includes("text/html") && !contentType.includes("application/pdf")) {
+    if (
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/pdf")
+    ) {
       return null;
     }
 
@@ -366,22 +407,28 @@ async function _fetchKnownSourceCandidates(
   urls: string[],
   signal?: AbortSignal,
 ): Promise<WebSearchResult[]> {
-  const results: WebSearchResult[] = [];
   const seen = new Set<string>();
+  const uniqueUrls = urls
+    .map((url) => url.trim())
+    .filter((url) => {
+      if (!url || seen.has(url)) {
+        return false;
+      }
+      seen.add(url);
+      return true;
+    });
 
-  for (const url of urls) {
-    const trimmed = url.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    const candidate = await fetchUrlAsSearchResult(trimmed, "known_source", signal);
-    if (candidate) {
-      results.push(candidate);
-    }
-  }
+  const candidates = await Promise.all(
+    uniqueUrls.map((url) =>
+      runWithWebLimit(() =>
+        fetchUrlAsSearchResult(url, "known_source", signal),
+      ),
+    ),
+  );
 
-  return results;
+  return candidates.filter(
+    (candidate): candidate is WebSearchResult => candidate != null,
+  );
 }
 
 async function _searchQueryWithFallback(
@@ -431,12 +478,14 @@ async function _searchWebForProduct(
   const seenUrls = new Set<string>();
   const warnings: string[] = [];
 
-  for (const query of uniqueQueries) {
-    throwIfAborted(signal);
-    const { results, warnings: queryWarnings } = await searchQueryWithFallback(
-      query,
-      signal,
-    );
+  const responses = await Promise.all(
+    uniqueQueries.map(async (query) => {
+      throwIfAborted(signal);
+      return runWithWebLimit(() => searchQueryWithCache(query, signal));
+    }),
+  );
+
+  for (const { results, warnings: queryWarnings } of responses) {
     warnings.push(...queryWarnings);
 
     for (const result of results) {
@@ -453,6 +502,47 @@ async function _searchWebForProduct(
   }
 
   return { results: merged, warnings };
+}
+
+async function searchQueryWithCache(
+  query: string,
+  signal?: AbortSignal,
+): Promise<WebSearchResponse> {
+  const key = normalizeCacheKey(query);
+  const ttlMs = await resolveEnrichmentSearchCacheTtlMs();
+  const now = Date.now();
+  const cached = searchCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return {
+      results: cached.response.results.map((result) => ({ ...result })),
+      warnings: [...cached.response.warnings],
+    };
+  }
+
+  if (!signal && inFlightSearches.has(key)) {
+    return inFlightSearches.get(key)!;
+  }
+
+  const promise = searchQueryWithFallback(query, signal);
+  if (!signal) {
+    inFlightSearches.set(key, promise);
+  }
+
+  try {
+    const response = await promise;
+    if (ttlMs > 0) {
+      searchCache.set(key, {
+        expiresAt: now + ttlMs,
+        response: {
+          results: response.results.map((result) => ({ ...result })),
+          warnings: [...response.warnings],
+        },
+      });
+    }
+    return response;
+  } finally {
+    inFlightSearches.delete(key);
+  }
 }
 
 function hostnameMatchesManufacturer(domain: string, manufacturer: string) {
@@ -475,7 +565,11 @@ function isMarketplaceDomain(domain: string) {
 
 function _rankSearchResults(
   results: WebSearchResult[],
-  input: { manufacturer?: string | null; name?: string | null; sourceUrl?: string | null },
+  input: {
+    manufacturer?: string | null;
+    name?: string | null;
+    sourceUrl?: string | null;
+  },
 ): WebSearchResult[] {
   const manufacturer = input.manufacturer?.trim() ?? "";
   const name = input.name?.trim().toLowerCase() ?? "";
@@ -536,9 +630,33 @@ function _extractPdfUrlsFromResults(results: WebSearchResult[]) {
   return urls;
 }
 
-export const fetchUrlAsSearchResult = traceFn(log, "fetchUrlAsSearchResult", _fetchUrlAsSearchResult);
-export const fetchKnownSourceCandidates = traceFn(log, "fetchKnownSourceCandidates", _fetchKnownSourceCandidates);
-export const searchQueryWithFallback = traceFn(log, "searchQueryWithFallback", _searchQueryWithFallback);
-export const searchWebForProduct = traceFn(log, "searchWebForProduct", _searchWebForProduct);
-export const rankSearchResults = traceFn(log, "rankSearchResults", _rankSearchResults);
-export const extractPdfUrlsFromResults = traceFn(log, "extractPdfUrlsFromResults", _extractPdfUrlsFromResults);
+export const fetchUrlAsSearchResult = traceFn(
+  log,
+  "fetchUrlAsSearchResult",
+  _fetchUrlAsSearchResult,
+);
+export const fetchKnownSourceCandidates = traceFn(
+  log,
+  "fetchKnownSourceCandidates",
+  _fetchKnownSourceCandidates,
+);
+export const searchQueryWithFallback = traceFn(
+  log,
+  "searchQueryWithFallback",
+  _searchQueryWithFallback,
+);
+export const searchWebForProduct = traceFn(
+  log,
+  "searchWebForProduct",
+  _searchWebForProduct,
+);
+export const rankSearchResults = traceFn(
+  log,
+  "rankSearchResults",
+  _rankSearchResults,
+);
+export const extractPdfUrlsFromResults = traceFn(
+  log,
+  "extractPdfUrlsFromResults",
+  _extractPdfUrlsFromResults,
+);

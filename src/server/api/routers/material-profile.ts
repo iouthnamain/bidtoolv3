@@ -8,6 +8,7 @@ import {
 } from "~/server/api/trpc";
 import {
   bulkApplyMaterialProfileMatches,
+  bulkAiSearchMaterialProfileItems,
   bulkUpdateMaterialProfileItems,
   createMaterialProfileWorkspace,
   deleteMaterialProfileWorkspace,
@@ -21,6 +22,7 @@ import {
   undoLastMaterialProfileBulkApply,
   updateMaterialProfileWorkspace,
   updateMaterialProfileExportEditState,
+  updateMaterialProfileItemEnrichmentDraft,
   updateMaterialProfileItem,
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
@@ -173,6 +175,31 @@ export const materialProfileRouter = createTRPCRouter({
       withMaterialProfileErrors(() => updateMaterialProfileItem(ctx.db, input)),
     ),
 
+  updateItemEnrichmentDraft: requirePermission("material:write")
+    .input(
+      z.object({
+        itemId: z.number().int().positive(),
+        enrichmentStatus: z
+          .enum([
+            "idle",
+            "web_searching",
+            "web_done",
+            "ai_searching",
+            "ai_done",
+            "error",
+          ])
+          .optional(),
+        webResults: z.array(z.record(z.unknown())).optional(),
+        aiFields: z.record(z.unknown()).optional(),
+        aiEvidence: z.array(z.record(z.unknown())).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileItemEnrichmentDraft(ctx.db, input),
+      ),
+    ),
+
   bulkUpdateItems: requirePermission("material:write")
     .input(
       workspaceIdInput.extend({
@@ -184,6 +211,18 @@ export const materialProfileRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         bulkUpdateMaterialProfileItems(ctx.db, input),
+      ),
+    ),
+
+  bulkAiSearchItems: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        bulkAiSearchMaterialProfileItems(ctx.db, input),
       ),
     ),
 

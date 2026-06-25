@@ -23,6 +23,10 @@ import {
   materials,
 } from "~/server/db/schema";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
+import {
+  listMaterialEnrichmentJobEvents,
+  publishMaterialEnrichmentItemEvent,
+} from "~/server/services/material-enrichment-events";
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortMaterialEnrichmentJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
@@ -394,7 +398,9 @@ async function _getMaterialEnrichmentItem(
 }
 
 async function _listMaterialEnrichmentItems(
-  input: string | { jobId: string; limit?: number; offset?: number },
+  input:
+    | string
+    | { jobId: string; limit?: number; offset?: number; updatedAfter?: string },
   scope?: TenantScopeValue,
 ) {
   const jobId = typeof input === "string" ? input : input.jobId;
@@ -405,10 +411,18 @@ async function _listMaterialEnrichmentItems(
       ? 500
       : Math.min(500, Math.max(1, input.limit ?? 500));
   const offset = typeof input === "string" ? 0 : Math.max(0, input.offset ?? 0);
+  const updatedAfter = typeof input === "string" ? undefined : input.updatedAfter;
   const rows = await db
     .select()
     .from(materialEnrichmentItems)
-    .where(eq(materialEnrichmentItems.jobId, jobId))
+    .where(
+      and(
+        eq(materialEnrichmentItems.jobId, jobId),
+        updatedAfter
+          ? sql`${materialEnrichmentItems.updatedAt} > ${updatedAfter}`
+          : undefined,
+      ),
+    )
     .orderBy(asc(materialEnrichmentItems.sortOrder))
     .limit(limit)
     .offset(offset);
@@ -425,11 +439,21 @@ async function _listMaterialEnrichmentItems(
  * (which read only status + confidence) working on the lighter payload.
  */
 async function _listMaterialEnrichmentItemSummaries(
-  input: string | { jobId: string; limit?: number; offset?: number },
+  input:
+    | string
+    | { jobId: string; limit?: number; offset?: number; updatedAfter?: string },
   scope?: TenantScopeValue,
 ) {
   const items = await listMaterialEnrichmentItems(input, scope);
   return items.map(trimItemSnapshotForList);
+}
+
+async function _listMaterialEnrichmentEvents(
+  input: { jobId: string; afterEventId?: number; limit?: number },
+  scope?: TenantScopeValue,
+) {
+  await assertJobInScope(input.jobId, scope);
+  return listMaterialEnrichmentJobEvents(input);
 }
 
 async function _listMaterialWebCandidates(itemId: number) {
@@ -540,6 +564,8 @@ async function _selectWebCandidate(
     .where(eq(materialEnrichmentItems.id, itemId))
     .returning();
 
+  await publishMaterialEnrichmentItemEvent(itemId, "item.candidate_selected");
+
   return {
     item: toItemSnapshot(requireItemRow(updated)),
     candidate: toCandidateSnapshot(candidate),
@@ -591,6 +617,8 @@ async function _setEnrichmentItemDecision(
     .where(eq(materialEnrichmentItems.id, itemId))
     .returning();
 
+  await publishMaterialEnrichmentItemEvent(itemId, "item.decision_saved");
+
   return { item: toItemSnapshot(requireItemRow(updated)) };
 }
 
@@ -614,6 +642,7 @@ async function _commitMaterialEnrichmentItem(
 
   const committed = await commitEnrichmentItem(db, itemId);
   await refreshMaterialEnrichmentJobCounters(committed.jobId);
+  await publishMaterialEnrichmentItemEvent(itemId, "item.committed");
   return toItemSnapshot(requireItemRow(committed));
 }
 
@@ -651,6 +680,7 @@ async function _bulkCommitMaterialEnrichment(
       // Items already confirmed in-scope by listMaterialEnrichmentItems above.
       const committedItem = await commitEnrichmentItem(db, item.id);
       results.push(toItemSnapshot(requireItemRow(committedItem)));
+      await publishMaterialEnrichmentItemEvent(item.id, "item.committed");
       committed += 1;
     } catch (error) {
       failed += 1;
@@ -691,6 +721,7 @@ async function _rejectMaterialEnrichmentItem(
   }
 
   await refreshMaterialEnrichmentJobCounters(updated.jobId);
+  await publishMaterialEnrichmentItemEvent(itemId, "item.rejected");
   return toItemSnapshot(updated);
 }
 
@@ -894,6 +925,7 @@ export const deleteMaterialEnrichmentJob = traceFn(log, "deleteMaterialEnrichmen
 export const getMaterialEnrichmentItem = traceFn(log, "getMaterialEnrichmentItem", _getMaterialEnrichmentItem);
 export const listMaterialEnrichmentItems = traceFn(log, "listMaterialEnrichmentItems", _listMaterialEnrichmentItems);
 export const listMaterialEnrichmentItemSummaries = traceFn(log, "listMaterialEnrichmentItemSummaries", _listMaterialEnrichmentItemSummaries);
+export const listMaterialEnrichmentEvents = traceFn(log, "listMaterialEnrichmentEvents", _listMaterialEnrichmentEvents);
 export const listMaterialWebCandidates = traceFn(log, "listMaterialWebCandidates", _listMaterialWebCandidates);
 export const getMaterialEnrichmentItemCandidates = traceFn(log, "getMaterialEnrichmentItemCandidates", _getMaterialEnrichmentItemCandidates);
 export const selectWebCandidate = traceFn(log, "selectWebCandidate", _selectWebCandidate);

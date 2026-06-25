@@ -23,9 +23,12 @@ import {
 import {
   resolveAiProvider,
   resolveEnrichmentItemConcurrency,
+  type ResolvedAiProvider,
 } from "~/server/services/app-settings";
 import { listCatalogDocumentsForMaterial } from "~/server/services/catalog-documents";
 import { runWithConcurrency } from "~/server/services/concurrency";
+import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
+import { publishMaterialEnrichmentItemEvent } from "~/server/services/material-enrichment-events";
 import { commitEnrichmentItem } from "~/server/services/material-enrichment-commit";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import { createLogger, traceFn } from "~/server/lib/logger";
@@ -116,7 +119,9 @@ function parseFilterOptions(value: unknown): MaterialEnrichmentFilterOptions {
   };
 }
 
-function materialToInput(material: typeof materials.$inferSelect): MaterialEnrichmentInput {
+function materialToInput(
+  material: typeof materials.$inferSelect,
+): MaterialEnrichmentInput {
   const metadata = normalizeMaterialMetadata(material.metadataJson);
   return {
     materialId: material.id,
@@ -144,7 +149,9 @@ function knownSourceUrls(
     input.sourceUrl,
     ...metadata.priceSources.map((source) => source.url),
   ];
-  return [...new Set(urls.map((url) => url?.trim()).filter(Boolean) as string[])];
+  return [
+    ...new Set(urls.map((url) => url?.trim()).filter(Boolean) as string[]),
+  ];
 }
 
 function buildSkippedError(searchWarnings: string[]) {
@@ -165,63 +172,10 @@ function resolveItemStatus(
   return "review";
 }
 
-function textOverlap(a: string, b: string): number {
-  const tokensA = new Set(a.toLowerCase().split(/\s+/).filter((t) => t.length > 2));
-  const tokensB = new Set(b.toLowerCase().split(/\s+/).filter((t) => t.length > 2));
-  if (tokensA.size === 0 || tokensB.size === 0) return 0;
-  let overlap = 0;
-  for (const t of tokensA) {
-    if (tokensB.has(t)) overlap++;
-  }
-  return overlap / Math.min(tokensA.size, tokensB.size);
-}
-
-function buildSearchQueries(input: MaterialEnrichmentInput, maxQueries: number) {
-  const queries: string[] = [];
-  const push = (value: string | null | undefined) => {
-    const trimmed = value?.trim();
-    if (!trimmed || trimmed.length < 3) {
-      return;
-    }
-    // Deduplicate: skip if the new query largely overlaps with an existing one
-    for (const existing of queries) {
-      if (textOverlap(trimmed, existing) > 0.75) return;
-    }
-    if (!queries.includes(trimmed)) {
-      queries.push(trimmed);
-    }
-  };
-
-  // 1. Name + manufacturer (no "datasheet" — fails for Vietnamese product names)
-  push(
-    input.manufacturer
-      ? `${input.name} ${input.manufacturer}`.trim()
-      : input.name,
-  );
-
-  // 2. Product code/model/SKU alone (short, precise)
-  push(input.sku ?? input.model ?? null);
-
-  // 3. SKU/model + manufacturer (when different from query 2)
-  if (input.manufacturer && (input.sku || input.model)) {
-    push(`${input.sku ?? input.model} ${input.manufacturer}`);
-  }
-
-  // 4. Name + short specText (max 60 chars, skip if high overlap with name)
-  if (input.specText) {
-    const shortSpec = input.specText.slice(0, 60).trim();
-    if (textOverlap(shortSpec, input.name) < 0.6) {
-      push(`${input.name} ${shortSpec}`);
-    }
-  }
-
-  // 5. Name alone as final fallback
-  push(input.name);
-
-  return queries.slice(0, maxQueries);
-}
-
-function overallConfidence(result: MaterialEnrichmentResult, fields: EnrichableField[]) {
+function overallConfidence(
+  result: MaterialEnrichmentResult,
+  fields: EnrichableField[],
+) {
   const scores = fields
     .map((field) => result.fields[field]?.confidence ?? 0)
     .filter((score) => score > 0);
@@ -288,8 +242,12 @@ async function saveWebCandidates(
         snippet: result.snippet,
         rawEvidence: result.snippet,
         catalogPdfUrls: extractPdfUrlsFromResults([result]),
-        confidenceScore: Math.max(0, Math.min(100, Math.round((result.rankScore + 1) * 40))),
-        matchReasons: result.rankScore > 0 ? [`rank:${result.rankScore.toFixed(2)}`] : [],
+        confidenceScore: Math.max(
+          0,
+          Math.min(100, Math.round((result.rankScore + 1) * 40)),
+        ),
+        matchReasons:
+          result.rankScore > 0 ? [`rank:${result.rankScore.toFixed(2)}`] : [],
         isSelected: index === 0,
         fetchedAt: now,
       })),
@@ -301,10 +259,7 @@ async function saveWebCandidates(
       .update(materialWebCandidates)
       .set({
         catalogPdfUrls: [
-          ...new Set([
-            ...(rows[0].catalogPdfUrls ?? []),
-            ...extractedPdfUrls,
-          ]),
+          ...new Set([...(rows[0].catalogPdfUrls ?? []), ...extractedPdfUrls]),
         ],
       })
       .where(eq(materialWebCandidates.id, rows[0].id));
@@ -333,7 +288,9 @@ function buildResultFromExtraction(
 
   const result: MaterialEnrichmentResult = {
     fields,
-    catalogPdfUrls: [...new Set([...(extracted.catalogPdfUrls ?? []), ...pdfUrls])],
+    catalogPdfUrls: [
+      ...new Set([...(extracted.catalogPdfUrls ?? []), ...pdfUrls]),
+    ],
     overallConfidence: 0,
     status: "review",
   };
@@ -387,18 +344,22 @@ function isMaterialWellFilled(
 async function _processEnrichmentItem(
   job: JobRow,
   item: ItemRow,
+  loadProvider?: () => Promise<ResolvedAiProvider>,
   signal?: AbortSignal,
 ) {
   throwIfAborted(signal);
   const options = parseJobOptions(job.optionsJson);
   const filterOptions = parseFilterOptions(job.filterSnapshotJson);
-  const targetFields = options.fields?.length ? options.fields : [...ENRICHABLE_FIELDS];
+  const targetFields = options.fields?.length
+    ? options.fields
+    : [...ENRICHABLE_FIELDS];
   const now = new Date().toISOString();
 
   await db
     .update(materialEnrichmentItems)
     .set({ status: "processing", updatedAt: now })
     .where(eq(materialEnrichmentItems.id, item.id));
+  await publishMaterialEnrichmentItemEvent(item.id, "item.processing");
 
   const [material] = await db
     .select()
@@ -422,6 +383,7 @@ async function _processEnrichmentItem(
         updatedAt: now,
       })
       .where(eq(materialEnrichmentItems.id, item.id));
+    await publishMaterialEnrichmentItemEvent(item.id, "item.failed");
     return failedResult;
   }
 
@@ -433,6 +395,7 @@ async function _processEnrichmentItem(
       updatedAt: now,
     })
     .where(eq(materialEnrichmentItems.id, item.id));
+  await publishMaterialEnrichmentItemEvent(item.id, "item.snapshot");
 
   // `skipWellFilled`: when the material already has its core enrichable fields,
   // mark the item "skipped" (matches the existing enum + the UI "Bỏ qua" label)
@@ -467,14 +430,20 @@ async function _processEnrichmentItem(
         updatedAt: new Date().toISOString(),
       })
       .where(eq(materialEnrichmentItems.id, item.id));
+    await publishMaterialEnrichmentItemEvent(item.id, "item.skipped");
     return skippedResult;
   }
 
   try {
-    const queries = buildSearchQueries(
-      input,
-      options.maxQueries ?? DEFAULT_MAX_QUERIES,
-    );
+    const queries = buildSearchQueries({
+      name: input.name,
+      manufacturer: input.manufacturer,
+      code: input.code,
+      specText: input.specText,
+      sku: input.sku,
+      model: input.model,
+      maxQueries: options.maxQueries ?? DEFAULT_MAX_QUERIES,
+    }).map((query) => query.query);
     const searchResponse = await searchWebForProduct(queries, signal);
     let ranked = rankSearchResults(searchResponse.results, {
       manufacturer: input.manufacturer,
@@ -512,17 +481,19 @@ async function _processEnrichmentItem(
           updatedAt: new Date().toISOString(),
         })
         .where(eq(materialEnrichmentItems.id, item.id));
+      await publishMaterialEnrichmentItemEvent(item.id, "item.skipped");
       return skippedResult;
     }
 
     const pdfUrls = extractPdfUrlsFromResults(ranked);
     const candidates = await saveWebCandidates(item, ranked, pdfUrls);
 
-    const provider = await resolveAiProvider("enrichment", options.model);
+    const provider =
+      loadProvider?.() ?? resolveAiProvider("enrichment", options.model);
     const extracted = await extractProductFromSources(
       input,
       ranked,
-      provider,
+      await provider,
       signal,
     );
 
@@ -541,11 +512,13 @@ async function _processEnrichmentItem(
         updatedAt: new Date().toISOString(),
       })
       .where(eq(materialEnrichmentItems.id, item.id));
+    await publishMaterialEnrichmentItemEvent(item.id, "item.completed");
 
     if (options.autoCommitHighConfidence && result.status === "auto") {
       await commitEnrichmentItem(db, item.id, {
         autoCommitHighConfidence: true,
       });
+      await publishMaterialEnrichmentItemEvent(item.id, "item.committed");
     }
 
     return result;
@@ -555,15 +528,21 @@ async function _processEnrichmentItem(
     // "failed" would inflate the failed count and prevent a resume. Leave the
     // item as "pending" so it can be picked up again, and don't record it as a
     // failure.
-    if (signal?.aborted === true || (error instanceof Error && error.name === "AbortError")) {
+    if (
+      signal?.aborted === true ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
       await db
         .update(materialEnrichmentItems)
         .set({ status: "pending", updatedAt: new Date().toISOString() })
         .where(eq(materialEnrichmentItems.id, item.id));
+      await publishMaterialEnrichmentItemEvent(item.id, "item.pending");
       throw error;
     }
     const message =
-      error instanceof Error ? error.message : "Lỗi không xác định khi enrichment.";
+      error instanceof Error
+        ? error.message
+        : "Lỗi không xác định khi enrichment.";
     const failedResult: MaterialEnrichmentResult = {
       fields: {},
       catalogPdfUrls: [],
@@ -579,11 +558,14 @@ async function _processEnrichmentItem(
         updatedAt: new Date().toISOString(),
       })
       .where(eq(materialEnrichmentItems.id, item.id));
+    await publishMaterialEnrichmentItemEvent(item.id, "item.failed");
     return failedResult;
   }
 }
 
-async function loadJobProgress(jobId: string): Promise<MaterialEnrichmentJobProgress> {
+async function loadJobProgress(
+  jobId: string,
+): Promise<MaterialEnrichmentJobProgress> {
   const [job] = await db
     .select()
     .from(materialEnrichmentJobs)
@@ -672,6 +654,13 @@ async function _processEnrichmentJob(
     )
     .orderBy(asc(materialEnrichmentItems.sortOrder));
 
+  const jobOptions = parseJobOptions(job.optionsJson);
+  let providerPromise: Promise<ResolvedAiProvider> | undefined;
+  const loadProvider = () => {
+    providerPromise ??= resolveAiProvider("enrichment", jobOptions.model);
+    return providerPromise;
+  };
+
   const itemConcurrency = await resolveEnrichmentItemConcurrency();
   await runWithConcurrency(pendingItems, itemConcurrency, async (item) => {
     throwIfAborted(signal);
@@ -700,11 +689,19 @@ async function _processEnrichmentJob(
       })
       .where(eq(materialEnrichmentJobs.id, jobId));
 
-    await processEnrichmentItem(job, item, signal);
+    await processEnrichmentItem(job, item, loadProvider, signal);
     await refreshJobCounters(jobId);
     options.onProgress?.(await loadJobProgress(jobId));
   });
 }
 
-export const processEnrichmentItem = traceFn(log, "processEnrichmentItem", _processEnrichmentItem);
-export const processEnrichmentJob = traceFn(log, "processEnrichmentJob", _processEnrichmentJob);
+export const processEnrichmentItem = traceFn(
+  log,
+  "processEnrichmentItem",
+  _processEnrichmentItem,
+);
+export const processEnrichmentJob = traceFn(
+  log,
+  "processEnrichmentJob",
+  _processEnrichmentJob,
+);

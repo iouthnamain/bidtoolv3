@@ -7,10 +7,7 @@ import {
   publicProcedure,
   requirePermission,
 } from "~/server/api/trpc";
-import {
-  creatorTenantId,
-  tenantScopeValue,
-} from "~/server/api/tenant-scope";
+import { creatorTenantId, tenantScopeValue } from "~/server/api/tenant-scope";
 import {
   bulkCommitMaterialEnrichment,
   cancelMaterialEnrichmentJob,
@@ -20,6 +17,7 @@ import {
   getMaterialEnrichmentItem,
   getMaterialEnrichmentItemCandidates,
   getMaterialEnrichmentJob,
+  listMaterialEnrichmentEvents,
   listMaterialEnrichmentItemSummaries,
   listMaterialEnrichmentJobs,
   rejectMaterialEnrichmentItem,
@@ -73,6 +71,13 @@ const listMaterialEnrichmentItemsInput = z.object({
   jobId: z.string().uuid(),
   limit: z.number().int().min(1).max(500).optional(),
   offset: z.number().int().min(0).optional(),
+  updatedAfter: z.string().datetime().optional(),
+});
+
+const listMaterialEnrichmentEventsInput = z.object({
+  jobId: z.string().uuid(),
+  afterEventId: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(500).optional(),
 });
 
 const materialEnrichmentItemInput = z.object({
@@ -165,6 +170,14 @@ export const materialEnrichmentRouter = createTRPCRouter({
     .query(({ ctx, input }) =>
       withShopJobErrors(() =>
         listMaterialEnrichmentItemSummaries(input, tenantScopeValue(ctx)),
+      ),
+    ),
+
+  listMaterialEnrichmentEvents: publicProcedure
+    .input(listMaterialEnrichmentEventsInput)
+    .query(({ ctx, input }) =>
+      withShopJobErrors(() =>
+        listMaterialEnrichmentEvents(input, tenantScopeValue(ctx)),
       ),
     ),
 

@@ -693,6 +693,23 @@ export const excelWorkspaceItems = pgTable(
       (): AnyPgColumn => webProductCandidates.id,
       { onDelete: "set null" },
     ),
+    enrichmentStatus: text("enrichment_status").notNull().default("idle"),
+    webResultsJson: jsonb("web_results_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    aiFieldsJson: jsonb("ai_fields_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    aiEvidenceJson: jsonb("ai_evidence_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    enrichmentUpdatedAt: timestamp("enrichment_updated_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
     enrichedSnapshotJson: jsonb("enriched_snapshot_json")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -716,6 +733,9 @@ export const excelWorkspaceItems = pgTable(
       table.workspaceId,
       table.matchStatus,
     ),
+    excelWorkspaceItemsEnrichmentIdx: index(
+      "excel_workspace_items_enrichment_idx",
+    ).on(table.workspaceId, table.enrichmentStatus, table.enrichmentUpdatedAt),
   }),
 );
 
@@ -1421,6 +1441,37 @@ export const materialEnrichmentEvents = pgTable(
       table.createdAt,
     ),
     itemIdx: index("material_enrichment_events_item_idx").on(table.itemId),
+  }),
+);
+
+export const materialEnrichmentJobEvents = pgTable(
+  "material_enrichment_job_events",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => materialEnrichmentJobs.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").references(() => materialEnrichmentItems.id, {
+      onDelete: "cascade",
+    }),
+    eventType: text("event_type").notNull(),
+    itemStatus: text("item_status"),
+    payloadJson: jsonb("payload_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobIdIdx: index("material_enrichment_job_events_job_id_idx").on(
+      table.jobId,
+      table.id,
+    ),
+    itemIdIdx: index("material_enrichment_job_events_item_id_idx").on(
+      table.itemId,
+    ),
   }),
 );
 

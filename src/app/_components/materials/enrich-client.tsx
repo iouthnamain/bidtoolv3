@@ -41,14 +41,22 @@ type EnrichmentCommitDecision = {
   editedFields: Partial<Record<EnrichableField, string>>;
 };
 
-type EnrichmentJob = RouterOutputs["materialEnrichment"]["getMaterialEnrichmentJob"];
+type EnrichmentJob =
+  RouterOutputs["materialEnrichment"]["getMaterialEnrichmentJob"];
 type EnrichmentJobListItem =
   RouterOutputs["materialEnrichment"]["listMaterialEnrichmentJobs"][number];
 type EnrichmentItem =
   RouterOutputs["materialEnrichment"]["listMaterialEnrichmentItems"][number];
+type EnrichmentStreamEvent = {
+  eventId: number;
+  payload?: {
+    item?: EnrichmentItem;
+  };
+};
 
 const EMPTY_UUID = "00000000-0000-4000-8000-000000000000";
 const JOB_POLL_MS = 1_500;
+const JOB_FALLBACK_POLL_MS = 5_000;
 const JOB_LIST_POLL_MS = 3_000;
 
 const fieldLabel: Record<EnrichableField, string> = {
@@ -106,7 +114,9 @@ const jobStatusTone: Record<
   cancelled: "warning",
 };
 
-function isJobActive(job: { status: EnrichmentJob["status"] } | null | undefined) {
+function isJobActive(
+  job: { status: EnrichmentJob["status"] } | null | undefined,
+) {
   return job?.status === "queued" || job?.status === "running";
 }
 
@@ -199,7 +209,9 @@ type WebCandidate = {
   imageUrl?: string | null;
 };
 
-export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } = {}) {
+export function MaterialEnrichClient({
+  jobId: routeJobId,
+}: { jobId?: string } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isJobPage = routeJobId != null;
@@ -216,10 +228,12 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
   });
   const [reviewItemId, setReviewItemId] = useState<number | null>(null);
   const [hideCommitted, setHideCommitted] = useState(false);
+  const [itemStatusFilter, setItemStatusFilter] = useState<
+    MaterialEnrichmentItemStatus | "all"
+  >("all");
   const [cancelJobOpen, setCancelJobOpen] = useState(false);
-  const [deleteJobTarget, setDeleteJobTarget] = useState<EnrichmentJobListItem | null>(
-    null,
-  );
+  const [deleteJobTarget, setDeleteJobTarget] =
+    useState<EnrichmentJobListItem | null>(null);
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   const utils = api.useUtils();
@@ -227,17 +241,15 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
 
   const focusedJobId = routeJobId ?? null;
 
-  const jobListQuery = api.materialEnrichment.listMaterialEnrichmentJobs.useQuery(
-    undefined,
-    {
+  const jobListQuery =
+    api.materialEnrichment.listMaterialEnrichmentJobs.useQuery(undefined, {
       refetchInterval: (query) => {
         const jobs = query.state.data ?? [];
         return jobs.some(isJobActive) ? JOB_LIST_POLL_MS : false;
       },
       refetchOnWindowFocus: false,
       staleTime: 0,
-    },
-  );
+    });
 
   const jobQuery = api.materialEnrichment.getMaterialEnrichmentJob.useQuery(
     { jobId: focusedJobId ?? EMPTY_UUID },
@@ -253,124 +265,192 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     },
   );
 
-  const itemsQuery = api.materialEnrichment.listMaterialEnrichmentItems.useQuery(
-    { jobId: focusedJobId ?? EMPTY_UUID },
-    {
-      enabled: focusedJobId !== null,
-      refetchInterval: (_query) => {
-        const job = jobQuery.data;
-        return isJobActive(job) ? JOB_POLL_MS : false;
+  const itemsQuery =
+    api.materialEnrichment.listMaterialEnrichmentItems.useQuery(
+      { jobId: focusedJobId ?? EMPTY_UUID },
+      {
+        enabled: focusedJobId !== null,
+        refetchInterval: (_query) => {
+          const job = jobQuery.data;
+          return isJobActive(job) ? JOB_FALLBACK_POLL_MS : false;
+        },
+        refetchOnWindowFocus: false,
+        retry: false,
+        staleTime: 0,
       },
-      refetchOnWindowFocus: false,
-      retry: false,
-      staleTime: 0,
-    },
-  );
+    );
+  const lastEventIdRef = useRef(0);
 
-  const reviewItemQuery = api.materialEnrichment.getMaterialEnrichmentItem.useQuery(
-    { itemId: reviewItemId ?? 0 },
-    { enabled: reviewItemId !== null, staleTime: 0 },
-  );
+  useEffect(() => {
+    if (!focusedJobId) {
+      lastEventIdRef.current = 0;
+      return;
+    }
+
+    const source = new EventSource(
+      `/api/material-enrichment/jobs/${focusedJobId}/events?after=${lastEventIdRef.current}`,
+    );
+    const handleUpdate = (message: Event) => {
+      try {
+        const event = JSON.parse(
+          (message as MessageEvent<string>).data,
+        ) as EnrichmentStreamEvent;
+        if (Number.isFinite(event.eventId)) {
+          lastEventIdRef.current = Math.max(
+            lastEventIdRef.current,
+            event.eventId,
+          );
+        }
+        const item = event.payload?.item;
+        if (!item) {
+          return;
+        }
+        utils.materialEnrichment.listMaterialEnrichmentItems.setData(
+          { jobId: focusedJobId },
+          (current) => {
+            if (!current) {
+              return current;
+            }
+            const next = current.some((row) => row.id === item.id)
+              ? current.map((row) => (row.id === item.id ? item : row))
+              : [...current, item];
+            return [...next].sort(
+              (left, right) => left.sortOrder - right.sortOrder,
+            );
+          },
+        );
+      } catch {
+        // Ignore malformed events; the fallback poll will repair the cache.
+      }
+    };
+
+    source.addEventListener("update", handleUpdate);
+    source.onerror = () => {
+      void utils.materialEnrichment.listMaterialEnrichmentItems.invalidate({
+        jobId: focusedJobId,
+      });
+    };
+
+    return () => {
+      source.removeEventListener("update", handleUpdate);
+      source.close();
+    };
+  }, [focusedJobId, utils.materialEnrichment.listMaterialEnrichmentItems]);
+
+  const reviewItemQuery =
+    api.materialEnrichment.getMaterialEnrichmentItem.useQuery(
+      { itemId: reviewItemId ?? 0 },
+      { enabled: reviewItemId !== null, staleTime: 0 },
+    );
 
   const activeJob = jobQuery.data ?? null;
   const isActive = isJobActive(activeJob);
   const jobRows = jobListQuery.data ?? [];
   const items = itemsQuery.data ?? [];
 
-  const startJob = api.materialEnrichment.startMaterialEnrichmentJob.useMutation({
-    onSuccess: (job) => {
-      void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
-      toast.success("Đã bắt đầu job làm giàu vật tư.");
-      router.push(`/materials/enrich/jobs/${job.id}`);
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể bắt đầu job làm giàu.");
-    },
-  });
+  const startJob =
+    api.materialEnrichment.startMaterialEnrichmentJob.useMutation({
+      onSuccess: (job) => {
+        void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
+        toast.success("Đã bắt đầu job làm giàu vật tư.");
+        router.push(`/materials/enrich/jobs/${job.id}`);
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể bắt đầu job làm giàu.");
+      },
+    });
 
-  const cancelJob = api.materialEnrichment.cancelMaterialEnrichmentJob.useMutation({
-    onSuccess: (job) => {
-      utils.materialEnrichment.getMaterialEnrichmentJob.setData(
-        { jobId: job.id },
-        job,
-      );
-      void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
-      setCancelJobOpen(false);
-      toast.warning("Đã hủy job làm giàu.");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể hủy job.");
-    },
-  });
+  const cancelJob =
+    api.materialEnrichment.cancelMaterialEnrichmentJob.useMutation({
+      onSuccess: (job) => {
+        utils.materialEnrichment.getMaterialEnrichmentJob.setData(
+          { jobId: job.id },
+          job,
+        );
+        void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
+        setCancelJobOpen(false);
+        toast.warning("Đã hủy job làm giàu.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể hủy job.");
+      },
+    });
 
-  const deleteJob = api.materialEnrichment.deleteMaterialEnrichmentJob.useMutation({
-    onSuccess: () => {
-      void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
-      setDeleteJobTarget(null);
-      toast.success("Đã xóa job khỏi danh sách.");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể xóa job.");
-    },
-  });
+  const deleteJob =
+    api.materialEnrichment.deleteMaterialEnrichmentJob.useMutation({
+      onSuccess: () => {
+        void utils.materialEnrichment.listMaterialEnrichmentJobs.invalidate();
+        setDeleteJobTarget(null);
+        toast.success("Đã xóa job khỏi danh sách.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể xóa job.");
+      },
+    });
 
-  const commitItem = api.materialEnrichment.commitMaterialEnrichmentItem.useMutation({
-    onSuccess: () => {
-      void invalidateJobData();
-      setReviewItemId(null);
-      toast.success("Đã commit thay đổi vào catalog.");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể commit mục này.");
-    },
-  });
+  const commitItem =
+    api.materialEnrichment.commitMaterialEnrichmentItem.useMutation({
+      onSuccess: () => {
+        void invalidateJobData();
+        setReviewItemId(null);
+        toast.success("Đã commit thay đổi vào catalog.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể commit mục này.");
+      },
+    });
 
   const setItemDecision =
     api.materialEnrichment.setEnrichmentItemDecision.useMutation();
 
-  const rejectItem = api.materialEnrichment.rejectMaterialEnrichmentItem.useMutation({
-    onSuccess: () => {
-      void invalidateJobData();
-      setReviewItemId(null);
-      toast.success("Đã từ chối đề xuất enrichment.");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể từ chối mục này.");
-    },
-  });
+  const rejectItem =
+    api.materialEnrichment.rejectMaterialEnrichmentItem.useMutation({
+      onSuccess: () => {
+        void invalidateJobData();
+        setReviewItemId(null);
+        toast.success("Đã từ chối đề xuất enrichment.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể từ chối mục này.");
+      },
+    });
 
-  const bulkCommit = api.materialEnrichment.bulkCommitMaterialEnrichment.useMutation({
-    onSuccess: (result) => {
-      void invalidateJobData();
-      toast.success(
-        `Đã commit ${result.committed.toLocaleString("vi-VN")} mục${
-          result.failed > 0
-            ? ` (${result.failed.toLocaleString("vi-VN")} lỗi)`
-            : ""
-        }.`,
-      );
-    },
-    onError: (error) => {
-      toast.error(error.message || "Không thể commit hàng loạt.");
-    },
-  });
-
-  const selectCandidate = api.materialEnrichment.selectWebCandidate.useMutation({    onSuccess: () => {
-      void invalidateJobData();
-      if (reviewItemId !== null) {
-        void reviewItemQuery.refetch();
-        // Refresh the focused candidate list so the radio `checked` state
-        // reflects the new selection.
-        void utils.materialEnrichment.getMaterialEnrichmentItemCandidates.invalidate(
-          { itemId: reviewItemId },
+  const bulkCommit =
+    api.materialEnrichment.bulkCommitMaterialEnrichment.useMutation({
+      onSuccess: (result) => {
+        void invalidateJobData();
+        toast.success(
+          `Đã commit ${result.committed.toLocaleString("vi-VN")} mục${
+            result.failed > 0
+              ? ` (${result.failed.toLocaleString("vi-VN")} lỗi)`
+              : ""
+          }.`,
         );
-      }
-      toast.success("Đã chọn ứng viên web.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể commit hàng loạt.");
+      },
+    });
+
+  const selectCandidate = api.materialEnrichment.selectWebCandidate.useMutation(
+    {
+      onSuccess: () => {
+        void invalidateJobData();
+        if (reviewItemId !== null) {
+          void reviewItemQuery.refetch();
+          // Refresh the focused candidate list so the radio `checked` state
+          // reflects the new selection.
+          void utils.materialEnrichment.getMaterialEnrichmentItemCandidates.invalidate(
+            { itemId: reviewItemId },
+          );
+        }
+        toast.success("Đã chọn ứng viên web.");
+      },
+      onError: (error) => {
+        toast.error(error.message || "Không thể chọn ứng viên.");
+      },
     },
-    onError: (error) => {
-      toast.error(error.message || "Không thể chọn ứng viên.");
-    },
-  });
+  );
 
   const invalidateJobData = async () => {
     if (!focusedJobId) {
@@ -447,7 +527,25 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
     (item) => item.status === "committed",
   ).length;
   const visibleItems =
-    hideCommitted ? items.filter((item) => item.status !== "committed") : items;
+    hideCommitted || itemStatusFilter !== "all"
+      ? items.filter((item) => {
+          if (hideCommitted && item.status === "committed") {
+            return false;
+          }
+          if (itemStatusFilter !== "all" && item.status !== itemStatusFilter) {
+            return false;
+          }
+          return true;
+        })
+      : items;
+  const itemStatusCounts = items.reduce(
+    (acc, item) => {
+      const status = item.status as MaterialEnrichmentItemStatus;
+      acc[status] = (acc[status] ?? 0) + 1;
+      return acc;
+    },
+    {} as Partial<Record<MaterialEnrichmentItemStatus, number>>,
+  );
 
   return (
     <div className="space-y-4">
@@ -467,7 +565,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-title">Làm giàu vật tư</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
+              <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
                 Tìm kiếm web và bổ sung catalog
               </h2>
               <p className="mt-1 text-xs text-slate-500">
@@ -532,7 +630,9 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                   }
                 />
                 <span>
-                  <span className="font-medium">Bỏ qua vật tư đã đủ thông tin</span>
+                  <span className="font-medium">
+                    Bỏ qua vật tư đã đủ thông tin
+                  </span>
                   <span className="mt-0.5 block text-xs text-slate-500">
                     Không xử lý các dòng đã có NCC, thông số và catalog PDF.
                   </span>
@@ -551,7 +651,9 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                   }
                 />
                 <span>
-                  <span className="font-medium">Tạo catalog PDF nếu không tìm thấy</span>
+                  <span className="font-medium">
+                    Tạo catalog PDF nếu không tìm thấy
+                  </span>
                   <span className="mt-0.5 block text-xs text-slate-500">
                     Tạo PDF gắn nhãn “generated” từ thông tin đã xác minh.
                   </span>
@@ -598,7 +700,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="section-title">Danh sách job</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
+              <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
                 Lịch sử enrichment
               </h2>
             </div>
@@ -632,13 +734,16 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                         Job {shortJobId(job.id)}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {job.materialIds.length.toLocaleString("vi-VN")} vật tư ·{" "}
-                        {formatDateTime(job.startedAt)}
+                        {job.materialIds.length.toLocaleString("vi-VN")} vật tư
+                        · {formatDateTime(job.startedAt)}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge tone={jobStatusTone[job.status]}>
                           {active ? (
-                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                            <Loader2
+                              className="h-3 w-3 animate-spin"
+                              aria-hidden
+                            />
                           ) : null}
                           {jobStatusLabel[job.status]}
                         </Badge>
@@ -699,7 +804,7 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="section-title">Tiến độ job</p>
-                <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
+                <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
                   Job {shortJobId(activeJob.id)}
                 </h2>
                 {activeJob.currentMaterialName ? (
@@ -792,26 +897,64 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
 
           <section className="panel overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-              <h3 className="text-sm font-bold text-slate-900 text-balance">
+              <h3 className="text-sm font-bold text-balance text-slate-900">
                 Chi tiết từng vật tư
               </h3>
-              {committedCount > 0 ? (
-                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={hideCommitted}
-                    onChange={(event) => setHideCommitted(event.target.checked)}
-                  />
-                  <span>
-                    Ẩn mục đã commit ({committedCount.toLocaleString("vi-VN")})
-                  </span>
-                </label>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    "all",
+                    "processing",
+                    "auto",
+                    "review",
+                    "failed",
+                    "committed",
+                  ] as Array<MaterialEnrichmentItemStatus | "all">
+                ).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setItemStatusFilter(status)}
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${
+                      itemStatusFilter === status
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {status === "all"
+                      ? "Tất cả"
+                      : (itemStatusLabel[status] ?? status)}
+                    {status !== "all"
+                      ? ` ${(itemStatusCounts[status] ?? 0).toLocaleString(
+                          "vi-VN",
+                        )}`
+                      : ""}
+                  </button>
+                ))}
+                {committedCount > 0 ? (
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={hideCommitted}
+                      onChange={(event) =>
+                        setHideCommitted(event.target.checked)
+                      }
+                    />
+                    <span>
+                      Ẩn mục đã commit ({committedCount.toLocaleString("vi-VN")}
+                      )
+                    </span>
+                  </label>
+                ) : null}
+              </div>
             </div>
 
             {itemsQuery.isLoading ? (
               <div className="p-4 text-sm text-slate-600">
-                <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" aria-hidden />
+                <Loader2
+                  className="mr-2 inline-block h-4 w-4 animate-spin"
+                  aria-hidden
+                />
                 Đang tải danh sách…
               </div>
             ) : items.length === 0 ? (
@@ -824,8 +967,8 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
             ) : visibleItems.length === 0 ? (
               <div className="p-4">
                 <EmptyState
-                  title="Đã commit tất cả"
-                  description="Tất cả mục đã được commit. Bỏ chọn “Ẩn mục đã commit” để xem lại."
+                  title="Không có mục phù hợp"
+                  description="Đổi bộ lọc trạng thái hoặc bỏ chọn “Ẩn mục đã commit” để xem lại."
                 />
               </div>
             ) : (
@@ -841,8 +984,11 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {visibleItems.map((item) => {
-                      const status = item.status as MaterialEnrichmentItemStatus;
-                      const canCommit = ["auto", "review"].includes(item.status);
+                      const status =
+                        item.status as MaterialEnrichmentItemStatus;
+                      const canCommit = ["auto", "review"].includes(
+                        item.status,
+                      );
                       const canReview = !["pending", "processing"].includes(
                         item.status,
                       );
@@ -927,7 +1073,10 @@ export function MaterialEnrichClient({ jobId: routeJobId }: { jobId?: string } =
         </>
       ) : isJobPage && jobQuery.isLoading ? (
         <div className="panel p-5 text-sm text-slate-600">
-          <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" aria-hidden />
+          <Loader2
+            className="mr-2 inline-block h-4 w-4 animate-spin"
+            aria-hidden
+          />
           Đang tải job…
         </div>
       ) : isJobPage && jobQuery.isError ? (
@@ -1122,7 +1271,8 @@ function EnrichmentReviewDialog({
     return null;
   }
 
-  const snapshot = (item?.originalSnapshot ?? {}) as Partial<MaterialEnrichmentInput>;
+  const snapshot = (item?.originalSnapshot ??
+    {}) as Partial<MaterialEnrichmentInput>;
   const trimmedName = snapshot.name?.trim();
   const materialName = trimmedName ?? "Vật tư";
 
@@ -1137,7 +1287,11 @@ function EnrichmentReviewDialog({
         }
       }}
       onClick={(event) => {
-        if (event.target === dialogRef.current && !isCommitting && !isRejecting) {
+        if (
+          event.target === dialogRef.current &&
+          !isCommitting &&
+          !isRejecting
+        ) {
           onClose();
         }
       }}
@@ -1148,7 +1302,9 @@ function EnrichmentReviewDialog({
             <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
               Duyệt enrichment
             </p>
-            <h3 className="mt-1 text-lg font-bold text-slate-950">{materialName}</h3>
+            <h3 className="mt-1 text-lg font-bold text-slate-950">
+              {materialName}
+            </h3>
             {result ? (
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <ConfidenceBadge confidence={result.overallConfidence} />
@@ -1176,7 +1332,10 @@ function EnrichmentReviewDialog({
             Đang tải chi tiết…
           </div>
         ) : !item || !result ? (
-          <EmptyState title="Không có dữ liệu" description="Mục này chưa sẵn sàng để duyệt." />
+          <EmptyState
+            title="Không có dữ liệu"
+            description="Mục này chưa sẵn sàng để duyệt."
+          />
         ) : (
           <div className="space-y-5">
             <div>
@@ -1212,8 +1371,10 @@ function EnrichmentReviewDialog({
                   // material's current snapshot; proposed = extracted values
                   // (preferring matchedOption). Price is formatted raw → number
                   // string so the editor shows/edits a clean value.
-                  const sheetFields: Partial<Record<FillableField, string>> = {};
-                  const proposedFields: Partial<Record<FillableField, string>> = {};
+                  const sheetFields: Partial<Record<FillableField, string>> =
+                    {};
+                  const proposedFields: Partial<Record<FillableField, string>> =
+                    {};
                   for (const field of ENRICHABLE_FIELDS) {
                     const fillable = ENRICHABLE_TO_FILLABLE_FIELD[field];
                     sheetFields[fillable] = readSnapshotField(snapshot, field);
@@ -1249,7 +1410,10 @@ function EnrichmentReviewDialog({
                         /* overwrite disabled for this surface */
                       }}
                       onEditValue={(field, value) => {
-                        setEditedValues((prev) => ({ ...prev, [field]: value }));
+                        setEditedValues((prev) => ({
+                          ...prev,
+                          [field]: value,
+                        }));
                         setAccepted((prev) => new Set(prev).add(field));
                       }}
                       onClear={() => {
@@ -1264,9 +1428,8 @@ function EnrichmentReviewDialog({
                 })()}
                 {result.catalogPdfUrls.length > 0 ? (
                   <p className="mt-2 text-xs text-slate-500">
-                    +{" "}
-                    {result.catalogPdfUrls.length.toLocaleString("vi-VN")} catalog
-                    PDF sẽ được đính kèm.
+                    + {result.catalogPdfUrls.length.toLocaleString("vi-VN")}{" "}
+                    catalog PDF sẽ được đính kèm.
                   </p>
                 ) : null}
               </div>
@@ -1276,7 +1439,9 @@ function EnrichmentReviewDialog({
               <h4 className="text-sm font-bold text-slate-900">Bằng chứng</h4>
               <div className="mt-2 space-y-2">
                 {collectEvidence(result).length === 0 ? (
-                  <p className="text-xs text-slate-500">Chưa có bằng chứng trích xuất.</p>
+                  <p className="text-xs text-slate-500">
+                    Chưa có bằng chứng trích xuất.
+                  </p>
                 ) : (
                   collectEvidence(result).map((evidence, index) => (
                     <div
@@ -1284,8 +1449,13 @@ function EnrichmentReviewDialog({
                       className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-xs"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="neutral">{fieldLabel[evidence.field as EnrichableField] ?? evidence.field}</Badge>
-                        <span className="font-medium text-slate-800">{evidence.value}</span>
+                        <Badge tone="neutral">
+                          {fieldLabel[evidence.field as EnrichableField] ??
+                            evidence.field}
+                        </Badge>
+                        <span className="font-medium text-slate-800">
+                          {evidence.value}
+                        </span>
                       </div>
                       {evidence.sourceUrl ? (
                         <a
@@ -1299,7 +1469,9 @@ function EnrichmentReviewDialog({
                         </a>
                       ) : null}
                       {evidence.snippet ? (
-                        <p className="mt-1.5 text-slate-600 line-clamp-3">{evidence.snippet}</p>
+                        <p className="mt-1.5 line-clamp-3 text-slate-600">
+                          {evidence.snippet}
+                        </p>
                       ) : null}
                     </div>
                   ))
@@ -1315,7 +1487,9 @@ function EnrichmentReviewDialog({
                   Đang tải ứng viên…
                 </div>
               ) : candidates.length === 0 ? (
-                <p className="mt-2 text-xs text-slate-500">Không có ứng viên web.</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Không có ứng viên web.
+                </p>
               ) : (
                 <div className="mt-2 space-y-2">
                   {candidates.map((candidate) => (
@@ -1365,7 +1539,7 @@ function EnrichmentReviewDialog({
                           {candidate.domain}
                         </a>
                         {candidate.snippet ? (
-                          <p className="mt-1 text-xs text-slate-600 line-clamp-2">
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-600">
                             {candidate.snippet}
                           </p>
                         ) : null}
@@ -1393,7 +1567,9 @@ function EnrichmentReviewDialog({
 
             {result.catalogPdfUrls.length > 0 ? (
               <div>
-                <h4 className="text-sm font-bold text-slate-900">Catalog PDF</h4>
+                <h4 className="text-sm font-bold text-slate-900">
+                  Catalog PDF
+                </h4>
                 <ul className="mt-2 space-y-1 text-xs">
                   {result.catalogPdfUrls.map((url) => (
                     <li key={url}>
@@ -1401,7 +1577,7 @@ function EnrichmentReviewDialog({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sky-700 hover:underline break-all"
+                        className="break-all text-sky-700 hover:underline"
                       >
                         {url}
                       </a>

@@ -33,6 +33,10 @@ export const SETTING_KEYS = {
   excelResearchJobTtlDays: "excel_research_job_ttl_days",
   searxngBaseUrl: "searxng_base_url",
   enrichmentItemConcurrency: "enrichment_item_concurrency",
+  enrichmentWebConcurrency: "enrichment_web_concurrency",
+  enrichmentAiConcurrency: "enrichment_ai_concurrency",
+  enrichmentAiTimeoutMs: "enrichment_ai_timeout_ms",
+  enrichmentSearchCacheTtlMs: "enrichment_search_cache_ttl_ms",
   excelResearchDir: "bidtool_excel_research_dir",
   materialProfileExportDir: "bidtool_material_profile_export_dir",
 } as const;
@@ -317,6 +321,10 @@ export type OperationalSettingKey =
   | "excelResearchJobTtlDays"
   | "searxngBaseUrl"
   | "enrichmentItemConcurrency"
+  | "enrichmentWebConcurrency"
+  | "enrichmentAiConcurrency"
+  | "enrichmentAiTimeoutMs"
+  | "enrichmentSearchCacheTtlMs"
   | "excelResearchDir"
   | "materialProfileExportDir";
 
@@ -470,6 +478,42 @@ export const OPERATIONAL_SETTINGS: Record<
     defaultValue: 2,
     min: 1,
     max: 8,
+    integer: true,
+  },
+  enrichmentWebConcurrency: {
+    settingKey: SETTING_KEYS.enrichmentWebConcurrency,
+    envVar: "ENRICHMENT_WEB_CONCURRENCY",
+    type: "number",
+    defaultValue: 12,
+    min: 1,
+    max: 64,
+    integer: true,
+  },
+  enrichmentAiConcurrency: {
+    settingKey: SETTING_KEYS.enrichmentAiConcurrency,
+    envVar: "ENRICHMENT_AI_CONCURRENCY",
+    type: "number",
+    defaultValue: 6,
+    min: 1,
+    max: 32,
+    integer: true,
+  },
+  enrichmentAiTimeoutMs: {
+    settingKey: SETTING_KEYS.enrichmentAiTimeoutMs,
+    envVar: "ENRICHMENT_AI_TIMEOUT_MS",
+    type: "number",
+    defaultValue: 60000,
+    min: 5000,
+    max: 300000,
+    integer: true,
+  },
+  enrichmentSearchCacheTtlMs: {
+    settingKey: SETTING_KEYS.enrichmentSearchCacheTtlMs,
+    envVar: "ENRICHMENT_SEARCH_CACHE_TTL_MS",
+    type: "number",
+    defaultValue: 300000,
+    min: 0,
+    max: 3600000,
     integer: true,
   },
   excelResearchDir: {
@@ -755,6 +799,22 @@ export async function resolveExcelResearchRowConcurrency(): Promise<number> {
 
 export async function resolveEnrichmentItemConcurrency(): Promise<number> {
   return resolveOperationalNumber("enrichmentItemConcurrency");
+}
+
+export async function resolveEnrichmentWebConcurrency(): Promise<number> {
+  return resolveOperationalNumber("enrichmentWebConcurrency");
+}
+
+export async function resolveEnrichmentAiConcurrency(): Promise<number> {
+  return resolveOperationalNumber("enrichmentAiConcurrency");
+}
+
+export async function resolveEnrichmentAiTimeoutMs(): Promise<number> {
+  return resolveOperationalNumber("enrichmentAiTimeoutMs");
+}
+
+export async function resolveEnrichmentSearchCacheTtlMs(): Promise<number> {
+  return resolveOperationalNumber("enrichmentSearchCacheTtlMs");
 }
 
 export async function resolveExcelResearchJobTtlDays(): Promise<number> {

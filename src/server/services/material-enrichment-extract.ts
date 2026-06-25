@@ -7,10 +7,32 @@ import {
   type MaterialEnrichmentInput,
 } from "~/lib/materials/material-enrichment-types";
 import { callAiProvider } from "~/server/services/ai-dispatch";
-import type { ResolvedAiProvider } from "~/server/services/app-settings";
+import {
+  resolveEnrichmentAiConcurrency,
+  resolveEnrichmentAiTimeoutMs,
+  type ResolvedAiProvider,
+} from "~/server/services/app-settings";
+import { createAsyncLimiter } from "~/server/services/concurrency";
 import type { WebSearchResult } from "~/server/services/material-web-search";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-material-enrichment-extract");
+
+let aiLimiterConcurrency = 0;
+let aiLimiter = createAsyncLimiter(6);
+
+async function runWithAiLimit<T>(task: () => Promise<T>): Promise<T> {
+  const concurrency = await resolveEnrichmentAiConcurrency();
+  if (concurrency !== aiLimiterConcurrency) {
+    aiLimiterConcurrency = concurrency;
+    aiLimiter = createAsyncLimiter(concurrency);
+  }
+  return aiLimiter(task);
+}
+
+async function enrichmentAiSignal(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(await resolveEnrichmentAiTimeoutMs());
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
 
 export type ExtractedProductFields = Partial<
   Record<
@@ -140,8 +162,7 @@ function parseFieldResult(
   }
   const record = value as Record<string, unknown>;
   const rawValue = record.value;
-  const normalizedValue =
-    rawValue == null ? null : asString(rawValue) || null;
+  const normalizedValue = rawValue == null ? null : asString(rawValue) || null;
   const evidence = parseEvidenceList(record.evidence).filter(
     (item) => item.field === field,
   );
@@ -160,7 +181,10 @@ function parseFieldResult(
 }
 
 function _parseExtractionResponse(content: string): ExtractedProductFields {
-  const parsed = JSON.parse(extractJsonObject(content)) as Record<string, unknown>;
+  const parsed = JSON.parse(extractJsonObject(content)) as Record<
+    string,
+    unknown
+  >;
   const fields: ExtractedProductFields = {};
   const rawFields =
     parsed.fields && typeof parsed.fields === "object"
@@ -194,17 +218,28 @@ async function _extractProductFromSources(
     return { catalogPdfUrls: [] };
   }
 
-  const completion = await callAiProvider(
-    provider,
-    [
-      { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-      { role: "user", content: buildExtractionUserPrompt(input, candidates) },
-    ],
-    { signal, responseFormat: "json_object" },
-  );
+  const completion = await runWithAiLimit(async () => {
+    const requestSignal = await enrichmentAiSignal(signal);
+    return callAiProvider(
+      provider,
+      [
+        { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
+        { role: "user", content: buildExtractionUserPrompt(input, candidates) },
+      ],
+      { signal: requestSignal, responseFormat: "json_object" },
+    );
+  });
 
   return parseExtractionResponse(completion.content);
 }
 
-export const parseExtractionResponse = traceFn(log, "parseExtractionResponse", _parseExtractionResponse);
-export const extractProductFromSources = traceFn(log, "extractProductFromSources", _extractProductFromSources);
+export const parseExtractionResponse = traceFn(
+  log,
+  "parseExtractionResponse",
+  _parseExtractionResponse,
+);
+export const extractProductFromSources = traceFn(
+  log,
+  "extractProductFromSources",
+  _extractProductFromSources,
+);

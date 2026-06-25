@@ -77,15 +77,20 @@ describe("searchQueryWithFallback", () => {
     expect(results[0]?.url).toBe("https://duck.example/item");
     expect(warnings.some((warning) => warning.includes("SearXNG"))).toBe(true);
     expect(
-      fetchMock.mock.calls.some(([url]) => requestUrl(url).includes("duckduckgo")),
+      fetchMock.mock.calls.some(([url]) =>
+        requestUrl(url).includes("duckduckgo"),
+      ),
     ).toBe(true);
   });
 
   it("returns empty results without throwing when all providers fail", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "");
-    vi.stubGlobal("fetch", vi.fn(async () => {
-      throw new Error("fetch failed");
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("fetch failed");
+      }),
+    );
 
     const { searchQueryWithFallback } = await import("./material-web-search");
     const { results, warnings } = await searchQueryWithFallback("ống PVC");
@@ -97,18 +102,53 @@ describe("searchQueryWithFallback", () => {
   it("fetches a known source URL as a search candidate", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response("<html><title>Ống PVC 90</title><body>Thông số kỹ thuật</body></html>", {
-          status: 200,
-          headers: { "Content-Type": "text/html" },
-        }),
+      vi.fn(
+        async () =>
+          new Response(
+            "<html><title>Ống PVC 90</title><body>Thông số kỹ thuật</body></html>",
+            {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            },
+          ),
       ),
     );
 
     const { fetchUrlAsSearchResult } = await import("./material-web-search");
-    const result = await fetchUrlAsSearchResult("https://example.com/product/pvc");
+    const result = await fetchUrlAsSearchResult(
+      "https://example.com/product/pvc",
+    );
 
     expect(result?.title).toBe("Ống PVC 90");
     expect(result?.snippet).toContain("Thông số");
+  });
+
+  it("caches repeated product searches for a short TTL", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("ENRICHMENT_SEARCH_CACHE_TTL_MS", "60000");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Ống PVC 90",
+                url: "https://example.com/pvc-90",
+                content: "Thông số kỹ thuật",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchWebForProduct } = await import("./material-web-search");
+    const first = await searchWebForProduct(["Ống PVC 90"]);
+    const second = await searchWebForProduct(["  Ống   PVC 90  "]);
+
+    expect(first.results).toHaveLength(1);
+    expect(second.results).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,14 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Loader2,
-  Play,
-} from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 
-import {
-  Button,
-} from "~/app/_components/ui";
+import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   ExcelResearchReviewPanel,
@@ -53,10 +48,12 @@ export function EnrichResearchStep({
   onError: (message: string | null) => void;
 }) {
   const toast = useToast();
-  const [statusFilter, setStatusFilter] = useState<ExcelResearchRowStatus | "all">(
-    "all",
+  const [statusFilter, setStatusFilter] = useState<
+    ExcelResearchRowStatus | "all"
+  >("all");
+  const [selectedRowNumber, setSelectedRowNumber] = useState<number | null>(
+    null,
   );
-  const [selectedRowNumber, setSelectedRowNumber] = useState<number | null>(null);
   const [scope, setScope] = useState<"unresolved" | "all">(
     unresolvedRowNumbers.length > 0 ? "unresolved" : "all",
   );
@@ -108,7 +105,8 @@ export function EnrichResearchStep({
       limit: 200,
     },
     {
-      enabled: jobId !== null && reviewReady,
+      enabled: jobId !== null,
+      refetchInterval: () => (isWorking ? JOB_POLL_MS : false),
       refetchOnWindowFocus: false,
     },
   );
@@ -119,7 +117,8 @@ export function EnrichResearchStep({
       rowNumber: selectedRowNumber ?? 1,
     },
     {
-      enabled: jobId !== null && selectedRowNumber != null && reviewReady,
+      enabled: jobId !== null && selectedRowNumber != null,
+      refetchInterval: () => (isWorking ? JOB_POLL_MS : false),
       refetchOnWindowFocus: false,
     },
   );
@@ -144,7 +143,9 @@ export function EnrichResearchStep({
   useEffect(() => {
     if (!activeJob) return;
     if (activeJob.status === "failed" || activeJob.status === "cancelled") {
-      onError(activeJob.error ?? activeJob.message ?? "Job nghiên cứu thất bại.");
+      onError(
+        activeJob.error ?? activeJob.message ?? "Job nghiên cứu thất bại.",
+      );
     }
   }, [activeJob, onError]);
 
@@ -227,7 +228,8 @@ export function EnrichResearchStep({
             rowDetailQuery.refetch(),
           ]).then(() => toast.success("Đã từ chối dòng."));
         },
-        onError: (err) => toast.error(err.message || "Không từ chối được dòng."),
+        onError: (err) =>
+          toast.error(err.message || "Không từ chối được dòng."),
       },
     );
   };
@@ -260,7 +262,7 @@ export function EnrichResearchStep({
     );
   };
 
-  if (!jobId || !reviewReady) {
+  if (!jobId || (!reviewReady && !rowData?.items.length)) {
     const progressPct =
       activeJob && activeJob.totalRows > 0
         ? Math.round((activeJob.processedRows / activeJob.totalRows) * 100)
@@ -269,7 +271,7 @@ export function EnrichResearchStep({
     return (
       <section className="panel overflow-hidden">
         <div className="border-b border-violet-200 bg-violet-50 px-4 py-3">
-          <h3 className="text-sm font-bold text-violet-950 text-balance">
+          <h3 className="text-sm font-bold text-balance text-violet-950">
             Nghiên cứu sản phẩm trên web
           </h3>
           <p className="mt-1 text-xs text-violet-800">
@@ -306,9 +308,12 @@ export function EnrichResearchStep({
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="block font-semibold">Chỉ dòng chưa xử lý</span>
+                  <span className="block font-semibold">
+                    Chỉ dòng chưa xử lý
+                  </span>
                   <span className="text-xs text-slate-500">
-                    {unresolvedRowNumbers.length.toLocaleString("vi-VN")} dòng cần web
+                    {unresolvedRowNumbers.length.toLocaleString("vi-VN")} dòng
+                    cần web
                   </span>
                 </span>
               </label>
@@ -323,7 +328,9 @@ export function EnrichResearchStep({
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="block font-semibold">Tất cả dòng có tên</span>
+                  <span className="block font-semibold">
+                    Tất cả dòng có tên
+                  </span>
                   <span className="text-xs text-slate-500">
                     Dùng khi muốn xác minh web toàn bộ file.
                   </span>
@@ -367,7 +374,8 @@ export function EnrichResearchStep({
                 </p>
               ) : !isJobRunning ? (
                 <p className="mt-2 text-[11px] text-violet-700">
-                  Đang chuẩn bị — quá trình nghiên cứu sẽ bắt đầu trong giây lát.
+                  Đang chuẩn bị — quá trình nghiên cứu sẽ bắt đầu trong giây
+                  lát.
                 </p>
               ) : null}
               {jobId ? (

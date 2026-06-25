@@ -30,4 +30,53 @@ async function _runWithConcurrency<T>(
   await Promise.all(runners);
 }
 
-export const runWithConcurrency = traceFn(log, "runWithConcurrency", _runWithConcurrency);
+export const runWithConcurrency = traceFn(
+  log,
+  "runWithConcurrency",
+  _runWithConcurrency,
+);
+
+type LimitState = {
+  active: number;
+  queue: Array<() => void>;
+};
+
+/**
+ * A small in-process async limiter for external calls. It gives each caller a
+ * Promise-returning wrapper while enforcing a shared cap across concurrent jobs.
+ */
+function _createAsyncLimiter(maxConcurrency: number) {
+  const state: LimitState = {
+    active: 0,
+    queue: [],
+  };
+  const limit = Math.max(1, Math.floor(maxConcurrency));
+
+  const release = () => {
+    state.active -= 1;
+    const next = state.queue.shift();
+    if (next) {
+      next();
+    }
+  };
+
+  return async function runLimited<T>(task: () => Promise<T>): Promise<T> {
+    if (state.active >= limit) {
+      await new Promise<void>((resolve) => {
+        state.queue.push(resolve);
+      });
+    }
+    state.active += 1;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  };
+}
+
+export const createAsyncLimiter = traceFn(
+  log,
+  "createAsyncLimiter",
+  _createAsyncLimiter,
+);

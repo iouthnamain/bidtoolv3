@@ -861,6 +861,48 @@ function MaterialReviewStep({
   const webSearch = api.material.enrichWebSearchRowLinks.useMutation();
   const aiSearch = api.material.enrichAiSearchRow.useMutation();
   const upsertMaterial = api.material.upsertMaterial.useMutation();
+  const saveEnrichmentDraft =
+    api.materialProfile.updateItemEnrichmentDraft.useMutation();
+  const bulkAiSearch = api.materialProfile.bulkAiSearchItems.useMutation();
+
+  useEffect(() => {
+    const nextWebResults: Record<number, WebSearchResult[]> = {};
+    const nextAiFields: Record<
+      number,
+      Partial<Record<FillableField, string>>
+    > = {};
+    const nextAiEvidence: Record<number, AiSearchResult["evidence"]> = {};
+
+    for (const item of items) {
+      if (
+        Array.isArray(item.webResultsJson) &&
+        item.webResultsJson.length > 0
+      ) {
+        nextWebResults[item.id] =
+          item.webResultsJson as unknown as WebSearchResult[];
+      }
+      if (
+        item.aiFieldsJson &&
+        typeof item.aiFieldsJson === "object" &&
+        Object.keys(item.aiFieldsJson).length > 0
+      ) {
+        nextAiFields[item.id] = item.aiFieldsJson as Partial<
+          Record<FillableField, string>
+        >;
+      }
+      if (
+        Array.isArray(item.aiEvidenceJson) &&
+        item.aiEvidenceJson.length > 0
+      ) {
+        nextAiEvidence[item.id] =
+          item.aiEvidenceJson as unknown as AiSearchResult["evidence"];
+      }
+    }
+
+    setWebResultsByItemId((current) => ({ ...nextWebResults, ...current }));
+    setAiFieldsByItemId((current) => ({ ...nextAiFields, ...current }));
+    setAiEvidenceByItemId((current) => ({ ...nextAiEvidence, ...current }));
+  }, [items]);
 
   useEffect(() => {
     if (drawerItemEffectId == null) return;
@@ -945,6 +987,11 @@ function MaterialReviewStep({
         ...current,
         [item.id]: result.results,
       }));
+      saveEnrichmentDraft.mutate({
+        itemId: item.id,
+        enrichmentStatus: result.results.length > 0 ? "web_done" : "error",
+        webResults: result.results as unknown as Record<string, unknown>[],
+      });
       if (switchToWebTab) {
         setActiveSearchTab("web");
       }
@@ -995,6 +1042,17 @@ function MaterialReviewStep({
               result,
               drawerAiFields,
             );
+            saveEnrichmentDraft.mutate({
+              itemId: drawerItem.id,
+              enrichmentStatus:
+                Object.keys(nextFields).length > 0 ? "ai_done" : "error",
+              webResults: webResults as unknown as Record<string, unknown>[],
+              aiFields: nextFields as Record<string, unknown>,
+              aiEvidence: result.evidence as unknown as Record<
+                string,
+                unknown
+              >[],
+            });
             if (Object.keys(nextFields).length === 0) {
               toast.warning("AI chưa trích xuất được trường vật tư nào.");
               return;
@@ -1011,54 +1069,49 @@ function MaterialReviewStep({
 
   const runBulkAiSearch = () => {
     void (async () => {
-      const selectedItems = items.filter((item) =>
-        selectedItemIds.includes(item.id),
-      );
-      if (selectedItems.length === 0) return;
+      if (selectedItemIds.length === 0 || bulkAiSearch.isPending) return;
       setIsBulkAiSearching(true);
-      let completed = 0;
-      let skipped = 0;
       try {
-        for (const item of selectedItems) {
-          if (!item.productName.trim()) {
-            skipped += 1;
-            continue;
+        const result = await bulkAiSearch.mutateAsync({
+          workspaceId: workspace.id,
+          itemIds: selectedItemIds,
+        });
+        const nextWebResults: Record<number, WebSearchResult[]> = {};
+        const nextAiFields: Record<
+          number,
+          Partial<Record<FillableField, string>>
+        > = {};
+        const nextAiEvidence: Record<number, AiSearchResult["evidence"]> = {};
+        for (const item of result.items) {
+          if (Array.isArray(item.webResultsJson)) {
+            nextWebResults[item.id] =
+              item.webResultsJson as unknown as WebSearchResult[];
           }
-          const input = webSearchInputFromItem(item);
-          const cachedWebResults = webResultsByItemId[item.id] ?? [];
-          const webResults =
-            cachedWebResults.length > 0
-              ? cachedWebResults
-              : await executeWebSearch({
-                  item,
-                  input,
-                  switchToWebTab: false,
-                });
-          if (webResults.length === 0) {
-            skipped += 1;
-            continue;
+          if (item.aiFieldsJson && typeof item.aiFieldsJson === "object") {
+            nextAiFields[item.id] = item.aiFieldsJson as Partial<
+              Record<FillableField, string>
+            >;
           }
-          const result = await aiSearch.mutateAsync({ ...input, webResults });
-          const nextFields = applyAiSearchResult(
-            item,
-            result,
-            aiFieldsByItemId[item.id] ?? {},
-          );
-          if (Object.keys(nextFields).length === 0) {
-            skipped += 1;
-            continue;
+          if (Array.isArray(item.aiEvidenceJson)) {
+            nextAiEvidence[item.id] =
+              item.aiEvidenceJson as unknown as AiSearchResult["evidence"];
           }
-          completed += 1;
         }
-        if (completed > 0) {
+        setWebResultsByItemId((current) => ({ ...current, ...nextWebResults }));
+        setAiFieldsByItemId((current) => ({ ...current, ...nextAiFields }));
+        setAiEvidenceByItemId((current) => ({ ...current, ...nextAiEvidence }));
+        void utils.materialProfile.get.invalidate({
+          workspaceId: workspace.id,
+        });
+        if (result.completed > 0) {
           setActiveSearchTab("ai");
           toast.success(
-            `Bulk AI đã trích xuất ${completed.toLocaleString("vi-VN")} dòng.`,
+            `Bulk AI đã trích xuất ${result.completed.toLocaleString("vi-VN")} dòng.`,
           );
         }
-        if (skipped > 0) {
+        if (result.skipped > 0) {
           toast.warning(
-            `Bulk AI bỏ qua ${skipped.toLocaleString("vi-VN")} dòng không có kết quả.`,
+            `Bulk AI bỏ qua ${result.skipped.toLocaleString("vi-VN")} dòng không có kết quả.`,
           );
         }
       } catch (error) {
