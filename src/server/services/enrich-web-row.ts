@@ -37,6 +37,15 @@ export type EnrichWebRowResult = {
   evidence: MaterialEnrichmentEvidence[];
 };
 
+export type EnrichWebRowHit = {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  query?: string;
+  rankScore?: number;
+};
+
 function _mapExtractedToFillable(
   extracted: ExtractedProductFields,
   sourceUrls: string[],
@@ -68,16 +77,7 @@ function _mapExtractedToFillable(
   return { fields, sourceUrls, evidence };
 }
 
-function _webHitsToSearchResults(
-  hits: Array<{
-    title: string;
-    url: string;
-    domain: string;
-    snippet: string;
-    query?: string;
-    rankScore?: number;
-  }>,
-): WebSearchResult[] {
+function _webHitsToSearchResults(hits: EnrichWebRowHit[]): WebSearchResult[] {
   return hits.map((hit) => ({
     title: hit.title,
     url: hit.url,
@@ -86,6 +86,61 @@ function _webHitsToSearchResults(
     query: hit.query ?? "",
     rankScore: hit.rankScore ?? 0,
   }));
+}
+
+function enrichmentInputFromRow(
+  input: EnrichWebRowInput,
+): MaterialEnrichmentInput {
+  const unitTrimmed = input.unit?.trim();
+  return {
+    materialId: 0,
+    name: input.name,
+    unit: unitTrimmed && unitTrimmed.length > 0 ? unitTrimmed : "cái",
+    code: input.code ?? null,
+    category: input.category ?? null,
+    specText: input.specText ?? "",
+    manufacturer: input.manufacturer ?? null,
+    originCountry: null,
+    defaultUnitPrice: null,
+    currency: "VND",
+    sourceUrl: null,
+    sku: input.code ?? null,
+    model: input.code ?? null,
+  };
+}
+
+async function extractFieldsFromRankedResults(
+  input: EnrichWebRowInput,
+  ranked: WebSearchResult[],
+  signal?: AbortSignal,
+): Promise<EnrichWebRowResult> {
+  const sourceUrls = [
+    ...new Set(ranked.map((result) => result.url).filter(Boolean)),
+  ];
+
+  if (ranked.length === 0) {
+    return { fields: {}, sourceUrls: [], evidence: [] };
+  }
+
+  let provider;
+  try {
+    provider = await resolveAiProvider("enrichment");
+  } catch {
+    return {
+      fields: sourceUrls.length > 0 ? { sourceUrl: sourceUrls[0] } : {},
+      sourceUrls,
+      evidence: [],
+    };
+  }
+
+  const extracted = await extractProductFromSources(
+    enrichmentInputFromRow(input),
+    ranked,
+    provider,
+    signal,
+  );
+
+  return mapExtractedToFillable(extracted, sourceUrls);
 }
 
 async function _enrichRowFromWeb(
@@ -110,50 +165,39 @@ async function _enrichRowFromWeb(
     sourceUrl: null,
   }).slice(0, 8);
 
-  const sourceUrls = [...new Set(ranked.map((result) => result.url).filter(Boolean))];
-
-  if (ranked.length === 0) {
-    return { fields: {}, sourceUrls: [], evidence: [] };
-  }
-
-  let provider;
-  try {
-    provider = await resolveAiProvider("enrichment");
-  } catch {
-    return {
-      fields: sourceUrls.length > 0 ? { sourceUrl: sourceUrls[0] } : {},
-      sourceUrls,
-      evidence: [],
-    };
-  }
-
-  const unitTrimmed = input.unit?.trim();
-  const enrichmentInput: MaterialEnrichmentInput = {
-    materialId: 0,
-    name: input.name,
-    unit: unitTrimmed && unitTrimmed.length > 0 ? unitTrimmed : "cái",
-    code: input.code ?? null,
-    category: input.category ?? null,
-    specText: input.specText ?? "",
-    manufacturer: input.manufacturer ?? null,
-    originCountry: null,
-    defaultUnitPrice: null,
-    currency: "VND",
-    sourceUrl: null,
-    sku: input.code ?? null,
-    model: input.code ?? null,
-  };
-
-  const extracted = await extractProductFromSources(
-    enrichmentInput,
-    ranked,
-    provider,
-    signal,
-  );
-
-  return mapExtractedToFillable(extracted, sourceUrls);
+  return extractFieldsFromRankedResults(input, ranked, signal);
 }
 
-export const mapExtractedToFillable = traceFn(log, "mapExtractedToFillable", _mapExtractedToFillable);
-export const webHitsToSearchResults = traceFn(log, "webHitsToSearchResults", _webHitsToSearchResults);
-export const enrichRowFromWeb = traceFn(log, "enrichRowFromWeb", _enrichRowFromWeb);
+async function _enrichRowFromWebResults(
+  input: EnrichWebRowInput & { webResults: EnrichWebRowHit[] },
+  signal?: AbortSignal,
+): Promise<EnrichWebRowResult> {
+  const ranked = rankSearchResults(webHitsToSearchResults(input.webResults), {
+    manufacturer: input.manufacturer ?? null,
+    name: input.name,
+    sourceUrl: null,
+  }).slice(0, 8);
+
+  return extractFieldsFromRankedResults(input, ranked, signal);
+}
+
+export const mapExtractedToFillable = traceFn(
+  log,
+  "mapExtractedToFillable",
+  _mapExtractedToFillable,
+);
+export const webHitsToSearchResults = traceFn(
+  log,
+  "webHitsToSearchResults",
+  _webHitsToSearchResults,
+);
+export const enrichRowFromWeb = traceFn(
+  log,
+  "enrichRowFromWeb",
+  _enrichRowFromWeb,
+);
+export const enrichRowFromWebResults = traceFn(
+  log,
+  "enrichRowFromWebResults",
+  _enrichRowFromWebResults,
+);

@@ -1017,7 +1017,7 @@ async function launchServerlessBrowser(): Promise<Browser> {
 function browserLaunchError(error: unknown) {
   return new Error(
     error instanceof Error
-      ? `Không khởi động được browser scrape. Cài Chrome/Chromium hoặc chạy "bunx playwright install chromium". ${error.message}`
+      ? `Không khởi động được browser scrape. Chạy "bun run dev:update" hoặc "bunx playwright install chromium --force". Trên Ubuntu có thể cần thêm: sudo bunx playwright install-deps chromium. ${error.message}`
       : "Không khởi động được browser scrape.",
   );
 }

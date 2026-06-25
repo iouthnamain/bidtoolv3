@@ -17,11 +17,13 @@ import {
 import Papa from "papaparse";
 import { z } from "zod";
 
-import { createTRPCRouter, protectedProcedure, publicProcedure, requirePermission } from "~/server/api/trpc";
 import {
-  creatorTenantId,
-  tenantScopeValue,
-} from "~/server/api/tenant-scope";
+  createTRPCRouter,
+  protectedProcedure,
+  publicProcedure,
+  requirePermission,
+} from "~/server/api/trpc";
+import { creatorTenantId, tenantScopeValue } from "~/server/api/tenant-scope";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
@@ -72,7 +74,15 @@ import {
 import { previewShopImportJob } from "~/server/services/shop-import-preview";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import { findFuzzyCandidates } from "~/server/services/ai-product-matcher";
-import { enrichRowFromWeb } from "~/server/services/enrich-web-row";
+import {
+  enrichRowFromWeb,
+  enrichRowFromWebResults,
+} from "~/server/services/enrich-web-row";
+import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
+import {
+  rankSearchResults,
+  searchWebForProduct,
+} from "~/server/services/material-web-search";
 import {
   addShopScrapeJobProduct,
   cancelShopScrapeJob,
@@ -123,6 +133,24 @@ const materialInput = z.object({
   sourceUrl: z.string().trim().optional(),
 });
 
+const enrichWebRowInput = z.object({
+  name: z.string().trim().min(1),
+  code: z.string().trim().optional(),
+  manufacturer: z.string().trim().optional(),
+  specText: z.string().trim().optional(),
+  unit: z.string().trim().optional(),
+  category: z.string().trim().optional(),
+});
+
+const webSearchResultInput = z.object({
+  title: z.string().trim().min(1),
+  url: z.string().trim().min(1),
+  domain: z.string().trim(),
+  snippet: z.string(),
+  query: z.string().optional(),
+  rankScore: z.number().optional(),
+});
+
 const materialSearchFiltersInput = z.object({
   keyword: z.string().trim().optional(),
   name: z.string().trim().optional(),
@@ -142,7 +170,9 @@ const shopScrapeInput = z
     maxPages: z.number().int().min(1).max(100).nullable().optional(),
     maxProducts: z.number().int().min(1).max(2000).nullable().optional(),
     method: z.enum(SHOP_SCRAPE_METHODS).default("auto"),
-    detailEnrichment: z.enum(SHOP_DETAIL_ENRICHMENT_MODES).default("missing_fields"),
+    detailEnrichment: z
+      .enum(SHOP_DETAIL_ENRICHMENT_MODES)
+      .default("missing_fields"),
   })
   .transform((input) => ({
     ...input,
@@ -1921,7 +1951,9 @@ export const materialRouter = createTRPCRouter({
 
   deleteMany: requirePermission("material:delete")
     .input(
-      z.object({ ids: z.array(z.number().int().positive()).min(1).max(10_000) }),
+      z.object({
+        ids: z.array(z.number().int().positive()).min(1).max(10_000),
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       // Soft-deletes up to 10k shared-catalog rows in one call; access is gated
@@ -1931,9 +1963,7 @@ export const materialRouter = createTRPCRouter({
       const updated = await ctx.db
         .update(materials)
         .set({ deletedAt: now, updatedAt: now })
-        .where(
-          and(inArray(materials.id, ids), isNull(materials.deletedAt)),
-        )
+        .where(and(inArray(materials.id, ids), isNull(materials.deletedAt)))
         .returning({ id: materials.id });
       return { count: updated.length };
     }),
@@ -2112,7 +2142,10 @@ export const materialRouter = createTRPCRouter({
         .select()
         .from(materials)
         .where(
-          and(isNull(materials.deletedAt), ilike(materials.name, `%${input.query}%`)),
+          and(
+            isNull(materials.deletedAt),
+            ilike(materials.name, `%${input.query}%`),
+          ),
         )
         .orderBy(asc(materials.name))
         .limit(input.limit);
@@ -2137,17 +2170,43 @@ export const materialRouter = createTRPCRouter({
       };
     }),
 
-  enrichWebSearchRow: protectedProcedure
+  enrichWebSearchRowLinks: protectedProcedure
+    .input(enrichWebRowInput)
+    .mutation(async ({ input }) => {
+      const queries = buildSearchQueries({
+        name: input.name,
+        manufacturer: input.manufacturer,
+        code: input.code,
+        specText: input.specText,
+      }).map((query) => query.query);
+
+      if (queries.length === 0) {
+        return { results: [], warnings: [] };
+      }
+
+      const response = await searchWebForProduct(queries);
+      const results = rankSearchResults(response.results, {
+        manufacturer: input.manufacturer ?? null,
+        name: input.name,
+        sourceUrl: null,
+      }).slice(0, 8);
+
+      return { results, warnings: response.warnings };
+    }),
+
+  enrichAiSearchRow: protectedProcedure
     .input(
-      z.object({
-        name: z.string().trim().min(1),
-        code: z.string().trim().optional(),
-        manufacturer: z.string().trim().optional(),
-        specText: z.string().trim().optional(),
-        unit: z.string().trim().optional(),
-        category: z.string().trim().optional(),
+      enrichWebRowInput.extend({
+        webResults: z.array(webSearchResultInput).min(1).max(12),
       }),
     )
+    .mutation(async ({ input }) => {
+      const result = await enrichRowFromWebResults(input);
+      return result;
+    }),
+
+  enrichWebSearchRow: protectedProcedure
+    .input(enrichWebRowInput)
     .mutation(async ({ input }) => {
       const result = await enrichRowFromWeb(input);
       return result;

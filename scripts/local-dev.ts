@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, readdir, readFile } from "node:fs/promises";
+import { access, copyFile, readFile } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -352,31 +351,16 @@ async function installDependencies(): Promise<void> {
   );
 }
 
-function playwrightBrowsersCacheDir(): string {
-  const override = process.env.PLAYWRIGHT_BROWSERS_PATH;
-  if (override && override !== "0") {
-    return override;
-  }
-
-  // Default cache locations Playwright uses per platform.
-  if (process.platform === "win32") {
-    const localAppData =
-      process.env.LOCALAPPDATA ??
-      path.join(os.homedir(), "AppData", "Local");
-    return path.join(localAppData, "ms-playwright");
-  }
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Caches", "ms-playwright");
-  }
-  return path.join(os.homedir(), ".cache", "ms-playwright");
-}
-
-async function isPlaywrightChromiumInstalled(): Promise<boolean> {
-  // A real install leaves a `chromium-<rev>` folder in the cache dir. Treat any
-  // such folder as "already installed" so we skip the slow/hang-prone download.
+async function verifyPlaywrightChromium(): Promise<boolean> {
   try {
-    const entries = await readdir(playwrightBrowsersCacheDir());
-    return entries.some((entry) => entry.startsWith("chromium"));
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch({
+      headless: true,
+      timeout: 15_000,
+      args: ["--disable-dev-shm-usage", "--no-sandbox"],
+    });
+    await browser.close();
+    return true;
   } catch {
     return false;
   }
@@ -384,49 +368,51 @@ async function isPlaywrightChromiumInstalled(): Promise<boolean> {
 
 async function installScrapeBrowser(): Promise<void> {
   // The shop scraper launches Playwright's Chromium when no system
-  // Chrome/Edge is found. Install it so scraping works on a fresh machine.
-  //
-  // This step is best-effort and must NEVER block startup:
-  //   - Skip entirely when Chromium is already cached (the common case on a
-  //     machine that has run this before).
-  //   - Guard the install with a timeout. On Windows, `bun x playwright install`
-  //     can finish the download but never return control, which previously
-  //     hung run.bat forever at this step.
-  // The scraper still falls back to a system Chrome/Edge if Chromium is absent,
-  // so warning instead of aborting is safe.
-  if (await isPlaywrightChromiumInstalled()) {
-    logStep("Playwright Chromium already installed — skipping download");
+  // Chrome/Edge is found. Verify with a real launch (not just cache
+  // folder names) so broken/partial installs are repaired automatically.
+  if (await verifyPlaywrightChromium()) {
+    logStep("Playwright Chromium ready for the shop scraper");
     return;
   }
 
-  logStep("Installing Playwright Chromium for the shop scraper");
   const installTimeoutMs = 5 * 60 * 1_000;
-  const result = await runCommand(
-    bunExecutable,
-    ["x", "playwright", "install", "chromium"],
-    { inheritStdio: true, timeoutMs: installTimeoutMs },
-  );
+  const installAttempts: string[][] = [[], ["--force"]];
 
-  if (result.timedOut) {
-    // The browser binary is usually already extracted by the time the process
-    // hangs, so re-check the cache before deciding how loudly to warn.
-    if (await isPlaywrightChromiumInstalled()) {
-      logStep(
-        "Playwright Chromium downloaded; the installer process did not exit cleanly but the browser is in place. Continuing.",
-      );
-    } else {
-      logStep(
-        "Playwright Chromium install timed out. Scraping will rely on an installed Chrome/Edge, or run `bunx playwright install chromium` manually.",
-      );
-    }
-    return;
-  }
-
-  if (result.code !== 0) {
+  for (const extraArgs of installAttempts) {
     logStep(
-      "Could not install Playwright Chromium automatically. Scraping will rely on an installed Chrome/Edge, or run `bunx playwright install chromium` manually.",
+      extraArgs.length > 0
+        ? "Reinstalling Playwright Chromium for the shop scraper (--force)"
+        : "Installing Playwright Chromium for the shop scraper",
     );
+
+    const result = await runCommand(
+      bunExecutable,
+      ["x", "playwright", "install", "chromium", ...extraArgs],
+      { inheritStdio: true, timeoutMs: installTimeoutMs },
+    );
+
+    if (result.timedOut) {
+      if (await verifyPlaywrightChromium()) {
+        logStep(
+          "Playwright Chromium downloaded; the installer did not exit cleanly but scraping works. Continuing.",
+        );
+        return;
+      }
+      continue;
+    }
+
+    if (await verifyPlaywrightChromium()) {
+      return;
+    }
   }
+
+  const linuxHint =
+    process.platform === "linux"
+      ? " On Ubuntu, also try: sudo bunx playwright install-deps chromium"
+      : "";
+  logStep(
+    `Could not install a working Playwright Chromium for scraping. Run manually: bunx playwright install chromium --force.${linuxHint} Or install Google Chrome / Chromium system-wide.`,
+  );
 }
 
 async function prepareLocalDatabase(): Promise<void> {
@@ -458,6 +444,7 @@ async function startDevServer(): Promise<void> {
 }
 
 async function runDevWorkflow(): Promise<void> {
+  await installScrapeBrowser();
   await prepareLocalDatabase();
   await startDevServer();
 }

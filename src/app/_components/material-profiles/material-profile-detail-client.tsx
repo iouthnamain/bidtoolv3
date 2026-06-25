@@ -6,19 +6,28 @@ import {
   ArrowLeft,
   Check,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   FolderOpen,
+  Globe,
   Loader2,
   RefreshCw,
   Search,
+  Sparkles,
   Trash2,
   Upload,
-  X,
 } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { api, type RouterOutputs } from "~/trpc/react";
+import {
+  FIELD_LABELS,
+  FILLABLE_FIELDS,
+  NON_COLUMN_FIELDS,
+  type FillableField,
+} from "~/lib/materials/excel-enrich-fields";
+import { parseOptionalNumber } from "~/lib/materials/format";
 
 type WorkspaceDetail = RouterOutputs["materialProfile"]["get"];
 type WorkspaceItem = WorkspaceDetail["items"][number];
@@ -28,20 +37,27 @@ type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
 type MaterialSearchCandidate =
   RouterOutputs["material"]["enrichSearchMaterials"]["candidates"][number];
-type MaterialDetail = NonNullable<RouterOutputs["material"]["getById"]>;
+type WebSearchResult =
+  RouterOutputs["material"]["enrichWebSearchRowLinks"]["results"][number];
+type AiSearchResult = RouterOutputs["material"]["enrichAiSearchRow"];
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
 
 type Candidate = {
   materialId: number;
-  name?: unknown;
-  code?: unknown;
-  unit?: unknown;
-  manufacturer?: unknown;
-  originCountry?: unknown;
-  defaultUnitPrice?: unknown;
-  currency?: unknown;
-  score?: unknown;
+  name: string;
+  code: string | null;
+  unit: string;
+  category: string | null;
+  manufacturer: string | null;
+  originCountry: string | null;
+  defaultUnitPrice: number | null;
+  currency: string;
+  imageUrl: string | null;
+  sourceUrl: string | null;
+  specSnippet: string;
+  score: number;
+  breakdown: unknown;
 };
 
 const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
@@ -104,21 +120,62 @@ function editedCellValue(
   return edits[sheetName]?.[key] ?? rawValue ?? "";
 }
 
+const materialProfileDraftFields = FILLABLE_FIELDS.filter(
+  (field) => !NON_COLUMN_FIELDS.has(field),
+);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown, fallback = "") {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return fallback;
+}
+
+function nullableString(value: unknown) {
+  const text = stringValue(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+function nullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeCandidate(value: unknown): Candidate | null {
+  const record = asRecord(value);
+  if (!record || typeof record.materialId !== "number") return null;
+  return {
+    materialId: record.materialId,
+    name: stringValue(record.name),
+    code: nullableString(record.code),
+    unit: stringValue(record.unit),
+    category: nullableString(record.category),
+    manufacturer: nullableString(record.manufacturer),
+    originCountry: nullableString(record.originCountry),
+    defaultUnitPrice: nullableNumber(record.defaultUnitPrice),
+    currency: stringValue(record.currency, "VND"),
+    imageUrl: nullableString(record.imageUrl),
+    sourceUrl: nullableString(record.sourceUrl),
+    specSnippet: stringValue(record.specSnippet),
+    score: nullableNumber(record.score) ?? 0,
+    breakdown: record.breakdown ?? null,
+  };
+}
+
 function candidatesFromItem(item: WorkspaceItem): Candidate[] {
   const snapshot = item.enrichedSnapshotJson;
   if (!snapshot || typeof snapshot !== "object") return [];
   const candidates = (snapshot as { candidates?: unknown }).candidates;
   if (!Array.isArray(candidates)) return [];
   return candidates
-    .map((candidate) =>
-      candidate && typeof candidate === "object"
-        ? (candidate as Candidate)
-        : null,
-    )
-    .filter(
-      (candidate): candidate is Candidate =>
-        typeof candidate?.materialId === "number",
-    );
+    .map((candidate) => normalizeCandidate(candidate))
+    .filter((candidate): candidate is Candidate => candidate != null);
 }
 
 function selectedCandidateForItem(item: WorkspaceItem) {
@@ -130,14 +187,10 @@ function selectedCandidateForItem(item: WorkspaceItem) {
   );
 }
 
-function formatPrice(candidate: Candidate | null) {
-  const value =
-    typeof candidate?.defaultUnitPrice === "number"
-      ? candidate.defaultUnitPrice
-      : null;
+function formatPrice(candidate: Candidate | MaterialSearchCandidate | null) {
+  const value = candidate?.defaultUnitPrice ?? null;
   if (value == null) return "-";
-  const currency =
-    typeof candidate?.currency === "string" ? candidate.currency : "VND";
+  const currency = candidate?.currency ?? "VND";
   return new Intl.NumberFormat("vi-VN", {
     style: "currency",
     currency,
@@ -177,6 +230,35 @@ function hasLastBulkApply(config: Record<string, unknown>) {
 
 function formatCandidateScore(score: unknown) {
   return typeof score === "number" ? `${Math.round(score * 100)}%` : "-";
+}
+
+function sheetFieldsFromItem(
+  item: WorkspaceItem,
+): Partial<Record<FillableField, string>> {
+  const original = asRecord(item.originalDataJson) ?? {};
+  return {
+    code: stringValue(original.code),
+    unit: stringValue(original.unit, item.unit ?? ""),
+    category: stringValue(original.category),
+    specText: stringValue(original.specText, item.specText ?? ""),
+    manufacturer: stringValue(original.manufacturer, item.vendorHint ?? ""),
+    originCountry: stringValue(original.originCountry, item.originHint ?? ""),
+    defaultUnitPrice: stringValue(
+      original.defaultUnitPrice,
+      item.unitPrice == null ? "" : String(item.unitPrice),
+    ),
+    currency: stringValue(original.currency, item.currency ?? "VND"),
+    sourceUrl: stringValue(original.sourceUrl),
+  };
+}
+
+function trimmedOrUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>) {
+  return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
 }
 
 function toggleNumber(values: number[], value: number) {
@@ -610,6 +692,17 @@ function MaterialReviewStep({
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(
     null,
   );
+  const [webResultsByItemId, setWebResultsByItemId] = useState<
+    Record<number, WebSearchResult[]>
+  >({});
+  const [aiFieldsByItemId, setAiFieldsByItemId] = useState<
+    Record<number, Partial<Record<FillableField, string>>>
+  >({});
+  const [aiEvidenceByItemId, setAiEvidenceByItemId] = useState<
+    Record<number, AiSearchResult["evidence"]>
+  >({});
+  const toast = useToast();
+  const utils = api.useUtils();
   const counts = useMemo(
     () =>
       items.reduce(
@@ -645,6 +738,16 @@ function MaterialReviewStep({
   const selectedCandidate = drawerItem
     ? selectedCandidateForItem(drawerItem)
     : null;
+  const drawerSheetFields = drawerItem ? sheetFieldsFromItem(drawerItem) : {};
+  const drawerWebResults = drawerItem
+    ? (webResultsByItemId[drawerItem.id] ?? [])
+    : [];
+  const drawerAiFields = drawerItem
+    ? (aiFieldsByItemId[drawerItem.id] ?? {})
+    : {};
+  const drawerAiEvidence = drawerItem
+    ? (aiEvidenceByItemId[drawerItem.id] ?? [])
+    : [];
   const selectedCount = selectedItemIds.length;
   const allVisibleSelected =
     visibleItems.length > 0 &&
@@ -657,6 +760,9 @@ function MaterialReviewStep({
     { id: selectedMaterialId ?? 0 },
     { enabled: selectedMaterialId != null },
   );
+  const webSearch = api.material.enrichWebSearchRowLinks.useMutation();
+  const aiSearch = api.material.enrichAiSearchRow.useMutation();
+  const upsertMaterial = api.material.upsertMaterial.useMutation();
 
   useEffect(() => {
     if (!drawerItem) return;
@@ -688,12 +794,167 @@ function MaterialReviewStep({
     onBulkUpdate({ itemIds: selectedItemIds, ...input });
   };
 
-  const material = materialDetail.data as MaterialDetail | null | undefined;
+  const material = materialDetail.data;
+  const catalogCandidates = materialSearch.data?.candidates ?? [];
+  const selectedCatalogCandidate =
+    selectedMaterialId == null
+      ? null
+      : (catalogCandidates.find(
+          (candidate) => candidate.materialId === selectedMaterialId,
+        ) ??
+        drawerCandidates.find(
+          (candidate) => candidate.materialId === selectedMaterialId,
+        ) ??
+        null);
   const originalFields =
     drawerItem?.originalDataJson &&
     typeof drawerItem.originalDataJson === "object"
       ? Object.entries(drawerItem.originalDataJson)
       : [];
+
+  const webSearchInput = drawerItem
+    ? {
+        name: drawerItem.productName,
+        code: drawerSheetFields.code,
+        manufacturer: drawerSheetFields.manufacturer,
+        specText: drawerSheetFields.specText,
+        unit: drawerSheetFields.unit,
+        category: drawerSheetFields.category,
+      }
+    : null;
+
+  const runWebSearch = () => {
+    if (!drawerItem || !webSearchInput) return;
+    webSearch.mutate(webSearchInput, {
+      onSuccess: (result) => {
+        setWebResultsByItemId((current) => ({
+          ...current,
+          [drawerItem.id]: result.results,
+        }));
+        if (result.results.length === 0) {
+          toast.warning("Không tìm thấy kết quả web cho dòng này.");
+          return;
+        }
+        toast.success(
+          `Đã tìm thấy ${result.results.length.toLocaleString("vi-VN")} kết quả web.`,
+        );
+      },
+      onError: (error) => {
+        toast.error(error.message ?? "Không tìm được kết quả web.");
+      },
+    });
+  };
+
+  const runAiSearch = () => {
+    if (!drawerItem || !webSearchInput || drawerWebResults.length === 0) return;
+    aiSearch.mutate(
+      { ...webSearchInput, webResults: drawerWebResults },
+      {
+        onSuccess: (result) => {
+          const nextFields = {
+            ...result.fields,
+            sourceUrl:
+              result.fields.sourceUrl ??
+              result.sourceUrls[0] ??
+              drawerAiFields.sourceUrl,
+          };
+          setAiFieldsByItemId((current) => ({
+            ...current,
+            [drawerItem.id]: nextFields,
+          }));
+          setAiEvidenceByItemId((current) => ({
+            ...current,
+            [drawerItem.id]: result.evidence,
+          }));
+          if (Object.keys(nextFields).length === 0) {
+            toast.warning("AI chưa trích xuất được trường vật tư nào.");
+            return;
+          }
+          toast.success("Đã trích xuất trường vật tư bằng AI.");
+        },
+        onError: (error) => {
+          toast.error(error.message ?? "Không chạy được tìm kiếm AI.");
+        },
+      },
+    );
+  };
+
+  const setAiField = (field: FillableField, value: string) => {
+    if (!drawerItem) return;
+    setAiFieldsByItemId((current) => ({
+      ...current,
+      [drawerItem.id]: {
+        ...(current[drawerItem.id] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveAiMaterial = (updateExisting: boolean) => {
+    if (!drawerItem) return;
+    const name = drawerItem.productName.trim();
+    const unit = firstNonEmpty(
+      drawerAiFields.unit,
+      drawerSheetFields.unit,
+      drawerItem.unit,
+    );
+    if (!name) {
+      toast.error("Tên vật tư không được để trống.");
+      return;
+    }
+    if (!unit) {
+      toast.error("ĐVT không được để trống.");
+      return;
+    }
+
+    upsertMaterial.mutate(
+      {
+        id: updateExisting ? (selectedMaterialId ?? undefined) : undefined,
+        patch: {
+          name,
+          unit,
+          code: trimmedOrUndefined(drawerAiFields.code),
+          category: trimmedOrUndefined(drawerAiFields.category),
+          specText: trimmedOrUndefined(drawerAiFields.specText),
+          manufacturer: trimmedOrUndefined(drawerAiFields.manufacturer),
+          originCountry: trimmedOrUndefined(drawerAiFields.originCountry),
+          defaultUnitPrice: parseOptionalNumber(
+            drawerAiFields.defaultUnitPrice ?? "",
+          ),
+          sourceUrl: trimmedOrUndefined(drawerAiFields.sourceUrl),
+          currency: firstNonEmpty(drawerAiFields.currency, "VND"),
+        },
+      },
+      {
+        onSuccess: (saved) => {
+          if (!saved) {
+            toast.error("Không lưu được vật tư.");
+            return;
+          }
+          void utils.material.enrichSearchMaterials.invalidate();
+          setSelectedMaterialId(saved.id);
+          onUpdateItem({ itemId: drawerItem.id, materialId: saved.id });
+          toast.success(
+            updateExisting
+              ? "Đã cập nhật và gán vật tư."
+              : "Đã lưu và gán vật tư.",
+          );
+        },
+        onError: (error) => {
+          if (error.data?.code === "CONFLICT") {
+            toast.error("Mã vật tư đã tồn tại.");
+            return;
+          }
+          toast.error(error.message ?? "Không lưu được vật tư.");
+        },
+      },
+    );
+  };
+
+  const assignSelectedMaterial = () => {
+    if (!drawerItem || selectedMaterialId == null) return;
+    onUpdateItem({ itemId: drawerItem.id, materialId: selectedMaterialId });
+  };
 
   if (items.length === 0) {
     return (
@@ -705,328 +966,270 @@ function MaterialReviewStep({
   }
 
   return (
-    <section className="panel overflow-hidden">
-      <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="section-title">Duyệt vật tư</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">
-              Review match theo kiểu danh mục vật tư
-            </h2>
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(24rem,0.75fr)]">
+      <div className="panel overflow-hidden">
+        <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="section-title">Duyệt vật tư</p>
+              <h2 className="mt-1 text-lg font-bold text-slate-950">
+                Review match theo kiểu danh mục vật tư
+              </h2>
+            </div>
+            <Button onClick={onContinue}>Qua preview export</Button>
           </div>
-          <Button onClick={onContinue}>Qua preview export</Button>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Tìm dòng / vật tư
+          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                Tìm dòng / vật tư
+              </span>
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="Tên vật tư, thông số, material id..."
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                Trạng thái
+              </span>
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as typeof statusFilter)
+                }
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+              >
+                <option value="all">Tất cả</option>
+                <option value="matched">Tự động</option>
+                <option value="manual">Thủ công</option>
+                <option value="candidates_found">Cần duyệt</option>
+                <option value="unmatched">Chưa match</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge tone="success" count={counts.matched + counts.manual}>
+              Đã match
+            </Badge>
+            <Badge tone="warning" count={counts.candidates_found}>
+              Cần duyệt
+            </Badge>
+            <Badge tone="neutral" count={counts.unmatched}>
+              Chưa match
+            </Badge>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs font-bold text-slate-600">
+              {selectedCount} dòng đã chọn
             </span>
-            <input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="Tên vật tư, thông số, material id..."
-              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Trạng thái
-            </span>
-            <select
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(event.target.value as typeof statusFilter)
-              }
-              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={selectedCount === 0}
+              isLoading={isBulkApplying}
+              onClick={() => onBulkApply(selectedItemIds)}
             >
-              <option value="all">Tất cả</option>
-              <option value="matched">Tự động</option>
-              <option value="manual">Thủ công</option>
-              <option value="candidates_found">Cần duyệt</option>
-              <option value="unmatched">Chưa match</option>
-            </select>
-          </label>
+              Tự áp dụng ≥ 85%
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={selectedCount === 0}
+              isLoading={isBulkUpdating}
+              onClick={() => runBulkUpdate({ includedInExport: true })}
+            >
+              Đưa vào export
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={selectedCount === 0}
+              isLoading={isBulkUpdating}
+              onClick={() => runBulkUpdate({ includedInExport: false })}
+            >
+              Loại khỏi export
+            </Button>
+            <Button
+              size="sm"
+              variant="warning"
+              disabled={selectedCount === 0}
+              isLoading={isBulkUpdating}
+              onClick={() => runBulkUpdate({ clearMaterialId: true })}
+            >
+              Xóa vật tư
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!hasLastBulkApply(workspace.templateConfigJson)}
+              isLoading={isUndoing}
+              onClick={onUndoBulk}
+            >
+              Hoàn tác bulk
+            </Button>
+          </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Badge tone="success" count={counts.matched + counts.manual}>
-            Đã match
-          </Badge>
-          <Badge tone="warning" count={counts.candidates_found}>
-            Cần duyệt
-          </Badge>
-          <Badge tone="neutral" count={counts.unmatched}>
-            Chưa match
-          </Badge>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <span className="text-xs font-bold text-slate-600">
-            {selectedCount} dòng đã chọn
-          </span>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={selectedCount === 0}
-            isLoading={isBulkApplying}
-            onClick={() => onBulkApply(selectedItemIds)}
-          >
-            Bulk auto-apply ≥ 85%
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={selectedCount === 0}
-            isLoading={isBulkUpdating}
-            onClick={() => runBulkUpdate({ includedInExport: true })}
-          >
-            Include export
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={selectedCount === 0}
-            isLoading={isBulkUpdating}
-            onClick={() => runBulkUpdate({ includedInExport: false })}
-          >
-            Exclude export
-          </Button>
-          <Button
-            size="sm"
-            variant="warning"
-            disabled={selectedCount === 0}
-            isLoading={isBulkUpdating}
-            onClick={() => runBulkUpdate({ clearMaterialId: true })}
-          >
-            Clear material
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!hasLastBulkApply(workspace.templateConfigJson)}
-            isLoading={isUndoing}
-            onClick={onUndoBulk}
-          >
-            Undo bulk apply
-          </Button>
-        </div>
-      </div>
 
-      <div className="max-h-[620px] overflow-auto">
-        <table className="w-full min-w-[1180px] divide-y divide-slate-200 text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-500 uppercase">
-            <tr>
-              <th className="px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  onChange={setVisibleSelection}
-                  aria-label="Chọn tất cả dòng đang hiển thị"
-                />
-              </th>
-              <th className="px-3 py-2">Dòng</th>
-              <th className="px-3 py-2">Vật tư Excel</th>
-              <th className="px-3 py-2">Trạng thái</th>
-              <th className="px-3 py-2">Match vật tư</th>
-              <th className="px-3 py-2">Mã VT</th>
-              <th className="px-3 py-2">ĐVT</th>
-              <th className="px-3 py-2">NCC</th>
-              <th className="px-3 py-2">Xuất xứ</th>
-              <th className="px-3 py-2 text-right">Đơn giá</th>
-              <th className="px-3 py-2">Catalog</th>
-              <th className="px-3 py-2 text-center">Export</th>
-              <th className="px-3 py-2">Candidates</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {visibleItems.map((item) => {
-              const selected = selectedCandidateForItem(item);
-              const candidates = candidatesFromItem(item);
-              return (
-                <tr key={item.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedItemIds.includes(item.id)}
-                      onChange={() => toggleSelectedItem(item.id)}
-                      aria-label={`Chọn dòng ${item.originalRowIndex}`}
-                    />
-                  </td>
-                  <td className="px-3 py-3 font-semibold tabular-nums">
-                    {item.originalRowIndex}
-                  </td>
-                  <td className="max-w-80 px-3 py-3">
-                    <p className="line-clamp-2 font-semibold text-slate-950">
-                      {item.productName}
-                    </p>
-                    <p className="line-clamp-2 text-xs text-slate-500">
-                      {item.specText || item.unit || "-"}
-                    </p>
-                  </td>
-                  <td className="px-3 py-3">
-                    <Badge tone={statusTone(item.matchStatus)}>
-                      {statusLabel[item.matchStatus]}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-3">
-                    <input
-                      type="number"
-                      min={1}
-                      defaultValue={item.materialId ?? ""}
-                      disabled={isUpdating}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
-                        onUpdateItem({
-                          itemId: item.id,
-                          materialId:
-                            Number.isInteger(value) && value > 0 ? value : null,
-                        });
-                      }}
-                      className="h-9 w-24 rounded-md border border-slate-300 px-2 text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs">
-                    {typeof selected?.code === "string" ? selected.code : "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {typeof selected?.unit === "string"
-                      ? selected.unit
-                      : item.unit || "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {typeof selected?.manufacturer === "string"
-                      ? selected.manufacturer
-                      : "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    {typeof selected?.originCountry === "string"
-                      ? selected.originCountry
-                      : "-"}
-                  </td>
-                  <td className="px-3 py-3 text-right font-bold text-emerald-700 tabular-nums">
-                    {formatPrice(selected)}
-                  </td>
-                  <td className="px-3 py-3">
-                    <Badge tone={item.materialId ? "info" : "neutral"}>
-                      {item.materialId ? "PDF?" : "-"}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <input
-                      type="checkbox"
-                      checked={item.includedInExport}
-                      disabled={isUpdating}
-                      onChange={(event) =>
-                        onUpdateItem({
-                          itemId: item.id,
-                          includedInExport: event.target.checked,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex max-w-96 flex-wrap gap-1.5">
-                      {candidates.slice(0, 3).map((candidate) => (
-                        <button
-                          key={`${item.id}-${candidate.materialId}`}
-                          type="button"
-                          disabled={isUpdating}
-                          onClick={() =>
-                            onUpdateItem({
-                              itemId: item.id,
-                              materialId: candidate.materialId,
-                            })
-                          }
-                          className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
-                        >
-                          #{candidate.materialId}{" "}
-                          {typeof candidate.name === "string"
-                            ? candidate.name.slice(0, 32)
-                            : ""}
-                        </button>
-                      ))}
+        <div className="max-h-[680px] overflow-auto">
+          <table className="w-full min-w-[980px] divide-y divide-slate-200 text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-500 uppercase">
+              <tr>
+                <th className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={setVisibleSelection}
+                    aria-label="Chọn tất cả dòng đang hiển thị"
+                  />
+                </th>
+                <th className="px-3 py-2">Dòng</th>
+                <th className="px-3 py-2">Vật tư Excel</th>
+                <th className="px-3 py-2">Trạng thái</th>
+                <th className="px-3 py-2">Mã VT</th>
+                <th className="px-3 py-2">ĐVT</th>
+                <th className="px-3 py-2">NCC</th>
+                <th className="px-3 py-2">Xuất xứ</th>
+                <th className="px-3 py-2 text-right">Đơn giá</th>
+                <th className="px-3 py-2">Catalog</th>
+                <th className="px-3 py-2">Ứng viên</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {visibleItems.map((item) => {
+                const selected = selectedCandidateForItem(item);
+                const candidates = candidatesFromItem(item);
+                const isActive = drawerItem?.id === item.id;
+                return (
+                  <tr
+                    key={item.id}
+                    className={isActive ? "bg-sky-50" : "hover:bg-slate-50"}
+                  >
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedItemIds.includes(item.id)}
+                        onChange={() => toggleSelectedItem(item.id)}
+                        aria-label={`Chọn dòng ${item.originalRowIndex}`}
+                      />
+                    </td>
+                    <td className="px-3 py-3 font-semibold tabular-nums">
+                      {item.originalRowIndex}
+                    </td>
+                    <td className="max-w-80 px-3 py-3">
                       <button
                         type="button"
                         onClick={() => setDrawerItemId(item.id)}
-                        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        className="block w-full text-left"
                       >
-                        Compare/search
+                        <span className="line-clamp-2 font-semibold text-slate-950">
+                          {item.productName}
+                        </span>
+                        <span className="line-clamp-2 text-xs text-slate-500">
+                          {firstNonEmpty(item.specText, item.unit, "-")}
+                        </span>
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge tone={statusTone(item.matchStatus)}>
+                        {statusLabel[item.matchStatus]}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs">
+                      {selected?.code ?? "-"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {firstNonEmpty(selected?.unit, item.unit, "-")}
+                    </td>
+                    <td className="px-3 py-3">
+                      {selected?.manufacturer ?? "-"}
+                    </td>
+                    <td className="px-3 py-3">
+                      {selected?.originCountry ?? "-"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-bold text-emerald-700 tabular-nums">
+                      {formatPrice(selected)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge tone={item.materialId ? "info" : "neutral"}>
+                        {item.materialId ? "PDF?" : "-"}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex max-w-96 flex-wrap gap-1.5">
+                        {candidates.slice(0, 3).map((candidate) => (
+                          <button
+                            key={`${item.id}-${candidate.materialId}`}
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={() => {
+                              setDrawerItemId(item.id);
+                              setSelectedMaterialId(candidate.materialId);
+                            }}
+                            className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
+                          >
+                            #{candidate.materialId}{" "}
+                            {candidate.name.slice(0, 32)}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setDrawerItemId(item.id)}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          So sánh & tìm kiếm
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {drawerItem ? (
-        <div className="border-t border-slate-200 bg-slate-50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+
+      <aside className="panel overflow-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-7rem)] xl:overflow-auto">
+        {drawerItem ? (
+          <div className="space-y-4 p-4">
             <div>
-              <p className="section-title">Compare & search</p>
-              <h3 className="text-base font-bold text-slate-950">
+              <p className="section-title">So sánh & tìm kiếm</p>
+              <h3 className="mt-1 text-base font-bold text-slate-950">
                 Dòng {drawerItem.originalRowIndex}: {drawerItem.productName}
               </h3>
             </div>
-            <button
-              type="button"
-              onClick={() => setDrawerItemId(null)}
-              className="rounded-full p-2 text-slate-500 hover:bg-white hover:text-slate-900"
-              aria-label="Đóng drawer"
-            >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                Excel row
+                Dòng Excel
               </p>
               <p className="mt-2 font-bold text-slate-950">
                 {drawerItem.productName}
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                {drawerItem.specText || drawerItem.unit || "-"}
+                {firstNonEmpty(drawerItem.specText, drawerItem.unit, "-")}
               </p>
-              <div className="mt-3 grid max-h-52 gap-2 overflow-auto text-xs">
+              <div className="mt-3 grid max-h-44 gap-2 overflow-auto text-xs">
                 {originalFields.map(([key, value]) => (
                   <div
                     key={key}
-                    className="grid grid-cols-[120px_minmax(0,1fr)] gap-2 rounded-md bg-slate-50 px-2 py-1"
+                    className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded-md bg-white px-2 py-1"
                   >
                     <span className="font-bold text-slate-500">{key}</span>
                     <span className="break-words text-slate-800">
-                      {typeof value === "string" ||
-                      typeof value === "number" ||
-                      typeof value === "boolean"
-                        ? String(value)
-                        : ""}
+                      {stringValue(value)}
                     </span>
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {drawerCandidates.map((candidate) => (
-                  <button
-                    key={candidate.materialId}
-                    type="button"
-                    onClick={() => setSelectedMaterialId(candidate.materialId)}
-                    className={`rounded-md border px-2 py-1 text-xs font-semibold ${
-                      selectedMaterialId === candidate.materialId
-                        ? "border-sky-600 bg-sky-50 text-sky-800"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    #{candidate.materialId} ·{" "}
-                    {formatCandidateScore(candidate.score)}
-                  </button>
-                ))}
-              </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
               <div className="flex flex-wrap items-end gap-2">
                 <label className="min-w-0 flex-1">
                   <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                    Search material
+                    Tìm vật tư
                   </span>
                   <input
                     value={drawerSearch}
@@ -1036,75 +1239,260 @@ function MaterialReviewStep({
                   />
                 </label>
                 <Button
-                  disabled={!selectedMaterialId}
-                  onClick={() =>
-                    selectedMaterialId &&
-                    onUpdateItem({
-                      itemId: drawerItem.id,
-                      materialId: selectedMaterialId,
-                    })
-                  }
+                  disabled={selectedMaterialId == null || isUpdating}
+                  isLoading={isUpdating}
+                  onClick={assignSelectedMaterial}
                 >
-                  Assign
+                  Gán vật tư
                 </Button>
               </div>
-              <div className="mt-3 grid max-h-44 gap-2 overflow-auto">
-                {(materialSearch.data?.candidates ?? []).map(
-                  (candidate: MaterialSearchCandidate) => (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={runWebSearch}
+                  disabled={!drawerItem.productName.trim()}
+                  isLoading={webSearch.isPending}
+                >
+                  <Globe className="h-4 w-4" aria-hidden />
+                  Tìm web
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={runAiSearch}
+                  disabled={drawerWebResults.length === 0}
+                  isLoading={aiSearch.isPending}
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                  Tìm bằng AI
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                Ứng viên gợi ý
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {drawerCandidates.length > 0 ? (
+                  drawerCandidates.map((candidate) => (
                     <button
                       key={candidate.materialId}
                       type="button"
                       onClick={() =>
                         setSelectedMaterialId(candidate.materialId)
                       }
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:border-sky-300 hover:bg-sky-50"
+                      className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+                        selectedMaterialId === candidate.materialId
+                          ? "border-sky-600 bg-sky-50 text-sky-800"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      #{candidate.materialId} ·{" "}
+                      {formatCandidateScore(candidate.score)}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Chưa có ứng viên tự động cho dòng này.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                Danh mục
+              </p>
+              <div className="mt-2 grid max-h-52 gap-2 overflow-auto">
+                {materialSearch.isLoading ? (
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Đang tìm danh mục…
+                  </p>
+                ) : catalogCandidates.length > 0 ? (
+                  catalogCandidates.map((candidate) => (
+                    <button
+                      key={candidate.materialId}
+                      type="button"
+                      onClick={() =>
+                        setSelectedMaterialId(candidate.materialId)
+                      }
+                      className={`rounded-lg border px-3 py-2 text-left ${
+                        selectedMaterialId === candidate.materialId
+                          ? "border-sky-400 bg-sky-50"
+                          : "border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50"
+                      }`}
                     >
                       <p className="text-sm font-bold text-slate-950">
                         {candidate.name}
                       </p>
                       <p className="text-xs text-slate-600">
                         #{candidate.materialId} · {candidate.code ?? "-"} ·{" "}
-                        {candidate.unit ?? "-"}
+                        {candidate.unit ?? "-"} · {formatPrice(candidate)}
                       </p>
                     </button>
-                  ),
+                  ))
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                    Nhập ít nhất 2 ký tự để tìm trong danh mục.
+                  </p>
                 )}
               </div>
-              <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
-                <p className="font-bold">
-                  {material?.name ??
-                    (selectedCandidate &&
-                    typeof selectedCandidate.name === "string"
-                      ? selectedCandidate.name
-                      : "Chưa chọn material")}
+            </div>
+
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
+              <p className="font-bold">
+                {material?.name ??
+                  selectedCatalogCandidate?.name ??
+                  "Chưa chọn vật tư"}
+              </p>
+              <p className="mt-1 text-xs">
+                Code: {material?.code ?? selectedCatalogCandidate?.code ?? "-"}{" "}
+                · ĐVT: {material?.unit ?? selectedCatalogCandidate?.unit ?? "-"}
+              </p>
+              <p className="mt-1 line-clamp-3 text-xs">
+                {material?.specText ??
+                  selectedCatalogCandidate?.specSnippet ??
+                  selectedCatalogCandidate?.manufacturer ??
+                  "Chọn ứng viên hoặc kết quả tìm kiếm để xem tóm tắt."}
+              </p>
+              <p className="mt-2 text-xs font-semibold">
+                Catalog: xem trong Step 4/export report
+              </p>
+            </div>
+
+            {drawerWebResults.length > 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  Web
                 </p>
-                <p className="mt-1 text-xs">
-                  Code:{" "}
-                  {material?.code ??
-                    (typeof selectedCandidate?.code === "string"
-                      ? selectedCandidate.code
-                      : "-")}{" "}
-                  · ĐVT:{" "}
-                  {material?.unit ??
-                    (typeof selectedCandidate?.unit === "string"
-                      ? selectedCandidate.unit
-                      : "-")}
-                </p>
-                <p className="mt-1 line-clamp-3 text-xs">
-                  {material?.specText ??
-                    (typeof selectedCandidate?.manufacturer === "string"
-                      ? selectedCandidate.manufacturer
-                      : null) ??
-                    "Chọn candidate/search result để xem summary."}
-                </p>
-                <p className="mt-2 text-xs font-semibold">
-                  Catalog: xem trong Step 4/export report
-                </p>
+                <div className="mt-2 grid gap-2">
+                  {drawerWebResults.slice(0, 6).map((result) => (
+                    <a
+                      key={result.url}
+                      href={result.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs hover:border-sky-300 hover:bg-sky-50"
+                    >
+                      <span className="flex items-start justify-between gap-2 font-bold text-slate-900">
+                        <span className="line-clamp-2">{result.title}</span>
+                        <ExternalLink
+                          className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                          aria-hidden
+                        />
+                      </span>
+                      <span className="mt-1 block text-slate-500">
+                        {result.domain}
+                      </span>
+                      {result.snippet ? (
+                        <span className="mt-1 line-clamp-2 block text-slate-600">
+                          {result.snippet}
+                        </span>
+                      ) : null}
+                    </a>
+                  ))}
+                </div>
               </div>
+            ) : null}
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  AI
+                </p>
+                {aiSearch.isPending ? (
+                  <span className="flex items-center gap-1 text-xs text-slate-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    Đang trích xuất…
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 grid gap-2">
+                {materialProfileDraftFields.map((field) => (
+                  <label
+                    key={field}
+                    className="block text-xs font-semibold text-slate-600"
+                  >
+                    {FIELD_LABELS[field]}
+                    <input
+                      value={drawerAiFields[field] ?? ""}
+                      onChange={(event) =>
+                        setAiField(field, event.target.value)
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                      placeholder={
+                        field === "unit"
+                          ? firstNonEmpty(drawerSheetFields.unit, "ĐVT")
+                          : undefined
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={Object.keys(drawerAiFields).length === 0}
+                  isLoading={upsertMaterial.isPending}
+                  onClick={() => saveAiMaterial(false)}
+                >
+                  Lưu vật tư mới
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={
+                    selectedMaterialId == null ||
+                    Object.keys(drawerAiFields).length === 0
+                  }
+                  isLoading={upsertMaterial.isPending}
+                  onClick={() => saveAiMaterial(true)}
+                >
+                  Cập nhật vật tư đã chọn
+                </Button>
+              </div>
+              {drawerAiEvidence.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-bold text-slate-700">
+                    Bằng chứng AI
+                  </p>
+                  {drawerAiEvidence.slice(0, 4).map((item, index) => (
+                    <div
+                      key={`${item.field}-${item.sourceUrl ?? index}`}
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"
+                    >
+                      <p className="font-semibold text-slate-700">
+                        {item.field}
+                      </p>
+                      <p className="mt-0.5 text-slate-600">{item.snippet}</p>
+                      {item.sourceUrl ? (
+                        <a
+                          href={item.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block text-sky-700 hover:underline"
+                        >
+                          {item.sourceUrl}
+                        </a>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <div className="p-4">
+            <EmptyState
+              title="Chọn một dòng"
+              description="Chọn một dòng ở bảng Duyệt vật tư để so sánh và tìm kiếm."
+            />
+          </div>
+        )}
+      </aside>
     </section>
   );
 }
