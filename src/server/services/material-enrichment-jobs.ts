@@ -442,6 +442,31 @@ async function _listMaterialWebCandidates(itemId: number) {
   return rows.map(toCandidateSnapshot);
 }
 
+async function refreshMaterialEnrichmentJobCounters(jobId: string) {
+  const [stats] = await db
+    .select({
+      processed: sql<number>`count(*) filter (where ${materialEnrichmentItems.status} <> 'pending' and ${materialEnrichmentItems.status} <> 'processing')::int`,
+      matched: sql<number>`count(*) filter (where ${materialEnrichmentItems.status} in ('auto', 'committed'))::int`,
+      needsReview: sql<number>`count(*) filter (where ${materialEnrichmentItems.status} = 'review')::int`,
+      failed: sql<number>`count(*) filter (where ${materialEnrichmentItems.status} = 'failed')::int`,
+      pdfsFound: sql<number>`coalesce(sum(case when jsonb_typeof(${materialEnrichmentItems.resultJson}->'catalogPdfUrls') = 'array' then jsonb_array_length(${materialEnrichmentItems.resultJson}->'catalogPdfUrls') else 0 end), 0)::int`,
+    })
+    .from(materialEnrichmentItems)
+    .where(eq(materialEnrichmentItems.jobId, jobId));
+
+  await db
+    .update(materialEnrichmentJobs)
+    .set({
+      processed: stats?.processed ?? 0,
+      matched: stats?.matched ?? 0,
+      needsReview: stats?.needsReview ?? 0,
+      failed: stats?.failed ?? 0,
+      pdfsFound: stats?.pdfsFound ?? 0,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(materialEnrichmentJobs.id, jobId));
+}
+
 /**
  * Focused query for the review dialog: return just one item's web candidates,
  * tenant-scoped via its parent job. Avoids re-downloading the full export
@@ -525,7 +550,7 @@ async function _selectWebCandidate(
  * Persist the review dialog's per-field decision onto the item's resultJson so
  * a subsequent commit (manual or bulk) honors it. Mirrors selectWebCandidate's
  * patch-and-return shape. Passing `undefined` for a key leaves it unchanged;
- * passing an empty array/object clears it (commit reverts to writing all fields).
+ * passing an empty array/object clears that part of the saved decision.
  */
 async function _setEnrichmentItemDecision(
   itemId: number,
@@ -588,6 +613,7 @@ async function _commitMaterialEnrichmentItem(
   }
 
   const committed = await commitEnrichmentItem(db, itemId);
+  await refreshMaterialEnrichmentJobCounters(committed.jobId);
   return toItemSnapshot(requireItemRow(committed));
 }
 
@@ -623,7 +649,8 @@ async function _bulkCommitMaterialEnrichment(
   for (const item of eligible) {
     try {
       // Items already confirmed in-scope by listMaterialEnrichmentItems above.
-      results.push(await commitMaterialEnrichmentItem(item.id));
+      const committedItem = await commitEnrichmentItem(db, item.id);
+      results.push(toItemSnapshot(requireItemRow(committedItem)));
       committed += 1;
     } catch (error) {
       failed += 1;
@@ -636,6 +663,10 @@ async function _bulkCommitMaterialEnrichment(
       });
       errors.push(`#${item.id}: ${message}`);
     }
+  }
+
+  if (committed > 0) {
+    await refreshMaterialEnrichmentJobCounters(input.jobId);
   }
 
   return { committed, failed, items: results, errors };
@@ -659,6 +690,7 @@ async function _rejectMaterialEnrichmentItem(
     throw new ShopJobServiceError("NOT_FOUND", "Không tìm thấy dòng enrichment.");
   }
 
+  await refreshMaterialEnrichmentJobCounters(updated.jobId);
   return toItemSnapshot(updated);
 }
 

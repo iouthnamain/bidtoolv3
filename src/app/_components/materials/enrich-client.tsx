@@ -1257,6 +1257,8 @@ function EnrichmentReviewDialog({
                         setEditedValues({});
                       }}
                       enableInlineEdit
+                      enableOverwrite={false}
+                      clearLabel="Bỏ chọn tất cả trường"
                     />
                   );
                 })()}

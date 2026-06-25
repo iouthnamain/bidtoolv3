@@ -69,6 +69,8 @@ export type FieldCompareEditorProps = {
 
   /** Inline edit of the proposed value (off for step-2 by default). */
   enableInlineEdit?: boolean;
+  /** Show force-overwrite controls for fields that already have values. */
+  enableOverwrite?: boolean;
 
   /** Per-row skip toggle (step-2 / step-3). */
   enableSkip?: boolean;
@@ -113,6 +115,7 @@ export function FieldCompareEditor({
   showingSearch = false,
   onChoose,
   enableInlineEdit = false,
+  enableOverwrite = true,
   enableSkip = false,
   isSkipped = false,
   onToggleSkip,
@@ -343,7 +346,7 @@ export function FieldCompareEditor({
                         </span>
                       )}
                     </>
-                  ) : cell.action === "kept" ? (
+                  ) : cell.action === "kept" && enableOverwrite ? (
                     <button
                       type="button"
                       onClick={(e) => {
