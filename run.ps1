@@ -9,7 +9,8 @@
     It will:
       1. Pull the latest code from git
       2. Make sure Docker Desktop is running
-      3. Ensure .env exists, then refresh deps + DB migrations (bun run dev:update)
+      3. Ensure .env exists, then refresh deps, start Postgres + SearXNG in
+         Docker, and apply DB migrations (bun run dev:update)
       4. Prepare auth (host-tenant backfill) and show how to create the
          first admin when authentication is enabled
       5. Start the app (bun run dev:run) and open http://localhost:3000
@@ -124,7 +125,7 @@ Write-Host "      Docker is ready."
 Write-Host ""
 
 # --- 3. Refresh deps + DB migrations after the pull --------------------------
-Write-Host "[3/5] Refreshing dependencies and database migrations..."
+Write-Host "[3/5] Refreshing dependencies, Docker services (Postgres + SearXNG), and database migrations..."
 bun run dev:update
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

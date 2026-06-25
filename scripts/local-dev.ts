@@ -294,8 +294,8 @@ async function ensureDockerIsReady(): Promise<void> {
 async function ensureDockerStack(): Promise<void> {
   await runCheckedCommand(
     "docker",
-    ["compose", "up", "-d", "postgres"],
-    "Starting PostgreSQL container",
+    ["compose", "up", "-d", "postgres", "searxng"],
+    "Starting PostgreSQL and SearXNG containers",
   );
 }
 
