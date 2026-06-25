@@ -40,8 +40,12 @@ type MaterialSearchCandidate =
 type WebSearchResult =
   RouterOutputs["material"]["enrichWebSearchRowLinks"]["results"][number];
 type AiSearchResult = RouterOutputs["material"]["enrichAiSearchRow"];
+type MaterialDetail = NonNullable<RouterOutputs["material"]["getById"]>;
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
+type SearchTab = "material" | "web" | "ai";
+type CompareFieldKey = "name" | FillableField;
+type CompareValues = Partial<Record<CompareFieldKey, string>>;
 
 type Candidate = {
   materialId: number;
@@ -123,6 +127,26 @@ function editedCellValue(
 const materialProfileDraftFields = FILLABLE_FIELDS.filter(
   (field) => !NON_COLUMN_FIELDS.has(field),
 );
+
+const materialProfileCompareFields: Array<{
+  key: CompareFieldKey;
+  label: string;
+}> = [
+  { key: "name", label: "Tên" },
+  { key: "code", label: FIELD_LABELS.code },
+  { key: "unit", label: FIELD_LABELS.unit },
+  { key: "specText", label: FIELD_LABELS.specText },
+  { key: "manufacturer", label: FIELD_LABELS.manufacturer },
+  { key: "originCountry", label: FIELD_LABELS.originCountry },
+  { key: "defaultUnitPrice", label: FIELD_LABELS.defaultUnitPrice },
+  { key: "sourceUrl", label: FIELD_LABELS.sourceUrl },
+];
+
+const searchTabs: Array<{ id: SearchTab; label: string }> = [
+  { id: "material", label: "Vật tư hiện có" },
+  { id: "web", label: "Web search" },
+  { id: "ai", label: "AI search" },
+];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
@@ -261,10 +285,183 @@ function firstNonEmpty(...values: Array<string | null | undefined>) {
   return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
 }
 
+function formatComparePrice(value: number | string | null | undefined) {
+  if (typeof value === "number") {
+    return value.toLocaleString("vi-VN");
+  }
+  return stringValue(value);
+}
+
+function excelCompareValues(
+  item: WorkspaceItem,
+  sheetFields: Partial<Record<FillableField, string>>,
+): CompareValues {
+  return {
+    name: item.productName,
+    code: sheetFields.code,
+    unit: sheetFields.unit,
+    specText: sheetFields.specText,
+    manufacturer: sheetFields.manufacturer,
+    originCountry: sheetFields.originCountry,
+    defaultUnitPrice: sheetFields.defaultUnitPrice,
+    sourceUrl: sheetFields.sourceUrl,
+  };
+}
+
+function materialCompareValues(
+  material: Candidate | MaterialSearchCandidate | MaterialDetail | null,
+): CompareValues {
+  if (!material) return {};
+  return {
+    name: material.name,
+    code: material.code ?? "",
+    unit: material.unit ?? "",
+    category: material.category ?? "",
+    specText:
+      "specText" in material
+        ? (material.specText ?? "")
+        : (material.specSnippet ?? ""),
+    manufacturer: material.manufacturer ?? "",
+    originCountry: material.originCountry ?? "",
+    defaultUnitPrice: formatComparePrice(material.defaultUnitPrice),
+    currency: material.currency ?? "VND",
+    sourceUrl: material.sourceUrl ?? "",
+  };
+}
+
+function aiCompareValues(
+  item: WorkspaceItem,
+  fields: Partial<Record<FillableField, string>>,
+): CompareValues {
+  return {
+    name: item.productName,
+    code: fields.code,
+    unit: fields.unit,
+    specText: fields.specText,
+    manufacturer: fields.manufacturer,
+    originCountry: fields.originCountry,
+    defaultUnitPrice: fields.defaultUnitPrice,
+    currency: fields.currency,
+    sourceUrl: fields.sourceUrl,
+  };
+}
+
+function normalizedCompareValue(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function compareTone(left: string | undefined, right: string | undefined) {
+  const leftValue = normalizedCompareValue(left);
+  const rightValue = normalizedCompareValue(right);
+  if (!leftValue && !rightValue) return "empty";
+  if (!leftValue || !rightValue) return "missing";
+  return leftValue === rightValue ? "same" : "different";
+}
+
 function toggleNumber(values: number[], value: number) {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value].sort((a, b) => a - b);
+}
+
+function CompareValue({
+  value,
+  tone,
+  align = "left",
+}: {
+  value: string | undefined;
+  tone?: "empty" | "missing" | "same" | "different";
+  align?: "left" | "right";
+}) {
+  const display = firstNonEmpty(value, "(trống)");
+  const toneClass =
+    tone === "same"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+      : tone === "different"
+        ? "border-amber-100 bg-amber-50 text-amber-900"
+        : tone === "missing"
+          ? "border-slate-200 bg-white text-slate-500"
+          : "border-dashed border-slate-200 bg-slate-50 text-slate-400";
+  return (
+    <div
+      className={`min-h-9 rounded-lg border px-2 py-1.5 text-xs ${toneClass} ${
+        align === "right" ? "text-right" : ""
+      }`}
+    >
+      {display}
+    </div>
+  );
+}
+
+function CoreComparisonRows({
+  left,
+  right,
+}: {
+  left: CompareValues;
+  right: CompareValues;
+}) {
+  return (
+    <div className="grid gap-2">
+      {materialProfileCompareFields.map((field) => {
+        const leftValue = left[field.key];
+        const rightValue = right[field.key];
+        const tone = compareTone(leftValue, rightValue);
+        return (
+          <div
+            key={field.key}
+            className="grid gap-1 rounded-lg border border-slate-100 bg-slate-50 p-2 md:grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)]"
+          >
+            <span className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+              {field.label}
+            </span>
+            <CompareValue value={leftValue} tone={tone} />
+            <CompareValue value={rightValue} tone={tone} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RawExcelFields({
+  fields,
+  expanded,
+  onToggle,
+}: {
+  fields: Array<[string, unknown]>;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (fields.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-500 uppercase hover:bg-slate-50"
+      >
+        Raw Excel fields
+        <span className="text-[11px] font-semibold tracking-normal text-slate-400 normal-case">
+          {expanded ? "Ẩn" : "Hiện"}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="grid max-h-52 gap-2 overflow-auto border-t border-slate-200 p-3 text-xs">
+          {fields.map(([key, value]) => (
+            <div
+              key={key}
+              className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded-md bg-slate-50 px-2 py-1"
+            >
+              <span className="font-bold text-slate-500">{key}</span>
+              <span className="break-words text-slate-800">
+                {stringValue(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function MaterialProfileStepHeader({
@@ -692,6 +889,8 @@ function MaterialReviewStep({
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(
     null,
   );
+  const [activeSearchTab, setActiveSearchTab] = useState<SearchTab>("material");
+  const [rawExcelExpanded, setRawExcelExpanded] = useState(false);
   const [webResultsByItemId, setWebResultsByItemId] = useState<
     Record<number, WebSearchResult[]>
   >({});
@@ -734,6 +933,9 @@ function MaterialReviewStep({
   }, [items, keyword, statusFilter]);
   const drawerItem =
     items.find((item) => item.id === drawerItemId) ?? visibleItems[0] ?? null;
+  const drawerItemEffectId = drawerItem?.id ?? null;
+  const drawerItemMaterialId = drawerItem?.materialId ?? null;
+  const drawerItemProductName = drawerItem?.productName ?? "";
   const drawerCandidates = drawerItem ? candidatesFromItem(drawerItem) : [];
   const selectedCandidate = drawerItem
     ? selectedCandidateForItem(drawerItem)
@@ -765,12 +967,19 @@ function MaterialReviewStep({
   const upsertMaterial = api.material.upsertMaterial.useMutation();
 
   useEffect(() => {
-    if (!drawerItem) return;
+    if (drawerItemEffectId == null) return;
     setSelectedMaterialId(
-      drawerItem.materialId ?? selectedCandidate?.materialId ?? null,
+      drawerItemMaterialId ?? selectedCandidate?.materialId ?? null,
     );
-    setDrawerSearch(drawerItem.productName);
-  }, [drawerItem, selectedCandidate?.materialId]);
+    setDrawerSearch(drawerItemProductName);
+    setActiveSearchTab("material");
+    setRawExcelExpanded(false);
+  }, [
+    drawerItemEffectId,
+    drawerItemMaterialId,
+    drawerItemProductName,
+    selectedCandidate?.materialId,
+  ]);
 
   const toggleSelectedItem = (itemId: number) => {
     setSelectedItemIds((current) => toggleNumber(current, itemId));
@@ -794,7 +1003,8 @@ function MaterialReviewStep({
     onBulkUpdate({ itemIds: selectedItemIds, ...input });
   };
 
-  const material = materialDetail.data;
+  const material =
+    materialDetail.data?.id === selectedMaterialId ? materialDetail.data : null;
   const catalogCandidates = materialSearch.data?.candidates ?? [];
   const selectedCatalogCandidate =
     selectedMaterialId == null
@@ -806,6 +1016,14 @@ function MaterialReviewStep({
           (candidate) => candidate.materialId === selectedMaterialId,
         ) ??
         null);
+  const existingMaterial = material ?? selectedCatalogCandidate ?? null;
+  const excelValues = drawerItem
+    ? excelCompareValues(drawerItem, drawerSheetFields)
+    : {};
+  const existingValues = materialCompareValues(existingMaterial);
+  const aiValues = drawerItem
+    ? aiCompareValues(drawerItem, drawerAiFields)
+    : {};
   const originalFields =
     drawerItem?.originalDataJson &&
     typeof drawerItem.originalDataJson === "object"
@@ -823,60 +1041,81 @@ function MaterialReviewStep({
       }
     : null;
 
+  const executeWebSearch = async ({
+    switchToWebTab,
+  }: {
+    switchToWebTab: boolean;
+  }) => {
+    if (!drawerItem || !webSearchInput) return [];
+    try {
+      const result = await webSearch.mutateAsync(webSearchInput);
+      setWebResultsByItemId((current) => ({
+        ...current,
+        [drawerItem.id]: result.results,
+      }));
+      if (switchToWebTab) {
+        setActiveSearchTab("web");
+      }
+      if (result.results.length === 0) {
+        toast.warning("Không tìm thấy kết quả web cho dòng này.");
+        return [];
+      }
+      toast.success(
+        `Đã tìm thấy ${result.results.length.toLocaleString("vi-VN")} kết quả web.`,
+      );
+      return result.results;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Không tìm được kết quả web.";
+      toast.error(message);
+      return [];
+    }
+  };
+
   const runWebSearch = () => {
-    if (!drawerItem || !webSearchInput) return;
-    webSearch.mutate(webSearchInput, {
-      onSuccess: (result) => {
-        setWebResultsByItemId((current) => ({
-          ...current,
-          [drawerItem.id]: result.results,
-        }));
-        if (result.results.length === 0) {
-          toast.warning("Không tìm thấy kết quả web cho dòng này.");
-          return;
-        }
-        toast.success(
-          `Đã tìm thấy ${result.results.length.toLocaleString("vi-VN")} kết quả web.`,
-        );
-      },
-      onError: (error) => {
-        toast.error(error.message ?? "Không tìm được kết quả web.");
-      },
-    });
+    void executeWebSearch({ switchToWebTab: true });
   };
 
   const runAiSearch = () => {
-    if (!drawerItem || !webSearchInput || drawerWebResults.length === 0) return;
-    aiSearch.mutate(
-      { ...webSearchInput, webResults: drawerWebResults },
-      {
-        onSuccess: (result) => {
-          const nextFields = {
-            ...result.fields,
-            sourceUrl:
-              result.fields.sourceUrl ??
-              result.sourceUrls[0] ??
-              drawerAiFields.sourceUrl,
-          };
-          setAiFieldsByItemId((current) => ({
-            ...current,
-            [drawerItem.id]: nextFields,
-          }));
-          setAiEvidenceByItemId((current) => ({
-            ...current,
-            [drawerItem.id]: result.evidence,
-          }));
-          if (Object.keys(nextFields).length === 0) {
-            toast.warning("AI chưa trích xuất được trường vật tư nào.");
-            return;
-          }
-          toast.success("Đã trích xuất trường vật tư bằng AI.");
+    void (async () => {
+      if (!drawerItem || !webSearchInput) return;
+      const webResults =
+        drawerWebResults.length > 0
+          ? drawerWebResults
+          : await executeWebSearch({ switchToWebTab: false });
+      if (webResults.length === 0) return;
+      setActiveSearchTab("ai");
+      aiSearch.mutate(
+        { ...webSearchInput, webResults },
+        {
+          onSuccess: (result) => {
+            const nextFields = {
+              ...result.fields,
+              sourceUrl:
+                result.fields.sourceUrl ??
+                result.sourceUrls[0] ??
+                drawerAiFields.sourceUrl,
+            };
+            setAiFieldsByItemId((current) => ({
+              ...current,
+              [drawerItem.id]: nextFields,
+            }));
+            setAiEvidenceByItemId((current) => ({
+              ...current,
+              [drawerItem.id]: result.evidence,
+            }));
+            if (Object.keys(nextFields).length === 0) {
+              toast.warning("AI chưa trích xuất được trường vật tư nào.");
+              return;
+            }
+            toast.success("Đã trích xuất trường vật tư bằng AI.");
+          },
+          onError: (error) => {
+            toast.error(error.message ?? "Không chạy được tìm kiếm AI.");
+          },
         },
-        onError: (error) => {
-          toast.error(error.message ?? "Không chạy được tìm kiếm AI.");
-        },
-      },
-    );
+      );
+    })();
   };
 
   const setAiField = (field: FillableField, value: string) => {
@@ -888,6 +1127,12 @@ function MaterialReviewStep({
         [field]: value,
       },
     }));
+  };
+
+  const handleWebResultAsSource = (result: WebSearchResult) => {
+    setAiField("sourceUrl", result.url);
+    setActiveSearchTab("ai");
+    toast.success("Đã đưa URL web vào bản nháp AI.");
   };
 
   const saveAiMaterial = (updateExisting: boolean) => {
@@ -966,7 +1211,7 @@ function MaterialReviewStep({
   }
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(24rem,0.75fr)]">
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(40rem,1.1fr)]">
       <div className="panel overflow-hidden">
         <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -1193,295 +1438,405 @@ function MaterialReviewStep({
       <aside className="panel overflow-hidden xl:sticky xl:top-4 xl:max-h-[calc(100vh-7rem)] xl:overflow-auto">
         {drawerItem ? (
           <div className="space-y-4 p-4">
-            <div>
-              <p className="section-title">So sánh & tìm kiếm</p>
-              <h3 className="mt-1 text-base font-bold text-slate-950">
-                Dòng {drawerItem.originalRowIndex}: {drawerItem.productName}
-              </h3>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-title">So sánh & tìm kiếm</p>
+                <h3 className="mt-1 text-base font-bold text-slate-950">
+                  Dòng {drawerItem.originalRowIndex}: {drawerItem.productName}
+                </h3>
+              </div>
+              <Button
+                size="sm"
+                disabled={selectedMaterialId == null || isUpdating}
+                isLoading={isUpdating}
+                onClick={assignSelectedMaterial}
+              >
+                Gán vật tư
+              </Button>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                Dòng Excel
-              </p>
-              <p className="mt-2 font-bold text-slate-950">
-                {drawerItem.productName}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">
-                {firstNonEmpty(drawerItem.specText, drawerItem.unit, "-")}
-              </p>
-              <div className="mt-3 grid max-h-44 gap-2 overflow-auto text-xs">
-                {originalFields.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded-md bg-white px-2 py-1"
-                  >
-                    <span className="font-bold text-slate-500">{key}</span>
-                    <span className="break-words text-slate-800">
-                      {stringValue(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="min-w-0 flex-1">
-                  <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                    Tìm vật tư
-                  </span>
-                  <input
-                    value={drawerSearch}
-                    onChange={(event) => setDrawerSearch(event.target.value)}
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm"
-                    placeholder="Tên vật tư..."
-                  />
-                </label>
-                <Button
-                  disabled={selectedMaterialId == null || isUpdating}
-                  isLoading={isUpdating}
-                  onClick={assignSelectedMaterial}
-                >
-                  Gán vật tư
-                </Button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={runWebSearch}
-                  disabled={!drawerItem.productName.trim()}
-                  isLoading={webSearch.isPending}
-                >
-                  <Globe className="h-4 w-4" aria-hidden />
-                  Tìm web
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={runAiSearch}
-                  disabled={drawerWebResults.length === 0}
-                  isLoading={aiSearch.isPending}
-                >
-                  <Sparkles className="h-4 w-4" aria-hidden />
-                  Tìm bằng AI
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                Ứng viên gợi ý
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {drawerCandidates.length > 0 ? (
-                  drawerCandidates.map((candidate) => (
-                    <button
-                      key={candidate.materialId}
-                      type="button"
-                      onClick={() =>
-                        setSelectedMaterialId(candidate.materialId)
-                      }
-                      className={`rounded-md border px-2 py-1 text-xs font-semibold ${
-                        selectedMaterialId === candidate.materialId
-                          ? "border-sky-600 bg-sky-50 text-sky-800"
-                          : "border-slate-200 bg-white text-slate-700"
-                      }`}
-                    >
-                      #{candidate.materialId} ·{" "}
-                      {formatCandidateScore(candidate.score)}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    Chưa có ứng viên tự động cho dòng này.
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="space-y-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    Dòng Excel
                   </p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                Danh mục
-              </p>
-              <div className="mt-2 grid max-h-52 gap-2 overflow-auto">
-                {materialSearch.isLoading ? (
-                  <p className="flex items-center gap-2 text-xs text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Đang tìm danh mục…
+                  <p className="mt-2 font-bold text-slate-950">
+                    {drawerItem.productName}
                   </p>
-                ) : catalogCandidates.length > 0 ? (
-                  catalogCandidates.map((candidate) => (
-                    <button
-                      key={candidate.materialId}
-                      type="button"
-                      onClick={() =>
-                        setSelectedMaterialId(candidate.materialId)
-                      }
-                      className={`rounded-lg border px-3 py-2 text-left ${
-                        selectedMaterialId === candidate.materialId
-                          ? "border-sky-400 bg-sky-50"
-                          : "border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50"
-                      }`}
-                    >
-                      <p className="text-sm font-bold text-slate-950">
-                        {candidate.name}
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        #{candidate.materialId} · {candidate.code ?? "-"} ·{" "}
-                        {candidate.unit ?? "-"} · {formatPrice(candidate)}
-                      </p>
-                    </button>
-                  ))
-                ) : (
-                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
-                    Nhập ít nhất 2 ký tự để tìm trong danh mục.
+                  <p className="mt-1 text-sm text-slate-600">
+                    {firstNonEmpty(drawerItem.specText, drawerItem.unit, "-")}
                   </p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
-              <p className="font-bold">
-                {material?.name ??
-                  selectedCatalogCandidate?.name ??
-                  "Chưa chọn vật tư"}
-              </p>
-              <p className="mt-1 text-xs">
-                Code: {material?.code ?? selectedCatalogCandidate?.code ?? "-"}{" "}
-                · ĐVT: {material?.unit ?? selectedCatalogCandidate?.unit ?? "-"}
-              </p>
-              <p className="mt-1 line-clamp-3 text-xs">
-                {material?.specText ??
-                  selectedCatalogCandidate?.specSnippet ??
-                  selectedCatalogCandidate?.manufacturer ??
-                  "Chọn ứng viên hoặc kết quả tìm kiếm để xem tóm tắt."}
-              </p>
-              <p className="mt-2 text-xs font-semibold">
-                Catalog: xem trong Step 4/export report
-              </p>
-            </div>
-
-            {drawerWebResults.length > 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                  Web
-                </p>
-                <div className="mt-2 grid gap-2">
-                  {drawerWebResults.slice(0, 6).map((result) => (
-                    <a
-                      key={result.url}
-                      href={result.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs hover:border-sky-300 hover:bg-sky-50"
-                    >
-                      <span className="flex items-start justify-between gap-2 font-bold text-slate-900">
-                        <span className="line-clamp-2">{result.title}</span>
-                        <ExternalLink
-                          className="h-3.5 w-3.5 shrink-0 text-slate-400"
-                          aria-hidden
-                        />
-                      </span>
-                      <span className="mt-1 block text-slate-500">
-                        {result.domain}
-                      </span>
-                      {result.snippet ? (
-                        <span className="mt-1 line-clamp-2 block text-slate-600">
-                          {result.snippet}
+                  <div className="mt-3 grid gap-2">
+                    {materialProfileCompareFields.map((field) => (
+                      <div
+                        key={field.key}
+                        className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2 rounded-lg bg-white px-2 py-1.5 text-xs"
+                      >
+                        <span className="font-bold text-slate-500">
+                          {field.label}
                         </span>
-                      ) : null}
-                    </a>
-                  ))}
+                        <span className="break-words text-slate-800">
+                          {firstNonEmpty(excelValues[field.key], "(trống)")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                <RawExcelFields
+                  fields={originalFields}
+                  expanded={rawExcelExpanded}
+                  onToggle={() => setRawExcelExpanded((current) => !current)}
+                />
               </div>
-            ) : null}
 
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                  AI
-                </p>
-                {aiSearch.isPending ? (
-                  <span className="flex items-center gap-1 text-xs text-slate-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    Đang trích xuất…
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-2 grid gap-2">
-                {materialProfileDraftFields.map((field) => (
-                  <label
-                    key={field}
-                    className="block text-xs font-semibold text-slate-600"
-                  >
-                    {FIELD_LABELS[field]}
-                    <input
-                      value={drawerAiFields[field] ?? ""}
-                      onChange={(event) =>
-                        setAiField(field, event.target.value)
-                      }
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
-                      placeholder={
-                        field === "unit"
-                          ? firstNonEmpty(drawerSheetFields.unit, "ĐVT")
-                          : undefined
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={Object.keys(drawerAiFields).length === 0}
-                  isLoading={upsertMaterial.isPending}
-                  onClick={() => saveAiMaterial(false)}
-                >
-                  Lưu vật tư mới
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={
-                    selectedMaterialId == null ||
-                    Object.keys(drawerAiFields).length === 0
-                  }
-                  isLoading={upsertMaterial.isPending}
-                  onClick={() => saveAiMaterial(true)}
-                >
-                  Cập nhật vật tư đã chọn
-                </Button>
-              </div>
-              {drawerAiEvidence.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs font-bold text-slate-700">
-                    Bằng chứng AI
-                  </p>
-                  {drawerAiEvidence.slice(0, 4).map((item, index) => (
-                    <div
-                      key={`${item.field}-${item.sourceUrl ?? index}`}
-                      className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"
+              <div className="rounded-xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 p-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {searchTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveSearchTab(tab.id)}
+                        aria-pressed={activeSearchTab === tab.id}
+                        className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${
+                          activeSearchTab === tab.id
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-end gap-2">
+                    <label className="min-w-0 flex-1">
+                      <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                        Tìm vật tư
+                      </span>
+                      <input
+                        value={drawerSearch}
+                        onChange={(event) =>
+                          setDrawerSearch(event.target.value)
+                        }
+                        className="mt-1 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                        placeholder="Tên vật tư..."
+                      />
+                    </label>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={runWebSearch}
+                      disabled={!drawerItem.productName.trim()}
+                      isLoading={webSearch.isPending}
                     >
-                      <p className="font-semibold text-slate-700">
-                        {item.field}
-                      </p>
-                      <p className="mt-0.5 text-slate-600">{item.snippet}</p>
-                      {item.sourceUrl ? (
-                        <a
-                          href={item.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-1 inline-block text-sky-700 hover:underline"
+                      <Globe className="h-4 w-4" aria-hidden />
+                      Tìm web
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={runAiSearch}
+                      disabled={!drawerItem.productName.trim()}
+                      isLoading={webSearch.isPending || aiSearch.isPending}
+                    >
+                      <Sparkles className="h-4 w-4" aria-hidden />
+                      Tìm bằng AI
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 p-3">
+                  {activeSearchTab === "material" ? (
+                    <>
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
+                        <p className="font-bold">
+                          {existingMaterial?.name ?? "Chưa chọn vật tư"}
+                        </p>
+                        <p className="mt-1 text-xs">
+                          Code: {firstNonEmpty(existingValues.code, "-")} · ĐVT:{" "}
+                          {firstNonEmpty(existingValues.unit, "-")}
+                        </p>
+                        <p className="mt-1 line-clamp-3 text-xs">
+                          {firstNonEmpty(
+                            existingValues.specText,
+                            "Chọn ứng viên hoặc kết quả danh mục để xem tóm tắt.",
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <div className="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                          <span>Trường</span>
+                          <span>Dòng Excel</span>
+                          <span>Vật tư hiện có</span>
+                        </div>
+                        <CoreComparisonRows
+                          left={excelValues}
+                          right={existingValues}
+                        />
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                          Ứng viên gợi ý
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {drawerCandidates.length > 0 ? (
+                            drawerCandidates.map((candidate) => (
+                              <button
+                                key={candidate.materialId}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedMaterialId(candidate.materialId)
+                                }
+                                className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+                                  selectedMaterialId === candidate.materialId
+                                    ? "border-sky-600 bg-sky-50 text-sky-800"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                #{candidate.materialId} ·{" "}
+                                {formatCandidateScore(candidate.score)}
+                              </button>
+                            ))
+                          ) : (
+                            <p className="text-xs text-slate-500">
+                              Chưa có ứng viên tự động cho dòng này.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                          Danh mục
+                        </p>
+                        <div className="mt-2 grid max-h-52 gap-2 overflow-auto">
+                          {materialSearch.isLoading ? (
+                            <p className="flex items-center gap-2 text-xs text-slate-500">
+                              <Loader2
+                                className="h-4 w-4 animate-spin"
+                                aria-hidden
+                              />
+                              Đang tìm danh mục…
+                            </p>
+                          ) : catalogCandidates.length > 0 ? (
+                            catalogCandidates.map((candidate) => (
+                              <button
+                                key={candidate.materialId}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedMaterialId(candidate.materialId)
+                                }
+                                className={`rounded-lg border px-3 py-2 text-left ${
+                                  selectedMaterialId === candidate.materialId
+                                    ? "border-sky-400 bg-sky-50"
+                                    : "border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50"
+                                }`}
+                              >
+                                <p className="text-sm font-bold text-slate-950">
+                                  {candidate.name}
+                                </p>
+                                <p className="text-xs text-slate-600">
+                                  #{candidate.materialId} ·{" "}
+                                  {candidate.code ?? "-"} ·{" "}
+                                  {candidate.unit ?? "-"} ·{" "}
+                                  {formatPrice(candidate)}
+                                </p>
+                              </button>
+                            ))
+                          ) : (
+                            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                              Nhập ít nhất 2 ký tự để tìm trong danh mục.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {activeSearchTab === "web" ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                          Web search
+                        </p>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {drawerWebResults.length.toLocaleString("vi-VN")} kết
+                          quả
+                        </span>
+                      </div>
+                      {webSearch.isPending ? (
+                        <p className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+                          <Loader2
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden
+                          />
+                          Đang tìm web…
+                        </p>
+                      ) : drawerWebResults.length > 0 ? (
+                        <div className="grid gap-2">
+                          {drawerWebResults.slice(0, 8).map((result) => (
+                            <div
+                              key={result.url}
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <a
+                                  href={result.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-bold text-slate-900 hover:text-sky-700 hover:underline"
+                                >
+                                  {result.title}
+                                </a>
+                                <ExternalLink
+                                  className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                                  aria-hidden
+                                />
+                              </div>
+                              <p className="mt-1 text-slate-500">
+                                {result.domain}
+                              </p>
+                              {result.snippet ? (
+                                <p className="mt-1 line-clamp-3 text-slate-600">
+                                  {result.snippet}
+                                </p>
+                              ) : null}
+                              <div className="mt-2 flex justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleWebResultAsSource(result)
+                                  }
+                                >
+                                  Dùng làm nguồn AI
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+                          Chưa có kết quả web. Bấm Tìm web hoặc Tìm bằng AI.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {activeSearchTab === "ai" ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                          AI search
+                        </p>
+                        {aiSearch.isPending ? (
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <Loader2
+                              className="h-3.5 w-3.5 animate-spin"
+                              aria-hidden
+                            />
+                            Đang trích xuất…
+                          </span>
+                        ) : null}
+                      </div>
+                      <div>
+                        <div className="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+                          <span>Trường</span>
+                          <span>Dòng Excel</span>
+                          <span>AI đề xuất</span>
+                        </div>
+                        <CoreComparisonRows
+                          left={excelValues}
+                          right={aiValues}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        {materialProfileDraftFields.map((field) => (
+                          <label
+                            key={field}
+                            className="block text-xs font-semibold text-slate-600"
+                          >
+                            {FIELD_LABELS[field]}
+                            <input
+                              value={drawerAiFields[field] ?? ""}
+                              onChange={(event) =>
+                                setAiField(field, event.target.value)
+                              }
+                              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              placeholder={
+                                field === "unit"
+                                  ? firstNonEmpty(drawerSheetFields.unit, "ĐVT")
+                                  : undefined
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={Object.keys(drawerAiFields).length === 0}
+                          isLoading={upsertMaterial.isPending}
+                          onClick={() => saveAiMaterial(false)}
                         >
-                          {item.sourceUrl}
-                        </a>
+                          Lưu vật tư mới
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={
+                            selectedMaterialId == null ||
+                            Object.keys(drawerAiFields).length === 0
+                          }
+                          isLoading={upsertMaterial.isPending}
+                          onClick={() => saveAiMaterial(true)}
+                        >
+                          Cập nhật vật tư hiện có
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={selectedMaterialId == null || isUpdating}
+                          isLoading={isUpdating}
+                          onClick={assignSelectedMaterial}
+                        >
+                          Gán vật tư
+                        </Button>
+                      </div>
+                      {drawerAiEvidence.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold text-slate-700">
+                            Bằng chứng AI
+                          </p>
+                          {drawerAiEvidence.slice(0, 4).map((item, index) => (
+                            <div
+                              key={`${item.field}-${item.sourceUrl ?? index}`}
+                              className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"
+                            >
+                              <p className="font-semibold text-slate-700">
+                                {item.field}
+                              </p>
+                              <p className="mt-0.5 text-slate-600">
+                                {item.snippet}
+                              </p>
+                              {item.sourceUrl ? (
+                                <a
+                                  href={item.sourceUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-1 inline-block text-sky-700 hover:underline"
+                                >
+                                  {item.sourceUrl}
+                                </a>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
                       ) : null}
                     </div>
-                  ))}
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
             </div>
           </div>
         ) : (
