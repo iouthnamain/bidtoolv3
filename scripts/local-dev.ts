@@ -357,6 +357,7 @@ async function verifyPlaywrightChromium(): Promise<boolean> {
     const browser = await chromium.launch({
       headless: true,
       timeout: 15_000,
+      executablePath: chromium.executablePath(),
       args: ["--disable-dev-shm-usage", "--no-sandbox"],
     });
     await browser.close();
@@ -408,10 +409,10 @@ async function installScrapeBrowser(): Promise<void> {
 
   const linuxHint =
     process.platform === "linux"
-      ? " On Ubuntu, also try: sudo bunx playwright install-deps chromium"
+      ? ' On Ubuntu, system libraries may also be required from the repo root: sudo env "PATH=$PATH" bun x playwright install-deps chromium'
       : "";
   logStep(
-    `Could not install a working Playwright Chromium for scraping. Run manually: bunx playwright install chromium --force.${linuxHint} Or install Google Chrome / Chromium system-wide.`,
+    `Could not install a working Playwright Chromium for scraping. Run manually: bun x playwright install chromium --force.${linuxHint} Or install Google Chrome / Chromium system-wide.`,
   );
 }
 

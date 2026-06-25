@@ -3,6 +3,7 @@ import "server-only";
 import { existsSync } from "node:fs";
 
 import type { Browser } from "playwright";
+import { launchManagedChromium } from "~/server/services/playwright-chromium-launch";
 
 import { isServerlessRuntime } from "~/server/runtime";
 import { createLogger, traceFn } from "~/server/lib/logger";
@@ -66,20 +67,7 @@ async function launchBrowser(): Promise<Browser> {
     });
   }
 
-  const { chromium } = await import("playwright");
-  const executablePath = findSystemBrowserExecutable();
-  const launchOptions = {
-    headless: true as const,
-    args: ["--disable-dev-shm-usage", "--no-sandbox"],
-  };
-  if (executablePath) {
-    try {
-      return await chromium.launch({ ...launchOptions, executablePath });
-    } catch {
-      // Fall back to a Playwright-managed browser.
-    }
-  }
-  return chromium.launch(launchOptions);
+  return launchManagedChromium(findSystemBrowserExecutable());
 }
 
 function escapeHtml(value: string): string {

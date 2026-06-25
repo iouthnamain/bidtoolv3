@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { isIP } from "node:net";
 
 import type { Browser, Page } from "playwright";
+import { launchManagedChromium } from "~/server/services/playwright-chromium-launch";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
@@ -965,25 +966,10 @@ async function launchBrowser(): Promise<Browser> {
     return launchServerlessBrowser();
   }
 
-  const { chromium } = await import("playwright");
-  const executablePath = findSystemBrowserExecutable();
-  const launchOptions = {
-    headless: true,
-    args: ["--disable-dev-shm-usage", "--no-sandbox"],
-  };
-
-  if (executablePath) {
-    try {
-      return registerBrowser(
-        await chromium.launch({ ...launchOptions, executablePath }),
-      );
-    } catch {
-      // Fall back to Playwright-managed browsers below.
-    }
-  }
-
   try {
-    return registerBrowser(await chromium.launch(launchOptions));
+    return registerBrowser(
+      await launchManagedChromium(findSystemBrowserExecutable()),
+    );
   } catch (error) {
     throw browserLaunchError(error);
   }
@@ -1017,7 +1003,7 @@ async function launchServerlessBrowser(): Promise<Browser> {
 function browserLaunchError(error: unknown) {
   return new Error(
     error instanceof Error
-      ? `Không khởi động được browser scrape. Chạy "bun run dev:update" hoặc "bunx playwright install chromium --force". Trên Ubuntu có thể cần thêm: sudo bunx playwright install-deps chromium. ${error.message}`
+      ? `Không khởi động được browser scrape. Chạy "bun run dev:update" hoặc "bun x playwright install chromium --force". Trên Ubuntu (từ thư mục repo): sudo env "PATH=$PATH" bun x playwright install-deps chromium. ${error.message}`
       : "Không khởi động được browser scrape.",
   );
 }
