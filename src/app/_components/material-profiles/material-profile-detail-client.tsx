@@ -40,7 +40,6 @@ type MaterialSearchCandidate =
 type WebSearchResult =
   RouterOutputs["material"]["enrichWebSearchRowLinks"]["results"][number];
 type AiSearchResult = RouterOutputs["material"]["enrichAiSearchRow"];
-type MaterialDetail = NonNullable<RouterOutputs["material"]["getById"]>;
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
 type SearchTab = "material" | "web" | "ai";
@@ -260,10 +259,6 @@ function hasLastBulkApply(config: Record<string, unknown>) {
   return Boolean(config.materialProfileLastBulkApply);
 }
 
-function formatCandidateScore(score: unknown) {
-  return typeof score === "number" ? `${Math.round(score * 100)}%` : "-";
-}
-
 function sheetFieldsFromItem(
   item: WorkspaceItem,
 ): Partial<Record<FillableField, string>> {
@@ -307,13 +302,6 @@ function firstNonEmpty(...values: Array<string | null | undefined>) {
   return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
 }
 
-function formatComparePrice(value: number | string | null | undefined) {
-  if (typeof value === "number") {
-    return value.toLocaleString("vi-VN");
-  }
-  return stringValue(value);
-}
-
 function excelCompareValues(
   item: WorkspaceItem,
   sheetFields: Partial<Record<FillableField, string>>,
@@ -330,119 +318,10 @@ function excelCompareValues(
   };
 }
 
-function materialCompareValues(
-  material: Candidate | MaterialSearchCandidate | MaterialDetail | null,
-): CompareValues {
-  if (!material) return {};
-  return {
-    name: material.name,
-    code: material.code ?? "",
-    unit: material.unit ?? "",
-    category: material.category ?? "",
-    specText:
-      "specText" in material
-        ? (material.specText ?? "")
-        : (material.specSnippet ?? ""),
-    manufacturer: material.manufacturer ?? "",
-    originCountry: material.originCountry ?? "",
-    defaultUnitPrice: formatComparePrice(material.defaultUnitPrice),
-    currency: material.currency ?? "VND",
-    sourceUrl: material.sourceUrl ?? "",
-  };
-}
-
-function aiCompareValues(
-  item: WorkspaceItem,
-  fields: Partial<Record<FillableField, string>>,
-): CompareValues {
-  return {
-    name: item.productName,
-    code: fields.code,
-    unit: fields.unit,
-    specText: fields.specText,
-    manufacturer: fields.manufacturer,
-    originCountry: fields.originCountry,
-    defaultUnitPrice: fields.defaultUnitPrice,
-    currency: fields.currency,
-    sourceUrl: fields.sourceUrl,
-  };
-}
-
-function normalizedCompareValue(value: string | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function compareTone(left: string | undefined, right: string | undefined) {
-  const leftValue = normalizedCompareValue(left);
-  const rightValue = normalizedCompareValue(right);
-  if (!leftValue && !rightValue) return "empty";
-  if (!leftValue || !rightValue) return "missing";
-  return leftValue === rightValue ? "same" : "different";
-}
-
 function toggleNumber(values: number[], value: number) {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value].sort((a, b) => a - b);
-}
-
-function CompareValue({
-  value,
-  tone,
-  align = "left",
-}: {
-  value: string | undefined;
-  tone?: "empty" | "missing" | "same" | "different";
-  align?: "left" | "right";
-}) {
-  const display = firstNonEmpty(value, "(trống)");
-  const toneClass =
-    tone === "same"
-      ? "border-emerald-100 bg-emerald-50 text-emerald-800"
-      : tone === "different"
-        ? "border-amber-100 bg-amber-50 text-amber-900"
-        : tone === "missing"
-          ? "border-slate-200 bg-white text-slate-500"
-          : "border-dashed border-slate-200 bg-slate-50 text-slate-400";
-  return (
-    <div
-      className={`min-h-9 rounded-lg border px-2 py-1.5 text-xs ${toneClass} ${
-        align === "right" ? "text-right" : ""
-      }`}
-    >
-      {display}
-    </div>
-  );
-}
-
-function CoreComparisonRows({
-  left,
-  right,
-}: {
-  left: CompareValues;
-  right: CompareValues;
-}) {
-  return (
-    <div className="grid gap-2">
-      {materialProfileCompareFields.map((field) => {
-        const leftValue = left[field.key];
-        const rightValue = right[field.key];
-        const tone = compareTone(leftValue, rightValue);
-        return (
-          <div
-            key={field.key}
-            className="grid gap-1 rounded-lg border border-slate-100 bg-slate-50 p-2 md:grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)]"
-          >
-            <span className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">
-              {field.label}
-            </span>
-            <CompareValue value={leftValue} tone={tone} />
-            <CompareValue value={rightValue} tone={tone} />
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function RawExcelFields({
@@ -958,7 +837,6 @@ function MaterialReviewStep({
     items.find((item) => item.id === drawerItemId) ?? visibleItems[0] ?? null;
   const drawerItemEffectId = drawerItem?.id ?? null;
   const drawerItemMaterialId = drawerItem?.materialId ?? null;
-  const drawerCandidates = drawerItem ? candidatesFromItem(drawerItem) : [];
   const selectedCandidate = drawerItem
     ? selectedCandidateForItem(drawerItem)
     : null;
@@ -979,10 +857,6 @@ function MaterialReviewStep({
   const materialSearch = api.material.enrichSearchMaterials.useQuery(
     { query: drawerSearch, limit: 20 },
     { enabled: drawerSearch.trim().length >= 2 },
-  );
-  const materialDetail = api.material.getById.useQuery(
-    { id: selectedMaterialId ?? 0 },
-    { enabled: selectedMaterialId != null },
   );
   const webSearch = api.material.enrichWebSearchRowLinks.useMutation();
   const aiSearch = api.material.enrichAiSearchRow.useMutation();
@@ -1020,27 +894,10 @@ function MaterialReviewStep({
     onBulkUpdate({ itemIds: selectedItemIds, ...input });
   };
 
-  const material =
-    materialDetail.data?.id === selectedMaterialId ? materialDetail.data : null;
   const catalogCandidates = materialSearch.data?.candidates ?? [];
   const hasCatalogSearch = drawerSearch.trim().length >= 2;
-  const selectedCatalogCandidate =
-    selectedMaterialId == null
-      ? null
-      : (catalogCandidates.find(
-          (candidate) => candidate.materialId === selectedMaterialId,
-        ) ??
-        drawerCandidates.find(
-          (candidate) => candidate.materialId === selectedMaterialId,
-        ) ??
-        null);
-  const existingMaterial = material ?? selectedCatalogCandidate ?? null;
   const excelValues = drawerItem
     ? excelCompareValues(drawerItem, drawerSheetFields)
-    : {};
-  const existingValues = materialCompareValues(existingMaterial);
-  const aiValues = drawerItem
-    ? aiCompareValues(drawerItem, drawerAiFields)
     : {};
   const originalFields =
     drawerItem?.originalDataJson &&
@@ -1386,24 +1243,6 @@ function MaterialReviewStep({
             </Button>
             <Button
               size="sm"
-              variant="secondary"
-              disabled={selectedCount === 0}
-              isLoading={isBulkUpdating}
-              onClick={() => runBulkUpdate({ includedInExport: true })}
-            >
-              Đưa vào export
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={selectedCount === 0}
-              isLoading={isBulkUpdating}
-              onClick={() => runBulkUpdate({ includedInExport: false })}
-            >
-              Loại khỏi export
-            </Button>
-            <Button
-              size="sm"
               variant="warning"
               disabled={selectedCount === 0}
               isLoading={isBulkUpdating}
@@ -1724,130 +1563,72 @@ function MaterialReviewStep({
 
                 <div className="space-y-3 p-3">
                   {activeSearchTab === "material" ? (
-                    <>
-                      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
-                        <p className="font-bold">
-                          {existingMaterial?.name ?? "Chưa chọn vật tư"}
-                        </p>
-                        <p className="mt-1 text-xs">
-                          Code: {firstNonEmpty(existingValues.code, "-")} · ĐVT:{" "}
-                          {firstNonEmpty(existingValues.unit, "-")}
-                        </p>
-                        <p className="mt-1 line-clamp-3 text-xs">
-                          {firstNonEmpty(
-                            existingValues.specText,
-                            "Chọn ứng viên hoặc kết quả danh mục để xem tóm tắt.",
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <div className="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
-                          <span>Trường</span>
-                          <span>Dòng Excel</span>
-                          <span>Vật tư hiện có</span>
-                        </div>
-                        <CoreComparisonRows
-                          left={excelValues}
-                          right={existingValues}
-                        />
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                          Ứng viên gợi ý
+                          Kết quả Tìm vật tư
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {drawerCandidates.length > 0 ? (
-                            drawerCandidates.map((candidate) => (
-                              <button
-                                key={candidate.materialId}
-                                type="button"
-                                onClick={() =>
-                                  setSelectedMaterialId(candidate.materialId)
-                                }
-                                className={`rounded-md border px-2 py-1 text-xs font-semibold ${
-                                  selectedMaterialId === candidate.materialId
-                                    ? "border-sky-600 bg-sky-50 text-sky-800"
-                                    : "border-slate-200 bg-white text-slate-700"
-                                }`}
-                              >
-                                #{candidate.materialId} ·{" "}
-                                {formatCandidateScore(candidate.score)}
-                              </button>
-                            ))
-                          ) : (
-                            <p className="text-xs text-slate-500">
-                              Chưa có ứng viên tự động cho dòng này.
-                            </p>
-                          )}
-                        </div>
+                        {hasCatalogSearch ? (
+                          <span className="text-xs font-semibold text-slate-500">
+                            {catalogCandidates.length.toLocaleString("vi-VN")}{" "}
+                            candidates
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="rounded-xl border border-slate-200 bg-white p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
-                            Kết quả Tìm vật tư
+                      <div className="mt-2 grid max-h-96 gap-2 overflow-auto">
+                        {!hasCatalogSearch ? (
+                          <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                            Nhập từ khóa vào Tìm vật tư để chỉ hiển thị kết quả
+                            đã search.
                           </p>
-                          {hasCatalogSearch ? (
-                            <span className="text-xs font-semibold text-slate-500">
-                              {catalogCandidates.length.toLocaleString("vi-VN")}{" "}
-                              candidates
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 grid max-h-96 gap-2 overflow-auto">
-                          {!hasCatalogSearch ? (
-                            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
-                              Nhập từ khóa vào Tìm vật tư để chỉ hiển thị kết
-                              quả đã search.
-                            </p>
-                          ) : materialSearch.isLoading ? (
-                            <p className="flex items-center gap-2 text-xs text-slate-500">
-                              <Loader2
-                                className="h-4 w-4 animate-spin"
-                                aria-hidden
-                              />
-                              Đang tìm danh mục…
-                            </p>
-                          ) : catalogCandidates.length > 0 ? (
-                            catalogCandidates.map((candidate) => (
-                              <button
-                                key={candidate.materialId}
-                                type="button"
-                                onClick={() =>
-                                  setSelectedMaterialId(candidate.materialId)
-                                }
-                                className={`rounded-lg border px-3 py-2 text-left ${
-                                  selectedMaterialId === candidate.materialId
-                                    ? "border-sky-400 bg-sky-50"
-                                    : "border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50"
-                                }`}
-                              >
-                                <p className="text-sm font-bold text-slate-950">
-                                  {candidate.name}
-                                </p>
-                                <p className="text-xs text-slate-600">
-                                  #{candidate.materialId} ·{" "}
-                                  {candidate.code ?? "-"} ·{" "}
-                                  {candidate.unit ?? "-"} ·{" "}
-                                  {formatPrice(candidate)}
-                                </p>
-                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                                  {firstNonEmpty(
-                                    candidate.specSnippet,
-                                    candidate.manufacturer,
-                                    candidate.sourceUrl,
-                                    "Chưa có thông tin mô tả.",
-                                  )}
-                                </p>
-                              </button>
-                            ))
-                          ) : (
-                            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
-                              Không tìm thấy vật tư phù hợp với từ khóa này.
-                            </p>
-                          )}
-                        </div>
+                        ) : materialSearch.isLoading ? (
+                          <p className="flex items-center gap-2 text-xs text-slate-500">
+                            <Loader2
+                              className="h-4 w-4 animate-spin"
+                              aria-hidden
+                            />
+                            Đang tìm danh mục…
+                          </p>
+                        ) : catalogCandidates.length > 0 ? (
+                          catalogCandidates.map((candidate) => (
+                            <button
+                              key={candidate.materialId}
+                              type="button"
+                              onClick={() =>
+                                setSelectedMaterialId(candidate.materialId)
+                              }
+                              className={`rounded-lg border px-3 py-2 text-left ${
+                                selectedMaterialId === candidate.materialId
+                                  ? "border-sky-400 bg-sky-50"
+                                  : "border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50"
+                              }`}
+                            >
+                              <p className="text-sm font-bold text-slate-950">
+                                {candidate.name}
+                              </p>
+                              <p className="text-xs text-slate-600">
+                                #{candidate.materialId} ·{" "}
+                                {candidate.code ?? "-"} ·{" "}
+                                {candidate.unit ?? "-"} ·{" "}
+                                {formatPrice(candidate)}
+                              </p>
+                              <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                                {firstNonEmpty(
+                                  candidate.specSnippet,
+                                  candidate.manufacturer,
+                                  candidate.sourceUrl,
+                                  "Chưa có thông tin mô tả.",
+                                )}
+                              </p>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                            Không tìm thấy vật tư phù hợp với từ khóa này.
+                          </p>
+                        )}
                       </div>
-                    </>
+                    </div>
                   ) : null}
 
                   {activeSearchTab === "web" ? (
@@ -1935,17 +1716,6 @@ function MaterialReviewStep({
                             Đang trích xuất…
                           </span>
                         ) : null}
-                      </div>
-                      <div>
-                        <div className="mb-2 grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-1 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
-                          <span>Trường</span>
-                          <span>Dòng Excel</span>
-                          <span>AI đề xuất</span>
-                        </div>
-                        <CoreComparisonRows
-                          left={excelValues}
-                          right={aiValues}
-                        />
                       </div>
                       <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                         Chỉnh sửa và lưu bản nháp AI ở cột bên trái, ngay dưới
