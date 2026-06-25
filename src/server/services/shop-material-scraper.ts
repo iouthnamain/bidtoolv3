@@ -1003,7 +1003,7 @@ async function launchServerlessBrowser(): Promise<Browser> {
 function browserLaunchError(error: unknown) {
   return new Error(
     error instanceof Error
-      ? `Không khởi động được browser scrape. Chạy "bun run dev:update" hoặc "bun x playwright install chromium --force". Trên Ubuntu (từ thư mục repo): sudo env "PATH=$PATH" bun x playwright install-deps chromium. ${error.message}`
+      ? `Không khởi động được browser scrape. Chạy "bun x playwright install chromium --force" từ thư mục repo (hoặc "bun run dev:update"). Trên Ubuntu có thể cần: sudo env "PATH=$PATH" bun x playwright install-deps chromium. ${error.message}`
       : "Không khởi động được browser scrape.",
   );
 }
@@ -1057,6 +1057,7 @@ function findSystemBrowserExecutable() {
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     ...windowsBrowserCandidates(),
   ].filter((value): value is string => Boolean(value));

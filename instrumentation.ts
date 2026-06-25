@@ -3,6 +3,11 @@ export async function register() {
     return;
   }
 
+  const { ensurePlaywrightPlatformEnvInProcess } = await import(
+    "~/server/services/playwright-platform-env"
+  );
+  ensurePlaywrightPlatformEnvInProcess();
+
   const { createLogger } = await import("~/server/lib/logger");
   const log = createLogger("bootstrap");
   log.info("server_boot");

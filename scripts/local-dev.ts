@@ -4,6 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { verifyManagedChromiumLaunch } from "../src/server/services/playwright-chromium-launch.ts";
+import { applyPlaywrightPlatformEnv, ensurePlaywrightPlatformEnvInProcess } from "../src/server/services/playwright-platform-env.ts";
 
 type WorkflowCommand = "install" | "run" | "update";
 
@@ -70,6 +72,7 @@ async function runCommand(
   args: string[],
   options?: {
     cwd?: string;
+    env?: NodeJS.ProcessEnv;
     inheritStdio?: boolean;
     // When set, the child is killed after this many ms and the result is
     // returned with `timedOut: true`. Used for non-essential steps (e.g. the
@@ -81,7 +84,7 @@ async function runCommand(
   return await new Promise<CommandResult>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options?.cwd ?? rootDir,
-      env: process.env,
+      env: options?.env ?? process.env,
       shell: false,
       stdio: options?.inheritStdio ? "inherit" : "pipe",
     });
@@ -352,67 +355,44 @@ async function installDependencies(): Promise<void> {
 }
 
 async function verifyPlaywrightChromium(): Promise<boolean> {
-  try {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
-      headless: true,
-      timeout: 15_000,
-      executablePath: chromium.executablePath(),
-      args: ["--disable-dev-shm-usage", "--no-sandbox"],
-    });
-    await browser.close();
-    return true;
-  } catch {
-    return false;
-  }
+  return verifyManagedChromiumLaunch();
 }
 
 async function installScrapeBrowser(): Promise<void> {
-  // The shop scraper launches Playwright's Chromium when no system
-  // Chrome/Edge is found. Verify with a real launch (not just cache
-  // folder names) so broken/partial installs are repaired automatically.
   if (await verifyPlaywrightChromium()) {
     logStep("Playwright Chromium ready for the shop scraper");
     return;
   }
 
-  const installTimeoutMs = 5 * 60 * 1_000;
-  const installAttempts: string[][] = [[], ["--force"]];
+  logStep("Installing Playwright Chromium for the shop scraper");
+  const installTimeoutMs = 10 * 60 * 1_000;
+  const result = await runCommand(
+    bunExecutable,
+    ["x", "playwright", "install", "chromium", "--force"],
+    {
+      inheritStdio: true,
+      timeoutMs: installTimeoutMs,
+      env: applyPlaywrightPlatformEnv(),
+    },
+  );
 
-  for (const extraArgs of installAttempts) {
+  if (result.timedOut && (await verifyPlaywrightChromium())) {
     logStep(
-      extraArgs.length > 0
-        ? "Reinstalling Playwright Chromium for the shop scraper (--force)"
-        : "Installing Playwright Chromium for the shop scraper",
+      "Playwright Chromium downloaded; the installer did not exit cleanly but scraping works. Continuing.",
     );
+    return;
+  }
 
-    const result = await runCommand(
-      bunExecutable,
-      ["x", "playwright", "install", "chromium", ...extraArgs],
-      { inheritStdio: true, timeoutMs: installTimeoutMs },
-    );
-
-    if (result.timedOut) {
-      if (await verifyPlaywrightChromium()) {
-        logStep(
-          "Playwright Chromium downloaded; the installer did not exit cleanly but scraping works. Continuing.",
-        );
-        return;
-      }
-      continue;
-    }
-
-    if (await verifyPlaywrightChromium()) {
-      return;
-    }
+  if (await verifyPlaywrightChromium()) {
+    return;
   }
 
   const linuxHint =
     process.platform === "linux"
       ? ' On Ubuntu, system libraries may also be required from the repo root: sudo env "PATH=$PATH" bun x playwright install-deps chromium'
       : "";
-  logStep(
-    `Could not install a working Playwright Chromium for scraping. Run manually: bun x playwright install chromium --force.${linuxHint} Or install Google Chrome / Chromium system-wide.`,
+  throw new Error(
+    `Could not install a working Playwright Chromium for scraping. Run manually: bun x playwright install chromium --force.${linuxHint} Or install Google Chrome / Chromium system-wide (e.g. sudo apt install chromium-browser).`,
   );
 }
 
@@ -452,6 +432,12 @@ async function runDevWorkflow(): Promise<void> {
 
 async function main(): Promise<void> {
   assertBunRuntime();
+  const playwrightOverride = ensurePlaywrightPlatformEnvInProcess();
+  if (playwrightOverride) {
+    logStep(
+      `Using Playwright platform fallback ${playwrightOverride} (this Ubuntu release is not bundled by Playwright yet)`,
+    );
+  }
 
   const commandArg = process.argv[2];
   if (!isWorkflowCommand(commandArg)) {

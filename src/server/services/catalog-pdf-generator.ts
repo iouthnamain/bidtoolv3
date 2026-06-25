@@ -50,6 +50,7 @@ function findSystemBrowserExecutable(): string | undefined {
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
   ];
   return candidates.find((candidate) => existsSync(candidate));
 }

@@ -23,6 +23,31 @@ cd "$ROOT_DIR"
 
 APP_URL="${BIDTOOL_APP_URL:-http://localhost:3000}"
 
+apply_playwright_platform_override() {
+  if [[ -n "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -r /etc/os-release ]]; then
+    return 0
+  fi
+  # shellcheck disable=SC1091
+  source /etc/os-release
+  case "${ID:-}" in
+    ubuntu|pop|neon|tuxedo)
+      major="${VERSION_ID%%.*}"
+      if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 26 )); then
+        arch="$(uname -m)"
+        if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
+          export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-arm64"
+        else
+          export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu24.04-x64"
+        fi
+        echo "      Playwright: using ${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE} fallback for Ubuntu ${VERSION_ID}"
+      fi
+      ;;
+  esac
+}
+
 write_section() {
   echo
   echo "============================================================"
@@ -257,6 +282,8 @@ maybe_open_browser() {
 }
 
 write_section "BidTool v3 - starting local development environment"
+
+apply_playwright_platform_override
 
 require_command bun "Install Bun from https://bun.sh and try again."
 require_command docker "Install Docker Engine + Compose plugin and try again."
