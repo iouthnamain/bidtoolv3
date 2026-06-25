@@ -74,45 +74,158 @@ get_env_value() {
   done < .env
 }
 
+docker_cli_error() {
+  docker info 2>&1 >/dev/null || true
+}
+
+docker_failure_kind() {
+  local err
+  err="$(docker_cli_error)"
+  if [[ "$err" == *"permission denied"* || "$err" == *"Permission denied"* ]]; then
+    printf 'permission'
+    return 0
+  fi
+  if [[ "$err" == *"Cannot connect to the Docker daemon"* || "$err" == *"Is the docker daemon running"* ]]; then
+    printf 'daemon-down'
+    return 0
+  fi
+  if [[ "$err" == *"not found"* || "$err" == *"No such file"* ]]; then
+    printf 'missing'
+    return 0
+  fi
+  printf 'unknown'
+}
+
+print_docker_help() {
+  local kind="$1"
+  local err
+  err="$(docker_cli_error)"
+
+  echo
+  echo "[ERROR] Docker is not usable." >&2
+  if [[ -n "$err" ]]; then
+    echo "        $err" >&2
+  fi
+  echo >&2
+
+  case "$kind" in
+    permission)
+      echo "        Your user cannot access /var/run/docker.sock." >&2
+      echo "        Fix (then log out/in or run: newgrp docker):" >&2
+      echo "          sudo usermod -aG docker \"\$USER\"" >&2
+      echo "        Or run this script with sudo (not recommended long-term)." >&2
+      ;;
+    daemon-down)
+      echo "        The Docker daemon is not running." >&2
+      echo "        Fix:" >&2
+      echo "          sudo systemctl enable --now docker" >&2
+      echo "          sudo systemctl status docker    # check for errors" >&2
+      if ! systemctl list-unit-files docker.service >/dev/null 2>&1; then
+        echo "        If docker.service is missing, install Docker Engine first:" >&2
+        echo "          https://docs.docker.com/engine/install/ubuntu/" >&2
+      fi
+      ;;
+    missing)
+      echo "        Docker does not appear to be installed." >&2
+      echo "        Install Docker Engine + Compose plugin, then re-run ./run.sh" >&2
+      ;;
+    *)
+      echo "        Check Docker manually:" >&2
+      echo "          docker info" >&2
+      echo "          sudo systemctl status docker" >&2
+      ;;
+  esac
+  exit 1
+}
+
+try_start_docker_service() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "      systemctl not found; start Docker manually."
+    return 1
+  fi
+
+  if ! systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    echo "      docker.service unit not found. Install Docker Engine first."
+    return 1
+  fi
+
+  echo "      Attempting to start Docker via systemd..."
+  local start_output=""
+  if systemctl is-active --quiet docker 2>/dev/null; then
+    echo "      docker.service is already active."
+    return 0
+  fi
+
+  if start_output="$(systemctl start docker 2>&1)"; then
+    echo "      Started docker.service."
+    return 0
+  fi
+
+  if [[ -n "$start_output" ]]; then
+    echo "      systemctl start docker: $start_output"
+  fi
+
+  if start_output="$(sudo -n systemctl start docker 2>&1)"; then
+    echo "      Started docker.service (via sudo)."
+    return 0
+  fi
+
+  if [[ -n "$start_output" && "$start_output" != *"password"* && "$start_output" != *"a password is required"* ]]; then
+    echo "      sudo systemctl start docker: $start_output"
+  fi
+
+  echo "      Could not start Docker automatically."
+  echo "      Run manually: sudo systemctl start docker"
+  return 1
+}
+
 ensure_docker_ready() {
   if docker info >/dev/null 2>&1; then
     echo "      Docker is ready."
     return 0
   fi
 
-  echo "      Docker daemon is not running."
-
-  if command -v systemctl >/dev/null 2>&1; then
-    echo "      Attempting to start Docker via systemd..."
-    if systemctl is-active --quiet docker 2>/dev/null; then
-      :
-    elif systemctl start docker 2>/dev/null; then
-      :
-    elif sudo systemctl start docker 2>/dev/null; then
-      :
-    else
-      echo "      Could not start Docker automatically."
-      echo "      Run: sudo systemctl start docker"
-    fi
-  else
-    echo "      Please start the Docker service manually."
+  local kind
+  kind="$(docker_failure_kind)"
+  if [[ "$kind" == "permission" ]]; then
+    echo "      Docker daemon may be running, but this user lacks socket access."
+    print_docker_help "$kind"
   fi
 
-  echo "      Waiting for Docker to be ready (this can take a minute)..."
+  if [[ "$kind" == "missing" ]]; then
+    print_docker_help "$kind"
+  fi
+
+  echo "      Docker daemon is not reachable."
+  try_start_docker_service || true
+
+  echo "      Waiting for Docker to be ready (up to ~2 minutes)..."
   local tries=0
+  local last_kind=""
   while (( tries < 40 )); do
-    sleep 3
     if docker info >/dev/null 2>&1; then
       echo "      Docker is ready."
       return 0
     fi
+
+    kind="$(docker_failure_kind)"
+    if [[ "$kind" == "permission" ]]; then
+      print_docker_help "$kind"
+    fi
+
     tries=$((tries + 1))
+    if (( tries % 5 == 0 )); then
+      echo "      ... still waiting (${tries}/40)"
+      if [[ "$kind" != "$last_kind" && "$kind" != "unknown" ]]; then
+        err="$(docker_cli_error)"
+        [[ -n "$err" ]] && echo "      ... $err"
+      fi
+    fi
+    last_kind="$kind"
+    sleep 3
   done
 
-  echo
-  echo "[ERROR] Docker did not start within the expected time." >&2
-  echo "        Start Docker (e.g. sudo systemctl start docker), then run ./run.sh again." >&2
-  exit 1
+  print_docker_help "$(docker_failure_kind)"
 }
 
 maybe_open_browser() {
