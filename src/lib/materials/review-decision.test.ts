@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   deriveMatchStatus,
+  deriveReviewRowStatus,
   deserializeRowDecision,
   seedDecisionFromItem,
   serializeRowDecision,
@@ -176,5 +177,61 @@ describe("review-decision", () => {
         null,
       ),
     ).toBe("candidates_found");
+
+    expect(
+      deriveMatchStatus(
+        {
+          materialId: null,
+          acceptedFields: new Set(["specText"]),
+          editedValues: { specText: "PVC D90" },
+        },
+        "unmatched",
+        null,
+      ),
+    ).toBe("manual");
+  });
+
+  it("derives review row status when a web/AI or catalog candidate is chosen", () => {
+    expect(
+      deriveReviewRowStatus(
+        {
+          materialId: 7,
+          acceptedFields: new Set(["unit"]),
+        },
+        "auto",
+        7,
+      ),
+    ).toBe("auto");
+
+    expect(
+      deriveReviewRowStatus(
+        {
+          materialId: 8,
+          acceptedFields: new Set(["unit"]),
+        },
+        "auto",
+        7,
+      ),
+    ).toBe("review");
+
+    expect(
+      deriveReviewRowStatus(
+        {
+          materialId: null,
+          acceptedFields: new Set(["specText", "defaultUnitPrice", "currency"]),
+          editedValues: {
+            specText: "PVC D90",
+            defaultUnitPrice: "120000",
+            currency: "VND",
+          },
+        },
+        "unmatched",
+        null,
+      ),
+    ).toBe("review");
+
+    expect(
+      deriveReviewRowStatus(undefined, "unmatched", null),
+    ).toBe("unmatched");
   });
 });

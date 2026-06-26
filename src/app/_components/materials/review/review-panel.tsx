@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Globe, Sparkles } from "lucide-react";
 
 import { MatchChooser } from "~/app/_components/materials/review/match-chooser";
@@ -23,6 +23,7 @@ import {
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
 import type { RowDecision } from "~/lib/materials/review-decision";
+import { deriveReviewRowStatus } from "~/lib/materials/review-decision";
 import { runWithConcurrency } from "~/lib/run-with-concurrency";
 import { api } from "~/trpc/react";
 
@@ -107,7 +108,27 @@ export function ReviewPanel({
   const filtered =
     statusFilter === "all"
       ? rows
-      : rows.filter((row) => row.status === statusFilter);
+      : rows.filter(
+          (row) =>
+            deriveReviewRowStatus(
+              decisions.get(row.originalRowIndex),
+              row.status,
+              row.topCandidate?.materialId ?? null,
+            ) === statusFilter,
+        );
+
+  const effectiveSummary = useMemo(() => {
+    const counts = { auto: 0, review: 0, unmatched: 0 };
+    for (const row of rows) {
+      const status = deriveReviewRowStatus(
+        decisions.get(row.originalRowIndex),
+        row.status,
+        row.topCandidate?.materialId ?? null,
+      );
+      counts[status] += 1;
+    }
+    return { totalRows: rows.length, ...counts };
+  }, [rows, decisions]);
 
   useEffect(() => {
     if (filtered.length === 0) return;
@@ -127,19 +148,19 @@ export function ReviewPanel({
     });
   }, [rows]);
 
-  const reviewCount = rows.filter((row) => row.status === "review").length;
+  const reviewCount = effectiveSummary.review;
   const filters: Array<{
     id: ReviewRowStatus | "all";
     label: string;
     count: number;
   }> = [
     { id: "all", label: "Tất cả", count: rows.length },
-    { id: "auto", label: STATUS_META.auto.label, count: summary.auto },
+    { id: "auto", label: STATUS_META.auto.label, count: effectiveSummary.auto },
     { id: "review", label: STATUS_META.review.label, count: reviewCount },
     {
       id: "unmatched",
       label: STATUS_META.unmatched.label,
-      count: pendingUnmatched,
+      count: effectiveSummary.unmatched,
     },
   ];
 
@@ -716,8 +737,13 @@ export function ReviewPanel({
             </label>
           ) : null}
           {filtered.map((row) => {
-            const meta = STATUS_META[row.status];
             const decision = decisions.get(row.originalRowIndex);
+            const rowStatus = deriveReviewRowStatus(
+              decision,
+              row.status,
+              row.topCandidate?.materialId ?? null,
+            );
+            const meta = STATUS_META[rowStatus];
             const isSelected = row.originalRowIndex === selectedRowIndex;
             const name = row.name.trim()
               ? row.name

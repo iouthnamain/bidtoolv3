@@ -12,6 +12,7 @@ import {
   isExportableDecision,
 } from "~/lib/materials/enrich-gap-fill";
 import {
+  deriveReviewRowStatus,
   seedDecisionsFromItems,
   serializeRowDecision,
   type RowDecision,
@@ -102,6 +103,9 @@ export function MaterialProfileReviewStep({
   const toast = useToast();
   const updateReviewDecision =
     api.materialProfile.updateItemReviewDecision.useMutation({
+      onSuccess: () => {
+        void utils.materialProfile.get.invalidate({ workspaceId });
+      },
       onError: (error) =>
         toast.error(error.message || "Không lưu được quyết định."),
     });
@@ -243,8 +247,13 @@ export function MaterialProfileReviewStep({
   );
   const pendingUnmatched = useMemo(() => {
     return reviewRows.filter((row) => {
-      if (row.status !== "unmatched") return false;
       const decision = decisions.get(row.originalRowIndex);
+      const rowStatus = deriveReviewRowStatus(
+        decision,
+        row.status,
+        row.topCandidate?.materialId ?? null,
+      );
+      if (rowStatus !== "unmatched") return false;
       if (decision?.skipped) return false;
       return !isExportableDecision(
         decision ?? { materialId: null, acceptedFields: new Set() },

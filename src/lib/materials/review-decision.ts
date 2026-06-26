@@ -3,6 +3,7 @@ import type {
   RowDecisionLike,
   WebLinkResult,
 } from "~/lib/materials/enrich-gap-fill";
+import { isExportableDecision } from "~/lib/materials/enrich-gap-fill";
 import {
   FILLABLE_FIELDS,
   type FillableField,
@@ -384,17 +385,44 @@ export function deriveMatchStatus(
   topCandidateMaterialId: number | null,
 ): "matched" | "manual" | "candidates_found" | "unmatched" {
   if (decision.skipped) return "unmatched";
-  if (decision.materialId == null) {
-    if (snapshotStatusValue === "review") return "candidates_found";
-    return "unmatched";
+  if (decision.materialId != null) {
+    if (
+      snapshotStatusValue === "auto" &&
+      decision.materialId === topCandidateMaterialId
+    ) {
+      return "matched";
+    }
+    return "manual";
   }
-  if (
-    snapshotStatusValue === "auto" &&
-    decision.materialId === topCandidateMaterialId
-  ) {
-    return "matched";
+  if (isExportableDecision(decision)) {
+    return "manual";
   }
-  return "manual";
+  if (snapshotStatusValue === "review") return "candidates_found";
+  return "unmatched";
+}
+
+/** UI row badge status after applying the current review decision. */
+export function deriveReviewRowStatus(
+  decision: RowDecision | undefined,
+  snapshotStatus: SnapshotStatus,
+  topCandidateMaterialId: number | null,
+): SnapshotStatus {
+  const resolved = decision ?? { materialId: null, acceptedFields: new Set() };
+  if (resolved.skipped) return "unmatched";
+  if (isExportableDecision(resolved)) {
+    if (
+      resolved.materialId != null &&
+      snapshotStatus === "auto" &&
+      resolved.materialId === topCandidateMaterialId
+    ) {
+      return "auto";
+    }
+    return "review";
+  }
+  if (resolved.materialId != null || resolved.acceptedFields.size > 0) {
+    return "review";
+  }
+  return snapshotStatus;
 }
 
 export function seedDecisionsFromItems(
