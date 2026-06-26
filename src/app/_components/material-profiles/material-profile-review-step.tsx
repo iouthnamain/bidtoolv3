@@ -150,6 +150,27 @@ export function MaterialProfileReviewStep({
     [itemIdByRowIndex, updateReviewDecision],
   );
 
+  const flushDecisionsForRows = useCallback(
+    (rowIndices: number[]) => {
+      for (const rowIndex of rowIndices) {
+        const timer = persistTimers.current.get(rowIndex);
+        if (timer) {
+          clearTimeout(timer);
+          persistTimers.current.delete(rowIndex);
+        }
+        const decision = decisionsRef.current.get(rowIndex);
+        const itemId = itemIdByRowIndex.get(rowIndex);
+        if (decision && itemId) {
+          updateReviewDecision.mutate({
+            itemId,
+            decision: serializeRowDecision(decision),
+          });
+        }
+      }
+    },
+    [itemIdByRowIndex, updateReviewDecision],
+  );
+
   const updateDecision = useCallback(
     (rowIndex: number, next: RowDecision) => {
       setDecisions((prev) => {
@@ -255,6 +276,8 @@ export function MaterialProfileReviewStep({
       matchedCount={matchedCount}
       pendingUnmatched={pendingUnmatched}
       onDecisionPersist={handleDecisionPersist}
+      onFlushDecisionsForRows={flushDecisionsForRows}
+      searchMode="profileSplit"
       emptyTitle="Chưa có kết quả match"
       emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
       headerActions={

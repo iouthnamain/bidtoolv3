@@ -11,9 +11,34 @@ import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrich
 
 export type WebSearchStatus = "idle" | "pending" | "done" | "error";
 
-export type WebSearchRowResult = {
+export type WebLinkResult = {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  query?: string;
+  rankScore?: number;
+};
+
+export type AiSearchStoredResult = {
   fields: Partial<Record<FillableField, string>>;
+  sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
+};
+
+export type RowDecisionLike = {
+  materialId: number | null;
+  acceptedFields: Set<FillableField>;
+  overwriteFields?: Set<FillableField>;
+  editedValues?: Partial<Record<FillableField, string>>;
+  webProposedFields?: Partial<Record<FillableField, string>>;
+  webEvidence?: MaterialEnrichmentEvidence[];
+  webSearchStatus?: WebSearchStatus;
+  webLinkResults?: WebLinkResult[];
+  webLinksStatus?: WebSearchStatus;
+  aiSearchResult?: AiSearchStoredResult;
+  aiSearchStatus?: WebSearchStatus;
+  skipped?: boolean;
 };
 
 /** Fields the catalog candidate would fill into blank sheet cells. */
@@ -87,15 +112,10 @@ export function webFieldsAfterGapFill(
   return result;
 }
 
-export type RowDecisionLike = {
-  materialId: number | null;
-  acceptedFields: Set<FillableField>;
-  overwriteFields?: Set<FillableField>;
-  editedValues?: Partial<Record<FillableField, string>>;
-  webProposedFields?: Partial<Record<FillableField, string>>;
-  webEvidence?: MaterialEnrichmentEvidence[];
-  webSearchStatus?: WebSearchStatus;
-  skipped?: boolean;
+export type WebSearchRowResult = {
+  fields: Partial<Record<FillableField, string>>;
+  evidence: MaterialEnrichmentEvidence[];
+  sourceUrls?: string[];
 };
 
 /** Effective values for accepted fields after catalog + web gap-fill + edits. */
@@ -158,6 +178,10 @@ export function applyWebSearchToDecision(
     webProposedFields: mergedWeb,
     webEvidence: result.evidence,
     webSearchStatus: "done",
+    webLinkResults: current.webLinkResults,
+    webLinksStatus: current.webLinksStatus,
+    aiSearchResult: current.aiSearchResult,
+    aiSearchStatus: current.aiSearchStatus,
     skipped: current.skipped,
   };
 }
@@ -183,6 +207,10 @@ export function applySavedMaterialToDecision(
     webEvidence: [],
     webSearchStatus:
       current?.webSearchStatus === "pending" ? "pending" : undefined,
+    webLinkResults: current?.webLinkResults,
+    webLinksStatus: current?.webLinksStatus,
+    aiSearchResult: current?.aiSearchResult,
+    aiSearchStatus: current?.aiSearchStatus,
     skipped: false,
   };
 }

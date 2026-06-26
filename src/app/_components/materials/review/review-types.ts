@@ -7,6 +7,8 @@ import type { SnapshotStatus } from "~/lib/materials/review-decision";
 
 export type ReviewRowStatus = SnapshotStatus;
 
+export type ReviewSearchMode = "default" | "profileSplit";
+
 export type ReviewRow = {
   key: number;
   originalRowIndex: number;

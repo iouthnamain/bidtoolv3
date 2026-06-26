@@ -45,22 +45,10 @@ type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
 type MaterialSearchCandidate =
   RouterOutputs["material"]["enrichSearchMaterials"]["candidates"][number];
-type WebSearchResult =
-  RouterOutputs["material"]["enrichWebSearchRowLinks"]["results"][number];
-type AiSearchResult = RouterOutputs["material"]["enrichAiSearchRow"];
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
-type SearchTab = "material" | "web" | "ai";
 type CompareFieldKey = "name" | FillableField;
 type CompareValues = Partial<Record<CompareFieldKey, string>>;
-type MaterialProfileWebSearchInput = {
-  name: string;
-  code?: string;
-  manufacturer?: string;
-  specText?: string;
-  unit?: string;
-  category?: string;
-};
 
 type Candidate = {
   materialId: number;
@@ -155,12 +143,6 @@ const materialProfileCompareFields: Array<{
   { key: "originCountry", label: FIELD_LABELS.originCountry },
   { key: "defaultUnitPrice", label: FIELD_LABELS.defaultUnitPrice },
   { key: "sourceUrl", label: FIELD_LABELS.sourceUrl },
-];
-
-const searchTabs: Array<{ id: SearchTab; label: string }> = [
-  { id: "material", label: "Vật tư hiện có" },
-  { id: "web", label: "Tìm kiếm web" },
-  { id: "ai", label: "Tìm kiếm AI" },
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -284,20 +266,6 @@ function sheetFieldsFromItem(
     ),
     currency: stringValue(original.currency, item.currency ?? "VND"),
     sourceUrl: stringValue(original.sourceUrl),
-  };
-}
-
-function webSearchInputFromItem(
-  item: WorkspaceItem,
-): MaterialProfileWebSearchInput {
-  const fields = sheetFieldsFromItem(item);
-  return {
-    name: item.productName,
-    code: fields.code,
-    manufacturer: fields.manufacturer,
-    specText: fields.specText,
-    unit: fields.unit,
-    category: fields.category,
   };
 }
 

@@ -1,4 +1,8 @@
-import type { RowDecisionLike } from "~/lib/materials/enrich-gap-fill";
+import type {
+  AiSearchStoredResult,
+  RowDecisionLike,
+  WebLinkResult,
+} from "~/lib/materials/enrich-gap-fill";
 import {
   FILLABLE_FIELDS,
   type FillableField,
@@ -17,6 +21,10 @@ export type SerializedRowDecision = {
   webProposedFields?: Partial<Record<FillableField, string>>;
   webEvidence?: MaterialEnrichmentEvidence[];
   webSearchStatus?: WebSearchStatus;
+  webLinkResults?: WebLinkResult[];
+  webLinksStatus?: WebSearchStatus;
+  aiSearchResult?: AiSearchStoredResult;
+  aiSearchStatus?: WebSearchStatus;
   skipped?: boolean;
 };
 
@@ -86,6 +94,52 @@ function parseWebSearchStatus(value: unknown): WebSearchStatus | undefined {
   return undefined;
 }
 
+function filterWebLinkResults(value: unknown): WebLinkResult[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: WebLinkResult[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const title = typeof record.title === "string" ? record.title : "";
+    const url = typeof record.url === "string" ? record.url : "";
+    const domain = typeof record.domain === "string" ? record.domain : "";
+    const snippet = typeof record.snippet === "string" ? record.snippet : "";
+    if (!url) continue;
+    result.push({
+      title,
+      url,
+      domain,
+      snippet,
+      query: typeof record.query === "string" ? record.query : undefined,
+      rankScore:
+        typeof record.rankScore === "number" && Number.isFinite(record.rankScore)
+          ? record.rankScore
+          : undefined,
+    });
+  }
+  return result.length > 0 ? result : undefined;
+}
+
+function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const fields = filterStringRecord(record.fields) ?? {};
+  const evidence = filterEvidence(record.evidence) ?? [];
+  const sourceUrls = Array.isArray(record.sourceUrls)
+    ? record.sourceUrls.filter(
+        (url): url is string => typeof url === "string" && url.length > 0,
+      )
+    : [];
+  if (
+    Object.keys(fields).length === 0 &&
+    evidence.length === 0 &&
+    sourceUrls.length === 0
+  ) {
+    return undefined;
+  }
+  return { fields, sourceUrls, evidence };
+}
+
 export function emptySerializedRowDecision(): SerializedRowDecision {
   return {
     materialId: null,
@@ -115,6 +169,12 @@ export function isEmptySerializedRowDecision(
   ) {
     return false;
   }
+  if (record.webLinkResults && record.webLinkResults.length > 0) {
+    return false;
+  }
+  if (record.aiSearchResult) {
+    return false;
+  }
   return true;
 }
 
@@ -130,6 +190,10 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
     webProposedFields: decision.webProposedFields,
     webEvidence: decision.webEvidence,
     webSearchStatus: decision.webSearchStatus,
+    webLinkResults: decision.webLinkResults,
+    webLinksStatus: decision.webLinksStatus,
+    aiSearchResult: decision.aiSearchResult,
+    aiSearchStatus: decision.aiSearchStatus,
     skipped: decision.skipped ? true : undefined,
   };
 }
@@ -153,6 +217,10 @@ export function deserializeRowDecision(
     webProposedFields: filterStringRecord(record.webProposedFields),
     webEvidence: filterEvidence(record.webEvidence),
     webSearchStatus: parseWebSearchStatus(record.webSearchStatus),
+    webLinkResults: filterWebLinkResults(record.webLinkResults),
+    webLinksStatus: parseWebSearchStatus(record.webLinksStatus),
+    aiSearchResult: filterAiSearchResult(record.aiSearchResult),
+    aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
     skipped: record.skipped === true,
   };
 }

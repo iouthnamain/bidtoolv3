@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Globe, Loader2 } from "lucide-react";
+import { Globe, Loader2, Sparkles } from "lucide-react";
 
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import {
@@ -7,12 +7,15 @@ import {
   type ManualProductValues,
 } from "~/app/_components/enrich/manual-product-dialog";
 import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
+import { AiResultsPanel } from "~/app/_components/materials/review/ai-results-panel";
 import { planForCandidate } from "~/app/_components/materials/review/review-plan";
-import type { ReviewRow } from "~/app/_components/materials/review/review-types";
+import type { ReviewRow, ReviewSearchMode } from "~/app/_components/materials/review/review-types";
+import { WebResultsPanel } from "~/app/_components/materials/review/web-results-panel";
 import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   applySavedMaterialToDecision,
+  applyWebSearchToDecision,
   effectiveAcceptedFieldValues,
   webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
@@ -26,23 +29,44 @@ import type { RowDecision } from "~/lib/materials/review-decision";
 import { parseOptionalNumber } from "~/lib/materials/format";
 import { api } from "~/trpc/react";
 
+function profileSearchFields(decision: RowDecision | undefined) {
+  return {
+    webLinkResults: decision?.webLinkResults,
+    webLinksStatus: decision?.webLinksStatus,
+    aiSearchResult: decision?.aiSearchResult,
+    aiSearchStatus: decision?.aiSearchStatus,
+  };
+}
+
 export function MatchChooser({
   row,
   decision,
   onChange,
+  searchMode = "default",
   onWebSearch,
+  onWebLinksSearch,
+  onAiSearch,
   isWebSearchPending,
+  isWebLinksPending,
+  isAiSearchPending,
 }: {
   row: ReviewRow;
   decision: RowDecision | undefined;
   onChange: (next: RowDecision) => void;
-  onWebSearch: () => void;
-  isWebSearchPending: boolean;
+  searchMode?: ReviewSearchMode;
+  onWebSearch?: () => void;
+  onWebLinksSearch?: () => void;
+  onAiSearch?: () => void;
+  isWebSearchPending?: boolean;
+  isWebLinksPending?: boolean;
+  isAiSearchPending?: boolean;
 }) {
   const toast = useToast();
   const utils = api.useUtils();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [isApplyingAi, setIsApplyingAi] = useState(false);
+  const isProfileSplit = searchMode === "profileSplit";
 
   useEffect(() => {
     const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
@@ -62,6 +86,7 @@ export function MatchChooser({
   const webProposedFields = decision?.webProposedFields ?? {};
   const webEvidence = decision?.webEvidence ?? [];
   const webSearchStatus = decision?.webSearchStatus;
+  const profileFields = profileSearchFields(decision);
 
   const sheetFields: Partial<Record<FillableField, string>> = row.sheetFields;
 
@@ -108,6 +133,7 @@ export function MatchChooser({
       webProposedFields,
       webEvidence,
       webSearchStatus,
+      ...profileFields,
     });
   };
 
@@ -122,6 +148,7 @@ export function MatchChooser({
       webProposedFields: {},
       webEvidence: [],
       skipped: !isSkipped,
+      ...profileFields,
     });
   };
 
@@ -142,6 +169,7 @@ export function MatchChooser({
       webProposedFields,
       webEvidence,
       webSearchStatus,
+      ...profileFields,
     });
   };
 
@@ -163,6 +191,7 @@ export function MatchChooser({
       webProposedFields,
       webEvidence,
       webSearchStatus,
+      ...profileFields,
     });
   };
 
@@ -178,6 +207,7 @@ export function MatchChooser({
       webProposedFields,
       webEvidence,
       webSearchStatus,
+      ...profileFields,
     });
   };
 
@@ -199,6 +229,7 @@ export function MatchChooser({
       editedValues: nextEdited,
       webProposedFields: {},
       webEvidence: [],
+      ...profileFields,
     });
   };
 
@@ -303,7 +334,42 @@ export function MatchChooser({
       editedValues: {},
       webProposedFields: {},
       webEvidence: [],
+      ...profileFields,
     });
+  };
+
+  const applyAiResult = () => {
+    const aiResult = decision?.aiSearchResult;
+    if (!aiResult || !decision) {
+      toast.warning("Chưa có kết quả AI để áp dụng.");
+      return;
+    }
+    setIsApplyingAi(true);
+    try {
+      const merged = applyWebSearchToDecision(
+        decision,
+        sheetFields,
+        catalogFields,
+        {
+          fields: aiResult.fields,
+          evidence: aiResult.evidence,
+          sourceUrls: aiResult.sourceUrls,
+        },
+      );
+      onChange({
+        ...merged,
+        aiSearchResult: aiResult,
+        aiSearchStatus: decision.aiSearchStatus,
+        webLinkResults: decision.webLinkResults,
+        webLinksStatus: decision.webLinksStatus,
+      });
+      const gapCount = Object.keys(
+        webFieldsAfterGapFill(sheetFields, catalogFields, aiResult.fields),
+      ).length;
+      toast.success(`Đã áp dụng ${gapCount} trường từ AI.`);
+    } finally {
+      setIsApplyingAi(false);
+    }
   };
 
   const hasWebOrManualDecision =
@@ -314,25 +380,71 @@ export function MatchChooser({
           (value) => (value ?? "").trim().length > 0,
         )));
 
-  const canSaveToMaterials = accepted.size > 0 && !isWebSearchPending;
+  const canSaveToMaterials =
+    accepted.size > 0 &&
+    !isWebSearchPending &&
+    !isWebLinksPending &&
+    !isAiSearchPending;
   const isSavingMaterial = upsertMaterial.isPending;
+
+  const showWebLinksPanel =
+    isProfileSplit &&
+    (isWebLinksPending ||
+      (decision?.webLinkResults?.length ?? 0) > 0 ||
+      decision?.webLinksStatus === "error");
+  const showAiPanel =
+    isProfileSplit &&
+    (isAiSearchPending ||
+      decision?.aiSearchResult != null ||
+      decision?.aiSearchStatus === "error");
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onWebSearch}
-          disabled={isWebSearchPending || !row.name.trim()}
-        >
-          {isWebSearchPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : (
-            <Globe className="h-4 w-4" aria-hidden />
-          )}
-          Tìm web
-        </Button>
+        {isProfileSplit ? (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onWebLinksSearch}
+              disabled={isWebLinksPending || !row.name.trim()}
+            >
+              {isWebLinksPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Globe className="h-4 w-4" aria-hidden />
+              )}
+              Tìm web
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onAiSearch}
+              disabled={isAiSearchPending || !row.name.trim()}
+            >
+              {isAiSearchPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden />
+              )}
+              Tìm AI
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onWebSearch}
+            disabled={isWebSearchPending || !row.name.trim()}
+          >
+            {isWebSearchPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Globe className="h-4 w-4" aria-hidden />
+            )}
+            Tìm web
+          </Button>
+        )}
         <Button
           variant="secondary"
           size="sm"
@@ -379,7 +491,23 @@ export function MatchChooser({
         forceShowDecision={hasWebOrManualDecision}
       />
 
-      {webEvidence.length > 0 && !isWebSearchPending ? (
+      {showWebLinksPanel ? (
+        <WebResultsPanel
+          links={decision?.webLinkResults ?? []}
+          status={decision?.webLinksStatus ?? (isWebLinksPending ? "pending" : undefined)}
+        />
+      ) : null}
+
+      {showAiPanel ? (
+        <AiResultsPanel
+          result={decision?.aiSearchResult}
+          status={decision?.aiSearchStatus ?? (isAiSearchPending ? "pending" : undefined)}
+          onApply={decision?.aiSearchResult ? applyAiResult : undefined}
+          isApplying={isApplyingAi}
+        />
+      ) : null}
+
+      {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (
         <div className="space-y-2">
           <p className="text-xs font-bold text-slate-700">Bằng chứng web</p>
           {webEvidence.slice(0, 6).map((item, index) => (

@@ -40,6 +40,43 @@ describe("review-decision", () => {
     expect(restored!.webSearchStatus).toBe("done");
   });
 
+  it("round-trips profile split web and AI fields", () => {
+    const decision: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set<"unit">(["unit"]),
+      webLinkResults: [
+        {
+          title: "Product page",
+          url: "https://example.com/p",
+          domain: "example.com",
+          snippet: "Specs here",
+          query: "widget",
+          rankScore: 0.9,
+        },
+      ],
+      webLinksStatus: "done",
+      aiSearchResult: {
+        fields: { manufacturer: "Acme" },
+        sourceUrls: ["https://example.com/p"],
+        evidence: [
+          {
+            field: "manufacturer",
+            value: "Acme",
+            snippet: "By Acme",
+            sourceUrl: "https://example.com/p",
+          },
+        ],
+      },
+      aiSearchStatus: "done",
+    };
+
+    const restored = deserializeRowDecision(serializeRowDecision(decision));
+    expect(restored?.webLinkResults?.[0]?.url).toBe("https://example.com/p");
+    expect(restored?.webLinksStatus).toBe("done");
+    expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
+    expect(restored?.aiSearchStatus).toBe("done");
+  });
+
   it("seeds auto row from item materialId and fill plan", () => {
     const decision = seedDecisionFromItem({
       id: 1,
