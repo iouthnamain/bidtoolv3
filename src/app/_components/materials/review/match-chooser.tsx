@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Globe, Loader2, Sparkles } from "lucide-react";
 
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
@@ -7,15 +7,13 @@ import {
   type ManualProductValues,
 } from "~/app/_components/enrich/manual-product-dialog";
 import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
-import { AiResultsPanel } from "~/app/_components/materials/review/ai-results-panel";
 import { planForCandidate } from "~/app/_components/materials/review/review-plan";
+import type { SearchSourceCandidate } from "~/app/_components/materials/review/search-source-candidate-card";
 import type { ReviewRow, ReviewSearchMode } from "~/app/_components/materials/review/review-types";
-import { WebResultsPanel } from "~/app/_components/materials/review/web-results-panel";
 import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   applySavedMaterialToDecision,
-  applyWebSearchToDecision,
   effectiveAcceptedFieldValues,
   webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
@@ -65,7 +63,6 @@ export function MatchChooser({
   const utils = api.useUtils();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [isApplyingAi, setIsApplyingAi] = useState(false);
   const isProfileSplit = searchMode === "profileSplit";
 
   useEffect(() => {
@@ -79,7 +76,14 @@ export function MatchChooser({
   );
   const upsertMaterial = api.material.upsertMaterial.useMutation();
 
-  const selectedId = decision?.materialId ?? null;
+  const selectedId =
+    decision?.selectedSource === "catalog" || decision?.selectedSource == null
+      ? (decision?.materialId ?? null)
+      : null;
+  const selectedSearchSource =
+    decision?.selectedSource === "web" || decision?.selectedSource === "ai"
+      ? decision.selectedSource
+      : null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
   const editedValues = decision?.editedValues ?? {};
@@ -108,6 +112,110 @@ export function MatchChooser({
     ? candidateToFields(selectedCandidate)
     : null;
 
+  const editorProposedFields =
+    selectedSearchSource === "ai" && decision?.aiSearchResult
+      ? decision.aiSearchResult.fields
+      : webProposedFields;
+
+  const searchSourceCandidates = useMemo((): SearchSourceCandidate[] => {
+    if (!isProfileSplit) return [];
+
+    const items: SearchSourceCandidate[] = [];
+
+    const showWeb =
+      isWebLinksPending ||
+      decision?.webLinksStatus != null ||
+      (decision?.webLinkResults?.length ?? 0) > 0;
+    if (showWeb) {
+      const links = decision?.webLinkResults ?? [];
+      const top = links[0];
+      items.push({
+        id: "web",
+        source: "web",
+        title: top?.title?.trim() || row.name.trim() || "Kết quả tìm web",
+        subtitle: isWebLinksPending
+          ? "Đang tìm liên kết…"
+          : links.length > 0
+            ? `${links.length} liên kết${top?.domain ? ` · ${top.domain}` : ""}`
+            : "Không có liên kết",
+        fillCount: 0,
+        links,
+        sourceUrl: top?.url,
+        status: isWebLinksPending
+          ? "pending"
+          : decision?.webLinksStatus === "error"
+            ? "error"
+            : links.length > 0
+              ? "done"
+              : "error",
+      });
+    }
+
+    const showAi =
+      isAiSearchPending ||
+      decision?.aiSearchStatus != null ||
+      decision?.aiSearchResult != null;
+    if (showAi) {
+      const ai = decision?.aiSearchResult;
+      const fieldCount = ai
+        ? Object.values(ai.fields).filter((value) => (value ?? "").trim()).length
+        : 0;
+      const fillCount = ai
+        ? Object.keys(webFieldsAfterGapFill(sheetFields, null, ai.fields)).length
+        : 0;
+      const previewField =
+        ai?.fields.manufacturer?.trim() ||
+        ai?.fields.code?.trim() ||
+        ai?.fields.specText?.trim() ||
+        "";
+      items.push({
+        id: "ai",
+        source: "ai",
+        title:
+          previewField ||
+          row.name.trim() ||
+          (isAiSearchPending ? "Đang tìm AI…" : "Kết quả AI"),
+        subtitle: isAiSearchPending
+          ? "Đang trích xuất trường…"
+          : fieldCount > 0
+            ? `${fieldCount} trường trích xuất`
+            : "Không trích xuất được trường",
+        fillCount,
+        sourceUrl: ai?.sourceUrls[0],
+        status: isAiSearchPending
+          ? "pending"
+          : decision?.aiSearchStatus === "error"
+            ? "error"
+            : ai && fieldCount > 0
+              ? "done"
+              : ai
+                ? "error"
+                : undefined,
+      });
+    }
+
+    return items;
+  }, [
+    decision?.aiSearchResult,
+    decision?.aiSearchStatus,
+    decision?.webLinkResults,
+    decision?.webLinksStatus,
+    isAiSearchPending,
+    isProfileSplit,
+    isWebLinksPending,
+    row.name,
+    sheetFields,
+  ]);
+
+  const afterColumnLabel =
+    selectedSearchSource === "ai"
+      ? "Sau (AI)"
+      : selectedSearchSource === "web"
+        ? "Sau (Web)"
+        : selectedCandidate
+          ? `Sau (${selectedCandidate.name})`
+          : "Sau";
+
   const choose = (candidate: EnrichCandidate) => {
     const { fillable } = planForCandidate(sheetFields, candidate);
     const candidateFields = candidateToFields(candidate);
@@ -127,6 +235,7 @@ export function MatchChooser({
     }
     onChange({
       materialId: candidate.materialId,
+      selectedSource: "catalog",
       acceptedFields: nextAccepted,
       overwriteFields: new Set(),
       editedValues: nextEdited,
@@ -137,11 +246,59 @@ export function MatchChooser({
     });
   };
 
+  const chooseSearchSource = (source: "web" | "ai") => {
+    if (source === "web") {
+      const links = decision?.webLinkResults ?? [];
+      if (links.length === 0) {
+        toast.warning("Chưa có liên kết web để chọn.");
+        return;
+      }
+      onChange({
+        materialId: null,
+        selectedSource: "web",
+        acceptedFields: new Set(),
+        overwriteFields: new Set(),
+        editedValues: {},
+        webProposedFields: {},
+        webEvidence: [],
+        webSearchStatus,
+        ...profileFields,
+      });
+      return;
+    }
+
+    const aiResult = decision?.aiSearchResult;
+    if (!aiResult) {
+      toast.warning("Chưa có kết quả AI để chọn.");
+      return;
+    }
+    const gapFields = webFieldsAfterGapFill(sheetFields, null, aiResult.fields);
+    const nextAccepted = new Set<FillableField>();
+    const nextEdited: Partial<Record<FillableField, string>> = {};
+    for (const [field, value] of Object.entries(gapFields)) {
+      const fillableField = field as FillableField;
+      nextAccepted.add(fillableField);
+      nextEdited[fillableField] = value;
+    }
+    onChange({
+      materialId: null,
+      selectedSource: "ai",
+      acceptedFields: nextAccepted,
+      overwriteFields: new Set(),
+      editedValues: nextEdited,
+      webProposedFields: { ...aiResult.fields },
+      webEvidence: aiResult.evidence,
+      webSearchStatus,
+      ...profileFields,
+    });
+  };
+
   const isSkipped = decision?.skipped === true;
 
   const toggleSkip = () => {
     onChange({
       materialId: null,
+      selectedSource: undefined,
       acceptedFields: new Set(),
       overwriteFields: new Set(),
       editedValues: {},
@@ -163,10 +320,11 @@ export function MatchChooser({
     }
     onChange({
       materialId: selectedId,
+      selectedSource: decision?.selectedSource,
       acceptedFields: next,
       overwriteFields: nextOverwrite,
       editedValues,
-      webProposedFields,
+      webProposedFields: editorProposedFields,
       webEvidence,
       webSearchStatus,
       ...profileFields,
@@ -185,10 +343,11 @@ export function MatchChooser({
     }
     onChange({
       materialId: selectedId,
+      selectedSource: decision?.selectedSource,
       acceptedFields: nextAccepted,
       overwriteFields: nextOverwrite,
       editedValues,
-      webProposedFields,
+      webProposedFields: editorProposedFields,
       webEvidence,
       webSearchStatus,
       ...profileFields,
@@ -201,10 +360,11 @@ export function MatchChooser({
     nextAccepted.add(field);
     onChange({
       materialId: selectedId,
+      selectedSource: decision?.selectedSource,
       acceptedFields: nextAccepted,
       overwriteFields: overwrite,
       editedValues: nextEdited,
-      webProposedFields,
+      webProposedFields: editorProposedFields,
       webEvidence,
       webSearchStatus,
       ...profileFields,
@@ -224,6 +384,7 @@ export function MatchChooser({
     }
     onChange({
       materialId: null,
+      selectedSource: undefined,
       acceptedFields: nextAccepted,
       overwriteFields: new Set(),
       editedValues: nextEdited,
@@ -240,7 +401,7 @@ export function MatchChooser({
       {
         acceptedFields: accepted,
         editedValues,
-        webProposedFields,
+        webProposedFields: editorProposedFields,
         overwriteFields: overwrite,
       },
     );
@@ -329,6 +490,7 @@ export function MatchChooser({
   const clearDecision = () => {
     onChange({
       materialId: null,
+      selectedSource: undefined,
       acceptedFields: new Set(),
       overwriteFields: new Set(),
       editedValues: {},
@@ -338,41 +500,8 @@ export function MatchChooser({
     });
   };
 
-  const applyAiResult = () => {
-    const aiResult = decision?.aiSearchResult;
-    if (!aiResult || !decision) {
-      toast.warning("Chưa có kết quả AI để áp dụng.");
-      return;
-    }
-    setIsApplyingAi(true);
-    try {
-      const merged = applyWebSearchToDecision(
-        decision,
-        sheetFields,
-        catalogFields,
-        {
-          fields: aiResult.fields,
-          evidence: aiResult.evidence,
-          sourceUrls: aiResult.sourceUrls,
-        },
-      );
-      onChange({
-        ...merged,
-        aiSearchResult: aiResult,
-        aiSearchStatus: decision.aiSearchStatus,
-        webLinkResults: decision.webLinkResults,
-        webLinksStatus: decision.webLinksStatus,
-      });
-      const gapCount = Object.keys(
-        webFieldsAfterGapFill(sheetFields, catalogFields, aiResult.fields),
-      ).length;
-      toast.success(`Đã áp dụng ${gapCount} trường từ AI.`);
-    } finally {
-      setIsApplyingAi(false);
-    }
-  };
-
   const hasWebOrManualDecision =
+    selectedSearchSource != null ||
     Object.keys(webProposedFields).length > 0 ||
     (selectedId == null &&
       (accepted.size > 0 ||
@@ -386,17 +515,6 @@ export function MatchChooser({
     !isWebLinksPending &&
     !isAiSearchPending;
   const isSavingMaterial = upsertMaterial.isPending;
-
-  const showWebLinksPanel =
-    isProfileSplit &&
-    (isWebLinksPending ||
-      (decision?.webLinkResults?.length ?? 0) > 0 ||
-      decision?.webLinksStatus === "error");
-  const showAiPanel =
-    isProfileSplit &&
-    (isAiSearchPending ||
-      decision?.aiSearchResult != null ||
-      decision?.aiSearchStatus === "error");
 
   return (
     <div className="space-y-3">
@@ -467,7 +585,7 @@ export function MatchChooser({
         sheetLabel={`Dòng Excel ${row.originalRowIndex}`}
         sheetName={row.name}
         sheetFields={sheetFields}
-        proposedFields={webProposedFields}
+        proposedFields={editorProposedFields}
         selectedMaterialId={selectedId}
         accepted={accepted}
         overwrite={overwrite}
@@ -489,23 +607,12 @@ export function MatchChooser({
         isSkipped={isSkipped}
         onToggleSkip={toggleSkip}
         forceShowDecision={hasWebOrManualDecision}
+        compareLayout={isProfileSplit ? "sideBySide" : "inline"}
+        afterColumnLabel={afterColumnLabel}
+        searchSourceCandidates={searchSourceCandidates}
+        selectedSearchSource={selectedSearchSource}
+        onChooseSearchSource={isProfileSplit ? chooseSearchSource : undefined}
       />
-
-      {showWebLinksPanel ? (
-        <WebResultsPanel
-          links={decision?.webLinkResults ?? []}
-          status={decision?.webLinksStatus ?? (isWebLinksPending ? "pending" : undefined)}
-        />
-      ) : null}
-
-      {showAiPanel ? (
-        <AiResultsPanel
-          result={decision?.aiSearchResult}
-          status={decision?.aiSearchStatus ?? (isAiSearchPending ? "pending" : undefined)}
-          onApply={decision?.aiSearchResult ? applyAiResult : undefined}
-          isApplying={isApplyingAi}
-        />
-      ) : null}
 
       {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (
         <div className="space-y-2">
@@ -513,7 +620,7 @@ export function MatchChooser({
           {webEvidence.slice(0, 6).map((item, index) => (
             <div
               key={`${item.field}-${item.sourceUrl ?? index}`}
-              className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2 text-xs"
+              className="rounded border border-slate-500 bg-white p-2 text-xs shadow-[var(--shadow-flat)]"
             >
               <p className="font-semibold text-slate-700">
                 {FIELD_LABELS[item.field as FillableField] ?? item.field}

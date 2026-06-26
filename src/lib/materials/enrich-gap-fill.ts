@@ -38,6 +38,7 @@ export type RowDecisionLike = {
   webLinksStatus?: WebSearchStatus;
   aiSearchResult?: AiSearchStoredResult;
   aiSearchStatus?: WebSearchStatus;
+  selectedSource?: "catalog" | "web" | "ai";
   skipped?: boolean;
 };
 
@@ -182,6 +183,7 @@ export function applyWebSearchToDecision(
     webLinksStatus: current.webLinksStatus,
     aiSearchResult: current.aiSearchResult,
     aiSearchStatus: current.aiSearchStatus,
+    selectedSource: current.selectedSource ?? "ai",
     skipped: current.skipped,
   };
 }
@@ -211,6 +213,7 @@ export function applySavedMaterialToDecision(
     webLinksStatus: current?.webLinksStatus,
     aiSearchResult: current?.aiSearchResult,
     aiSearchStatus: current?.aiSearchStatus,
+    selectedSource: "catalog",
     skipped: false,
   };
 }

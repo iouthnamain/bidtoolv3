@@ -25,6 +25,7 @@ export type SerializedRowDecision = {
   webLinksStatus?: WebSearchStatus;
   aiSearchResult?: AiSearchStoredResult;
   aiSearchStatus?: WebSearchStatus;
+  selectedSource?: "catalog" | "web" | "ai";
   skipped?: boolean;
 };
 
@@ -140,6 +141,15 @@ function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined 
   return { fields, sourceUrls, evidence };
 }
 
+function parseSelectedSource(
+  value: unknown,
+): "catalog" | "web" | "ai" | undefined {
+  if (value === "catalog" || value === "web" || value === "ai") {
+    return value;
+  }
+  return undefined;
+}
+
 export function emptySerializedRowDecision(): SerializedRowDecision {
   return {
     materialId: null,
@@ -194,6 +204,7 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
     webLinksStatus: decision.webLinksStatus,
     aiSearchResult: decision.aiSearchResult,
     aiSearchStatus: decision.aiSearchStatus,
+    selectedSource: decision.selectedSource,
     skipped: decision.skipped ? true : undefined,
   };
 }
@@ -221,6 +232,7 @@ export function deserializeRowDecision(
     webLinksStatus: parseWebSearchStatus(record.webLinksStatus),
     aiSearchResult: filterAiSearchResult(record.aiSearchResult),
     aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
+    selectedSource: parseSelectedSource(record.selectedSource),
     skipped: record.skipped === true,
   };
 }

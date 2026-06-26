@@ -68,6 +68,7 @@ describe("review-decision", () => {
         ],
       },
       aiSearchStatus: "done",
+      selectedSource: "ai",
     };
 
     const restored = deserializeRowDecision(serializeRowDecision(decision));
@@ -75,6 +76,7 @@ describe("review-decision", () => {
     expect(restored?.webLinksStatus).toBe("done");
     expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
     expect(restored?.aiSearchStatus).toBe("done");
+    expect(restored?.selectedSource).toBe("ai");
   });
 
   it("seeds auto row from item materialId and fill plan", () => {

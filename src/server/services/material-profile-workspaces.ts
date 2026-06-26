@@ -145,21 +145,14 @@ export function sanitizeMaterialProfileWorkbookFileName(fileName: string) {
 
 function timestampLabel(date = new Date()) {
   const pad = (value: number) => String(value).padStart(2, "0");
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    "-",
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-  ].join("");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}`;
 }
 
 export function buildMaterialProfileOutputPrefix(
   noticeNumber: string,
   date = new Date(),
 ) {
-  return `${safePathSegment(noticeNumber, "material-profile")} - ${timestampLabel(date)}`;
+  return `${safePathSegment(noticeNumber, "material-profile")}_${timestampLabel(date)}`;
 }
 
 async function materialProfileRoot() {
@@ -1864,6 +1857,7 @@ export async function openMaterialProfileOutputFolder(
 }
 
 type MaterialProfileExportBundle = {
+  outputFolderName: string;
   excelFileName: string;
   excelBuffer: Buffer;
   catalogFiles: Array<{ fileName: string; buffer: Buffer }>;
@@ -2063,6 +2057,7 @@ async function buildMaterialProfileExportBundle(
   return {
     workspace,
     bundle: {
+      outputFolderName: prefix,
       excelFileName,
       excelBuffer,
       catalogFiles: Array.from(catalogBuffersByFileName.entries()).map(
@@ -2087,6 +2082,7 @@ export async function exportMaterialProfileDownloadBundle(
     null,
   );
   return {
+    outputFolderName: bundle.outputFolderName,
     excelFileName: bundle.excelFileName,
     workbookBase64: bundle.excelBuffer.toString("base64"),
     catalogFiles: bundle.catalogFiles.map((file) => ({
@@ -2105,8 +2101,10 @@ export async function exportMaterialProfileWorkspace(
   outputDirPathInput: string,
 ) {
   const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
-  const outputDir = await assertExportDirWritable(outputDirPathInput);
+  const parentDir = await assertExportDirWritable(outputDirPathInput);
+  const outputDir = path.join(parentDir, bundle.outputFolderName);
   const catalogDir = path.join(outputDir, "Catalog");
+  await mkdir(outputDir, { recursive: true });
   await mkdir(catalogDir, { recursive: true });
 
   await writeFile(
@@ -2126,7 +2124,9 @@ export async function exportMaterialProfileWorkspace(
 
   return {
     outputDirPath: outputDir,
+    parentDirPath: parentDir,
     excelFileName: bundle.excelFileName,
+    outputFolderName: bundle.outputFolderName,
     catalogCount: bundle.catalogCount,
     missingCount: bundle.missingCount,
     warnings: bundle.warnings,

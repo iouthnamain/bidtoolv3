@@ -9,6 +9,8 @@ export type ReviewRowStatus = SnapshotStatus;
 
 export type ReviewSearchMode = "default" | "profileSplit";
 
+export type ReviewCandidateSource = "catalog" | "web" | "ai";
+
 export type ReviewRow = {
   key: number;
   originalRowIndex: number;

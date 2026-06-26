@@ -1164,7 +1164,7 @@ export function MaterialProfileDetailClient({
     });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
-      setLastMaterialProfileExportDir(result.outputDirPath);
+      setLastMaterialProfileExportDir(result.parentDirPath);
       await utils.materialProfile.get.invalidate({ workspaceId });
       if (result.missingCount > 0 || result.warnings.length > 0) {
         toast.warning(
@@ -1475,17 +1475,12 @@ export function MaterialProfileDetailClient({
       );
       await utils.materialProfile.get.invalidate({ workspaceId });
 
-      const destinationLabel =
-        saved.mode === "directory"
-          ? `thư mục ${saved.label}`
-          : "Downloads (trình duyệt)";
-
       if (bundle.missingCount > 0 || bundle.warnings.length > 0) {
         toast.warning(
-          `Đã lưu vào ${destinationLabel}, nhưng có ${bundle.missingCount} cảnh báo catalog.`,
+          `Đã lưu ${saved.label}, nhưng có ${bundle.missingCount} cảnh báo catalog.`,
         );
       } else {
-        toast.success(`Đã lưu export vào ${destinationLabel}.`);
+        toast.success(`Đã lưu export: ${saved.label}`);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {

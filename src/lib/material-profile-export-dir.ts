@@ -1,6 +1,9 @@
+import JSZip from "jszip";
+
 const STORAGE_KEY = "bidtool.materialProfile.lastExportDir";
 
 export type MaterialProfileExportDownloadBundle = {
+  outputFolderName: string;
   excelFileName: string;
   workbookBase64: string;
   catalogFiles: Array<{ fileName: string; base64: string }>;
@@ -59,8 +62,7 @@ function base64ToUint8Array(base64: string) {
   return bytes;
 }
 
-function downloadBase64File(fileName: string, base64: string, mimeType: string) {
-  const blob = new Blob([base64ToUint8Array(base64)], { type: mimeType });
+function downloadBlob(fileName: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -84,6 +86,54 @@ async function writeBase64File(
   await writable.close();
 }
 
+async function getExportOutputDirectory(
+  parentHandle: FileSystemDirectoryHandle,
+  outputFolderName: string,
+) {
+  return parentHandle.getDirectoryHandle(outputFolderName, { create: true });
+}
+
+async function writeBundleToDirectory(
+  outputDirectoryHandle: FileSystemDirectoryHandle,
+  bundle: MaterialProfileExportDownloadBundle,
+) {
+  await writeBase64File(
+    outputDirectoryHandle,
+    bundle.excelFileName,
+    bundle.workbookBase64,
+  );
+  const catalogDir = await outputDirectoryHandle.getDirectoryHandle("Catalog", {
+    create: true,
+  });
+  for (const file of bundle.catalogFiles) {
+    await writeBase64File(catalogDir, file.fileName, file.base64);
+  }
+}
+
+async function downloadBundleAsZip(bundle: MaterialProfileExportDownloadBundle) {
+  const zip = new JSZip();
+  const root = zip.folder(bundle.outputFolderName);
+  if (!root) {
+    throw new Error("Không tạo được folder export.");
+  }
+
+  root.file(bundle.excelFileName, base64ToUint8Array(bundle.workbookBase64), {
+    binary: true,
+  });
+  const catalogDir = root.folder("Catalog");
+  if (!catalogDir) {
+    throw new Error("Không tạo được folder Catalog.");
+  }
+  for (const file of bundle.catalogFiles) {
+    catalogDir.file(file.fileName, base64ToUint8Array(file.base64), {
+      binary: true,
+    });
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  downloadBlob(`${bundle.outputFolderName}.zip`, blob);
+}
+
 export async function pickMaterialProfileBrowserExportDirectory() {
   if (!isMaterialProfileBrowserFolderPickerSupported()) {
     return null;
@@ -96,42 +146,20 @@ export async function saveMaterialProfileExportBundleInBrowser(
   directoryHandle?: FileSystemDirectoryHandle | null,
 ) {
   if (directoryHandle) {
-    await writeBase64File(
+    const outputDirectoryHandle = await getExportOutputDirectory(
       directoryHandle,
-      bundle.excelFileName,
-      bundle.workbookBase64,
+      bundle.outputFolderName,
     );
-    const catalogDir = await directoryHandle.getDirectoryHandle("Catalog", {
-      create: true,
-    });
-    for (const file of bundle.catalogFiles) {
-      await writeBase64File(catalogDir, file.fileName, file.base64);
-    }
+    await writeBundleToDirectory(outputDirectoryHandle, bundle);
     return {
       mode: "directory" as const,
-      label: directoryHandle.name,
+      label: `${directoryHandle.name}/${bundle.outputFolderName}`,
     };
   }
 
-  downloadBase64File(
-    bundle.excelFileName,
-    bundle.workbookBase64,
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  );
-
-  for (const file of bundle.catalogFiles) {
-    downloadBase64File(
-      file.fileName,
-      file.base64,
-      "application/pdf",
-    );
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 250);
-    });
-  }
-
+  await downloadBundleAsZip(bundle);
   return {
     mode: "download" as const,
-    label: bundle.excelFileName,
+    label: `${bundle.outputFolderName}.zip`,
   };
 }

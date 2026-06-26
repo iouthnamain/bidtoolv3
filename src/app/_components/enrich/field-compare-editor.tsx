@@ -8,6 +8,10 @@ import {
   ProductCandidateCard,
   type EnrichCandidate,
 } from "~/app/_components/enrich/product-candidate-card";
+import {
+  SearchSourceCandidateCard,
+  type SearchSourceCandidate,
+} from "~/app/_components/materials/review/search-source-candidate-card";
 import { mergeWebGapFill } from "~/lib/materials/enrich-gap-fill";
 import {
   buildFillPlanWithEdits,
@@ -87,6 +91,16 @@ export type FieldCompareEditorProps = {
    * (step-2 manual/web-only rows).
    */
   forceShowDecision?: boolean;
+
+  /** Side-by-side before/after columns instead of inline arrows. */
+  compareLayout?: "inline" | "sideBySide";
+  /** Label for the proposed-value column in side-by-side mode. */
+  afterColumnLabel?: string;
+
+  /** Web/AI search results shown as additional selectable candidate cards. */
+  searchSourceCandidates?: SearchSourceCandidate[];
+  selectedSearchSource?: "web" | "ai" | null;
+  onChooseSearchSource?: (source: "web" | "ai") => void;
 };
 
 const EDITABLE_FIELDS = FILLABLE_FIELDS.filter(
@@ -123,6 +137,11 @@ export function FieldCompareEditor({
   skippedLabel = "Bỏ qua: bật",
   clearLabel = "Bỏ ghép dòng này",
   forceShowDecision = false,
+  compareLayout = "inline",
+  afterColumnLabel = "Sau",
+  searchSourceCandidates = [],
+  selectedSearchSource = null,
+  onChooseSearchSource,
 }: FieldCompareEditorProps) {
   // The base material fields feeding the plan: a chosen catalog candidate wins,
   // otherwise the surface's proposed/found values.
@@ -157,13 +176,17 @@ export function FieldCompareEditor({
   const hasDecision =
     forceShowDecision ||
     selectedMaterialId != null ||
+    selectedSearchSource != null ||
     hasProposed ||
     Object.values(editedValues).some((v) => (v ?? "").trim().length > 0);
 
-  // Digit keys 1-9 select the matching candidate card. Guarded so typing in the
-  // manual-search box (or any text field) never hijacks the keystroke.
+  const catalogCardCount = candidates.length;
+  const searchCardCount = searchSourceCandidates.length;
+  const totalHotkeyCards = catalogCardCount + searchCardCount;
+
+  // Digit keys 1-9 select catalog or search-source candidate cards.
   useEffect(() => {
-    if (!enableCandidateGrid || !onChoose) return;
+    if (!enableCandidateGrid) return;
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -178,17 +201,26 @@ export function FieldCompareEditor({
       }
       const digit = Number(event.key);
       if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
-      const candidate = candidates[digit - 1];
-      if (!candidate) return;
+      if (digit <= catalogCardCount && onChoose) {
+        const candidate = candidates[digit - 1];
+        if (!candidate) return;
+        event.preventDefault();
+        onChoose(candidate);
+        return;
+      }
+      const searchIndex = digit - catalogCardCount - 1;
+      const searchCandidate = searchSourceCandidates[searchIndex];
+      if (!searchCandidate || !onChooseSearchSource) return;
+      if (searchCandidate.status === "pending" || searchCandidate.status === "error") {
+        return;
+      }
       event.preventDefault();
-      onChoose(candidate);
+      onChooseSearchSource(searchCandidate.id);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-    // A fresh handler whenever the candidate list changes (i.e. row/search
-    // changes) is exactly what we want.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, enableCandidateGrid]);
+  }, [candidates, searchSourceCandidates, enableCandidateGrid, catalogCardCount]);
 
   return (
     <div className="space-y-4">
@@ -258,23 +290,29 @@ export function FieldCompareEditor({
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Đang tìm…
           </p>
-        ) : candidates.length === 0 ? (
+        ) : candidates.length === 0 && searchSourceCandidates.length === 0 ? (
           <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-6 text-center text-xs text-slate-700">
             {showingSearch
               ? "Không tìm thấy sản phẩm phù hợp."
-              : "Không có ứng viên ghép tự động — hãy tìm thủ công ở trên."}
+              : "Không có ứng viên ghép tự động — hãy tìm thủ công hoặc chạy Tìm web / Tìm AI."}
           </p>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-700">
-              Mẹo: bấm phím 1-9 để chọn nhanh ứng viên tương ứng.
-            </p>
+            {totalHotkeyCards > 0 ? (
+              <p className="text-xs font-semibold text-slate-700">
+                Mẹo: bấm phím 1-{Math.min(9, totalHotkeyCards)} để chọn nhanh ứng
+                viên tương ứng.
+              </p>
+            ) : null}
             <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
               {candidates.map((candidate, index) => (
                 <ProductCandidateCard
                   key={candidate.materialId}
                   candidate={candidate}
-                  isSelected={candidate.materialId === selectedMaterialId}
+                  isSelected={
+                    selectedSearchSource == null &&
+                    candidate.materialId === selectedMaterialId
+                  }
                   isRecommended={
                     !showingSearch &&
                     index === 0 &&
@@ -292,6 +330,15 @@ export function FieldCompareEditor({
                   hotkeyIndex={index + 1}
                 />
               ))}
+              {searchSourceCandidates.map((candidate, index) => (
+                <SearchSourceCandidateCard
+                  key={candidate.id}
+                  candidate={candidate}
+                  isSelected={selectedSearchSource === candidate.id}
+                  onChoose={() => onChooseSearchSource?.(candidate.id)}
+                  hotkeyIndex={catalogCardCount + index + 1}
+                />
+              ))}
             </div>
           </div>
         )
@@ -303,76 +350,188 @@ export function FieldCompareEditor({
           <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Sẽ điền vào dòng
           </p>
-          <div className="mt-2 grid gap-1.5">
-            {plan.map((cell) => {
-              const field = cell.field;
-              const isFillable =
-                cell.action === "filled" || cell.action === "overwritten";
-              return (
-                <div
-                  key={field}
-                  className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${
-                    isFillable ? "bg-slate-50" : "opacity-60"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={!isFillable}
-                    checked={isFillable && accepted.has(field)}
-                    onChange={() => onToggleField(field)}
-                    aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
-                  />
-                  <span className="w-20 shrink-0 font-semibold text-slate-600">
-                    {FIELD_LABELS[field]}
-                  </span>
-                  <span className="truncate text-slate-700">
-                    {cell.before || "(trống)"}
-                  </span>
-                  {isFillable ? (
-                    <>
-                      <span className="text-slate-600">→</span>
-                      {enableInlineEdit ? (
-                        <input
-                          type="text"
-                          value={editedValues[field] ?? cell.after}
-                          onChange={(event) =>
-                            onEditValue(field, event.target.value)
-                          }
-                          className="min-w-0 flex-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        />
-                      ) : (
-                        <span className="truncate font-medium text-emerald-700">
-                          {cell.after}
-                        </span>
-                      )}
-                    </>
-                  ) : cell.action === "kept" && enableOverwrite ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onToggleOverwrite(field);
-                      }}
-                      className={`ml-auto rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
-                        overwrite.has(field)
-                          ? "border-amber-300 bg-amber-100 text-amber-800"
-                          : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      Ghi đè
-                    </button>
-                  ) : (
-                    <span className="ml-auto text-xs text-slate-600" />
-                  )}
+          {compareLayout === "sideBySide" ? (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[28rem] border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-300 text-left text-slate-600">
+                    <th className="w-8 py-2 pr-2" aria-label="Chọn trường" />
+                    <th className="w-24 py-2 pr-2 font-semibold">Trường</th>
+                    <th className="w-[40%] py-2 pr-2 font-semibold">Trước</th>
+                    <th className="w-[40%] py-2 pr-2 font-semibold">
+                      {afterColumnLabel}
+                    </th>
+                    <th className="w-16 py-2 font-semibold" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.map((cell) => {
+                    const field = cell.field;
+                    const isFillable =
+                      cell.action === "filled" || cell.action === "overwritten";
+                    const afterValue = editedValues[field] ?? cell.after;
+                    return (
+                      <tr
+                        key={field}
+                        className={`border-b border-slate-100 ${
+                          isFillable ? "bg-slate-50/80" : "opacity-60"
+                        }`}
+                      >
+                        <td className="py-2 pr-2 align-top">
+                          <input
+                            type="checkbox"
+                            disabled={!isFillable}
+                            checked={isFillable && accepted.has(field)}
+                            onChange={() => onToggleField(field)}
+                            aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
+                          />
+                        </td>
+                        <td className="py-2 pr-2 align-top font-semibold text-slate-600">
+                          {FIELD_LABELS[field]}
+                        </td>
+                        <td className="py-2 pr-2 align-top text-slate-700">
+                          {cell.before || "(trống)"}
+                        </td>
+                        <td className="py-2 pr-2 align-top">
+                          {isFillable ? (
+                            enableInlineEdit ? (
+                              <input
+                                type="text"
+                                value={afterValue}
+                                onChange={(event) =>
+                                  onEditValue(field, event.target.value)
+                                }
+                                className="w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                              />
+                            ) : (
+                              <span className="font-medium text-emerald-700">
+                                {afterValue}
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 align-top text-right">
+                          {cell.action === "kept" && enableOverwrite ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                onToggleOverwrite(field);
+                              }}
+                              className={`rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
+                                overwrite.has(field)
+                                  ? "border-amber-300 bg-amber-100 text-amber-800"
+                                  : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
+                              }`}
+                            >
+                              Ghi đè
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {selectedSearchSource === "web" &&
+              searchSourceCandidates.find((c) => c.id === "web")?.links?.length ? (
+                <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Liên kết tham khảo
+                  </p>
+                  {searchSourceCandidates
+                    .find((c) => c.id === "web")
+                    ?.links?.slice(0, 6)
+                    .map((link) => (
+                      <a
+                        key={link.url}
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block truncate text-xs text-blue-700 hover:underline"
+                      >
+                        {link.title || link.url}
+                      </a>
+                    ))}
                 </div>
-              );
-            })}
-            {plan.length === 0 ? (
-              <p className="text-xs text-slate-700">
-                Không có ô trống nào để điền cho lựa chọn này.
-              </p>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-2 grid gap-1.5">
+              {plan.map((cell) => {
+                const field = cell.field;
+                const isFillable =
+                  cell.action === "filled" || cell.action === "overwritten";
+                return (
+                  <div
+                    key={field}
+                    className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${
+                      isFillable ? "bg-slate-50" : "opacity-60"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!isFillable}
+                      checked={isFillable && accepted.has(field)}
+                      onChange={() => onToggleField(field)}
+                      aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
+                    />
+                    <span className="w-20 shrink-0 font-semibold text-slate-600">
+                      {FIELD_LABELS[field]}
+                    </span>
+                    <span className="truncate text-slate-700">
+                      {cell.before || "(trống)"}
+                    </span>
+                    {isFillable ? (
+                      <>
+                        <span className="text-slate-600">→</span>
+                        {enableInlineEdit ? (
+                          <input
+                            type="text"
+                            value={editedValues[field] ?? cell.after}
+                            onChange={(event) =>
+                              onEditValue(field, event.target.value)
+                            }
+                            className="min-w-0 flex-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          />
+                        ) : (
+                          <span className="truncate font-medium text-emerald-700">
+                            {cell.after}
+                          </span>
+                        )}
+                      </>
+                    ) : cell.action === "kept" && enableOverwrite ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onToggleOverwrite(field);
+                        }}
+                        className={`ml-auto rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
+                          overwrite.has(field)
+                            ? "border-amber-300 bg-amber-100 text-amber-800"
+                            : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        Ghi đè
+                      </button>
+                    ) : (
+                      <span className="ml-auto text-xs text-slate-600" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {plan.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-700">
+              {selectedSearchSource === "web"
+                ? "Kết quả web là liên kết tham khảo — không có trường để điền tự động."
+                : "Không có ô trống nào để điền cho lựa chọn này."}
+            </p>
+          ) : null}
           <div className="mt-2 flex justify-end">
             <Button variant="ghost" size="sm" onClick={onClear}>
               {clearLabel}

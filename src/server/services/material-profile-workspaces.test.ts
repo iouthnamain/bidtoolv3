@@ -44,7 +44,7 @@ describe("material profile workspace helpers", () => {
     const date = new Date(2026, 5, 23, 10, 30);
     const prefix = buildMaterialProfileOutputPrefix("IB2600190527-00", date);
 
-    expect(prefix).toBe("IB2600190527-00 - 20260623-1030");
+    expect(prefix).toBe("IB2600190527-00_20260623_1030");
     expect(prefix).not.toContain("enriched");
   });
 
