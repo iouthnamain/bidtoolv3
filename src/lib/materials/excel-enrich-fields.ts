@@ -63,6 +63,12 @@ export const FIELD_LABELS: Record<FillableField, string> = {
   sourceUrl: "Nguồn",
 };
 
+export const PRICE_FIELDS = new Set<FillableField>(["defaultUnitPrice", "currency"]);
+
+export function isPriceField(field: FillableField) {
+  return PRICE_FIELDS.has(field);
+}
+
 // ---------------------------------------------------------------------------
 // Thresholds (single tunable block, shared client + server)
 // ---------------------------------------------------------------------------

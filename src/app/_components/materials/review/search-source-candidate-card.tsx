@@ -43,6 +43,8 @@ export type SearchSourceCandidate = {
   sourceUrl?: string;
   isRecommended?: boolean;
   status?: "pending" | "done" | "error";
+  /** Formatted unit price when AI extracted a price. */
+  priceLabel?: string;
 };
 
 export function SearchSourceCandidateCard({
@@ -122,6 +124,11 @@ export function SearchSourceCandidateCard({
             <p className="line-clamp-2 text-sm font-bold text-slate-900">
               {candidate.title}
             </p>
+            {candidate.priceLabel ? (
+              <p className="mt-0.5 text-xs font-bold text-amber-800 tabular-nums">
+                {candidate.priceLabel}
+              </p>
+            ) : null}
             <p className="mt-0.5 line-clamp-2 text-xs text-slate-700">
               {candidate.subtitle}
             </p>

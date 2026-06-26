@@ -27,7 +27,7 @@ import {
   FILLABLE_FIELDS,
 } from "~/lib/materials/excel-enrich-fields";
 import type { RowDecision } from "~/lib/materials/review-decision";
-import { parseOptionalNumber } from "~/lib/materials/format";
+import { formatMoney, parseOptionalNumber } from "~/lib/materials/format";
 import {
   aiCandidateMatchChips,
   catalogCandidateScore,
@@ -38,6 +38,15 @@ import {
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
 import { api } from "~/trpc/react";
+
+function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
+  const raw = fields.defaultUnitPrice?.trim();
+  if (!raw) return undefined;
+  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(/,/g, "");
+  const parsed = parseOptionalNumber(normalized);
+  if (parsed == null) return undefined;
+  return formatMoney(parsed, fields.currency?.trim() || "VND");
+}
 
 function profileSearchFields(decision: RowDecision | undefined) {
   return {
@@ -236,6 +245,7 @@ export function MatchChooser({
           score,
           chips,
           sourceUrl: candidate.url ?? candidate.sourceUrls[0],
+          priceLabel: aiPriceLabel(candidate.fields),
           isRecommended: false,
           status:
             fillCount > 0

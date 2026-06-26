@@ -85,6 +85,13 @@ function _buildSearchQueries(input: {
     push(`${name} bảng giá ${brand}`, "bang_gia");
   }
 
+  if (!input.specText?.trim()) {
+    push(
+      `${name} thông số kỹ thuật chi tiết${brand ? ` ${brand}` : ""}`,
+      "vn_spec",
+    );
+  }
+
   if (identifier) {
     push(brand ? `${identifier} ${brand}` : identifier, "official");
     if (brand) {

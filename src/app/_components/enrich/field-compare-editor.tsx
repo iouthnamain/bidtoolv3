@@ -18,9 +18,11 @@ import {
   candidateToFields,
   FIELD_LABELS,
   FILLABLE_FIELDS,
+  isPriceField,
   NON_COLUMN_FIELDS,
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
+import { formatMoney, parseOptionalNumber } from "~/lib/materials/format";
 
 /**
  * Shared side-by-side compare + per-field edit panel. Extracted from the step-2
@@ -113,6 +115,45 @@ export type FieldCompareEditorProps = {
 const EDITABLE_FIELDS = FILLABLE_FIELDS.filter(
   (field) => !NON_COLUMN_FIELDS.has(field),
 );
+
+function parsePriceInput(value: string) {
+  const normalized = value.replace(/\s/g, "").replace(/\./g, "").replace(/,/g, "");
+  return parseOptionalNumber(normalized);
+}
+
+function formatCompareFieldValue(
+  field: FillableField,
+  value: string,
+  currency?: string,
+) {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (field === "defaultUnitPrice") {
+    const parsed = parsePriceInput(trimmed);
+    if (parsed != null) {
+      return formatMoney(parsed, currency?.trim() || "VND");
+    }
+  }
+  return trimmed;
+}
+
+function beforeFieldClass(field: FillableField) {
+  return isPriceField(field)
+    ? "text-amber-900/80 font-medium tabular-nums"
+    : "text-slate-700";
+}
+
+function afterFieldTextClass(field: FillableField) {
+  return isPriceField(field)
+    ? "font-semibold text-amber-800 tabular-nums"
+    : "font-medium text-emerald-700";
+}
+
+function afterFieldInputClass(field: FillableField) {
+  return isPriceField(field)
+    ? "w-full rounded border border-amber-400 bg-amber-50/60 px-1.5 py-0.5 text-xs font-semibold text-amber-900 tabular-nums shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+    : "w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none";
+}
 
 export function FieldCompareEditor({
   sheetLabel,
@@ -233,13 +274,15 @@ export function FieldCompareEditor({
 
     const ready = entries.filter((entry) => !isDeferred(entry));
     const deferred = entries.filter((entry) => isDeferred(entry));
-    ready.sort((left, right) => {
-      const leftScore = left.kind === "catalog" ? left.score : left.candidate.score;
-      const rightScore =
-        right.kind === "catalog" ? right.score : right.candidate.score;
-      return rightScore - leftScore;
-    });
-    return [...ready, ...deferred];
+    const catalogReady = ready.filter((entry) => entry.kind === "catalog");
+    const searchReady = ready.filter((entry) => entry.kind === "search");
+
+    catalogReady.sort((left, right) => right.score - left.score);
+    searchReady.sort(
+      (left, right) => right.candidate.score - left.candidate.score,
+    );
+
+    return [...catalogReady, ...searchReady, ...deferred];
   }, [candidates, searchSourceCandidates, sheetFields, unifiedCandidateGrid]);
 
   const catalogCardCount = candidates.length;
@@ -349,16 +392,28 @@ export function FieldCompareEditor({
         <div className="mt-2 flex flex-wrap gap-1.5">
           {EDITABLE_FIELDS.map((field) => {
             const value = sheetFields[field]?.trim() ?? "";
+            const isPrice = isPriceField(field);
             return (
               <span
                 key={field}
                 className={`rounded border px-1.5 py-0.5 text-xs ${
                   value
-                    ? "border-slate-500 bg-white text-slate-900 shadow-sm"
-                    : "border-dashed border-slate-400 bg-transparent text-slate-600"
+                    ? isPrice
+                      ? "border-amber-300 bg-amber-50 font-semibold text-amber-900 tabular-nums shadow-sm"
+                      : "border-slate-500 bg-white text-slate-900 shadow-sm"
+                    : isPrice
+                      ? "border-dashed border-amber-300 bg-amber-50/40 text-amber-800/70"
+                      : "border-dashed border-slate-400 bg-transparent text-slate-600"
                 }`}
               >
-                {FIELD_LABELS[field]}: {value.length > 0 ? value : "(trống)"}
+                {FIELD_LABELS[field]}:{" "}
+                {value.length > 0
+                  ? formatCompareFieldValue(
+                      field,
+                      value,
+                      sheetFields.currency,
+                    ) || value
+                  : "(trống)"}
               </span>
             );
           })}
@@ -527,6 +582,23 @@ export function FieldCompareEditor({
                         (alwaysEditableFields
                           ? (baseFields[field] ?? "")
                           : (cell?.after ?? ""));
+                      const currency =
+                        editedValues.currency ??
+                        sheetFields.currency ??
+                        baseFields.currency;
+                      const beforeDisplay =
+                        beforeValue.trim().length > 0
+                          ? formatCompareFieldValue(
+                              field,
+                              beforeValue,
+                              currency,
+                            ) || beforeValue
+                          : "(trống)";
+                      const afterDisplay =
+                        afterValue.trim().length > 0
+                          ? formatCompareFieldValue(field, afterValue, currency) ||
+                            afterValue
+                          : "";
                       return (
                         <tr
                           key={field}
@@ -548,8 +620,8 @@ export function FieldCompareEditor({
                           <td className="py-2 pr-2 align-top font-semibold text-slate-600">
                             {FIELD_LABELS[field]}
                           </td>
-                          <td className="py-2 pr-2 align-top text-slate-700">
-                            {beforeValue || "(trống)"}
+                          <td className={`py-2 pr-2 align-top ${beforeFieldClass(field)}`}>
+                            {beforeDisplay}
                           </td>
                           <td className="py-2 pr-2 align-top">
                             {isFillable ? (
@@ -560,11 +632,11 @@ export function FieldCompareEditor({
                                   onChange={(event) =>
                                     onEditValue(field, event.target.value)
                                   }
-                                  className="w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                                  className={`min-w-0 flex-1 ${afterFieldInputClass(field)}`}
                                 />
                               ) : (
-                                <span className="font-medium text-emerald-700">
-                                  {afterValue}
+                                <span className={afterFieldTextClass(field)}>
+                                  {afterDisplay}
                                 </span>
                               )
                             ) : (
@@ -653,7 +725,11 @@ export function FieldCompareEditor({
                       {FIELD_LABELS[field]}
                     </span>
                     <span className="truncate text-slate-700">
-                      {cell.before || "(trống)"}
+                      {formatCompareFieldValue(
+                        field,
+                        cell.before || "",
+                        sheetFields.currency,
+                      ) || cell.before || "(trống)"}
                     </span>
                     {isFillable ? (
                       <>
@@ -665,11 +741,15 @@ export function FieldCompareEditor({
                             onChange={(event) =>
                               onEditValue(field, event.target.value)
                             }
-                            className="min-w-0 flex-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                            className={`min-w-0 flex-1 ${afterFieldInputClass(field)}`}
                           />
                         ) : (
-                          <span className="truncate font-medium text-emerald-700">
-                            {cell.after}
+                          <span className={`min-w-0 flex-1 truncate ${afterFieldTextClass(field)}`}>
+                            {formatCompareFieldValue(
+                              field,
+                              editedValues[field] ?? cell.after,
+                              editedValues.currency ?? sheetFields.currency,
+                            ) || (editedValues[field] ?? cell.after)}
                           </span>
                         )}
                       </>
