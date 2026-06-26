@@ -132,6 +132,20 @@ function filterCatalogPdfUrls(value: unknown): string[] | undefined {
   return urls.length > 0 ? urls : undefined;
 }
 
+function filterFieldConfidences(
+  value: unknown,
+): Partial<Record<FillableField, number>> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const result: Partial<Record<FillableField, number>> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!isFillableField(key) || typeof raw !== "number" || !Number.isFinite(raw)) {
+      continue;
+    }
+    result[key] = raw;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
@@ -155,6 +169,7 @@ function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined 
     sourceUrls,
     evidence,
     catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
+    fieldConfidences: filterFieldConfidences(record.fieldConfidences),
     title: typeof record.title === "string" ? record.title : undefined,
     url: typeof record.url === "string" ? record.url : undefined,
     snippet: typeof record.snippet === "string" ? record.snippet : undefined,

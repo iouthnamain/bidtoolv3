@@ -563,16 +563,43 @@ function isMarketplaceDomain(domain: string) {
   );
 }
 
+const SPEC_KEYWORDS = [
+  "thông số",
+  "datasheet",
+  "catalog",
+  "catalogue",
+  "bảng giá",
+  "specification",
+];
+
+function textContainsSpecKeyword(text: string) {
+  const normalized = text.toLowerCase();
+  return SPEC_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function codeTokensMatch(code: string, title: string, url: string) {
+  const normalizedCode = code.trim().toLowerCase();
+  if (!normalizedCode || normalizedCode.length < 2) return false;
+  const haystack = `${title} ${url}`.toLowerCase();
+  if (haystack.includes(normalizedCode)) return true;
+  const parts = normalizedCode.split(/[^a-z0-9]+/i).filter((part) => part.length >= 2);
+  if (parts.length === 0) return false;
+  const hits = parts.filter((part) => haystack.includes(part)).length;
+  return hits / parts.length >= 0.6;
+}
+
 function _rankSearchResults(
   results: WebSearchResult[],
   input: {
     manufacturer?: string | null;
     name?: string | null;
+    code?: string | null;
     sourceUrl?: string | null;
   },
 ): WebSearchResult[] {
   const manufacturer = input.manufacturer?.trim() ?? "";
   const name = input.name?.trim().toLowerCase() ?? "";
+  const code = input.code?.trim() ?? "";
   const sourceDomain = input.sourceUrl ? extractDomain(input.sourceUrl) : "";
 
   const scored = results.map((result) => {
@@ -580,15 +607,29 @@ function _rankSearchResults(
     const domain = result.domain.toLowerCase();
     const title = result.title.toLowerCase();
     const snippet = result.snippet.toLowerCase();
+    const combined = `${title} ${snippet}`;
 
     if (manufacturer && hostnameMatchesManufacturer(domain, manufacturer)) {
       score += 0.35;
     }
-    if (/\.pdf(?:$|[?#])/i.test(result.url)) {
+    const isPdf = /\.pdf(?:$|[?#])/i.test(result.url);
+    if (isPdf) {
       score += 0.3;
+      if (result.query?.includes("filetype:pdf")) {
+        score += 0.1;
+      }
+    }
+    if (domain.endsWith(".vn") && !isMarketplaceDomain(domain)) {
+      score += 0.15;
     }
     if (sourceDomain && domain === sourceDomain) {
       score += 0.2;
+    }
+    if (code && codeTokensMatch(code, title, result.url)) {
+      score += 0.2;
+    }
+    if (textContainsSpecKeyword(combined)) {
+      score += 0.1;
     }
     if (name) {
       const nameTokens = name.split(/\s+/).filter((token) => token.length > 2);

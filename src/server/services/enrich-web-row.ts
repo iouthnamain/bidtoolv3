@@ -29,6 +29,7 @@ export type EnrichWebRowInput = {
   specText?: string;
   unit?: string;
   category?: string;
+  originCountry?: string;
 };
 
 export type EnrichWebRowResult = {
@@ -91,7 +92,7 @@ function _webHitsToSearchResults(hits: EnrichWebRowHit[]): WebSearchResult[] {
   }));
 }
 
-function enrichmentInputFromRow(
+export function enrichmentInputFromRow(
   input: EnrichWebRowInput,
 ): MaterialEnrichmentInput {
   const unitTrimmed = input.unit?.trim();
@@ -103,7 +104,7 @@ function enrichmentInputFromRow(
     category: input.category ?? null,
     specText: input.specText ?? "",
     manufacturer: input.manufacturer ?? null,
-    originCountry: null,
+    originCountry: input.originCountry?.trim() ? input.originCountry : null,
     defaultUnitPrice: null,
     currency: "VND",
     sourceUrl: null,
@@ -166,6 +167,7 @@ async function _enrichRowFromWeb(
   const ranked = rankSearchResults(searchResponse.results, {
     manufacturer: input.manufacturer ?? null,
     name: input.name,
+    code: input.code ?? null,
     sourceUrl: null,
   }).slice(0, 8);
 
@@ -179,6 +181,7 @@ async function _enrichRowFromWebResults(
   const ranked = rankSearchResults(webHitsToSearchResults(input.webResults), {
     manufacturer: input.manufacturer ?? null,
     name: input.name,
+    code: input.code ?? null,
     sourceUrl: null,
   }).slice(0, 8);
 

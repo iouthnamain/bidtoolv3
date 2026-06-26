@@ -3,7 +3,14 @@ const log = createLogger("services-excel-research-query-builder");
 
 export type SearchQuery = {
   query: string;
-  intent: "official" | "datasheet" | "pdf" | "general";
+  intent:
+    | "official"
+    | "datasheet"
+    | "pdf"
+    | "general"
+    | "bang_gia"
+    | "vn_spec"
+    | "vn_pdf";
 };
 
 function textOverlap(a: string, b: string): number {
@@ -37,6 +44,9 @@ function _buildSearchQueries(input: {
   specText?: string | null;
   sku?: string | null;
   model?: string | null;
+  unit?: string | null;
+  category?: string | null;
+  originCountry?: string | null;
   maxQueries?: number;
 }): SearchQuery[] {
   const name = input.name.trim();
@@ -47,7 +57,10 @@ function _buildSearchQueries(input: {
   const sku = input.sku?.trim() ?? "";
   const model = input.model?.trim() ?? "";
   const identifier = sku || model || code;
-  const maxQueries = Math.max(1, input.maxQueries ?? 4);
+  const category = input.category?.trim() ?? "";
+  const unit = input.unit?.trim() ?? "";
+  const origin = input.originCountry?.trim() ?? "";
+  const maxQueries = Math.max(1, input.maxQueries ?? 6);
   const queries: SearchQuery[] = [];
 
   const push = (
@@ -63,14 +76,32 @@ function _buildSearchQueries(input: {
 
   if (brand && identifier) {
     push(`"${brand}" "${identifier}" datasheet filetype:pdf`, "pdf");
+    push(`${brand} ${identifier} catalogue filetype:pdf`, "vn_pdf");
   }
 
   if (brand) {
-    push(`${brand} ${name} thông số kỹ thuật`, "official");
+    push(`${brand} ${name} thông số kỹ thuật`, "vn_spec");
+    push(`${name} ${brand} thông số kỹ thuật filetype:pdf`, "vn_pdf");
+    push(`${name} bảng giá ${brand}`, "bang_gia");
   }
 
   if (identifier) {
     push(brand ? `${identifier} ${brand}` : identifier, "official");
+    if (brand) {
+      push(`${identifier} catalogue ${brand}`, "vn_pdf");
+    }
+  }
+
+  if (category && textOverlap(category, name) < 0.6) {
+    push(`${name} ${category}`, "general");
+  }
+
+  if (unit && textOverlap(unit, name) < 0.5) {
+    push(`${name} ${unit}`, "general");
+  }
+
+  if (origin && brand) {
+    push(`${name} ${brand} ${origin}`, "general");
   }
 
   if (input.specText) {

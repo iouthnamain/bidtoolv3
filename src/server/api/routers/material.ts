@@ -50,6 +50,7 @@ import {
   formatCatalogPdfUrlsCell,
   parseCatalogPdfUrlsCell,
 } from "~/lib/materials/catalog-pdf";
+import { enrichProfileRowSearch } from "~/server/services/enrich-profile-row-search";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
@@ -141,6 +142,7 @@ const enrichWebRowInput = z.object({
   specText: z.string().trim().optional(),
   unit: z.string().trim().optional(),
   category: z.string().trim().optional(),
+  originCountry: z.string().trim().optional(),
 });
 
 const webSearchResultInput = z.object({
@@ -2232,10 +2234,17 @@ export const materialRouter = createTRPCRouter({
       const results = rankSearchResults(response.results, {
         manufacturer: input.manufacturer ?? null,
         name: input.name,
+        code: input.code ?? null,
         sourceUrl: null,
       }).slice(0, 8);
 
       return { results, warnings: response.warnings };
+    }),
+
+  enrichProfileSearchRow: protectedProcedure
+    .input(enrichWebRowInput)
+    .mutation(async ({ input }) => {
+      return enrichProfileRowSearch(input);
     }),
 
   enrichAiSearchRow: protectedProcedure

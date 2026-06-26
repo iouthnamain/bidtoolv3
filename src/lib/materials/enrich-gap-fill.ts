@@ -25,6 +25,7 @@ export type AiSearchStoredResult = {
   sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
   catalogPdfUrls?: string[];
+  fieldConfidences?: Partial<Record<FillableField, number>>;
   title?: string;
   url?: string;
   snippet?: string;
@@ -140,6 +141,71 @@ export function applyAllProposedFields(
     editedValues[field] = value;
   }
   return { acceptedFields, editedValues };
+}
+
+/** Profile select: map all fields and default currency when price is present. */
+export function applyAllProposedFieldsWithCurrency(
+  fields: Partial<Record<FillableField, string>>,
+): {
+  acceptedFields: Set<FillableField>;
+  editedValues: Partial<Record<FillableField, string>>;
+} {
+  const result = applyAllProposedFields(fields);
+  if (result.editedValues.defaultUnitPrice?.trim()) {
+    result.editedValues.currency = "VND";
+    result.acceptedFields.add("currency");
+  }
+  return result;
+}
+
+/** Profile review: effective "Sau" values from edits overlaid on proposed/catalog base. */
+export function profileEffectiveFieldValues(
+  sheetFields: Partial<Record<FillableField, string>>,
+  catalogFields: Partial<Record<FillableField, string>> | null,
+  decision: Pick<RowDecisionLike, "editedValues" | "webProposedFields">,
+): Partial<Record<FillableField, string>> {
+  const baseFields: Partial<Record<FillableField, string>> =
+    catalogFields != null
+      ? mergeWebGapFill(
+          sheetFields,
+          catalogFields,
+          decision.webProposedFields ?? {},
+        )
+      : { ...(decision.webProposedFields ?? {}) };
+  const result: Partial<Record<FillableField, string>> = {};
+  for (const field of FILLABLE_FIELDS) {
+    if (field === "currency") continue;
+    const value = (
+      decision.editedValues?.[field] ??
+      baseFields[field] ??
+      ""
+    ).trim();
+    if (value) result[field] = value;
+  }
+  const price = result.defaultUnitPrice?.trim();
+  if (price && !result.currency) {
+    const editedCurrency = decision.editedValues?.currency?.trim();
+    const sheetCurrency = sheetFields.currency?.trim();
+    result.currency =
+      (editedCurrency && editedCurrency.length > 0
+        ? editedCurrency
+        : undefined) ??
+      (sheetCurrency && sheetCurrency.length > 0 ? sheetCurrency : undefined) ??
+      "VND";
+  }
+  return result;
+}
+
+export function profileAcceptedFields(
+  sheetFields: Partial<Record<FillableField, string>>,
+  catalogFields: Partial<Record<FillableField, string>> | null,
+  decision: Pick<RowDecisionLike, "editedValues" | "webProposedFields">,
+): Set<FillableField> {
+  return new Set(
+    Object.keys(
+      profileEffectiveFieldValues(sheetFields, catalogFields, decision),
+    ) as FillableField[],
+  );
 }
 
 export type WebSearchRowResult = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Loader2, Search } from "lucide-react";
 
 import { Button } from "~/app/_components/ui";
@@ -106,6 +106,8 @@ export type FieldCompareEditorProps = {
   searchSourceCandidates?: SearchSourceCandidate[];
   selectedSearchCandidateKey?: string | null;
   onChooseSearchCandidate?: (key: string) => void;
+  /** Profile: merge catalog + web/AI cards, sorted by score. */
+  unifiedCandidateGrid?: boolean;
 };
 
 const EDITABLE_FIELDS = FILLABLE_FIELDS.filter(
@@ -150,6 +152,7 @@ export function FieldCompareEditor({
   searchSourceCandidates = [],
   selectedSearchCandidateKey = null,
   onChooseSearchCandidate,
+  unifiedCandidateGrid = false,
 }: FieldCompareEditorProps) {
   // The base material fields feeding the plan: a chosen catalog candidate wins,
   // otherwise the surface's proposed/found values.
@@ -188,9 +191,62 @@ export function FieldCompareEditor({
     hasProposed ||
     Object.values(editedValues).some((v) => (v ?? "").trim().length > 0);
 
+  type UnifiedGridEntry =
+    | {
+        kind: "catalog";
+        candidate: EnrichCandidate;
+        score: number;
+        fillCount: number;
+        key: string;
+      }
+    | {
+        kind: "search";
+        candidate: SearchSourceCandidate;
+        key: string;
+      };
+
+  const unifiedGridEntries = useMemo((): UnifiedGridEntry[] => {
+    if (!unifiedCandidateGrid) return [];
+
+    const entries: UnifiedGridEntry[] = [];
+    for (const candidate of candidates) {
+      entries.push({
+        kind: "catalog",
+        candidate,
+        score: candidate.score ?? 0,
+        fillCount: buildFillPlanWithEdits(
+          sheetFields,
+          candidateToFields(candidate),
+          {},
+          new Set(),
+        ).filter((cell) => cell.action === "filled").length,
+        key: `catalog:${candidate.materialId}`,
+      });
+    }
+    for (const candidate of searchSourceCandidates) {
+      entries.push({ kind: "search", candidate, key: candidate.key });
+    }
+
+    const isDeferred = (entry: UnifiedGridEntry) =>
+      entry.kind === "search" &&
+      (entry.candidate.status === "pending" || entry.candidate.status === "error");
+
+    const ready = entries.filter((entry) => !isDeferred(entry));
+    const deferred = entries.filter((entry) => isDeferred(entry));
+    ready.sort((left, right) => {
+      const leftScore = left.kind === "catalog" ? left.score : left.candidate.score;
+      const rightScore =
+        right.kind === "catalog" ? right.score : right.candidate.score;
+      return rightScore - leftScore;
+    });
+    return [...ready, ...deferred];
+  }, [candidates, searchSourceCandidates, sheetFields, unifiedCandidateGrid]);
+
   const catalogCardCount = candidates.length;
   const searchCardCount = searchSourceCandidates.length;
-  const totalHotkeyCards = catalogCardCount + searchCardCount;
+  const totalHotkeyCards = unifiedCandidateGrid
+    ? unifiedGridEntries.length
+    : catalogCardCount + searchCardCount;
 
   // Digit keys 1-9 select catalog or search-source candidate cards.
   useEffect(() => {
@@ -209,6 +265,28 @@ export function FieldCompareEditor({
       }
       const digit = Number(event.key);
       if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
+
+      if (unifiedCandidateGrid) {
+        const entry = unifiedGridEntries[digit - 1];
+        if (!entry) return;
+        if (entry.kind === "catalog") {
+          if (!onChoose) return;
+          event.preventDefault();
+          onChoose(entry.candidate);
+          return;
+        }
+        if (
+          entry.candidate.status === "pending" ||
+          entry.candidate.status === "error" ||
+          !onChooseSearchCandidate
+        ) {
+          return;
+        }
+        event.preventDefault();
+        onChooseSearchCandidate(entry.candidate.key);
+        return;
+      }
+
       if (digit <= catalogCardCount && onChoose) {
         const candidate = candidates[digit - 1];
         if (!candidate) return;
@@ -228,7 +306,14 @@ export function FieldCompareEditor({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, searchSourceCandidates, enableCandidateGrid, catalogCardCount]);
+  }, [
+    candidates,
+    searchSourceCandidates,
+    enableCandidateGrid,
+    catalogCardCount,
+    unifiedCandidateGrid,
+    unifiedGridEntries,
+  ]);
 
   const selectedSearchCandidate =
     selectedSearchCandidateKey != null
@@ -320,40 +405,85 @@ export function FieldCompareEditor({
               </p>
             ) : null}
             <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
-              {candidates.map((candidate, index) => (
-                <ProductCandidateCard
-                  key={candidate.materialId}
-                  candidate={candidate}
-                  isSelected={
-                    selectedSearchCandidateKey == null &&
-                    candidate.materialId === selectedMaterialId
-                  }
-                  isRecommended={
-                    !showingSearch &&
-                    index === 0 &&
-                    recommendedMaterialId === candidate.materialId
-                  }
-                  fillCount={
-                    buildFillPlanWithEdits(
-                      sheetFields,
-                      candidateToFields(candidate),
-                      {},
-                      new Set(),
-                    ).filter((cell) => cell.action === "filled").length
-                  }
-                  onChoose={() => onChoose?.(candidate)}
-                  hotkeyIndex={index + 1}
-                />
-              ))}
-              {searchSourceCandidates.map((candidate, index) => (
-                <SearchSourceCandidateCard
-                  key={candidate.key}
-                  candidate={candidate}
-                  isSelected={selectedSearchCandidateKey === candidate.key}
-                  onChoose={() => onChooseSearchCandidate?.(candidate.key)}
-                  hotkeyIndex={catalogCardCount + index + 1}
-                />
-              ))}
+              {unifiedCandidateGrid
+                ? unifiedGridEntries.map((entry, index) => {
+                    const isTopReady =
+                      index === 0 &&
+                      (entry.kind === "catalog" ||
+                        (entry.kind === "search" &&
+                          entry.candidate.status !== "pending" &&
+                          entry.candidate.status !== "error"));
+                    if (entry.kind === "catalog") {
+                      return (
+                        <ProductCandidateCard
+                          key={entry.key}
+                          candidate={entry.candidate}
+                          isSelected={
+                            selectedSearchCandidateKey == null &&
+                            entry.candidate.materialId === selectedMaterialId
+                          }
+                          isRecommended={!showingSearch && isTopReady}
+                          fillCount={entry.fillCount}
+                          onChoose={() => onChoose?.(entry.candidate)}
+                          hotkeyIndex={index + 1}
+                        />
+                      );
+                    }
+                    return (
+                      <SearchSourceCandidateCard
+                        key={entry.key}
+                        candidate={{
+                          ...entry.candidate,
+                          isRecommended: isTopReady,
+                        }}
+                        isSelected={
+                          selectedSearchCandidateKey === entry.candidate.key
+                        }
+                        onChoose={() =>
+                          onChooseSearchCandidate?.(entry.candidate.key)
+                        }
+                        hotkeyIndex={index + 1}
+                      />
+                    );
+                  })
+                : (
+                  <>
+                    {candidates.map((candidate, index) => (
+                      <ProductCandidateCard
+                        key={candidate.materialId}
+                        candidate={candidate}
+                        isSelected={
+                          selectedSearchCandidateKey == null &&
+                          candidate.materialId === selectedMaterialId
+                        }
+                        isRecommended={
+                          !showingSearch &&
+                          index === 0 &&
+                          recommendedMaterialId === candidate.materialId
+                        }
+                        fillCount={
+                          buildFillPlanWithEdits(
+                            sheetFields,
+                            candidateToFields(candidate),
+                            {},
+                            new Set(),
+                          ).filter((cell) => cell.action === "filled").length
+                        }
+                        onChoose={() => onChoose?.(candidate)}
+                        hotkeyIndex={index + 1}
+                      />
+                    ))}
+                    {searchSourceCandidates.map((candidate, index) => (
+                      <SearchSourceCandidateCard
+                        key={candidate.key}
+                        candidate={candidate}
+                        isSelected={selectedSearchCandidateKey === candidate.key}
+                        onChoose={() => onChooseSearchCandidate?.(candidate.key)}
+                        hotkeyIndex={catalogCardCount + index + 1}
+                      />
+                    ))}
+                  </>
+                )}
             </div>
           </div>
         )
@@ -370,7 +500,9 @@ export function FieldCompareEditor({
               <table className="w-full min-w-[28rem] border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-300 text-left text-slate-600">
-                    <th className="w-8 py-2 pr-2" aria-label="Chọn trường" />
+                    {!alwaysEditableFields ? (
+                      <th className="w-8 py-2 pr-2" aria-label="Chọn trường" />
+                    ) : null}
                     <th className="w-24 py-2 pr-2 font-semibold">Trường</th>
                     <th className="w-[40%] py-2 pr-2 font-semibold">Trước</th>
                     <th className="w-[40%] py-2 font-semibold">
@@ -402,15 +534,17 @@ export function FieldCompareEditor({
                             isFillable ? "bg-slate-50/80" : "opacity-60"
                           }`}
                         >
-                          <td className="py-2 pr-2 align-top">
-                            <input
-                              type="checkbox"
-                              disabled={!isFillable}
-                              checked={isFillable && accepted.has(field)}
-                              onChange={() => onToggleField(field)}
-                              aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
-                            />
-                          </td>
+                          {!alwaysEditableFields ? (
+                            <td className="py-2 pr-2 align-top">
+                              <input
+                                type="checkbox"
+                                disabled={!isFillable}
+                                checked={isFillable && accepted.has(field)}
+                                onChange={() => onToggleField(field)}
+                                aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
+                              />
+                            </td>
+                          ) : null}
                           <td className="py-2 pr-2 align-top font-semibold text-slate-600">
                             {FIELD_LABELS[field]}
                           </td>
@@ -443,15 +577,17 @@ export function FieldCompareEditor({
                   )}
                   {onEditCatalogPdfUrls ? (
                     <tr className="border-b border-slate-100 bg-slate-50/80">
-                      <td className="py-2 pr-2 align-top">
-                        <input
-                          type="checkbox"
-                          checked={(catalogPdfUrls?.length ?? 0) > 0}
-                          readOnly
-                          aria-label="URL catalog"
-                          className="pointer-events-none opacity-70"
-                        />
-                      </td>
+                      {!alwaysEditableFields ? (
+                        <td className="py-2 pr-2 align-top">
+                          <input
+                            type="checkbox"
+                            checked={(catalogPdfUrls?.length ?? 0) > 0}
+                            readOnly
+                            aria-label="URL catalog"
+                            className="pointer-events-none opacity-70"
+                          />
+                        </td>
+                      ) : null}
                       <td className="py-2 pr-2 align-top font-semibold text-slate-600">
                         URL catalog
                       </td>

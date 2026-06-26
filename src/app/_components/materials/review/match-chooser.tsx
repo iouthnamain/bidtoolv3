@@ -13,9 +13,11 @@ import type { ReviewRow, ReviewSearchMode } from "~/app/_components/materials/re
 import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
-  applyAllProposedFields,
+  applyAllProposedFieldsWithCurrency,
   applySavedMaterialToDecision,
   effectiveAcceptedFieldValues,
+  profileAcceptedFields,
+  profileEffectiveFieldValues,
   webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
 import {
@@ -28,8 +30,11 @@ import type { RowDecision } from "~/lib/materials/review-decision";
 import { parseOptionalNumber } from "~/lib/materials/format";
 import {
   aiCandidateMatchChips,
+  catalogCandidateScore,
+  markTopRecommended,
   parseSearchCandidateKey,
   searchCandidateKey,
+  sortCandidatesByScore,
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
 import { api } from "~/trpc/react";
@@ -63,9 +68,11 @@ export function MatchChooser({
   onWebSearch,
   onWebLinksSearch,
   onAiSearch,
+  onProfileSearch,
   isWebSearchPending,
   isWebLinksPending,
   isAiSearchPending,
+  isProfileSearchPending,
 }: {
   row: ReviewRow;
   decision: RowDecision | undefined;
@@ -74,9 +81,11 @@ export function MatchChooser({
   onWebSearch?: () => void;
   onWebLinksSearch?: () => void;
   onAiSearch?: () => void;
+  onProfileSearch?: () => void;
   isWebSearchPending?: boolean;
   isWebLinksPending?: boolean;
   isAiSearchPending?: boolean;
+  isProfileSearchPending?: boolean;
 }) {
   const toast = useToast();
   const utils = api.useUtils();
@@ -122,7 +131,13 @@ export function MatchChooser({
   const showingSearch = debounced.length > 0;
   const cards: EnrichCandidate[] = showingSearch
     ? searchCandidates
-    : row.candidates;
+    : isProfileSplit
+      ? [...row.candidates].sort(
+          (left, right) =>
+            catalogCandidateScore(right.score) -
+            catalogCandidateScore(left.score),
+        )
+      : row.candidates;
 
   const selectedCandidate =
     selectedId != null
@@ -140,13 +155,17 @@ export function MatchChooser({
       ? selectedAiCandidate.fields
       : webProposedFields;
 
+  const profileSearchRunning =
+    isProfileSearchPending ??
+    [isWebLinksPending, isAiSearchPending].some((v) => v === true);
+
   const searchSourceCandidates = useMemo((): SearchSourceCandidate[] => {
     if (!isProfileSplit) return [];
 
     const items: SearchSourceCandidate[] = [];
     const links = decision?.webLinkResults ?? [];
 
-    if (isWebLinksPending && links.length === 0) {
+    if (profileSearchRunning && links.length === 0) {
       items.push({
         key: "web:pending",
         source: "web",
@@ -158,10 +177,8 @@ export function MatchChooser({
         status: "pending",
       });
     } else {
-      let topWebScore = -1;
       links.forEach((link) => {
         const { score, chips } = webLinkMatchChips(link, row.name);
-        if (score > topWebScore) topWebScore = score;
         items.push({
           key: searchCandidateKey("web", link.url),
           source: "web",
@@ -176,15 +193,9 @@ export function MatchChooser({
             decision?.webLinksStatus === "error" ? "error" : ("done" as const),
         });
       });
-      for (const item of items) {
-        if (item.source === "web" && item.score === topWebScore && topWebScore > 0) {
-          item.isRecommended = true;
-          break;
-        }
-      }
     }
 
-    if (isAiSearchPending && aiCandidates.length === 0) {
+    if (profileSearchRunning && aiCandidates.length === 0) {
       items.push({
         key: "ai:pending",
         source: "ai",
@@ -196,18 +207,15 @@ export function MatchChooser({
         status: "pending",
       });
     } else {
-      let topAiScore = -1;
       aiCandidates.forEach((candidate, index) => {
         const { score, chips } = aiCandidateMatchChips(
           candidate,
           sheetFields,
           row.name,
-          candidate.rankScore,
         );
         const fillCount = Object.values(candidate.fields).filter(
           (value) => (value ?? "").trim().length > 0,
         ).length;
-        if (score > topAiScore) topAiScore = score;
         const previewField = [
           candidate.fields.manufacturer,
           candidate.fields.code,
@@ -237,16 +245,10 @@ export function MatchChooser({
                 : "done",
         });
       });
-      for (const item of items) {
-        if (item.source === "ai" && item.score === topAiScore && topAiScore > 0) {
-          item.isRecommended = true;
-          break;
-        }
-      }
     }
 
     if (
-      !isWebLinksPending &&
+      !profileSearchRunning &&
       decision?.webLinksStatus === "error" &&
       links.length === 0
     ) {
@@ -262,15 +264,15 @@ export function MatchChooser({
       });
     }
 
-    return items;
+    return markTopRecommended(sortCandidatesByScore(items));
   }, [
     aiCandidates,
     decision?.aiSearchStatus,
     decision?.webLinkResults,
     decision?.webLinksStatus,
-    isAiSearchPending,
+    isProfileSearchPending,
     isProfileSplit,
-    isWebLinksPending,
+    profileSearchRunning,
     row.name,
     sheetFields,
   ]);
@@ -294,7 +296,7 @@ export function MatchChooser({
     const candidateFields = candidateToFields(candidate);
     if (isProfileSplit) {
       const { acceptedFields, editedValues: nextEdited } =
-        applyAllProposedFields(candidateFields);
+        applyAllProposedFieldsWithCurrency(candidateFields);
       onChange({
         materialId: candidate.materialId,
         selectedSource: "catalog",
@@ -352,9 +354,8 @@ export function MatchChooser({
 
       const matchingAi = aiCandidates.find((candidate) => candidate.url === link.url);
       if (matchingAi) {
-        const { acceptedFields, editedValues: nextEdited } = applyAllProposedFields(
-          matchingAi.fields,
-        );
+        const { acceptedFields, editedValues: nextEdited } =
+          applyAllProposedFieldsWithCurrency(matchingAi.fields);
         onChange({
           materialId: null,
           selectedSource: "web",
@@ -398,7 +399,7 @@ export function MatchChooser({
       toast.warning("Chưa có kết quả AI để chọn.");
       return;
     }
-    const gapFields = applyAllProposedFields(aiResult.fields);
+    const gapFields = applyAllProposedFieldsWithCurrency(aiResult.fields);
     onChange({
       materialId: null,
       selectedSource: "ai",
@@ -481,8 +482,16 @@ export function MatchChooser({
 
   const editValue = (field: FillableField, value: string) => {
     const nextEdited = { ...editedValues, [field]: value };
-    const nextAccepted = new Set(accepted);
-    nextAccepted.add(field);
+    const nextAccepted = isProfileSplit
+      ? profileAcceptedFields(sheetFields, catalogFields, {
+          editedValues: nextEdited,
+          webProposedFields: editorProposedFields,
+        })
+      : (() => {
+          const next = new Set(accepted);
+          next.add(field);
+          return next;
+        })();
     onChange({
       materialId: selectedId,
       selectedSource: decision?.selectedSource,
@@ -540,17 +549,25 @@ export function MatchChooser({
     });
   };
 
-  const saveCurrentToMaterials = () => {
-    const effective = effectiveAcceptedFieldValues(
-      sheetFields,
-      catalogFields,
-      {
-        acceptedFields: accepted,
+  const profileEffective = isProfileSplit
+    ? profileEffectiveFieldValues(sheetFields, catalogFields, {
         editedValues,
         webProposedFields: editorProposedFields,
-        overwriteFields: overwrite,
-      },
-    );
+      })
+    : null;
+
+  const saveCurrentToMaterials = () => {
+    const effective = isProfileSplit
+      ? profileEffectiveFieldValues(sheetFields, catalogFields, {
+          editedValues,
+          webProposedFields: editorProposedFields,
+        })
+      : effectiveAcceptedFieldValues(sheetFields, catalogFields, {
+          acceptedFields: accepted,
+          editedValues,
+          webProposedFields: editorProposedFields,
+          overwriteFields: overwrite,
+        });
     const unit = effective.unit?.trim() ?? sheetFields.unit?.trim() ?? "";
     const name = row.name.trim();
     if (!name) {
@@ -561,8 +578,15 @@ export function MatchChooser({
       toast.error("ĐVT không được để trống.");
       return;
     }
-    if (accepted.size === 0) {
+    if (
+      !isProfileSplit &&
+      accepted.size === 0
+    ) {
       toast.error("Chọn ít nhất một trường trước khi lưu.");
+      return;
+    }
+    if (isProfileSplit && Object.keys(effective).length === 0) {
+      toast.error("Nhập ít nhất một trường trước khi lưu.");
       return;
     }
 
@@ -660,44 +684,32 @@ export function MatchChooser({
 
   const rowNameMissing = row.name.trim().length === 0;
   const canSaveToMaterials =
-    accepted.size > 0 &&
+    (isProfileSplit
+      ? Object.keys(profileEffective ?? {}).length > 0
+      : accepted.size > 0) &&
     !isWebSearchPending &&
     !isWebLinksPending &&
-    !isAiSearchPending;
+    !isAiSearchPending &&
+    !isProfileSearchPending;
   const isSavingMaterial = upsertMaterial.isPending;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {isProfileSplit ? (
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onWebLinksSearch}
-              disabled={[isWebLinksPending, rowNameMissing].some(Boolean)}
-            >
-              {isWebLinksPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Globe className="h-4 w-4" aria-hidden />
-              )}
-              Tìm web
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onAiSearch}
-              disabled={[isAiSearchPending, rowNameMissing].some(Boolean)}
-            >
-              {isAiSearchPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Sparkles className="h-4 w-4" aria-hidden />
-              )}
-              Tìm AI
-            </Button>
-          </>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onProfileSearch}
+            disabled={[isProfileSearchPending, rowNameMissing].some(Boolean)}
+          >
+            {isProfileSearchPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="h-4 w-4" aria-hidden />
+            )}
+            Tìm lại
+          </Button>
         ) : (
           <Button
             variant="secondary"
@@ -721,7 +733,9 @@ export function MatchChooser({
           title={
             canSaveToMaterials
               ? "Lưu các trường đã chọn vào danh mục vật tư"
-              : "Chọn ít nhất một trường để lưu"
+              : isProfileSplit
+                ? "Nhập ít nhất một trường để lưu"
+                : "Chọn ít nhất một trường để lưu"
           }
         >
           {isSavingMaterial ? (
@@ -767,6 +781,7 @@ export function MatchChooser({
         onChooseSearchCandidate={
           isProfileSplit ? chooseSearchCandidate : undefined
         }
+        unifiedCandidateGrid={isProfileSplit}
       />
 
       {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (

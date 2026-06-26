@@ -41,7 +41,15 @@ function webRowInput(row: ReviewRow) {
     specText: row.sheetFields.specText,
     unit: row.sheetFields.unit,
     category: row.sheetFields.category,
+    originCountry: row.sheetFields.originCountry,
   };
+}
+
+function isProfileSearchPending(decision: RowDecision | undefined) {
+  return (
+    decision?.webLinksStatus === "pending" ||
+    decision?.aiSearchStatus === "pending"
+  );
 }
 
 export function ReviewPanel({
@@ -89,13 +97,17 @@ export function ReviewPanel({
   const isProfileSplit = searchMode === "profileSplit";
   const webSearch = api.material.enrichWebSearchRow.useMutation();
   const webLinksSearch = api.material.enrichWebSearchRowLinks.useMutation();
+  const profileSearch = api.material.enrichProfileSearchRow.useMutation();
   const aiSearchSingle = api.material.enrichAiSearchRow.useMutation();
   const selectedRowIndexRef = useRef(selectedRowIndex);
   selectedRowIndexRef.current = selectedRowIndex;
+  const decisionsRef = useRef(decisions);
+  decisionsRef.current = decisions;
+  const profileAutoSearchRef = useRef<number | null>(null);
 
   const [checkedRows, setCheckedRows] = useState<Set<number>>(() => new Set());
   const [bulkProgress, setBulkProgress] = useState<{
-    kind: "web" | "ai";
+    kind: "web" | "ai" | "profile";
     completed: number;
     total: number;
   } | null>(null);
@@ -122,14 +134,6 @@ export function ReviewPanel({
       return next;
     });
   }, [rows]);
-
-  if (rows.length === 0) {
-    return (
-      <section className="panel p-2">
-        <EmptyState title={emptyTitle} description={emptyDescription} />
-      </section>
-    );
-  }
 
   const reviewCount = rows.filter((row) => row.status === "review").length;
   const filters: Array<{
@@ -295,6 +299,121 @@ export function ReviewPanel({
       },
     });
   };
+
+  const runProfileSearchForRow = async (
+    row: ReviewRow,
+    options?: { force?: boolean },
+  ) => {
+    const rowIndex = row.originalRowIndex;
+    if (!row.name.trim()) return;
+
+    const decision = decisionsRef.current.get(rowIndex) ?? {
+      materialId: null,
+      acceptedFields: new Set<FillableField>(),
+    };
+    if (decision.skipped) return;
+    if (isProfileSearchPending(decision)) return;
+
+    if (!options?.force) {
+      const hasCache =
+        (decision.webLinkResults?.length ?? 0) > 0 ||
+        (decision.aiSearchCandidates?.length ?? 0) > 0;
+      if (
+        hasCache ||
+        decision.webLinksStatus === "done" ||
+        decision.aiSearchStatus === "done"
+      ) {
+        return;
+      }
+    }
+
+    const nextPending = {
+      ...decision,
+      webLinksStatus: "pending" as const,
+      aiSearchStatus: "pending" as const,
+      webLinkResults: [],
+      aiSearchCandidates: [],
+    };
+    updateDecision(rowIndex, nextPending);
+    persistDecision(rowIndex, nextPending);
+
+    try {
+      const result = await profileSearch.mutateAsync(webRowInput(row));
+      const links = result.webLinkResults ?? [];
+      const candidates = result.aiSearchCandidates ?? [];
+      const hasResults = links.length > 0 || candidates.length > 0;
+      const status = hasResults ? ("done" as const) : ("error" as const);
+
+      applyDecisions((prev) => {
+        const current = prev.get(rowIndex);
+        if (!current) return prev;
+        const next = new Map(prev);
+        next.set(rowIndex, {
+          ...current,
+          webLinkResults: links,
+          webLinksStatus: status,
+          aiSearchCandidates: candidates,
+          aiSearchResult: candidates[0],
+          aiSearchStatus: status,
+          selectedSearchCandidateKey: result.recommendedCandidateKey,
+        });
+        persistDecision(rowIndex, next.get(rowIndex)!);
+        return next;
+      });
+
+      if (rowIndex === selectedRowIndexRef.current) {
+        if (!hasResults) {
+          toast.warning("Không tìm thấy kết quả web/AI.");
+        } else {
+          toast.success(
+            `Tìm thấy ${links.length} liên kết và ${candidates.length} ứng viên AI.`,
+          );
+        }
+      }
+    } catch (error) {
+      applyDecisions((prev) => {
+        const current = prev.get(rowIndex);
+        if (!current) return prev;
+        const next = new Map(prev);
+        next.set(rowIndex, {
+          ...current,
+          webLinksStatus: "error",
+          aiSearchStatus: "error",
+        });
+        persistDecision(rowIndex, next.get(rowIndex)!);
+        return next;
+      });
+      if (rowIndex === selectedRowIndexRef.current) {
+        toast.error(
+          error instanceof Error ? error.message : "Tìm kiếm thất bại.",
+        );
+      }
+      throw error;
+    }
+  };
+
+  useEffect(() => {
+    if (!isProfileSplit || !selectedRow) return;
+    if (!selectedRow.name.trim()) return;
+    const rowIndex = selectedRow.originalRowIndex;
+    const decision = decisions.get(rowIndex);
+    if (decision?.skipped) return;
+    if (isProfileSearchPending(decision)) return;
+    const hasCache =
+      (decision?.webLinkResults?.length ?? 0) > 0 ||
+      (decision?.aiSearchCandidates?.length ?? 0) > 0;
+    if (hasCache) return;
+    if (
+      decision?.webLinksStatus === "done" ||
+      decision?.aiSearchStatus === "done"
+    ) {
+      return;
+    }
+    if (profileAutoSearchRef.current === rowIndex) return;
+    profileAutoSearchRef.current = rowIndex;
+    void runProfileSearchForRow(selectedRow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProfileSplit, selectedRowIndex, selectedRow?.name, decisions]);
 
   const runWebLinksForRow = async (row: ReviewRow) => {
     const rowIndex = row.originalRowIndex;
@@ -497,7 +616,7 @@ export function ReviewPanel({
     }
   };
 
-  const runBulkSearch = async (kind: "web" | "ai") => {
+  const runBulkSearch = async (kind: "web" | "ai" | "profile") => {
     const targets = resolveTargetRows().filter((row) => row.name.trim());
     if (targets.length === 0) {
       toast.warning("Không có dòng hợp lệ để tìm.");
@@ -510,21 +629,29 @@ export function ReviewPanel({
     try {
       await runWithConcurrency(
         targets.map((row) => () =>
-          kind === "web" ? runWebLinksForRow(row) : runAiSearchForRow(row),
+          kind === "profile"
+            ? runProfileSearchForRow(row, { force: true })
+            : kind === "web"
+              ? runWebLinksForRow(row)
+              : runAiSearchForRow(row),
         ),
         3,
         (completed, total) => setBulkProgress({ kind, completed, total }),
       );
       toast.success(
-        kind === "web"
-          ? `Đã tìm web cho ${targets.length} dòng.`
-          : `Đã tìm AI cho ${targets.length} dòng.`,
+        kind === "profile"
+          ? `Đã tìm lại cho ${targets.length} dòng.`
+          : kind === "web"
+            ? `Đã tìm web cho ${targets.length} dòng.`
+            : `Đã tìm AI cho ${targets.length} dòng.`,
       );
     } catch {
       toast.error(
-        kind === "web"
-          ? "Một số dòng tìm web thất bại."
-          : "Một số dòng tìm AI thất bại.",
+        kind === "profile"
+          ? "Một số dòng tìm kiếm thất bại."
+          : kind === "web"
+            ? "Một số dòng tìm web thất bại."
+            : "Một số dòng tìm AI thất bại.",
       );
     } finally {
       setBulkProgress(null);
@@ -579,6 +706,14 @@ export function ReviewPanel({
     row.name.trim(),
   ).length;
   const isBulkRunning = bulkProgress != null;
+
+  if (rows.length === 0) {
+    return (
+      <section className="panel p-2">
+        <EmptyState title={emptyTitle} description={emptyDescription} />
+      </section>
+    );
+  }
 
   return (
     <section className="panel overflow-hidden">
@@ -647,27 +782,17 @@ export function ReviewPanel({
             <>
               {bulkProgress ? (
                 <span className="text-xs text-slate-600">
-                  {bulkProgress.kind === "web" ? "Đang tìm web" : "Đang tìm AI"}:{" "}
-                  {bulkProgress.completed}/{bulkProgress.total}
+                  Đang tìm: {bulkProgress.completed}/{bulkProgress.total}
                 </span>
               ) : null}
               <Button
                 variant="secondary"
                 size="sm"
                 disabled={bulkTargetCount === 0 || isBulkRunning}
-                onClick={() => void runBulkSearch("web")}
-              >
-                <Globe className="h-4 w-4" aria-hidden />
-                Tìm web ({bulkTargetCount.toLocaleString("vi-VN")})
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={bulkTargetCount === 0 || isBulkRunning}
-                onClick={() => void runBulkSearch("ai")}
+                onClick={() => void runBulkSearch("profile")}
               >
                 <Sparkles className="h-4 w-4" aria-hidden />
-                Tìm AI ({bulkTargetCount.toLocaleString("vi-VN")})
+                Tìm lại ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
             </>
           ) : null}
@@ -799,18 +924,19 @@ export function ReviewPanel({
               }
               searchMode={searchMode}
               onWebSearch={() => handleWebSearch(selectedRow)}
-              onWebLinksSearch={() => void runWebLinksForRow(selectedRow)}
-              onAiSearch={() => void runAiSearchForRow(selectedRow)}
+              onProfileSearch={() => {
+                profileAutoSearchRef.current = null;
+                void runProfileSearchForRow(selectedRow, { force: true });
+              }}
+              isProfileSearchPending={
+                profileSearch.isPending ||
+                decisions.get(selectedRow.originalRowIndex)?.webLinksStatus ===
+                  "pending" ||
+                decisions.get(selectedRow.originalRowIndex)?.aiSearchStatus ===
+                  "pending"
+              }
               isWebSearchPending={
                 decisions.get(selectedRow.originalRowIndex)?.webSearchStatus ===
-                "pending"
-              }
-              isWebLinksPending={
-                decisions.get(selectedRow.originalRowIndex)?.webLinksStatus ===
-                "pending"
-              }
-              isAiSearchPending={
-                decisions.get(selectedRow.originalRowIndex)?.aiSearchStatus ===
                 "pending"
               }
             />

@@ -151,4 +151,36 @@ describe("searchQueryWithFallback", () => {
     expect(second.results).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("boosts VN domains, product codes, and PDF URLs when ranking", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Generic listing",
+          url: "https://marketplace.example/item",
+          domain: "marketplace.example",
+          snippet: "buy pvc pipe",
+          query: "pvc",
+          rankScore: 0,
+        },
+        {
+          title: "PVC-D90 datasheet Bình Minh",
+          url: "https://binhminh.vn/catalog/pvc-d90.pdf",
+          domain: "binhminh.vn",
+          snippet: "Thông số kỹ thuật catalog",
+          query: "pvc filetype:pdf",
+          rankScore: 0,
+        },
+      ],
+      {
+        manufacturer: "Bình Minh",
+        name: "Ống PVC D90",
+        code: "PVC-D90",
+      },
+    );
+
+    expect(ranked[0]?.url).toContain("binhminh.vn");
+    expect(ranked[0]?.rankScore ?? 0).toBeGreaterThan(ranked[1]?.rankScore ?? 0);
+  });
 });

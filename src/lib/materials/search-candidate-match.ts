@@ -1,11 +1,16 @@
 import type { AiSearchStoredResult, WebLinkResult } from "~/lib/materials/enrich-gap-fill";
-import type { FillableField } from "~/lib/materials/excel-enrich-fields";
+import {
+  FILLABLE_FIELDS,
+  type FillableField,
+} from "~/lib/materials/excel-enrich-fields";
 
 export function normalizeMatchScore(score: number | undefined): number {
   if (score == null || !Number.isFinite(score)) return 0;
   if (score > 1) return Math.min(1, score / 100);
   return Math.max(0, Math.min(1, score));
 }
+
+const OVERWRITE_CONFIDENCE = 0.85;
 
 function tokenOverlap(a: string, b: string): number {
   const left = a.trim().toLowerCase();
@@ -22,6 +27,70 @@ function tokenOverlap(a: string, b: string): number {
     if (leftTokens.has(token)) hits += 1;
   }
   return hits / rightTokens.length;
+}
+
+export function scoreAiCandidateCompletion(
+  candidate: AiSearchStoredResult,
+  sheetFields: Partial<Record<FillableField, string>>,
+): number {
+  const fields = candidate.fields;
+  const confidences = candidate.fieldConfidences ?? {};
+  const score = normalizeMatchScore(candidate.rankScore ?? 0) * 0.25;
+  let filled = 0;
+  let confidenceSum = 0;
+  let conflictPenalty = 0;
+
+  for (const field of FILLABLE_FIELDS) {
+    if (field === "currency") continue;
+    const value = fields[field]?.trim();
+    if (!value) continue;
+    const conf = confidences[field] ?? 0.5;
+    const sheetVal = sheetFields[field]?.trim();
+    if (sheetVal && sheetVal !== value) {
+      if (conf >= OVERWRITE_CONFIDENCE) {
+        filled += 0.5;
+        confidenceSum += conf * 0.5;
+      } else {
+        conflictPenalty += 0.12;
+      }
+      continue;
+    }
+    filled += 1;
+    confidenceSum += conf;
+  }
+
+  const fieldScore = filled * 0.07 + confidenceSum * 0.1;
+  const pdfBonus = (candidate.catalogPdfUrls?.length ?? 0) > 0 ? 0.05 : 0;
+  return Math.max(0, Math.min(1, score + fieldScore + pdfBonus - conflictPenalty));
+}
+
+export function catalogCandidateScore(score: number | undefined): number {
+  return normalizeMatchScore(score);
+}
+
+export function sortCandidatesByScore<T extends { score: number; status?: string }>(
+  items: T[],
+): T[] {
+  const isDeferred = (item: T) =>
+    item.status === "pending" || item.status === "error";
+  const ready = items.filter((item) => !isDeferred(item));
+  const deferred = items.filter((item) => isDeferred(item));
+  ready.sort((left, right) => right.score - left.score);
+  return [...ready, ...deferred];
+}
+
+export function markTopRecommended<T extends { score: number; isRecommended?: boolean }>(
+  items: T[],
+): T[] {
+  if (items.length === 0) return items;
+  for (const item of items) {
+    item.isRecommended = false;
+  }
+  const topScore = items[0]!.score;
+  if (topScore > 0) {
+    items[0]!.isRecommended = true;
+  }
+  return items;
 }
 
 export function webLinkMatchChips(
@@ -44,8 +113,8 @@ export function aiCandidateMatchChips(
   candidate: AiSearchStoredResult,
   sheetFields: Partial<Record<FillableField, string>>,
   rowName: string,
-  rankScore?: number,
 ): { score: number; chips: string[] } {
+  const score = scoreAiCandidateCompletion(candidate, sheetFields);
   const fieldCount = Object.values(candidate.fields).filter(
     (value) => (value ?? "").trim().length > 0,
   ).length;
@@ -76,9 +145,9 @@ export function aiCandidateMatchChips(
     chips.push("cùng ĐVT");
   }
 
-  const extractedScore =
-    fieldCount >= 4 ? 0.85 : fieldCount >= 2 ? 0.65 : fieldCount >= 1 ? 0.45 : 0.2;
-  const score = normalizeMatchScore(rankScore ?? extractedScore);
+  const pct = Math.round(score * 100);
+  if (pct > 0) chips.push(`khớp ${pct}%`);
+
   return { score, chips };
 }
 
