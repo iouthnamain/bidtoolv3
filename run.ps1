@@ -9,8 +9,7 @@
     It will:
       1. Pull the latest code from git
       2. Make sure Docker Desktop is running
-      3. Ensure .env exists, then refresh deps, start Postgres + SearXNG in
-         Docker, and apply DB migrations (bun run dev:update)
+      3. Refresh dependencies + database migrations (bun run dev:update)
       4. Prepare auth (host-tenant backfill) and show how to create the
          first admin when authentication is enabled
       5. Start the app (bun run dev:run) and open http://localhost:3000
@@ -125,7 +124,7 @@ Write-Host "      Docker is ready."
 Write-Host ""
 
 # --- 3. Refresh deps + DB migrations after the pull --------------------------
-Write-Host "[3/5] Refreshing dependencies, Docker services (Postgres + SearXNG), and database migrations..."
+Write-Host "[3/5] Refreshing dependencies and database migrations..."
 bun run dev:update
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
@@ -197,33 +196,11 @@ if ($authEnabled -and $authEnabled.ToLower() -eq "true") {
 Write-Host ""
 
 # --- 5. Open the browser once the server is listening ------------------------
-# Runs as a background job so it can wait for the port while the dev server
-# starts in this window. We probe the TCP port (not an HTTP 200) because
-# next dev --turbo binds the port immediately but only answers HTTP after the
-# first route compiles, which can take a minute on a cold start.
+# This runs in a separate window so it can wait while the dev server starts
+# in this window.
 Write-Host "[5/5] Starting BidTool. The browser will open automatically when ready."
-
-$openBrowser = {
-    param($url)
-    $uri = [System.Uri]$url
-    $probeHost = $uri.Host
-    $probePort = $uri.Port
-    $tries = 0
-    while ($tries -lt 90) {
-        try {
-            $client = New-Object System.Net.Sockets.TcpClient
-            $client.Connect($probeHost, $probePort)
-            $client.Close()
-            break
-        } catch {
-            $tries++
-            Start-Sleep -Seconds 2
-        }
-    }
-    Start-Sleep -Seconds 1
-    Start-Process $url
-}
-Start-Job -ScriptBlock $openBrowser -ArgumentList $AppUrl | Out-Null
+$waitScript = Join-Path $ScriptDir "scripts\wait-and-open.bat"
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$waitScript`"", $AppUrl -WindowStyle Minimized | Out-Null
 Write-Host ""
 
 # --- Start the dev server (blocks until you close it) ------------------------
