@@ -24,6 +24,7 @@ export type AiSearchStoredResult = {
   fields: Partial<Record<FillableField, string>>;
   sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
+  catalogPdfUrls?: string[];
   title?: string;
   url?: string;
   snippet?: string;
@@ -47,6 +48,7 @@ export type RowDecisionLike = {
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
   selectedSearchCandidateKey?: string;
+  catalogPdfUrls?: string[];
   skipped?: boolean;
 };
 
@@ -121,10 +123,30 @@ export function webFieldsAfterGapFill(
   return result;
 }
 
+/** Accept every non-empty proposed field (profile review: map all extracted values). */
+export function applyAllProposedFields(
+  fields: Partial<Record<FillableField, string>>,
+): {
+  acceptedFields: Set<FillableField>;
+  editedValues: Partial<Record<FillableField, string>>;
+} {
+  const acceptedFields = new Set<FillableField>();
+  const editedValues: Partial<Record<FillableField, string>> = {};
+  for (const field of FILLABLE_FIELDS) {
+    if (field === "currency") continue;
+    const value = fields[field]?.trim() ?? "";
+    if (!value) continue;
+    acceptedFields.add(field);
+    editedValues[field] = value;
+  }
+  return { acceptedFields, editedValues };
+}
+
 export type WebSearchRowResult = {
   fields: Partial<Record<FillableField, string>>;
   evidence: MaterialEnrichmentEvidence[];
   sourceUrls?: string[];
+  catalogPdfUrls?: string[];
 };
 
 /** Effective values for accepted fields after catalog + web gap-fill + edits. */

@@ -96,6 +96,11 @@ export type FieldCompareEditorProps = {
   compareLayout?: "inline" | "sideBySide";
   /** Label for the proposed-value column in side-by-side mode. */
   afterColumnLabel?: string;
+  /** Profile review: every field row is editable regardless of fill plan. */
+  alwaysEditableFields?: boolean;
+  /** Catalog PDF URLs extracted from web/AI search. */
+  catalogPdfUrls?: string[];
+  onEditCatalogPdfUrls?: (raw: string) => void;
 
   /** Web/AI search results shown as additional selectable candidate cards. */
   searchSourceCandidates?: SearchSourceCandidate[];
@@ -139,6 +144,9 @@ export function FieldCompareEditor({
   forceShowDecision = false,
   compareLayout = "inline",
   afterColumnLabel = "Sau",
+  alwaysEditableFields = false,
+  catalogPdfUrls,
+  onEditCatalogPdfUrls,
   searchSourceCandidates = [],
   selectedSearchCandidateKey = null,
   onChooseSearchCandidate,
@@ -371,56 +379,96 @@ export function FieldCompareEditor({
                   </tr>
                 </thead>
                 <tbody>
-                  {plan.map((cell) => {
-                    const field = cell.field;
-                    const isFillable =
-                      cell.action === "filled" || cell.action === "overwritten";
-                    const afterValue = editedValues[field] ?? cell.after;
-                    return (
-                      <tr
-                        key={field}
-                        className={`border-b border-slate-100 ${
-                          isFillable ? "bg-slate-50/80" : "opacity-60"
-                        }`}
-                      >
-                        <td className="py-2 pr-2 align-top">
-                          <input
-                            type="checkbox"
-                            disabled={!isFillable}
-                            checked={isFillable && accepted.has(field)}
-                            onChange={() => onToggleField(field)}
-                            aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
-                          />
-                        </td>
-                        <td className="py-2 pr-2 align-top font-semibold text-slate-600">
-                          {FIELD_LABELS[field]}
-                        </td>
-                        <td className="py-2 pr-2 align-top text-slate-700">
-                          {cell.before || "(trống)"}
-                        </td>
-                        <td className="py-2 pr-2 align-top">
-                          {isFillable ? (
-                            enableInlineEdit ? (
-                              <input
-                                type="text"
-                                value={afterValue}
-                                onChange={(event) =>
-                                  onEditValue(field, event.target.value)
-                                }
-                                className="w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                              />
+                  {(alwaysEditableFields ? EDITABLE_FIELDS : plan.map((c) => c.field)).map(
+                    (field) => {
+                      const cell = plan.find((item) => item.field === field);
+                      const isFillable = alwaysEditableFields
+                        ? true
+                        : cell?.action === "filled" ||
+                          cell?.action === "overwritten";
+                      const beforeValue =
+                        sheetFields[field]?.trim() ??
+                        cell?.before ??
+                        "";
+                      const afterValue =
+                        editedValues[field] ??
+                        (alwaysEditableFields
+                          ? (baseFields[field] ?? "")
+                          : (cell?.after ?? ""));
+                      return (
+                        <tr
+                          key={field}
+                          className={`border-b border-slate-100 ${
+                            isFillable ? "bg-slate-50/80" : "opacity-60"
+                          }`}
+                        >
+                          <td className="py-2 pr-2 align-top">
+                            <input
+                              type="checkbox"
+                              disabled={!isFillable}
+                              checked={isFillable && accepted.has(field)}
+                              onChange={() => onToggleField(field)}
+                              aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
+                            />
+                          </td>
+                          <td className="py-2 pr-2 align-top font-semibold text-slate-600">
+                            {FIELD_LABELS[field]}
+                          </td>
+                          <td className="py-2 pr-2 align-top text-slate-700">
+                            {beforeValue || "(trống)"}
+                          </td>
+                          <td className="py-2 pr-2 align-top">
+                            {isFillable ? (
+                              enableInlineEdit ? (
+                                <input
+                                  type="text"
+                                  value={afterValue}
+                                  onChange={(event) =>
+                                    onEditValue(field, event.target.value)
+                                  }
+                                  className="w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                                />
+                              ) : (
+                                <span className="font-medium text-emerald-700">
+                                  {afterValue}
+                                </span>
+                              )
                             ) : (
-                              <span className="font-medium text-emerald-700">
-                                {afterValue}
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                              <span className="text-slate-500">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    },
+                  )}
+                  {onEditCatalogPdfUrls ? (
+                    <tr className="border-b border-slate-100 bg-slate-50/80">
+                      <td className="py-2 pr-2 align-top">
+                        <input
+                          type="checkbox"
+                          checked={(catalogPdfUrls?.length ?? 0) > 0}
+                          readOnly
+                          aria-label="URL catalog"
+                          className="pointer-events-none opacity-70"
+                        />
+                      </td>
+                      <td className="py-2 pr-2 align-top font-semibold text-slate-600">
+                        URL catalog
+                      </td>
+                      <td className="py-2 pr-2 align-top text-slate-700">(trống)</td>
+                      <td className="py-2 pr-2 align-top">
+                        <textarea
+                          value={(catalogPdfUrls ?? []).join("\n")}
+                          onChange={(event) =>
+                            onEditCatalogPdfUrls(event.target.value)
+                          }
+                          rows={Math.min(4, Math.max(1, catalogPdfUrls?.length ?? 1))}
+                          placeholder="Một URL PDF mỗi dòng"
+                          className="w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
               {selectedSearchCandidate?.source === "web" &&

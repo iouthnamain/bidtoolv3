@@ -52,6 +52,9 @@ export function aiCandidateMatchChips(
   const chips: string[] = [];
   if (fieldCount > 0) chips.push(`${fieldCount} trường AI`);
 
+  const pdfCount = candidate.catalogPdfUrls?.length ?? 0;
+  if (pdfCount > 0) chips.push(`${pdfCount} catalog PDF`);
+
   const nameOverlap = tokenOverlap(rowName, candidate.fields.code ?? "");
   const titleOverlap = tokenOverlap(rowName, candidate.title ?? "");
   const bestName = Math.max(nameOverlap, titleOverlap);

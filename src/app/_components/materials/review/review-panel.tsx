@@ -440,6 +440,7 @@ export function ReviewPanel({
               fields: result.fields,
               sourceUrls: result.sourceUrls,
               evidence: result.evidence,
+              catalogPdfUrls: result.catalogPdfUrls,
               title: link.title,
               url: link.url,
               snippet: link.snippet,

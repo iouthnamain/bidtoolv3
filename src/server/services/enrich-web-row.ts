@@ -35,6 +35,7 @@ export type EnrichWebRowResult = {
   fields: Partial<Record<FillableField, string>>;
   sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
+  catalogPdfUrls: string[];
 };
 
 export type EnrichWebRowHit = {
@@ -74,7 +75,9 @@ function _mapExtractedToFillable(
     fields.sourceUrl = sourceUrls[0];
   }
 
-  return { fields, sourceUrls, evidence };
+  const catalogPdfUrls = [...new Set(extracted.catalogPdfUrls ?? [])];
+
+  return { fields, sourceUrls, evidence, catalogPdfUrls };
 }
 
 function _webHitsToSearchResults(hits: EnrichWebRowHit[]): WebSearchResult[] {
@@ -119,7 +122,7 @@ async function extractFieldsFromRankedResults(
   ];
 
   if (ranked.length === 0) {
-    return { fields: {}, sourceUrls: [], evidence: [] };
+    return { fields: {}, sourceUrls: [], evidence: [], catalogPdfUrls: [] };
   }
 
   let provider;
@@ -130,6 +133,7 @@ async function extractFieldsFromRankedResults(
       fields: sourceUrls.length > 0 ? { sourceUrl: sourceUrls[0] } : {},
       sourceUrls,
       evidence: [],
+      catalogPdfUrls: [],
     };
   }
 
@@ -155,7 +159,7 @@ async function _enrichRowFromWeb(
   }).map((query) => query.query);
 
   if (queries.length === 0 || !input.name.trim()) {
-    return { fields: {}, sourceUrls: [], evidence: [] };
+    return { fields: {}, sourceUrls: [], evidence: [], catalogPdfUrls: [] };
   }
 
   const searchResponse = await searchWebForProduct(queries, signal);

@@ -13,6 +13,7 @@ import type { ReviewRow, ReviewSearchMode } from "~/app/_components/materials/re
 import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
+  applyAllProposedFields,
   applySavedMaterialToDecision,
   effectiveAcceptedFieldValues,
   webFieldsAfterGapFill,
@@ -40,6 +41,7 @@ function profileSearchFields(decision: RowDecision | undefined) {
     aiSearchResult: decision?.aiSearchResult,
     aiSearchCandidates: decision?.aiSearchCandidates,
     aiSearchStatus: decision?.aiSearchStatus,
+    catalogPdfUrls: decision?.catalogPdfUrls,
   };
 }
 
@@ -202,8 +204,8 @@ export function MatchChooser({
           row.name,
           candidate.rankScore,
         );
-        const fillCount = Object.keys(
-          webFieldsAfterGapFill(sheetFields, null, candidate.fields),
+        const fillCount = Object.values(candidate.fields).filter(
+          (value) => (value ?? "").trim().length > 0,
         ).length;
         if (score > topAiScore) topAiScore = score;
         const previewField = [
@@ -289,8 +291,26 @@ export function MatchChooser({
           : "Sau";
 
   const choose = (candidate: EnrichCandidate) => {
-    const { fillable } = planForCandidate(sheetFields, candidate);
     const candidateFields = candidateToFields(candidate);
+    if (isProfileSplit) {
+      const { acceptedFields, editedValues: nextEdited } =
+        applyAllProposedFields(candidateFields);
+      onChange({
+        materialId: candidate.materialId,
+        selectedSource: "catalog",
+        selectedSearchCandidateKey: undefined,
+        acceptedFields,
+        overwriteFields: new Set(),
+        editedValues: nextEdited,
+        webProposedFields,
+        webEvidence,
+        webSearchStatus,
+        ...profileFields,
+      });
+      return;
+    }
+
+    const { fillable } = planForCandidate(sheetFields, candidate);
     const webGaps = webFieldsAfterGapFill(
       sheetFields,
       candidateFields,
@@ -329,17 +349,45 @@ export function MatchChooser({
         toast.warning("Chưa có liên kết web để chọn.");
         return;
       }
+
+      const matchingAi = aiCandidates.find((candidate) => candidate.url === link.url);
+      if (matchingAi) {
+        const { acceptedFields, editedValues: nextEdited } = applyAllProposedFields(
+          matchingAi.fields,
+        );
+        onChange({
+          materialId: null,
+          selectedSource: "web",
+          selectedSearchCandidateKey: key,
+          acceptedFields,
+          overwriteFields: new Set(),
+          editedValues: nextEdited,
+          webProposedFields: { ...matchingAi.fields },
+          webEvidence: matchingAi.evidence,
+          webSearchStatus,
+          ...profileFields,
+          catalogPdfUrls: matchingAi.catalogPdfUrls,
+          aiSearchResult: matchingAi,
+        });
+        return;
+      }
+
+      const pdfFromUrl = link.url.toLowerCase().includes(".pdf") ? [link.url] : [];
+      const nextEdited: Partial<Record<FillableField, string>> = {
+        sourceUrl: link.url,
+      };
       onChange({
         materialId: null,
         selectedSource: "web",
         selectedSearchCandidateKey: key,
-        acceptedFields: new Set(),
+        acceptedFields: new Set<FillableField>(["sourceUrl"]),
         overwriteFields: new Set(),
-        editedValues: {},
-        webProposedFields: {},
+        editedValues: nextEdited,
+        webProposedFields: { sourceUrl: link.url },
         webEvidence: [],
         webSearchStatus,
         ...profileFields,
+        catalogPdfUrls: pdfFromUrl.length > 0 ? pdfFromUrl : undefined,
       });
       return;
     }
@@ -350,25 +398,19 @@ export function MatchChooser({
       toast.warning("Chưa có kết quả AI để chọn.");
       return;
     }
-    const gapFields = webFieldsAfterGapFill(sheetFields, null, aiResult.fields);
-    const nextAccepted = new Set<FillableField>();
-    const nextEdited: Partial<Record<FillableField, string>> = {};
-    for (const [field, value] of Object.entries(gapFields)) {
-      const fillableField = field as FillableField;
-      nextAccepted.add(fillableField);
-      nextEdited[fillableField] = value;
-    }
+    const gapFields = applyAllProposedFields(aiResult.fields);
     onChange({
       materialId: null,
       selectedSource: "ai",
       selectedSearchCandidateKey: key,
-      acceptedFields: nextAccepted,
+      acceptedFields: gapFields.acceptedFields,
       overwriteFields: new Set(),
-      editedValues: nextEdited,
+      editedValues: gapFields.editedValues,
       webProposedFields: { ...aiResult.fields },
       webEvidence: aiResult.evidence,
       webSearchStatus,
       ...profileFields,
+      catalogPdfUrls: aiResult.catalogPdfUrls,
       aiSearchResult: aiResult,
     });
   };
@@ -455,6 +497,26 @@ export function MatchChooser({
     });
   };
 
+  const editCatalogPdfUrls = (raw: string) => {
+    const urls = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    onChange({
+      materialId: selectedId,
+      selectedSource: decision?.selectedSource,
+      selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
+      acceptedFields: accepted,
+      overwriteFields: overwrite,
+      editedValues,
+      webProposedFields: editorProposedFields,
+      webEvidence,
+      webSearchStatus,
+      ...profileFields,
+      catalogPdfUrls: urls.length > 0 ? urls : undefined,
+    });
+  };
+
   const applyManualValues = (values: ManualProductValues) => {
     const nextAccepted = new Set<FillableField>();
     const nextEdited: Partial<Record<FillableField, string>> = {};
@@ -528,6 +590,7 @@ export function MatchChooser({
           ),
           sourceUrl: trimmedOrUndefined(effective.sourceUrl),
           currency: "VND",
+          catalogPdfUrls: decision?.catalogPdfUrls,
         },
       },
       {
@@ -582,6 +645,7 @@ export function MatchChooser({
       webProposedFields: {},
       webEvidence: [],
       ...profileFields,
+      catalogPdfUrls: undefined,
     });
   };
 
@@ -695,6 +759,9 @@ export function MatchChooser({
         forceShowDecision={hasWebOrManualDecision}
         compareLayout={isProfileSplit ? "sideBySide" : "inline"}
         afterColumnLabel={afterColumnLabel}
+        alwaysEditableFields={isProfileSplit}
+        catalogPdfUrls={decision?.catalogPdfUrls}
+        onEditCatalogPdfUrls={isProfileSplit ? editCatalogPdfUrls : undefined}
         searchSourceCandidates={searchSourceCandidates}
         selectedSearchCandidateKey={selectedSearchCandidateKey}
         onChooseSearchCandidate={

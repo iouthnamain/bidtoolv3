@@ -131,6 +131,7 @@ const materialInput = z.object({
   defaultUnitPrice: z.number().nonnegative().nullable().optional(),
   currency: z.string().trim().min(1).default("VND"),
   sourceUrl: z.string().trim().optional(),
+  catalogPdfUrls: z.array(z.string().trim().min(1)).optional(),
 });
 
 const enrichWebRowInput = z.object({
@@ -407,15 +408,23 @@ async function assertMaterialCodeAvailable(
 }
 
 function materialValues(input: MaterialInput, now: string) {
+  const { catalogPdfUrls: _catalogPdfUrls, ...materialFields } = input;
+  void _catalogPdfUrls;
   return {
-    ...input,
-    code: input.code?.trim() ? input.code : null,
-    category: input.category?.trim() ? input.category : null,
-    specText: input.specText ?? "",
-    manufacturer: input.manufacturer?.trim() ? input.manufacturer : null,
-    originCountry: input.originCountry?.trim() ? input.originCountry : null,
-    defaultUnitPrice: input.defaultUnitPrice ?? null,
-    sourceUrl: input.sourceUrl?.trim() ? input.sourceUrl : null,
+    ...materialFields,
+    code: materialFields.code?.trim() ? materialFields.code : null,
+    category: materialFields.category?.trim() ? materialFields.category : null,
+    specText: materialFields.specText ?? "",
+    manufacturer: materialFields.manufacturer?.trim()
+      ? materialFields.manufacturer
+      : null,
+    originCountry: materialFields.originCountry?.trim()
+      ? materialFields.originCountry
+      : null,
+    defaultUnitPrice: materialFields.defaultUnitPrice ?? null,
+    sourceUrl: materialFields.sourceUrl?.trim()
+      ? materialFields.sourceUrl
+      : null,
     createdAt: now,
     updatedAt: now,
   };
@@ -1588,6 +1597,7 @@ export const materialRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
+      const catalogPdfUrls = input.patch.catalogPdfUrls ?? [];
       if (input.id) {
         await assertMaterialCodeAvailable(ctx.db, input.patch.code, input.id);
         const [updated] = await ctx.db
@@ -1601,6 +1611,23 @@ export const materialRouter = createTRPCRouter({
             message: "Không tìm thấy vật tư.",
           });
         }
+        if (catalogPdfUrls.length > 0) {
+          try {
+            await attachCatalogPdfUrlsToMaterial(
+              ctx.db,
+              catalogPdfUrls,
+              updated.id,
+              {
+                sourceType: "detected",
+                linkSource: "manual",
+                fallbackTitle: updated.name,
+                supplier: updated.manufacturer,
+              },
+            );
+          } catch {
+            // Catalog PDF linking must not fail the material save.
+          }
+        }
         return updated;
       }
 
@@ -1609,6 +1636,23 @@ export const materialRouter = createTRPCRouter({
         .insert(materials)
         .values(materialValues(input.patch, now))
         .returning();
+      if (created && catalogPdfUrls.length > 0) {
+        try {
+          await attachCatalogPdfUrlsToMaterial(
+            ctx.db,
+            catalogPdfUrls,
+            created.id,
+            {
+              sourceType: "detected",
+              linkSource: "manual",
+              fallbackTitle: created.name,
+              supplier: created.manufacturer,
+            },
+          );
+        } catch {
+          // Catalog PDF linking must not fail the material save.
+        }
+      }
       return created;
     }),
 

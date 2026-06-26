@@ -28,6 +28,7 @@ export type SerializedRowDecision = {
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
   selectedSearchCandidateKey?: string;
+  catalogPdfUrls?: string[];
   skipped?: boolean;
 };
 
@@ -123,6 +124,14 @@ function filterWebLinkResults(value: unknown): WebLinkResult[] | undefined {
   return result.length > 0 ? result : undefined;
 }
 
+function filterCatalogPdfUrls(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const urls = value.filter(
+    (url): url is string => typeof url === "string" && url.trim().length > 0,
+  );
+  return urls.length > 0 ? urls : undefined;
+}
+
 function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
@@ -136,7 +145,8 @@ function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined 
   if (
     Object.keys(fields).length === 0 &&
     evidence.length === 0 &&
-    sourceUrls.length === 0
+    sourceUrls.length === 0 &&
+    !filterCatalogPdfUrls(record.catalogPdfUrls)
   ) {
     return undefined;
   }
@@ -144,6 +154,7 @@ function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined 
     fields,
     sourceUrls,
     evidence,
+    catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
     title: typeof record.title === "string" ? record.title : undefined,
     url: typeof record.url === "string" ? record.url : undefined,
     snippet: typeof record.snippet === "string" ? record.snippet : undefined,
@@ -232,6 +243,7 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
     aiSearchStatus: decision.aiSearchStatus,
     selectedSource: decision.selectedSource,
     selectedSearchCandidateKey: decision.selectedSearchCandidateKey,
+    catalogPdfUrls: decision.catalogPdfUrls,
     skipped: decision.skipped ? true : undefined,
   };
 }
@@ -284,6 +296,7 @@ export function deserializeRowDecision(
     aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
     selectedSource,
     selectedSearchCandidateKey,
+    catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
     skipped: record.skipped === true,
   };
 }
