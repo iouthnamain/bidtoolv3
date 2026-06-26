@@ -433,13 +433,12 @@ export function ReviewPanel({
 
     try {
       let links = decision.webLinkResults ?? [];
-      let candidates = decision.aiSearchCandidates ?? [];
 
       if (links.length === 0) {
         if (isProfileSplit) {
           const response = await profileSearch.mutateAsync(webRowInput(row));
           links = response.webLinkResults;
-          candidates = response.aiSearchCandidates;
+          const profileCandidates = response.aiSearchCandidates;
           applyDecisions((prev) => {
             const current = prev.get(rowIndex);
             if (!current) return prev;
@@ -448,16 +447,18 @@ export function ReviewPanel({
               ...current,
               webLinkResults: links,
               webLinksStatus: links.length > 0 ? "done" : "error",
-              aiSearchCandidates: candidates,
-              aiSearchResult: candidates[0],
-              aiSearchStatus: candidates.length > 0 ? "done" : "error",
+              aiSearchCandidates: profileCandidates,
+              aiSearchResult: profileCandidates[0],
+              aiSearchStatus: profileCandidates.length > 0 ? "done" : "error",
             });
             persistDecision(rowIndex, next.get(rowIndex)!);
             return next;
           });
-          if (candidates.length > 0) {
+          if (profileCandidates.length > 0) {
             if (rowIndex === selectedRowIndexRef.current) {
-              toast.success(`Tìm thấy ${candidates.length} ứng viên AI.`);
+              toast.success(
+                `Tìm thấy ${profileCandidates.length} ứng viên AI.`,
+              );
             }
             return;
           }
