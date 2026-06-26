@@ -12,7 +12,7 @@ export function EnrichJobsClient({ jobId }: { jobId?: string }) {
   if (isJobPage) {
     return (
       <div className="space-y-4">
-        <section className="panel p-4 sm:p-5">
+        <section className="panel p-4">
           <Link
             href="/enrich/jobs"
             className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
@@ -27,14 +27,14 @@ export function EnrichJobsClient({ jobId }: { jobId?: string }) {
 
   return (
     <div className="space-y-4">
-      <section className="panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="panel p-4">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <p className="section-title">Nghiên cứu web</p>
             <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
               Job nghiên cứu Excel
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Xem và tiếp tục các job nghiên cứu sản phẩm đã tạo từ bước 3 của
               đối chiếu Excel.
             </p>
@@ -47,7 +47,7 @@ export function EnrichJobsClient({ jobId }: { jobId?: string }) {
         </div>
       </section>
 
-      <section className="panel p-4 sm:p-5">
+      <section className="panel p-4">
         <EnrichJobsList
           emptyAction={
             <Link href="/enrich">

@@ -118,7 +118,7 @@ export function SidebarUpdatePill({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div
-      className={`rounded-lg border border-sky-200 bg-sky-50 text-sky-950 ${
+      className={`rounded border border-blue-200 bg-blue-50 text-blue-950 ${
         collapsed ? "px-1.5 py-2" : "px-3 py-2.5"
       }`}
     >
@@ -137,7 +137,7 @@ export function SidebarUpdatePill({ collapsed }: { collapsed: boolean }) {
             type="button"
             onClick={() => void handleAction()}
             disabled={disabled || action === "none"}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-sky-800 px-2 text-[11px] font-bold text-white hover:bg-sky-900 disabled:opacity-60"
+            className="inline-flex h-7 items-center gap-1 rounded bg-blue-800 px-2 text-xs font-bold text-white hover:bg-blue-900 disabled:opacity-60"
           >
             {action === "install" ? (
               <RotateCw className="h-3 w-3" />
@@ -151,7 +151,7 @@ export function SidebarUpdatePill({ collapsed }: { collapsed: boolean }) {
               type="button"
               onClick={dismiss}
               aria-label="Ẩn thông báo cập nhật desktop"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-sky-800 hover:bg-sky-100"
+              className="flex h-7 w-7 items-center justify-center rounded text-blue-800 hover:bg-blue-100"
             >
               <X className="h-3.5 w-3.5" />
             </button>

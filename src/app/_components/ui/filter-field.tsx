@@ -41,7 +41,7 @@ export function FilterField({
       {error}
     </span>
   ) : helper ? (
-    <span id={messageId} className="text-xs text-slate-500">
+    <span id={messageId} className="text-xs text-slate-700">
       {helper}
     </span>
   ) : null;

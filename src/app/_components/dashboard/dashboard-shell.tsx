@@ -20,25 +20,22 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="animate-rise flex min-h-full flex-col space-y-4">
-      <header className="border-b border-slate-200 pb-3.5">
+    <section className="flex min-h-full flex-col space-y-2">
+      <header className="border-b border-slate-400 pb-2">
         <Breadcrumbs />
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
           <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <span
-                className="h-7 w-1 rounded-full bg-gradient-to-b from-[var(--brand-from)] via-[var(--brand-via)] to-[var(--brand-to)]"
-                aria-hidden
-              />
+            <div className="flex items-center gap-2">
+              <span className="h-7 w-1 rounded bg-brand" aria-hidden />
               <h1 className="text-2xl leading-tight font-extrabold tracking-tight text-balance text-slate-950">
                 {title}
               </h1>
             </div>
-            <p className="mt-1.5 max-w-4xl pl-3.5 text-sm leading-6 text-pretty text-slate-600">
+            <p className="mt-1 max-w-4xl pl-3 text-base leading-snug text-pretty text-slate-800">
               {description}
             </p>
           </div>
-          <div className="hidden rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold tracking-wide text-slate-500 shadow-[var(--shadow-flat)] sm:block">
+          <div className="rounded border border-slate-400 bg-white px-2 py-1 text-xs font-bold tracking-wide text-slate-700 shadow-[var(--shadow-flat)]">
             BidTool v3
           </div>
         </div>

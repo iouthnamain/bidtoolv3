@@ -3,7 +3,7 @@ import { DesktopSettingsSection } from "~/app/_components/dashboard/desktop-sett
 import { requireAdminRole } from "../require-page-permission";
 
 export const metadata = createPageMetadata({
-  title: "Desktop client",
+  title: "Ứng dụng desktop",
   description: "Cấu hình server URL cho BidTool desktop client.",
   path: "/settings/desktop",
   noIndex: true,

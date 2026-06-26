@@ -31,15 +31,15 @@ export function WorkflowDetailRunsClient({
 
   return (
     <section className="panel p-4">
-      <div className="border-b border-slate-200 pb-3">
+      <div className="border-b border-slate-400 pb-3">
         <h2 className="text-sm font-bold">Lịch sử chạy</h2>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-700">
           Theo dõi thông điệp, thời gian bắt đầu và kết quả cho từng lần chạy.
         </p>
       </div>
 
       {runsQuery.isLoading ? (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+        <div className="mt-3 rounded border border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-600">
           Đang tải lịch sử chạy…
         </div>
       ) : runHistory.length === 0 ? (
@@ -53,7 +53,7 @@ export function WorkflowDetailRunsClient({
           {runHistory.map((run) => (
             <li
               key={run.id}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"
+              className="rounded border border-slate-400 bg-slate-50 px-3 py-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -62,7 +62,7 @@ export function WorkflowDetailRunsClient({
                     {formatDateTime(run.startedAt)}
                   </span>
                 </div>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-700">
                   Kết thúc: {formatDateTime(run.finishedAt)}
                 </span>
               </div>

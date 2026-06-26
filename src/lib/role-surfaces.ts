@@ -67,7 +67,7 @@ export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
     tone: "sky",
     landingPath: "/admin",
     summary: "Toàn quyền vận hành và quản trị hệ thống.",
-    see: ["Toàn bộ dashboard nội bộ", "Operations", "Administration", "Activity"],
+    see: ["Toàn bộ dashboard nội bộ", "Vận hành", "Quản trị", "Hoạt động"],
     do: [
       "Quản lý người dùng và tổ chức",
       "Cấu hình AI, cập nhật và desktop",
@@ -80,7 +80,7 @@ export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
     tone: "violet",
     landingPath: "/manager",
     summary: "Quản trị người dùng, tổ chức và cấu hình; không làm nghiệp vụ.",
-    see: ["Governance", "Activity", "Trợ giúp"],
+    see: ["Điều hành", "Hoạt động", "Trợ giúp"],
     do: ["Quản lý user", "Quản lý tenant", "Cấu hình AI"],
     cannot: [
       "Không tạo/sửa vật tư",
@@ -93,7 +93,7 @@ export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
     tone: "emerald",
     landingPath: "/staff",
     summary: "Làm toàn bộ tác vụ nghiệp vụ; không quản trị hệ thống.",
-    see: ["Operations", "Activity", "Trợ giúp"],
+    see: ["Vận hành", "Hoạt động", "Trợ giúp"],
     do: [
       "Tìm kiếm, lưu watchlist và smart view",
       "Quản lý vật tư, catalog, workflow",
@@ -106,7 +106,7 @@ export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
     tone: "amber",
     landingPath: "/portal",
     summary: "Cổng khách hàng chỉ để xem dữ liệu thuộc tổ chức của mình.",
-    see: ["Thông báo", "Job nghiên cứu", "Job làm giàu", "Watchlist tenant"],
+    see: ["Thông báo", "Job nghiên cứu", "Job làm giàu", "Danh sách theo dõi tenant"],
     do: ["Xem tiến độ và kết quả được chia sẻ"],
     cannot: ["Không vào dashboard nội bộ", "Không tạo/sửa/chạy tác vụ"],
   },
@@ -124,19 +124,19 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
     items: [
       {
         href: "/admin",
-        label: "Admin dashboard",
+        label: "Bảng điều khiển quản trị",
         icon: "admin",
         roles: ["admin"],
       },
       {
         href: "/manager",
-        label: "Manager dashboard",
+        label: "Bảng điều khiển quản lý",
         icon: "settings",
         roles: ["manager"],
       },
       {
         href: "/staff",
-        label: "Staff dashboard",
+        label: "Bảng điều khiển nhân viên",
         icon: "dashboard",
         roles: ["staff"],
       },
@@ -144,7 +144,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
   },
   {
     id: "operations",
-    title: "Operations",
+    title: "Vận hành",
     roles: OPERATIONS_ROLES,
     items: [
       {
@@ -162,7 +162,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
       },
       {
         href: "/documents",
-        label: "Documents",
+        label: "Tài liệu",
         icon: "documents",
         roles: OPERATIONS_ROLES,
       },
@@ -185,7 +185,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
           },
           {
             href: "/materials/scrape",
-            label: "Scrape shop",
+            label: "Quét cửa hàng",
             permission: "scrape:run",
           },
         ],
@@ -232,12 +232,12 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
       },
       {
         href: "/saved-items",
-        label: "Bộ lọc & Watchlist",
+        label: "Bộ lọc & theo dõi",
         icon: "saved",
         roles: OPERATIONS_ROLES,
         subItems: [
-          { href: "/saved-items/smart-views", label: "Smart Views" },
-          { href: "/saved-items/watchlist", label: "Watchlist" },
+          { href: "/saved-items/smart-views", label: "Bộ lọc thông minh" },
+          { href: "/saved-items/watchlist", label: "Danh sách theo dõi" },
         ],
       },
       {
@@ -255,7 +255,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
   },
   {
     id: "administration",
-    title: "Administration",
+    title: "Quản trị",
     roles: ["admin"],
     items: [
       {
@@ -266,20 +266,20 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         subItems: [
           { href: "/settings/users", label: "Người dùng" },
           { href: "/settings/tenants", label: "Tổ chức" },
-          { href: "/settings/ai", label: "AI Providers" },
+          { href: "/settings/ai", label: "Nhà cung cấp AI" },
           {
             href: "/settings/updates",
             label: "Cập nhật",
             permission: "onprem:admin",
           },
-          { href: "/settings/desktop", label: "Desktop client" },
+          { href: "/settings/desktop", label: "Ứng dụng desktop" },
         ],
       },
     ],
   },
   {
     id: "governance",
-    title: "Governance",
+    title: "Điều hành",
     roles: GOVERNANCE_ROLES,
     items: [
       {
@@ -301,10 +301,10 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
           },
           {
             href: "/settings/ai",
-            label: "AI Providers",
+            label: "Nhà cung cấp AI",
             permission: "settings:manage",
           },
-          { href: "/settings/desktop", label: "Desktop client", roles: ["admin"] },
+          { href: "/settings/desktop", label: "Ứng dụng desktop", roles: ["admin"] },
           {
             href: "/settings/updates",
             label: "Cập nhật",
@@ -316,7 +316,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
   },
   {
     id: "activity",
-    title: "Activity",
+    title: "Hoạt động",
     roles: INTERNAL_ROLES,
     items: [
       {
@@ -329,7 +329,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
   },
   {
     id: "support",
-    title: "Support",
+    title: "Hỗ trợ",
     roles: INTERNAL_ROLES,
     items: [
       {
@@ -343,17 +343,17 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
           { href: "/help/bat-dau", label: "Bắt đầu" },
           { href: "/help/cap-nhat-hang-ngay", label: "Vận hành" },
           { href: "/help/tim-kiem", label: "Tìm kiếm" },
-          { href: "/help/smart-view", label: "Smart Views" },
+          { href: "/help/smart-view", label: "Bộ lọc thông minh" },
           { href: "/help/quy-trinh", label: "Quy trình" },
           { href: "/help/thong-bao", label: "Thông báo" },
-          { href: "/help/import-mapping", label: "Import & Mapping" },
+          { href: "/help/import-mapping", label: "Nhập & ánh xạ" },
           { href: "/help/vat-tu", label: "Vật tư" },
           { href: "/help/khac-phuc-loi", label: "Khắc phục lỗi" },
         ],
       },
       {
         href: "/chat",
-        label: "Chat sandbox",
+        label: "Thử nghiệm chat",
         icon: "chat",
         roles: OPERATIONS_ROLES,
         permission: "ai:run",

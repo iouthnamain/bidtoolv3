@@ -4,47 +4,63 @@
   --font-sans:
     var(--font-be-vietnam-pro), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand-1);
+  --color-brand-muted: var(--brand-2);
+  --color-line: var(--line-soft);
+  --color-line-strong: var(--line-strong);
+  --color-critical: var(--critical);
+  --color-warning: var(--warning);
+  --color-good: var(--good);
+  --color-ring: var(--ring);
+
+  --radius-panel: 4px;
 }
 
 :root {
+  --surface-canvas: #f1f5f9;
   --surface-1: #ffffff;
   --surface-2: #f8fafc;
-  --surface-3: #eef2f7;
-  --surface-4: #e2e8f0;
-  --line-soft: #e2e8f0;
-  --line-strong: #cbd5e1;
+  --surface-3: #e2e8f0;
+  --surface-4: #cbd5e1;
+  --line-soft: #94a3b8;
+  --line-strong: #64748b;
   --ink-1: #0f172a;
-  --ink-2: #334155;
-  --ink-3: #64748b;
-  --brand-1: #0f766e;
-  --brand-2: #0369a1;
+  --ink-2: #1e293b;
+  --ink-3: #475569;
+  --brand-1: #1d4ed8;
+  --brand-2: #2563eb;
   --critical: #be123c;
   --warning: #b45309;
   --good: #047857;
-  --ring: #0284c7;
+  --ring: #3b82f6;
   --ring-offset: 2px;
 
-  /* Brand gradient (logo-derived) for hero accents and highlights */
-  --brand-from: #0e7490;
-  --brand-via: #075985;
-  --brand-to: #115e59;
-
-  /* Elevation tiers for visual hierarchy */
-  --shadow-flat: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-raised:
-    0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow-overlay:
-    0 8px 24px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-flat: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-raised: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-overlay: 0 4px 16px rgba(15, 23, 42, 0.12);
 }
 
 html {
   color-scheme: light;
-  scroll-behavior: smooth;
+  font-size: 18px;
+  scroll-behavior: auto;
 }
 
 body {
   min-height: 100vh;
   overflow-x: hidden;
+  background: var(--surface-canvas);
+  color: var(--ink-1);
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 button,
@@ -53,139 +69,112 @@ input,
 select,
 textarea {
   touch-action: manipulation;
-  -webkit-tap-highlight-color: rgba(14, 116, 144, 0.16);
+  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.16);
 }
 
 .app-bg {
-  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 42%, #edf2f7 100%);
+  background: var(--surface-canvas);
 }
 
 .panel {
-  border: 1px solid color-mix(in srgb, var(--line-soft) 86%, white 14%);
+  border: 1px solid var(--line-soft);
   background: var(--surface-1);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow-flat);
 }
 
-/* Raised panel for primary/interactive cards */
 .panel-raised {
-  border: 1px solid color-mix(in srgb, var(--line-soft) 80%, white 20%);
+  border: 1px solid var(--line-soft);
   background: var(--surface-1);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow-raised);
 }
 
-/* Subtle brand gradient accent surface for hero/highlight moments */
 .brand-surface {
-  background: linear-gradient(
-    135deg,
-    var(--brand-from) 0%,
-    var(--brand-via) 55%,
-    var(--brand-to) 100%
-  );
-  color: #f0fdfa;
+  background: var(--brand-1);
+  color: #eff6ff;
 }
 
-/* Thin gradient rule for section dividers / progress accents */
 .brand-rule {
   height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    var(--brand-from) 0%,
-    var(--brand-via) 50%,
-    var(--brand-to) 100%
-  );
+  border-radius: var(--radius-panel);
+  background: var(--brand-1);
 }
 
-/* KPI stat number emphasis */
 .stat-value {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
 
 .chip {
-  border-radius: 999px;
+  border-radius: var(--radius-panel);
   border: 1px solid var(--line-strong);
   background: white;
-  padding: 0.125rem 0.5rem;
-  font-size: 11px;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
   line-height: 1.2;
   color: var(--ink-2);
 }
 
 .section-title {
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
-/* Shared focus ring */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+}
+
+.data-table thead th {
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-1);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.data-table tbody td {
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-1);
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: var(--surface-2);
+}
+
 .focus-ring {
   outline: none;
 }
+
 .focus-ring:focus-visible {
   box-shadow:
     0 0 0 var(--ring-offset) var(--surface-1),
     0 0 0 calc(var(--ring-offset) + 2px) var(--ring);
 }
 
-/* Smooth dialog backdrop */
 dialog::backdrop {
-  transition: opacity 150ms ease;
-}
-dialog[open]::backdrop {
-  opacity: 1;
+  background: rgba(15, 23, 42, 0.45);
 }
 
-/* Toast entry animation */
-@keyframes toast-enter {
-  from {
-    opacity: 0;
-    transform: translateX(1rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.toast-enter {
-  animation: toast-enter 200ms ease-out;
-}
-
-/* Shimmer for skeleton loaders */
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
   }
 }
 
-/* Subtle page/section enter animation */
-@keyframes fade-rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-rise {
-  animation: fade-rise 280ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  .toast-enter,
-  .animate-rise {
-    animation: none;
   }
 }

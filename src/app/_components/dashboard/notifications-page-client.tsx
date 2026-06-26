@@ -80,7 +80,7 @@ export function NotificationsPageClient() {
   });
 
   return (
-    <div className="animate-rise">
+    <div className="">
       <section id="notification-list" className="panel scroll-mt-6 p-4">
       <ConfirmDialog
         open={confirmDelete}
@@ -93,10 +93,10 @@ export function NotificationsPageClient() {
         onCancel={() => setConfirmDelete(false)}
       />
 
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 pb-3">
         <div>
           <h2 className="text-sm font-bold">Thông báo trong ứng dụng</h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-700">
             Theo dõi cảnh báo được tạo từ workflow và dọn hộp thông báo sau khi
             xử lý.
           </p>
@@ -161,17 +161,17 @@ export function NotificationsPageClient() {
           {notifications.map((item) => (
             <li
               key={item.id}
-              className={`rounded-xl border border-l-2 px-4 py-3 transition-colors duration-150 ${
+              className={`rounded border border-l-2 px-4 py-3 transition-colors duration-0 ${
                 sel.selected.has(item.id)
-                  ? "border-sky-300 border-l-sky-400 bg-sky-50 ring-1 ring-sky-200"
+                  ? "border-blue-300 border-l-blue-400 bg-blue-50 ring-1 ring-blue-200"
                   : item.isRead
-                    ? "border-slate-200 border-l-slate-300 bg-slate-50 hover:bg-slate-100/60"
-                    : "border-sky-200 border-l-sky-400 bg-sky-50/30 hover:bg-sky-50/60"
+                    ? "border-slate-400 border-l-slate-300 bg-slate-50 hover:bg-slate-100/60"
+                    : "border-blue-200 border-l-blue-400 bg-blue-50/30 hover:bg-blue-50/60"
               }`}
             >
               <div className="flex items-start gap-2">
                 <label
-                  className="relative -ml-2 flex h-10 w-10 shrink-0 cursor-pointer items-start justify-center rounded-md pt-1.5 transition-colors focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 hover:bg-white/70"
+                  className="relative -ml-2 flex h-10 w-10 shrink-0 cursor-pointer items-start justify-center rounded pt-1.5 transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 hover:bg-white/70"
                   data-testid="notification-select-target"
                 >
                   <input
@@ -183,7 +183,7 @@ export function NotificationsPageClient() {
                   />
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-white transition-colors peer-checked:border-sky-700 peer-checked:bg-sky-700"
+                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded border border-slate-400 bg-white text-white transition-colors peer-checked:border-blue-700 peer-checked:bg-blue-700"
                   >
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   </span>
@@ -203,7 +203,7 @@ export function NotificationsPageClient() {
                     {!item.isRead ? <Badge tone="info">Mới</Badge> : null}
                   </div>
                   <p className="mt-1 line-clamp-1 text-sm text-slate-700">{item.body}</p>
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-700">
                     {formatDateTime(item.createdAt)}
                   </p>
                 </div>

@@ -93,7 +93,7 @@ export function ExportDestinationModal({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-auto w-full max-w-lg rounded-lg border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 z-50 m-auto w-full max-w-lg rounded border border-slate-400 bg-white p-0 shadow-xl backdrop:bg-slate-900/40 "
       onKeyDown={handleKeyDown}
       onClick={handleBackdropClick}
       aria-labelledby="export-destination-title"
@@ -121,7 +121,7 @@ export function ExportDestinationModal({
                 value={outputDirPath}
                 onChange={(event) => setOutputDirPath(event.target.value)}
                 placeholder="/home/user/Downloads"
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                className="min-w-0 flex-1 rounded border border-slate-400 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 disabled={isExporting}
               />
               {isDesktop ? (

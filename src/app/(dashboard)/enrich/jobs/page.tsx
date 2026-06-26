@@ -17,7 +17,7 @@ export default function EnrichJobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="panel p-5 text-sm text-slate-600">
+        <div className="panel p-2 text-sm text-slate-600">
           Đang tải danh sách job…
         </div>
       }

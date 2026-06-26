@@ -52,7 +52,7 @@ export function SettingsStatusStrip() {
     return (
       <section
         id="settings-overview"
-        className="scroll-mt-6 grid gap-3 sm:grid-cols-3"
+        className="scroll-mt-6 grid gap-1 sm:grid-cols-3"
         aria-label="Đang tải trạng thái cài đặt"
         aria-busy="true"
       >
@@ -72,44 +72,44 @@ export function SettingsStatusStrip() {
   return (
     <section
       id="settings-overview"
-      className="scroll-mt-6 grid gap-3 sm:grid-cols-3"
+      className="scroll-mt-6 grid gap-1 sm:grid-cols-3"
       aria-label="Tóm tắt cài đặt"
     >
-      <article className="panel rounded-lg p-4">
+      <article className="panel rounded p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+          <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
             Phiên bản hiện tại
           </p>
-          <SurfaceIcon className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <SurfaceIcon className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
         </div>
         <p className="mt-2 text-lg font-bold tracking-tight text-slate-950 tabular-nums">
           {versionStatus.current}
         </p>
         {versionStatus.buildMetadata !== null &&
         versionStatus.buildMetadata !== undefined ? (
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-700">
             {versionStatus.buildMetadata}
           </p>
         ) : null}
       </article>
 
-      <article className="panel rounded-lg p-4">
-        <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+      <article className="panel rounded p-4">
+        <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
           Môi trường
         </p>
         <p className="mt-2 text-lg font-bold tracking-tight text-slate-950">
           {formatSurfaceLabel(versionStatus.surface)}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-700">
           {versionStatus.latest
             ? `Mới nhất: ${formatBuildLabel(versionStatus.latest, versionStatus.latestBuildMetadata)}`
             : "Chưa xác định bản mới nhất"}
         </p>
       </article>
 
-      <article className="panel rounded-lg p-4">
+      <article className="panel rounded p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+          <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
             Cập nhật
           </p>
           <Badge tone={updateTone}>{updateLabel}</Badge>
@@ -119,7 +119,7 @@ export function SettingsStatusStrip() {
             ? "Có bản cập nhật sẵn sàng"
             : "Không có bản mới"}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-700">
           {versionStatus.surface === "web"
             ? "Web được promote tự động từ tag v*"
             : versionStatus.surface === "onprem"

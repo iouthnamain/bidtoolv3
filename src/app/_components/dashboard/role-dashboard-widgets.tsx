@@ -24,11 +24,11 @@ const toneClass: Record<
   NonNullable<DashboardMetric["tone"]>,
   { border: string; badge: "neutral" | "success" | "warning" | "critical" | "info" }
 > = {
-  neutral: { border: "border-slate-200", badge: "neutral" },
+  neutral: { border: "border-slate-400", badge: "neutral" },
   success: { border: "border-emerald-200", badge: "success" },
   warning: { border: "border-amber-200", badge: "warning" },
   critical: { border: "border-rose-200", badge: "critical" },
-  info: { border: "border-sky-200", badge: "info" },
+  info: { border: "border-blue-200", badge: "info" },
 };
 
 export function RoleDashboardFrame({
@@ -49,13 +49,13 @@ export function RoleDashboardFrame({
   const capability = ROLE_CAPABILITIES[role];
 
   return (
-    <section className="animate-rise flex min-h-full flex-col gap-3">
-      <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="flex min-h-full flex-col gap-1">
+      <header className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="info">{ROLE_LABELS[role]}</Badge>
-              <span className="text-xs font-bold tracking-[0.16em] text-slate-400 uppercase">
+              <span className="text-xs font-bold tracking-[0.16em] text-slate-600 uppercase">
                 {eyebrow}
               </span>
             </div>
@@ -68,7 +68,7 @@ export function RoleDashboardFrame({
           </div>
           <div className="flex flex-col items-end gap-2">
             {primaryAction}
-            <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-500">
+            <span className="rounded border border-slate-400 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
               {capability.summary}
             </span>
           </div>
@@ -87,10 +87,10 @@ export function MetricStrip({ metrics }: { metrics: DashboardMetric[] }) {
         return (
           <article
             key={metric.label}
-            className={`rounded-lg border ${tone.border} bg-white px-3 py-2.5 shadow-sm`}
+            className={`rounded border ${tone.border} bg-white px-3 py-2.5 shadow-sm`}
           >
             <div className="flex items-start justify-between gap-2">
-              <p className="text-[11px] font-bold tracking-[0.14em] text-slate-500 uppercase">
+              <p className="text-xs font-bold tracking-[0.14em] text-slate-700 uppercase">
                 {metric.label}
               </p>
               {metric.tone ? <Badge tone={tone.badge}>{metric.tone}</Badge> : null}
@@ -99,7 +99,7 @@ export function MetricStrip({ metrics }: { metrics: DashboardMetric[] }) {
               {metric.value}
             </p>
             {metric.hint ? (
-              <p className="mt-0.5 truncate text-xs text-slate-500">
+              <p className="mt-0.5 truncate text-xs text-slate-700">
                 {metric.hint}
               </p>
             ) : null}
@@ -122,18 +122,18 @@ export function WorkQueuePanel({
   emptyText?: string;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+    <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-1 border-b border-slate-400 pb-3">
         <div>
           <p className="section-title">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-700">{description}</p>
         </div>
         <Badge tone={items.length > 0 ? "warning" : "success"}>
           {items.length}
         </Badge>
       </div>
       {items.length === 0 ? (
-        <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+        <div className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-4 text-center text-xs text-slate-700">
           {emptyText}
         </div>
       ) : (
@@ -141,7 +141,7 @@ export function WorkQueuePanel({
           {items.map((item) => {
             const content = (
               <div className="flex items-start gap-2 py-2.5">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-950">
@@ -149,12 +149,12 @@ export function WorkQueuePanel({
                     </p>
                     <Badge tone={item.tone ?? "neutral"}>{item.tone ?? "info"}</Badge>
                   </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-slate-500">
+                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-slate-700">
                     {item.meta}
                   </p>
                 </div>
                 {item.href ? (
-                  <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-600" />
                 ) : null}
               </div>
             );
@@ -178,7 +178,7 @@ export function WorkQueuePanel({
 
 export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <p className="section-title">Lối tắt</p>
@@ -186,7 +186,7 @@ export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
             Mở tác vụ thường dùng
           </h2>
         </div>
-        <CheckCircle2 className="h-4 w-4 text-slate-400" aria-hidden="true" />
+        <CheckCircle2 className="h-4 w-4 text-slate-600" aria-hidden="true" />
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => {
@@ -195,13 +195,13 @@ export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
             <Link
               key={item.href}
               href={item.href}
-              className="group rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-3 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+              className="group rounded border border-slate-400 bg-slate-50/70 px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             >
-              <Icon className="h-4 w-4 text-sky-700" aria-hidden="true" />
+              <Icon className="h-4 w-4 text-blue-700" aria-hidden="true" />
               <p className="mt-2 text-sm font-bold text-slate-950">
                 {item.label}
               </p>
-              <p className="mt-0.5 text-xs leading-5 text-slate-500">
+              <p className="mt-0.5 text-xs leading-5 text-slate-700">
                 {item.description}
               </p>
             </Link>
@@ -220,9 +220,9 @@ export function RoleBoundaryNotice({
   items: readonly string[];
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <section className="rounded border border-slate-400 bg-slate-50 p-4">
       <div className="flex items-center gap-2">
-        <EyeOff className="h-4 w-4 text-slate-400" aria-hidden="true" />
+        <EyeOff className="h-4 w-4 text-slate-600" aria-hidden="true" />
         <h2 className="text-sm font-bold text-slate-900">{title}</h2>
       </div>
       <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-slate-600 sm:grid-cols-2">

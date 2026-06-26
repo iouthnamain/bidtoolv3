@@ -57,29 +57,29 @@ export function ProductCandidateCard({
         }
       }}
       aria-pressed={isSelected}
-      className={`group relative flex w-full cursor-pointer flex-col gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         isSelected
-          ? "border-sky-500 bg-sky-50 ring-1 ring-sky-400"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+          ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
+          : "border-slate-400 bg-white hover:border-slate-400 hover:bg-slate-50"
       }`}
     >
       {isRecommended ? (
-        <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+        <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
           <Sparkles className="h-3 w-3" aria-hidden />
           Gợi ý tốt nhất
         </span>
       ) : null}
       {hotkeyIndex && hotkeyIndex <= 9 ? (
         <span
-          className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-200 bg-white text-[10px] font-bold text-slate-500 tabular-nums"
+          className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 bg-white text-xs font-bold text-slate-700 tabular-nums"
           aria-hidden
         >
           {hotkeyIndex}
         </span>
       ) : null}
 
-      <div className="flex gap-3">
-        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+      <div className="flex gap-1">
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
           {candidate.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -99,7 +99,7 @@ export function ProductCandidateCard({
           <p className="line-clamp-2 text-sm font-bold text-slate-900">
             {candidate.name}
           </p>
-          <p className="mt-0.5 truncate text-xs text-slate-500">
+          <p className="mt-0.5 truncate text-xs text-slate-700">
             {candidate.code ? `${candidate.code} · ` : ""}
             {candidate.manufacturer ?? "NSX —"}
             {candidate.originCountry ? ` · ${candidate.originCountry}` : ""}
@@ -135,7 +135,7 @@ export function ProductCandidateCard({
           {chips.map((chip) => (
             <span
               key={chip}
-              className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
+              className="rounded border border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600"
             >
               {chip}
             </span>
@@ -143,8 +143,8 @@ export function ProductCandidateCard({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
-        <span className="text-[11px] font-medium text-slate-500">
+      <div className="flex items-center justify-between gap-2 border-t border-slate-400 pt-2">
+        <span className="text-xs font-medium text-slate-700">
           {fillCount > 0
             ? `Sẽ điền ${fillCount} trường trống`
             : "Không có trường trống để điền"}
@@ -156,7 +156,7 @@ export function ProductCandidateCard({
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
           >
             <ExternalLink className="h-3 w-3" aria-hidden />
             Nguồn
@@ -165,9 +165,9 @@ export function ProductCandidateCard({
       </div>
 
       <span
-        className={`pointer-events-none rounded-lg px-3 py-1.5 text-center text-xs font-bold transition-colors ${
+        className={`pointer-events-none rounded px-3 py-1.5 text-center text-xs font-bold transition-colors ${
           isSelected
-            ? "bg-sky-600 text-white"
+            ? "bg-blue-600 text-white"
             : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
         }`}
       >

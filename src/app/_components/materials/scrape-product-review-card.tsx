@@ -49,14 +49,14 @@ export function ScrapeProductReviewCard({
     <article
       className={
         selected
-          ? "rounded-xl border border-sky-200 bg-sky-50 p-3 shadow-sm"
-          : "rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+          ? "rounded border border-blue-200 bg-blue-50 p-3 shadow-sm"
+          : "rounded border border-slate-400 bg-white p-3 shadow-sm"
       }
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-1">
         <input
           type="checkbox"
-          className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 accent-sky-600"
+          className="mt-1 h-4 w-4 shrink-0 rounded border-slate-400 accent-blue-600"
           checked={selected}
           disabled={disabled}
           onChange={onToggle}
@@ -73,32 +73,32 @@ export function ScrapeProductReviewCard({
           </div>
           <button
             type="button"
-            className="mt-2 block w-full text-left text-sm font-bold text-slate-950 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="mt-2 block w-full text-left text-sm font-bold text-slate-950 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={onOpen}
           >
             {name}
           </button>
-          <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+          <p className="mt-1 line-clamp-2 text-xs text-slate-700">
             {infoSummary || "Không có SKU / model / trạng thái"}
           </p>
         </div>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Giá</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Giá</dt>
           <dd className="font-bold text-slate-900 tabular-nums">{priceText}</dd>
         </div>
-        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Đơn vị</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Đơn vị</dt>
           <dd className="font-bold text-slate-900">{unit}</dd>
         </div>
-        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">NCC</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">NCC</dt>
           <dd className="line-clamp-2 text-slate-800">{manufacturer}</dd>
         </div>
-        <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Xuất xứ</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Xuất xứ</dt>
           <dd className="line-clamp-2 text-slate-800">{originCountry}</dd>
         </div>
       </dl>
@@ -136,7 +136,7 @@ export function ScrapeProductReviewCard({
           href={sourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+          className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-400 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           Nguồn

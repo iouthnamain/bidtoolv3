@@ -107,13 +107,13 @@ export function WorkflowsListClient() {
   );
 
   return (
-    <div className="animate-rise">
-    <section className="panel-raised p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+    <div className="">
+    <section className="panel-raised p-2">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 pb-3">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-bold">Danh sách workflow</h2>
           <span className="text-2xl font-extrabold stat-value text-slate-900">{workflows.length}</span>
-          <span className="text-xs text-slate-500 ml-1">workflow</span>
+          <span className="text-xs text-slate-700 ml-1">workflow</span>
         </div>
 
         <PermissionGate permission="workflow:write">
@@ -143,16 +143,16 @@ export function WorkflowsListClient() {
             key={filterKey}
             type="button"
             onClick={() => setActiveFilter(filterKey)}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 ${
+            className={`inline-flex min-h-10 items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
               activeFilter === filterKey
                 ? "border-transparent text-white"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             style={activeFilter === filterKey ? { background: 'linear-gradient(135deg, #0e7490, #0369a1)' } : undefined}
           >
             <span>{filterLabels[filterKey]}</span>
             <span
-              className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+              className={`rounded-full px-1.5 py-0.5 text-xs ${
                 activeFilter === filterKey
                   ? "bg-white/20 text-white"
                   : "bg-slate-100 text-slate-600"

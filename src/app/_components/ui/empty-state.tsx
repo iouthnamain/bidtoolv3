@@ -17,16 +17,16 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div
-      className={`rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white px-6 py-8 text-center ${className ?? ""}`}
+      className={`rounded border border-dashed border-slate-400 bg-slate-50 px-2 py-4 text-center ${className ?? ""}`}
     >
       {icon ? (
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-slate-400 shadow-[var(--shadow-raised)] ring-1 ring-slate-100">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded bg-white text-slate-600 shadow-[var(--shadow-raised)] ring-1 ring-slate-100">
           {icon}
         </div>
       ) : null}
       <p className="text-sm font-bold text-slate-800">{title}</p>
       {description ? (
-        <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-slate-500">
+        <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-slate-700">
           {description}
         </p>
       ) : null}

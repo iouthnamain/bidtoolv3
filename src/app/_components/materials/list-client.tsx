@@ -161,7 +161,7 @@ const catalogStatusOptions: Array<{ value: CatalogStatus; label: string }> = [
 ];
 
 const materialControlClass =
-  "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
+  "min-h-11 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
 
 type MaterialViewSearchParams = {
   get(name: string): string | null;
@@ -294,7 +294,7 @@ function materialTableHeaderClass(columnId: string, density: TableDensity) {
 
 const materialCellBaseClass: Record<string, string> = {
   select: "text-center align-top",
-  stt: "text-center align-top text-slate-500 tabular-nums",
+  stt: "text-center align-top text-slate-700 tabular-nums",
   name: "align-top font-semibold text-slate-900",
   code: "align-top font-mono text-xs text-slate-700 truncate",
   unit: "align-top text-slate-700",
@@ -328,13 +328,13 @@ function MaterialMobileCard({
 
   return (
     <article
-      className={`rounded-xl border p-4 shadow-[var(--shadow-raised)] transition-all duration-200 ${
+      className={`rounded border p-4 shadow-[var(--shadow-raised)] transition-all duration-0 ${
         row.getIsSelected()
-          ? "border-sky-200 bg-sky-50/80"
-          : "border-slate-200 bg-white"
+          ? "border-blue-200 bg-blue-50/80"
+          : "border-slate-400 bg-white"
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-1">
         <SelectionCheckbox
           checked={row.getIsSelected()}
           disabled={!row.getCanSelect()}
@@ -342,52 +342,52 @@ function MaterialMobileCard({
           onChange={row.getToggleSelectedHandler()}
         />
         <div className="min-w-0 flex-1">
-          <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+          <span className="text-xs font-semibold text-slate-600 tabular-nums">
             STT {rowNumber.toLocaleString("vi-VN")}
           </span>
           <Link
             href={`/materials/${material.id}`}
-            className="line-clamp-2 text-[15px] font-extrabold text-slate-950 hover:text-sky-700 hover:underline"
+            className="line-clamp-2 text-[15px] font-extrabold text-slate-950 hover:text-blue-700 hover:underline"
           >
             {material.name}
           </Link>
           {material.code ? (
-            <span className="mt-0.5 block font-mono text-[11px] text-slate-400">
+            <span className="mt-0.5 block font-mono text-xs text-slate-600">
               Mã VT: {material.code}
             </span>
           ) : null}
-          <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+          <p className="mt-1 line-clamp-2 text-xs text-slate-700">
             {material.details || material.specText || ""}
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
           {material.unit}
         </span>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
-        <div className="col-span-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
-          <dt className="text-[11px] font-bold text-emerald-700 uppercase">Đơn giá</dt>
+        <div className="col-span-2 rounded border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+          <dt className="text-xs font-bold text-emerald-700 uppercase">Đơn giá</dt>
           <dd className="mt-0.5 stat-value text-xl font-extrabold text-emerald-800 tabular-nums">
             {material.defaultUnitPrice
               ? formatMoney(material.defaultUnitPrice, material.currency)
-              : <span className="text-sm font-semibold text-slate-400 italic">Chưa có giá</span>}
+              : <span className="text-sm font-semibold text-slate-600 italic">Chưa có giá</span>}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">NCC</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">NCC</dt>
           <dd className="mt-0.5 truncate font-semibold text-slate-700">
             {material.manufacturer ?? "-"}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Xuất xứ</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Xuất xứ</dt>
           <dd className="mt-0.5 truncate font-semibold text-slate-700">
             {material.originCountry ?? "-"}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Cập nhật</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Cập nhật</dt>
           <dd className="mt-0.5 font-semibold text-slate-700">
             {formatDate(material.updatedAt)}
           </dd>
@@ -395,7 +395,7 @@ function MaterialMobileCard({
       </dl>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="truncate text-xs text-slate-500">
+        <span className="truncate text-xs text-slate-700">
           {material.catalogDocumentCount > 0
             ? `${material.catalogDocumentCount.toLocaleString("vi-VN")} catalog PDF`
             : material.sourceCount > 0
@@ -405,7 +405,7 @@ function MaterialMobileCard({
         <div className="flex shrink-0 gap-1.5">
           <Link
             href={`/materials/${material.id}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             aria-label={`Mở chi tiết ${material.name}`}
           >
             <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -1136,7 +1136,7 @@ export function MaterialsListClient() {
       {
         id: "stt",
         enableHiding: false,
-        header: () => <span className="text-slate-500">STT</span>,
+        header: () => <span className="text-slate-700">STT</span>,
         cell: ({ row }) => (
           <span>
             {(
@@ -1161,7 +1161,7 @@ export function MaterialsListClient() {
         cell: ({ row }) => (
           <Link
             href={`/materials/${row.original.id}`}
-            className="line-clamp-2 font-semibold hover:text-sky-700 hover:underline"
+            className="line-clamp-2 font-semibold hover:text-blue-700 hover:underline"
           >
             {row.original.name}
           </Link>
@@ -1205,7 +1205,7 @@ export function MaterialsListClient() {
               {row.original.specText || "-"}
             </span>
             {row.original.details ? (
-              <span className="line-clamp-2 text-xs text-slate-400">
+              <span className="line-clamp-2 text-xs text-slate-600">
                 {row.original.details}
               </span>
             ) : null}
@@ -1222,7 +1222,7 @@ export function MaterialsListClient() {
               PDF
             </Badge>
           ) : (
-            <span className="text-xs text-slate-400">-</span>
+            <span className="text-xs text-slate-600">-</span>
           ),
       },
       {
@@ -1273,7 +1273,7 @@ export function MaterialsListClient() {
           />
         ),
         cell: ({ row }) => (
-          <span className={`stat-value font-bold tabular-nums ${row.original.defaultUnitPrice ? "text-emerald-700" : "text-slate-400 italic"}`}>
+          <span className={`stat-value font-bold tabular-nums ${row.original.defaultUnitPrice ? "text-emerald-700" : "text-slate-600 italic"}`}>
             {row.original.defaultUnitPrice
               ? formatMoney(row.original.defaultUnitPrice, row.original.currency)
               : "Chưa có giá"}
@@ -1292,7 +1292,7 @@ export function MaterialsListClient() {
           />
         ),
         cell: ({ row }) => (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-700">
             {formatDate(row.original.updatedAt)}
           </span>
         ),
@@ -1305,7 +1305,7 @@ export function MaterialsListClient() {
           <div className="flex justify-end gap-1.5">
             <Link
               href={`/materials/${row.original.id}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700"
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700"
               aria-label={`Mở chi tiết ${row.original.name}`}
             >
               <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -1313,7 +1313,7 @@ export function MaterialsListClient() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 px-0 text-slate-600 hover:bg-slate-100 hover:text-sky-800"
+              className="h-8 w-8 px-0 text-slate-600 hover:bg-slate-100 hover:text-blue-800"
               disabled={duplicateMaterial.isPending}
               isLoading={duplicatingMaterialId === row.original.id}
               onClick={() => duplicateMaterialRow(row.original.id)}
@@ -1423,7 +1423,7 @@ export function MaterialsListClient() {
 
   const renderPaginationBar = (placement: "top" | "bottom") => (
     <div
-      className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
+      className={`flex flex-col gap-1 rounded border border-slate-400 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
         placement === "top" ? "mt-3" : "mt-3"
       }`}
     >
@@ -1442,7 +1442,7 @@ export function MaterialsListClient() {
         <label className="inline-flex items-center gap-2">
           <span>Số dòng</span>
           <select
-            className="h-10 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            className="h-10 rounded border border-slate-400 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             aria-label="Số dòng mỗi trang"
             value={pagination.pageSize}
             onChange={(event) => {
@@ -1477,7 +1477,7 @@ export function MaterialsListClient() {
             max={totalPages}
             value={pageJumpValue}
             aria-label="Nhảy tới trang"
-            className="h-10 w-14 rounded-md border border-slate-300 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            className="h-10 w-14 rounded border border-slate-400 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             onChange={(event) => setPageJumpValue(event.target.value)}
             onBlur={submitPageJump}
             onKeyDown={(event) => {
@@ -1489,7 +1489,7 @@ export function MaterialsListClient() {
         </label>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang đầu"
           disabled={!canGoToPreviousPage || isFetching}
           onClick={() => goToPage(0)}
@@ -1498,7 +1498,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang trước"
           disabled={!canGoToPreviousPage || isFetching}
           onClick={() => goToPage(pagination.pageIndex - 1)}
@@ -1507,7 +1507,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang sau"
           disabled={!canGoToNextPage || isFetching}
           onClick={() => goToPage(pagination.pageIndex + 1)}
@@ -1516,7 +1516,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang cuối"
           disabled={!canGoToNextPage || isFetching}
           onClick={() => goToPage(totalPages - 1)}
@@ -1557,19 +1557,19 @@ export function MaterialsListClient() {
         onCancel={() => setSingleDeleteTarget(null)}
       />
 
-      <section className="panel-raised p-5">
+      <section className="panel-raised p-2">
         <div className="flex flex-wrap gap-2">
           <PermissionGate permission="material:write">
             <Link
               href="/materials/new"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 sm:min-h-10"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
             >
               <Plus className="h-4 w-4" aria-hidden />
               Thêm thủ công
             </Link>
             <Link
               href="/materials/import"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
@@ -1578,7 +1578,7 @@ export function MaterialsListClient() {
           <Button
             variant="secondary"
             size="sm"
-            className="min-h-11 sm:min-h-10"
+            className="min-h-11"
             leftIcon={<Download className="h-3.5 w-3.5" />}
             isLoading={exportCsvQuery.isFetching}
             disabled={summary.total === 0}
@@ -1589,10 +1589,10 @@ export function MaterialsListClient() {
           <PermissionGate permission="scrape:run">
             <Link
               href="/materials/scrape"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:min-h-10"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               <Search className="h-4 w-4" aria-hidden />
-              Scrape shop
+              Quét cửa hàng
             </Link>
           </PermissionGate>
         </div>
@@ -1600,23 +1600,23 @@ export function MaterialsListClient() {
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-500">Tổng vật tư</p>
-              <PackagePlus className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+              <p className="text-xs font-semibold text-slate-700">Tổng vật tư</p>
+              <PackagePlus className="h-3.5 w-3.5 text-slate-600" aria-hidden />
             </div>
             <p className="mt-0.5 text-base font-bold text-slate-950" aria-label="Tổng vật tư theo bộ lọc">
               {showSummaryLoading ? "-" : summary.total.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-xs font-medium text-slate-700">
               Bấm để xem danh mục
             </p>
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
+            className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${priceStatus === "priced" ? "border-emerald-400 ring-2 ring-emerald-300" : "border-emerald-200 bg-emerald-50/70"}`}
             onClick={() =>
               setPriceStatus((current) =>
                 current === "priced" ? "all" : "priced",
@@ -1634,7 +1634,7 @@ export function MaterialsListClient() {
                 ? "-"
                 : summary.priced.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-emerald-700">
+            <p className="mt-0.5 text-xs font-medium text-emerald-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.priced, summary.total)} — lọc có giá`}
@@ -1642,7 +1642,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
+            className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${priceStatus === "missing" ? "border-amber-400 ring-2 ring-amber-300" : "border-amber-200 bg-amber-50/70"}`}
             onClick={() =>
               setPriceStatus((current) =>
                 current === "missing" ? "all" : "missing",
@@ -1658,27 +1658,27 @@ export function MaterialsListClient() {
                 ? "-"
                 : summary.missingPrice.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-amber-700">
+            <p className="mt-0.5 text-xs font-medium text-amber-700">
               Bấm để lọc thiếu giá
             </p>
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-sky-400 ring-2 ring-sky-300" : "border-sky-200 bg-sky-50/70"}`}
+            className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${sourceStatus === "with" ? "border-blue-400 ring-2 ring-blue-300" : "border-blue-200 bg-blue-50/70"}`}
             onClick={() =>
               setSourceStatus((current) => (current === "with" ? "all" : "with"))
             }
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-sky-700">Có nguồn giá</p>
-              <LinkIcon className="h-3.5 w-3.5 text-sky-600" aria-hidden />
+              <p className="text-xs font-semibold text-blue-700">Có nguồn giá</p>
+              <LinkIcon className="h-3.5 w-3.5 text-blue-600" aria-hidden />
             </div>
-            <p className="mt-0.5 stat-value text-base font-bold text-sky-950">
+            <p className="mt-0.5 stat-value text-base font-bold text-blue-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withSources.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-sky-700">
+            <p className="mt-0.5 text-xs font-medium text-blue-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.withSources, summary.total)} — lọc có nguồn`}
@@ -1686,7 +1686,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
+            className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${catalogStatus === "with" ? "border-violet-400 ring-2 ring-violet-300" : "border-violet-200 bg-violet-50/70"}`}
             onClick={() =>
               setCatalogStatus((current) =>
                 current === "with" ? "all" : "with",
@@ -1704,7 +1704,7 @@ export function MaterialsListClient() {
                 ? "-"
                 : summary.withCatalog.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-violet-700">
+            <p className="mt-0.5 text-xs font-medium text-violet-700">
               {showSummaryLoading
                 ? "-"
                 : `${formatCoverage(summary.withCatalog, summary.total)} — lọc có catalog`}
@@ -1712,19 +1712,19 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-500">Có NCC</p>
-              <Factory className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+              <p className="text-xs font-semibold text-slate-700">Có NCC</p>
+              <Factory className="h-3.5 w-3.5 text-slate-600" aria-hidden />
             </div>
             <p className="mt-0.5 text-base font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withManufacturer.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-xs font-medium text-slate-700">
               {showSummaryLoading
                 ? "-"
                 : `${summary.uniqueManufacturers.toLocaleString("vi-VN")} NCC khác nhau`}
@@ -1732,19 +1732,19 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-500">Có xuất xứ</p>
-              <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+              <p className="text-xs font-semibold text-slate-700">Có xuất xứ</p>
+              <MapPin className="h-3.5 w-3.5 text-slate-600" aria-hidden />
             </div>
             <p className="mt-0.5 text-base font-bold text-slate-950">
               {showSummaryLoading
                 ? "-"
                 : summary.withOrigin.toLocaleString("vi-VN")}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 text-xs font-medium text-slate-700">
               {showSummaryLoading
                 ? "-"
                 : `${summary.uniqueOrigins.toLocaleString("vi-VN")} xuất xứ khác nhau`}
@@ -1753,14 +1753,14 @@ export function MaterialsListClient() {
         </div>
       </section>
 
-      <div className="animate-rise mt-4 space-y-4">
+      <div className="mt-2 space-y-2">
       <section id="material-catalog" className="panel scroll-mt-6 p-4">
-          <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
+          <div className="grid gap-1 border-b border-slate-400 pb-3 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
             <div>
               <h2 className="text-sm font-bold text-slate-950">
                 Danh mục vật tư
               </h2>
-              <p className="mt-1 text-xs text-slate-500" aria-live="polite">
+              <p className="mt-1 text-xs text-slate-700" aria-live="polite">
                 {showInitialLoading
                   ? "Đang tải…"
                   : `${resultRangeLabel} • Trang ${currentPage.toLocaleString(
@@ -1772,7 +1772,7 @@ export function MaterialsListClient() {
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               {isRefreshing ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                   Đang cập nhật
                 </span>
               ) : null}
@@ -1787,7 +1787,7 @@ export function MaterialsListClient() {
               ) : null}
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-400 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 onClick={() => setIsFiltersOpen((open) => !open)}
                 aria-expanded={isFiltersOpen}
                 aria-controls="material-catalog-filters-content"
@@ -1805,7 +1805,7 @@ export function MaterialsListClient() {
                 Đặt lại
               </Button>
               <div
-                className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-[var(--shadow-flat)]"
+                className="inline-flex items-center rounded border border-slate-400 bg-white p-0.5 shadow-[var(--shadow-flat)]"
                 role="group"
                 aria-label="Kiểu hiển thị"
               >
@@ -1814,9 +1814,9 @@ export function MaterialsListClient() {
                   aria-pressed={viewMode === "table"}
                   title="Xem dạng bảng"
                   onClick={() => setViewMode("table")}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-semibold transition-colors ${
                     viewMode === "table"
-                      ? "bg-sky-600 text-white"
+                      ? "bg-blue-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -1828,9 +1828,9 @@ export function MaterialsListClient() {
                   aria-pressed={viewMode === "grid"}
                   title="Xem dạng lưới"
                   onClick={() => setViewMode("grid")}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-semibold transition-colors ${
                     viewMode === "grid"
-                      ? "bg-sky-600 text-white"
+                      ? "bg-blue-600 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
@@ -1877,9 +1877,9 @@ export function MaterialsListClient() {
                 {showColumnPicker ? (
                   <div
                     id="material-column-picker"
-                    className="absolute top-full right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+                    className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-400 bg-white p-3 shadow-lg"
                   >
-                    <p className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                    <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                       Cột tùy chọn
                     </p>
                     <div className="mt-2 grid gap-2">
@@ -1898,14 +1898,14 @@ export function MaterialsListClient() {
                               type="checkbox"
                               checked={tableColumn.getIsVisible()}
                               onChange={tableColumn.getToggleVisibilityHandler()}
-                              className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                              className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                             />
                             {column.label}
                           </label>
                         );
                       })}
                     </div>
-                    <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                    <p className="mt-3 text-xs leading-relaxed text-slate-700">
                       Bấm tiêu đề cột để sắp xếp. Bấm ĐVT/NCC/Xuất xứ để lọc
                       nhanh.
                     </p>
@@ -1917,26 +1917,26 @@ export function MaterialsListClient() {
 
           {activeFilterChips.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+              <span className="text-xs font-bold tracking-[0.12em] text-slate-600 uppercase">
                 Đang lọc
               </span>
               {activeFilterChips.map((chip) => (
                 <button
                   key={chip.key}
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 py-0.5 pr-1.5 pl-2.5 text-xs font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                  className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 py-0.5 pr-1.5 pl-2.5 text-xs font-semibold text-blue-800 transition-colors hover:border-blue-300 hover:bg-blue-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                   onClick={chip.onClear}
                   aria-label={`Bỏ lọc ${chip.label}: ${chip.value}`}
                   title={`Bỏ lọc ${chip.label}`}
                 >
-                  <span className="text-sky-500">{chip.label}:</span>
+                  <span className="text-blue-500">{chip.label}:</span>
                   <span className="max-w-40 truncate">{chip.value}</span>
                   <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 </button>
               ))}
               <button
                 type="button"
-                className="ml-1 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:underline"
+                className="ml-1 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
                 onClick={resetViewControls}
               >
                 Xóa tất cả
@@ -1946,18 +1946,18 @@ export function MaterialsListClient() {
 
           <div
             id="material-catalog-filters"
-            className="mt-3 overflow-hidden rounded-xl border border-slate-200"
+            className="mt-3 overflow-hidden rounded border border-slate-400"
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="flex w-full items-center justify-between gap-1 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               onClick={() => setIsFiltersOpen((open) => !open)}
               aria-expanded={isFiltersOpen}
               aria-controls="material-catalog-filters-content"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <SlidersHorizontal
-                  className="h-4 w-4 shrink-0 text-slate-500"
+                  className="h-4 w-4 shrink-0 text-slate-700"
                   aria-hidden
                 />
                 <span className="text-sm font-bold text-slate-950">
@@ -1965,11 +1965,11 @@ export function MaterialsListClient() {
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
                   {activeFilterCount.toLocaleString("vi-VN")} đang áp dụng
                 </span>
                 <ChevronDown
-                  className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
+                  className={`h-4 w-4 text-slate-700  ${
                     isFiltersOpen ? "rotate-180" : ""
                   }`}
                   aria-hidden
@@ -1980,16 +1980,16 @@ export function MaterialsListClient() {
             {isFiltersOpen ? (
               <div
                 id="material-catalog-filters-content"
-                className="grid gap-3 border-t border-slate-200 bg-slate-50 p-3"
+                className="grid gap-1 border-t border-slate-400 bg-slate-50 p-3"
               >
             <div className="grid gap-2 lg:grid-cols-[minmax(16rem,1.1fr)_minmax(14rem,0.9fr)_repeat(2,minmax(9rem,0.55fr))]">
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Tìm kiếm
                 </span>
                 <span className="relative">
                   <Search
-                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                     aria-hidden
                   />
                   <input
@@ -2003,7 +2003,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Tên chính xác
                 </span>
                 <SearchableSelect
@@ -2017,7 +2017,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Sắp xếp
                 </span>
                 <select
@@ -2037,7 +2037,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Thứ tự
                 </span>
                 <select
@@ -2056,7 +2056,7 @@ export function MaterialsListClient() {
 
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   ĐVT
                 </span>
                 <SearchableSelect
@@ -2070,7 +2070,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Nhóm
                 </span>
                 <SearchableSelect
@@ -2084,7 +2084,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   NCC
                 </span>
                 <SearchableSelect
@@ -2098,7 +2098,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Xuất xứ
                 </span>
                 <SearchableSelect
@@ -2112,7 +2112,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Đơn giá
                 </span>
                 <select
@@ -2132,7 +2132,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Nguồn giá
                 </span>
                 <select
@@ -2152,7 +2152,7 @@ export function MaterialsListClient() {
               </label>
 
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Catalog PDF
                 </span>
                 <select
@@ -2172,7 +2172,7 @@ export function MaterialsListClient() {
               </label>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
               {isFilterOptionsError ? (
                 <button
@@ -2195,17 +2195,17 @@ export function MaterialsListClient() {
           </div>
 
           <div
-            className={`sticky top-2 z-20 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors ${
+            className={`sticky top-2 z-20 mt-3 flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 transition-colors ${
               someSelected
-                ? "border-sky-300 bg-sky-50/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-sky-50/80"
-                : "border-slate-200 bg-slate-50"
+                ? "border-blue-300 bg-blue-50/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-blue-50/80"
+                : "border-slate-400 bg-slate-50"
             }`}
           >
             <label
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+              className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-xs font-semibold ${
                 visibleMaterials.length === 0
-                  ? "cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                  : "cursor-pointer border-sky-200 bg-white text-slate-800 hover:bg-sky-50"
+                  ? "cursor-not-allowed border-slate-400 bg-white text-slate-600"
+                  : "cursor-pointer border-blue-200 bg-white text-slate-800 hover:bg-blue-50"
               }`}
             >
               <SelectionCheckbox
@@ -2220,7 +2220,7 @@ export function MaterialsListClient() {
               <span className="hidden sm:inline">
                 Chọn tất cả đang hiển thị
               </span>
-              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 tabular-nums">
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 tabular-nums">
                 {selectedCount}/{visibleMaterials.length}
               </span>
             </label>
@@ -2228,12 +2228,12 @@ export function MaterialsListClient() {
             <div className="flex flex-wrap items-center gap-2">
               {someSelected ? (
                 <>
-                  <span className="rounded-full border border-sky-300 bg-white px-2.5 py-0.5 text-xs font-bold text-sky-800 tabular-nums">
+                  <span className="rounded-full border border-blue-300 bg-white px-2.5 py-0.5 text-xs font-bold text-blue-800 tabular-nums">
                     {selectedCount.toLocaleString("vi-VN")} đã chọn
                   </span>
                   <button
                     type="button"
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    className="text-xs font-semibold text-slate-700 hover:text-slate-900"
                     onClick={clearSelection}
                   >
                     Bỏ chọn
@@ -2284,14 +2284,14 @@ export function MaterialsListClient() {
           </div>
 
           {bulkEditOpen && someSelected ? (
-            <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+            <div className="mt-3 rounded border border-blue-200 bg-blue-50/60 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-slate-900">
                   Sửa {selectedCount.toLocaleString("vi-VN")} vật tư đã chọn
                 </p>
                 <button
                   type="button"
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                  className="text-xs font-semibold text-slate-700 hover:text-slate-900"
                   onClick={() => setBulkEditOpen(false)}
                 >
                   Đóng
@@ -2303,7 +2303,7 @@ export function MaterialsListClient() {
               </p>
               <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                 <label className="grid gap-1">
-                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Nhóm mới
                   </span>
                   <input
@@ -2315,7 +2315,7 @@ export function MaterialsListClient() {
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     NCC mới
                   </span>
                   <input
@@ -2329,7 +2329,7 @@ export function MaterialsListClient() {
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Xuất xứ mới
                   </span>
                   <input
@@ -2341,7 +2341,7 @@ export function MaterialsListClient() {
                   />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Đơn giá
                   </span>
                   <select
@@ -2362,7 +2362,7 @@ export function MaterialsListClient() {
               </div>
               {bulkPriceMode === "set" ? (
                 <label className="mt-2 grid max-w-xs gap-1">
-                  <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Giá mới
                   </span>
                   <input
@@ -2403,7 +2403,7 @@ export function MaterialsListClient() {
           ) : null}
 
           {attachPdfOpen && someSelected ? (
-            <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+            <div className="mt-3 rounded border border-violet-200 bg-violet-50/50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-slate-900">
                   Gắn catalog PDF cho {selectedCount.toLocaleString("vi-VN")}{" "}
@@ -2411,7 +2411,7 @@ export function MaterialsListClient() {
                 </p>
                 <button
                   type="button"
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                  className="text-xs font-semibold text-slate-700 hover:text-slate-900"
                   onClick={() => setAttachPdfOpen(false)}
                 >
                   Đóng
@@ -2437,11 +2437,11 @@ export function MaterialsListClient() {
               />
               <ul className="mt-2 grid gap-1.5 md:grid-cols-2">
                 {attachPdfDocuments.isLoading ? (
-                  <li className="px-2 py-1 text-xs text-slate-500">
+                  <li className="px-2 py-1 text-xs text-slate-700">
                     Đang tải tài liệu…
                   </li>
                 ) : (attachPdfDocuments.data ?? []).length === 0 ? (
-                  <li className="px-2 py-1 text-xs text-slate-500">
+                  <li className="px-2 py-1 text-xs text-slate-700">
                     Không có tài liệu trong thư viện.
                   </li>
                 ) : (
@@ -2449,7 +2449,7 @@ export function MaterialsListClient() {
                     <li key={document.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-violet-300 hover:bg-violet-50"
+                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-violet-300 hover:bg-violet-50"
                         onClick={() =>
                           attachPdfToMaterials.mutate({
                             documentId: document.id,
@@ -2461,7 +2461,7 @@ export function MaterialsListClient() {
                         <span className="min-w-0 flex-1 truncate font-medium">
                           {document.title}
                         </span>
-                        <span className="shrink-0 text-xs text-slate-500">
+                        <span className="shrink-0 text-xs text-slate-700">
                           {document.linkedMaterialCount} vật tư
                         </span>
                       </button>
@@ -2503,7 +2503,7 @@ export function MaterialsListClient() {
                 ))
               : null}
             {!showInitialLoading && catalogError && visibleRows.length === 0 ? (
-              <div className="rounded-lg border border-rose-200 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
+              <div className="rounded border border-rose-200 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <EmptyState
                   title="Không tải được danh mục vật tư."
                   description={catalogError}
@@ -2518,7 +2518,7 @@ export function MaterialsListClient() {
             {!showInitialLoading &&
             !catalogError &&
             visibleRows.length === 0 ? (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
+              <div className="rounded border border-slate-400 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <EmptyState
                   title="Chưa có sản phẩm / vật tư."
                   description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
@@ -2526,13 +2526,13 @@ export function MaterialsListClient() {
                     <div className="flex flex-wrap justify-center gap-2">
                       <Link
                         href="/materials/new"
-                        className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                        className="inline-flex items-center rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
                       >
                         Thêm thủ công
                       </Link>
                       <Link
                         href="/materials/import"
-                        className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         Nhập sheet
                       </Link>
@@ -2546,13 +2546,13 @@ export function MaterialsListClient() {
           <div className="hidden md:block">{renderPaginationBar("top")}</div>
 
           <div
-            className={`relative mt-3 hidden overflow-hidden rounded-lg border border-slate-200 ${
+            className={`relative mt-3 hidden overflow-hidden rounded border border-slate-400 ${
               viewMode === "table" ? "md:block" : ""
             }`}
             aria-busy={isCatalogBusy}
           >
             {isRefreshing ? (
-              <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-full border border-sky-200 bg-white/95 px-2.5 py-1 text-xs font-semibold text-sky-700 shadow-sm">
+              <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-full border border-blue-200 bg-white/95 px-2.5 py-1 text-xs font-semibold text-blue-700 shadow-sm">
                 Đang cập nhật kết quả
               </div>
             ) : null}
@@ -2560,7 +2560,7 @@ export function MaterialsListClient() {
               aria-label="Danh mục vật tư"
               className="w-full table-fixed divide-y divide-slate-200 text-sm break-words"
             >
-              <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-slate-100/50 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
+              <thead className="sticky top-0 z-10 border-b border-slate-400 bg-slate-200 text-left text-xs font-bold tracking-wide text-slate-900 uppercase">
                 {materialTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -2608,8 +2608,8 @@ export function MaterialsListClient() {
                         key={row.id}
                         className={`cursor-pointer transition-colors duration-100 ${
                           row.getIsSelected()
-                            ? "bg-sky-50/60"
-                            : "hover:bg-sky-50/40"
+                            ? "bg-blue-50/60"
+                            : "hover:bg-blue-50/40"
                         }`}
                         onClick={(event) =>
                           handleMaterialRowClick(event, row.original.id)
@@ -2677,21 +2677,21 @@ export function MaterialsListClient() {
                           <div className="flex flex-wrap justify-center gap-2">
                             <Link
                               href="/materials/new"
-                              className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                              className="inline-flex items-center rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
                             >
                               Thêm thủ công
                             </Link>
                             <Link
                               href="/materials/import"
-                              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                             >
                               Nhập sheet
                             </Link>
                             <Link
                               href="/materials/scrape"
-                              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                             >
-                              Scrape shop
+                              Quét cửa hàng
                             </Link>
                           </div>
                         }

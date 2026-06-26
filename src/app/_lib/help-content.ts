@@ -225,7 +225,7 @@ export const sourceMatrixRows: SourceMatrixRow[] = [
 
 export const importPipeline: FlowNode[] = [
   {
-    step: "Import",
+    step: "Nhập",
     label: "Chọn nguồn",
     body: "Upload `.xlsx` hoặc dán CSV từ catalog vật tư có sẵn.",
   },
@@ -240,7 +240,7 @@ export const importPipeline: FlowNode[] = [
     body: "Ghép tên vật tư, đơn vị, thông số, NCC, xuất xứ và đơn giá.",
   },
   {
-    step: "Save",
+    step: "Lưu",
     label: "Nhập catalog",
     body: "Chỉ lưu khi preview hợp lệ; dòng trùng name + unit được bỏ qua.",
   },
@@ -369,7 +369,7 @@ export const pageDirectory: PageDirectoryItem[] = [
   },
   {
     href: "/materials/scrape",
-    title: "Scrape shop",
+    title: "Quét cửa hàng",
     body: "Chạy job scrape URL shop nhiều trang rồi nhập sản phẩm, giá và nguồn vào catalog.",
   },
   {
@@ -551,7 +551,7 @@ export const sections: Section[] = [
     links: [
       { href: "/materials/import", label: "Nhập catalog" },
       { href: "/enrich", label: "Đối chiếu & điền" },
-      { href: "/materials/scrape", label: "Scrape shop" },
+      { href: "/materials/scrape", label: "Quét cửa hàng" },
     ],
     visual: "import-pipeline",
   },
@@ -598,7 +598,7 @@ export const sections: Section[] = [
     ],
     links: [
       { href: "/materials", label: "Mở Vật tư" },
-      { href: "/materials/scrape", label: "Scrape shop" },
+      { href: "/materials/scrape", label: "Quét cửa hàng" },
       { href: "/catalog-pdfs", label: "Catalog PDFs" },
     ],
     image: {

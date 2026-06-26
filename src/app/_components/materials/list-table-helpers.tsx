@@ -112,7 +112,7 @@ export function SortableHeader<TColumn extends string>({
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-left transition hover:bg-slate-200/70 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+      className={`inline-flex items-center gap-1 rounded px-1 py-0.5 text-left transition hover:bg-slate-200/70 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
         isActive ? "text-slate-900" : "text-slate-600"
       }`}
       aria-label={`Sắp xếp theo ${label}`}
@@ -121,7 +121,7 @@ export function SortableHeader<TColumn extends string>({
     >
       <span>{label}</span>
       <SortIcon
-        className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-sky-700" : "text-slate-400"}`}
+        className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-blue-700" : "text-slate-600"}`}
         aria-hidden
       />
     </button>
@@ -145,7 +145,7 @@ export function QuickFilterCell({
   return (
     <button
       type="button"
-      className="line-clamp-2 text-left hover:text-sky-700 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+      className="line-clamp-2 text-left hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
       title={`Lọc theo "${normalizedValue}"`}
       aria-label={`Lọc theo ${normalizedValue}`}
       onClick={() => onFilter(normalizedValue)}
@@ -183,7 +183,7 @@ export function SelectionCheckbox({
       checked={checked}
       onChange={onChange}
       disabled={disabled}
-      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600 disabled:cursor-not-allowed"
+      className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600 disabled:cursor-not-allowed"
       aria-label={ariaLabel}
     />
   );

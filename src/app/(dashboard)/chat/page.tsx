@@ -4,7 +4,7 @@ import { ChatSandboxClient } from "~/app/_components/chat/chat-sandbox-client";
 export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
-  title: "Chat sandbox",
+  title: "Thử nghiệm chat",
   description:
     "Thử nghiệm chat LLM qua OpenRouter với model tùy chọn trong BidTool v3.",
   path: "/chat",

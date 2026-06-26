@@ -70,17 +70,17 @@ export function SearchableSelect({
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         type="button"
-        className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10"
+        className="flex min-h-11 w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className={value ? "truncate" : "truncate text-slate-500"}>
+        <span className={value ? "truncate" : "truncate text-slate-700"}>
           {displayValue}
         </span>
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-4 w-4 shrink-0 text-slate-600 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
@@ -88,13 +88,13 @@ export function SearchableSelect({
       {open ? (
         <div
           id={listId}
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
+          className="absolute z-20 mt-1 w-full overflow-hidden rounded border border-slate-400 bg-white shadow-lg"
         >
-          <div className="border-b border-slate-100 p-2">
+          <div className="border-b border-slate-400 p-2">
             <input
               ref={searchInputRef}
               type="search"
-              className="min-h-10 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+              className="min-h-10 w-full rounded border border-slate-400 px-2.5 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
               placeholder={placeholder}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -109,14 +109,14 @@ export function SearchableSelect({
             <li role="option" aria-selected={!value}>
               <button
                 type="button"
-                className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${!value ? "bg-sky-50 font-semibold text-sky-800" : "text-slate-700"}`}
+                className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${!value ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-700"}`}
                 onClick={() => selectOption("")}
               >
                 {emptyOptionLabel}
               </button>
             </li>
             {filteredOptions.length === 0 ? (
-              <li role="option" aria-selected={false} className="px-3 py-2 text-xs text-slate-500">
+              <li role="option" aria-selected={false} className="px-3 py-2 text-xs text-slate-700">
                 Không có lựa chọn phù hợp.
               </li>
             ) : (
@@ -124,7 +124,7 @@ export function SearchableSelect({
                 <li key={option} role="option" aria-selected={value === option}>
                   <button
                     type="button"
-                    className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${value === option ? "bg-sky-50 font-semibold text-sky-800" : "text-slate-800"}`}
+                    className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${value === option ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-800"}`}
                     onClick={() => selectOption(option)}
                   >
                     {option}
@@ -134,7 +134,7 @@ export function SearchableSelect({
             )}
           </ul>
           {truncated ? (
-            <p className="border-t border-slate-100 px-3 py-2 text-[11px] text-amber-700">
+            <p className="border-t border-slate-400 px-3 py-2 text-xs text-amber-700">
               Hiển thị tối đa 200 giá trị — dùng ô tìm kiếm chính nếu không
               thấy.
             </p>

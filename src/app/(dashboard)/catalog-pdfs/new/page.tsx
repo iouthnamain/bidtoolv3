@@ -13,7 +13,7 @@ export const metadata = createPageMetadata({
 
 export default function CatalogPdfsNewPage() {
   return (
-    <Suspense fallback={<div className="panel p-5 text-sm text-slate-600">Đang tải…</div>}>
+    <Suspense fallback={<div className="panel p-2 text-sm text-slate-600">Đang tải…</div>}>
       <CatalogPdfLibraryClient view="new" />
     </Suspense>
   );

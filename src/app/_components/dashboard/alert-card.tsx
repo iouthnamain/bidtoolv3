@@ -40,13 +40,13 @@ const severityConfig: Record<
     icon: AlertTriangle,
   },
   low: {
-    bar: "bg-sky-500",
-    bg: "bg-sky-50",
-    border: "border-sky-200",
-    title: "text-sky-950",
-    body: "text-sky-800",
-    label: "text-sky-700",
-    labelBg: "bg-sky-100 border-sky-200",
+    bar: "bg-blue-500",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    title: "text-blue-950",
+    body: "text-blue-800",
+    label: "text-blue-700",
+    labelBg: "bg-blue-100 border-blue-200",
     icon: Info,
   },
 };
@@ -63,7 +63,7 @@ export function AlertCard({ title, body, severity }: AlertCardProps) {
 
   return (
     <article
-      className={`relative overflow-hidden rounded-xl border ${cfg.bg} ${cfg.border} p-3.5`}
+      className={`relative overflow-hidden rounded border ${cfg.bg} ${cfg.border} p-3.5`}
     >
       {/* Left severity bar */}
       <div className={`absolute inset-y-0 left-0 w-1 ${cfg.bar}`} />
@@ -79,7 +79,7 @@ export function AlertCard({ title, body, severity }: AlertCardProps) {
           </p>
         </div>
         <span
-          className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${cfg.labelBg} ${cfg.label}`}
+          className={`shrink-0 rounded border px-1.5 py-0.5 text-xs font-bold ${cfg.labelBg} ${cfg.label}`}
         >
           {severityLabel[severity]}
         </span>

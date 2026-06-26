@@ -132,8 +132,8 @@ export function MaterialProfilesClient() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <div className="grid gap-4">
-        <section className="panel p-4 sm:p-5">
+      <div className="grid gap-2">
+        <section className="panel p-4">
           <p className="section-title">Work mới</p>
           <h2 className="mt-1 text-base font-bold text-slate-950">Số TBMT</h2>
 
@@ -150,7 +150,7 @@ export function MaterialProfilesClient() {
                 value={noticeNumber}
                 onChange={(event) => setNoticeNumber(event.target.value)}
                 placeholder="VD: IB2600190527-00"
-                className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                className="h-11 rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
               />
             </label>
             <Button
@@ -166,7 +166,7 @@ export function MaterialProfilesClient() {
         </section>
 
         <section className="panel overflow-hidden">
-          <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+          <div className="border-b border-slate-400 px-4 py-4 sm:px-5">
             <p className="section-title">Danh sách trước đó</p>
             <h2 className="mt-1 text-base font-bold text-slate-950">
               Previous work
@@ -188,7 +188,7 @@ export function MaterialProfilesClient() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-500 uppercase">
+                <thead className="bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-700 uppercase">
                   <tr>
                     <th className="px-4 py-3">Số TBMT</th>
                     <th className="px-4 py-3">File gốc</th>
@@ -219,7 +219,7 @@ export function MaterialProfilesClient() {
                                   cancelEditing();
                                 }
                               }}
-                              className="h-9 w-full min-w-44 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                              className="h-9 w-full min-w-44 rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                               autoFocus
                             />
                           ) : (
@@ -268,7 +268,7 @@ export function MaterialProfilesClient() {
                               <>
                                 {workspace.outputDirPath ? (
                                   <span
-                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600"
+                                    className="inline-flex items-center gap-1 rounded border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600"
                                     title={workspace.outputDirPath}
                                   >
                                     <FolderOpen className="h-3.5 w-3.5" />
@@ -277,7 +277,7 @@ export function MaterialProfilesClient() {
                                 ) : null}
                                 <Link
                                   href={`/material-profiles/${workspace.id}`}
-                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                  className="inline-flex min-h-9 items-center gap-1.5 rounded bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                                 >
                                   Resume
                                   <ArrowRight

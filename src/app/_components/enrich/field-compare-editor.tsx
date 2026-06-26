@@ -193,10 +193,10 @@ export function FieldCompareEditor({
   return (
     <div className="space-y-4">
       {/* Current row / material */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-start justify-between gap-3">
+      <div className="rounded border border-slate-400 bg-slate-50 p-3">
+        <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               {sheetLabel}
             </p>
             <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -220,10 +220,10 @@ export function FieldCompareEditor({
             return (
               <span
                 key={field}
-                className={`rounded border px-1.5 py-0.5 text-[11px] ${
+                className={`rounded border px-1.5 py-0.5 text-xs ${
                   value
-                    ? "border-slate-200 bg-white text-slate-600"
-                    : "border-dashed border-slate-300 bg-transparent text-slate-400"
+                    ? "border-slate-400 bg-white text-slate-600"
+                    : "border-dashed border-slate-400 bg-transparent text-slate-600"
                 }`}
               >
                 {FIELD_LABELS[field]}: {value.length > 0 ? value : "(trống)"}
@@ -237,7 +237,7 @@ export function FieldCompareEditor({
       {enableCandidateGrid && onSearchTermChange ? (
         <div className="relative">
           <Search
-            className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-400"
+            className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-600"
             aria-hidden
           />
           <input
@@ -246,7 +246,7 @@ export function FieldCompareEditor({
             onChange={(event) => onSearchTermChange(event.target.value)}
             placeholder="Tìm sản phẩm khác trong catalog…"
             spellCheck={false}
-            className="w-full rounded-lg border border-slate-300 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="w-full rounded border border-slate-400 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
           />
         </div>
       ) : null}
@@ -254,22 +254,22 @@ export function FieldCompareEditor({
       {/* Candidate cards */}
       {enableCandidateGrid ? (
         showingSearch && isSearching ? (
-          <p className="flex items-center gap-2 text-xs text-slate-500">
+          <p className="flex items-center gap-2 text-xs text-slate-700">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Đang tìm…
           </p>
         ) : candidates.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-xs text-slate-500">
+          <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-6 text-center text-xs text-slate-700">
             {showingSearch
               ? "Không tìm thấy sản phẩm phù hợp."
               : "Không có ứng viên ghép tự động — hãy tìm thủ công ở trên."}
           </p>
         ) : (
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold text-slate-500">
+            <p className="text-xs font-semibold text-slate-700">
               Mẹo: bấm phím 1-9 để chọn nhanh ứng viên tương ứng.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
               {candidates.map((candidate, index) => (
                 <ProductCandidateCard
                   key={candidate.materialId}
@@ -299,8 +299,8 @@ export function FieldCompareEditor({
 
       {/* Fill plan: per-field accept / overwrite / inline edit */}
       {hasDecision ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+        <div className="rounded border border-slate-400 bg-white p-3">
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Sẽ điền vào dòng
           </p>
           <div className="mt-2 grid gap-1.5">
@@ -311,7 +311,7 @@ export function FieldCompareEditor({
               return (
                 <div
                   key={field}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs ${
+                  className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${
                     isFillable ? "bg-slate-50" : "opacity-60"
                   }`}
                 >
@@ -325,12 +325,12 @@ export function FieldCompareEditor({
                   <span className="w-20 shrink-0 font-semibold text-slate-600">
                     {FIELD_LABELS[field]}
                   </span>
-                  <span className="truncate text-slate-500">
+                  <span className="truncate text-slate-700">
                     {cell.before || "(trống)"}
                   </span>
                   {isFillable ? (
                     <>
-                      <span className="text-slate-400">→</span>
+                      <span className="text-slate-600">→</span>
                       {enableInlineEdit ? (
                         <input
                           type="text"
@@ -338,7 +338,7 @@ export function FieldCompareEditor({
                           onChange={(event) =>
                             onEditValue(field, event.target.value)
                           }
-                          className="min-w-0 flex-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="min-w-0 flex-1 rounded border border-slate-400 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         />
                       ) : (
                         <span className="truncate font-medium text-emerald-700">
@@ -353,22 +353,22 @@ export function FieldCompareEditor({
                         e.preventDefault();
                         onToggleOverwrite(field);
                       }}
-                      className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                      className={`ml-auto rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
                         overwrite.has(field)
                           ? "border-amber-300 bg-amber-100 text-amber-800"
-                          : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
+                          : "border-slate-400 bg-white text-slate-700 hover:bg-slate-100"
                       }`}
                     >
                       Ghi đè
                     </button>
                   ) : (
-                    <span className="ml-auto text-[11px] text-slate-400" />
+                    <span className="ml-auto text-xs text-slate-600" />
                   )}
                 </div>
               );
             })}
             {plan.length === 0 ? (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-700">
                 Không có ô trống nào để điền cho lựa chọn này.
               </p>
             ) : null}

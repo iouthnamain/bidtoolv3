@@ -60,7 +60,7 @@ const DEFAULT_BUDGET_SLIDER_MAX = 100_000_000_000;
 const BUDGET_SLIDER_STEP = 1_000_000;
 
 const controlClass =
-  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none";
+  "w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
 
 const smartViewFrequencyLabels = {
   daily: "Hằng ngày",
@@ -169,22 +169,22 @@ export function SearchPageClient({
           </option>
         ))}
       </select>
-      <div className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm">
+      <div className="inline-flex items-center gap-2 rounded border border-slate-400 bg-white px-2 py-1 text-sm">
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!result || page <= 1}
           onClick={() => setPage((previous) => Math.max(1, previous - 1))}
         >
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
           Trước
         </button>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-slate-700">
           {result ? `Trang ${page}/${totalPages}` : "Trang …"}
         </span>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!result || page >= totalPages}
           onClick={() =>
             setPage((previous) => Math.min(totalPages, previous + 1))
@@ -222,7 +222,7 @@ export function SearchPageClient({
   );
 
   return (
-    <div className="animate-rise space-y-4">
+    <div className="space-y-2">
       <section id="search-modes" className="panel scroll-mt-6 p-3 sm:p-4">
         <div className="flex items-center justify-between gap-2">
           <div
@@ -241,10 +241,10 @@ export function SearchPageClient({
                   role="tab"
                   aria-selected={isActive}
                   title={SEARCH_MODE_DESCRIPTIONS[tabMode]}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                     isActive
-                      ? "border-sky-400 bg-sky-50 text-sky-900"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      ? "border-blue-400 bg-blue-50 text-blue-900"
+                      : "border-slate-400 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
                   }`}
                 >
                   {SEARCH_MODE_LABELS[tabMode]}
@@ -254,21 +254,21 @@ export function SearchPageClient({
           </div>
           <Link
             href="/saved-items/smart-views"
-            className="hidden shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:inline-flex"
+            className="hidden shrink-0 items-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:inline-flex"
           >
             <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
             Smart Views
           </Link>
         </div>
 
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-slate-700">
           {SEARCH_MODE_DESCRIPTIONS[mode]}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-gradient-to-b from-white to-slate-50/50 p-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded bg-gradient-to-b from-white to-slate-50/50 p-2">
           <div className="relative min-w-[12rem] flex-1">
             <Search
-              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
               aria-hidden
             />
             <input
@@ -291,21 +291,21 @@ export function SearchPageClient({
             aria-expanded={filtersOpen}
             aria-controls="search-advanced-filters"
             onClick={() => setFiltersOpen((previous) => !previous)}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded border px-3 py-2 text-sm font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
               filtersOpen || appliedChips.length > 0
-                ? "border-sky-300 bg-sky-50 text-sky-800"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-blue-300 bg-blue-50 text-blue-800"
+                : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
             }`}
           >
             <SlidersHorizontal className="h-4 w-4" aria-hidden />
             Bộ lọc
             {appliedChips.length > 0 ? (
-              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-xs font-bold text-white">
+              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-xs font-bold text-white">
                 {appliedChips.length}
               </span>
             ) : null}
             <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform duration-150 ${filtersOpen ? "rotate-180" : ""}`}
+              className={`h-3.5 w-3.5  ${filtersOpen ? "rotate-180" : ""}`}
               aria-hidden
             />
           </button>
@@ -328,13 +328,13 @@ export function SearchPageClient({
               return (
                 <span
                   key={chip}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-400 bg-slate-50 px-2 py-0.5 text-xs text-slate-600"
                 >
                   {chip}
                   {!isModeChip ? (
                     <button
                       type="button"
-                      className="-mr-0.5 rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                      className="-mr-0.5 rounded-full p-0.5 text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                       aria-label={`Xóa bộ lọc ${chip}`}
                       onClick={() => removeAppliedChip(chip)}
                     >
@@ -346,7 +346,7 @@ export function SearchPageClient({
             })}
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900"
               onClick={resetFilters}
             >
               <X className="h-3 w-3" aria-hidden />
@@ -358,9 +358,9 @@ export function SearchPageClient({
         <div
           id="search-advanced-filters"
           hidden={!filtersOpen}
-          className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+          className="mt-3 rounded border border-slate-400 bg-slate-50/70 p-3"
         >
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-1 lg:grid-cols-2">
             <FilterField label="Tỉnh / thành">
               {mode === "package_location" ? (
                 <select
@@ -488,10 +488,10 @@ export function SearchPageClient({
             htmlFor="search-budget-min"
             className="lg:col-span-2"
           >
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded border border-slate-400 bg-slate-50/80 p-3">
+              <div className="grid gap-1 sm:grid-cols-2">
                 <label className="flex flex-col gap-1" htmlFor="search-budget-min">
-                  <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                     Ngân sách từ
                   </span>
                   <input
@@ -510,7 +510,7 @@ export function SearchPageClient({
                 </label>
 
                 <label className="flex flex-col gap-1" htmlFor="search-budget-max">
-                  <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                     Ngân sách đến
                   </span>
                   <input
@@ -530,14 +530,14 @@ export function SearchPageClient({
               </div>
 
               <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-700">
                   <span>{formatCompactCurrency(budgetSliderMinValue)}</span>
                   <span>{formatCompactCurrency(budgetSliderMaxValue)}</span>
                 </div>
                 <div className="relative h-8">
                   <div className="absolute inset-x-0 top-3 h-2 rounded-full bg-slate-200" />
                   <div
-                    className="absolute top-3 h-2 rounded-full bg-sky-500"
+                    className="absolute top-3 h-2 rounded-full bg-blue-500"
                     style={{
                       left: `${budgetSliderMinPercent}%`,
                       right: `${100 - budgetSliderMaxPercent}%`,
@@ -550,7 +550,7 @@ export function SearchPageClient({
                     step={BUDGET_SLIDER_STEP}
                     value={budgetSliderMinValue}
                     aria-label="Ngân sách từ"
-                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-sky-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
+                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-blue-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
                     onChange={(event) => {
                       const next = Number(event.currentTarget.value);
                       const currentMax = parseOptionalNumber(formState.budgetMax);
@@ -570,7 +570,7 @@ export function SearchPageClient({
                     step={BUDGET_SLIDER_STEP}
                     value={budgetSliderMaxValue}
                     aria-label="Ngân sách đến"
-                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-sky-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
+                    className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent accent-blue-700 [&::-moz-range-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:pointer-events-auto"
                     onChange={(event) => {
                       const next = Number(event.currentTarget.value);
                       const bounded = Math.max(next, budgetSliderMinValue);
@@ -639,7 +639,7 @@ export function SearchPageClient({
           )}
 
           <FilterField label="Sắp xếp ngày đăng">
-            <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 bg-white p-0.5 text-sm">
+            <div className="inline-flex overflow-hidden rounded border border-slate-400 bg-white p-0.5 text-sm">
               {(
                 [
                   { value: "desc", label: "Mới nhất" },
@@ -649,9 +649,9 @@ export function SearchPageClient({
                 <button
                   key={option.value}
                   type="button"
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  className={`rounded px-3 py-1.5 text-xs font-semibold ${
                     sortOrder === option.value
-                      ? "bg-sky-700 text-white"
+                      ? "bg-blue-700 text-white"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                   onClick={() => setSortOrder(option.value)}
@@ -660,40 +660,40 @@ export function SearchPageClient({
                 </button>
               ))}
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Sắp xếp áp dụng ngay; bộ lọc khác cần bấm Tìm.
             </p>
           </FilterField>
           </div>
 
           {budgetRangeError ? (
-            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               Ngân sách đến phải lớn hơn hoặc bằng ngân sách từ.
             </div>
           ) : null}
 
           {publishedDateRangeError ? (
-            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               Ngày đến phải lớn hơn hoặc bằng ngày từ.
             </div>
           ) : null}
 
         </div>
 
-        <div className="mt-3 rounded-xl border border-slate-200 bg-white">
+        <div className="mt-3 rounded border border-slate-400 bg-white">
           <button
             type="button"
             aria-expanded={isSmartViewPanelOpen}
             aria-controls="search-smart-view-panel"
-            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="flex w-full items-center justify-between gap-1 px-3 py-2 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             onClick={() => setSmartViewOpen((previous) => !previous)}
           >
             <span className="inline-flex items-center gap-2">
-              <BookmarkCheck className="h-4 w-4 text-sky-700" aria-hidden />
+              <BookmarkCheck className="h-4 w-4 text-blue-700" aria-hidden />
               Smart View
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-slate-500 transition-transform duration-150 ${
+              className={`h-4 w-4 text-slate-700  ${
                 isSmartViewPanelOpen ? "rotate-180" : ""
               }`}
               aria-hidden
@@ -703,9 +703,9 @@ export function SearchPageClient({
           <div
             id="search-smart-view-panel"
             hidden={!isSmartViewPanelOpen}
-            className="border-t border-slate-200 px-3 py-3"
+            className="border-t border-slate-400 px-3 py-3"
           >
-            <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
+            <div className="grid gap-1 sm:grid-cols-[1.4fr_1fr]">
               <FilterField label="Tên Smart View" htmlFor="smart-view-name">
                 <input
                   id="smart-view-name"
@@ -759,17 +759,17 @@ export function SearchPageClient({
         </div>
 
         {isEditingSmartView ? (
-          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="mt-4 rounded border border-blue-200 bg-blue-50 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-1">
               <div>
-                <p className="text-sm font-semibold text-sky-900">
+                <p className="text-sm font-semibold text-blue-900">
                   {savedFilterQuery.isPending
                     ? "Đang tải Smart View để chỉnh sửa"
                     : savedFilterQuery.error
                       ? "Không mở được Smart View"
                       : "Đang chỉnh sửa Smart View"}
                 </p>
-                <p className="mt-1 text-xs text-sky-800">
+                <p className="mt-1 text-xs text-blue-800">
                   {savedFilterQuery.error?.message ??
                     "Cập nhật Smart View sẽ không sửa workflow đã tạo trước đó."}
                 </p>
@@ -786,7 +786,7 @@ export function SearchPageClient({
         ) : null}
 
         {hasPendingSearchFilterChanges ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             <span className="inline-flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" aria-hidden />
               Có thay đổi bộ lọc chưa áp dụng. Kết quả và Smart View vẫn đang
@@ -805,13 +805,13 @@ export function SearchPageClient({
         ) : null}
 
         {saveError ? (
-          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {saveError}
           </div>
         ) : null}
 
         {smartViewSuccess ? (
-          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {smartViewSuccess} • {smartViewFrequencyLabels[smartViewFrequency]}
           </div>
         ) : null}
@@ -819,16 +819,16 @@ export function SearchPageClient({
 
       <section
         id="search-results"
-        className="panel rounded-xl p-4 sm:p-5"
+        className="panel rounded p-4"
         aria-busy={resultQuery.isFetching ? true : undefined}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-1">
           <div>
             <p className="text-sm font-bold text-slate-900">
               Kết quả {SEARCH_MODE_LABELS[mode]}
             </p>
             {result ? (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 {result.localRefinement.active
                   ? `Phù hợp bộ lọc: ${result.total.toLocaleString("vi-VN")} • Đã quét ${result.scannedCount.toLocaleString("vi-VN")} mục nguồn`
                   : `Tổng nguồn: ${result.total.toLocaleString("vi-VN")}`}{" "}
@@ -836,7 +836,7 @@ export function SearchPageClient({
                 {formatDateTime(result.fetchedAt)}
               </p>
             ) : (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Đang tải dữ liệu public…
               </p>
             )}
@@ -845,25 +845,25 @@ export function SearchPageClient({
         </div>
 
         {saveSelectedSuccess ? (
-          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {saveSelectedSuccess}
           </div>
         ) : null}
 
         {saveSelectedError ? (
-          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {saveSelectedError}
           </div>
         ) : null}
 
         {watchlistSuccess ? (
-          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {watchlistSuccess}
           </div>
         ) : null}
 
         {isShowingPreviousResults ? (
-          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
+          <div className="mt-3 inline-flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800">
             <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
             Đang tải kết quả mới…
           </div>

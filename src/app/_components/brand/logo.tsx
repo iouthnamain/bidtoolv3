@@ -24,7 +24,7 @@ export function LogoMark({
 }: LogoMarkProps) {
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-700 via-sky-800 to-teal-800 text-white shadow-sm ${sizeClasses[size]} ${className ?? ""}`}
+      className={`flex shrink-0 items-center justify-center rounded bg-gradient-to-br from-cyan-700 via-blue-800 to-teal-800 text-white shadow-sm ${sizeClasses[size]} ${className ?? ""}`}
       style={style}
       aria-hidden
       {...rest}
@@ -88,7 +88,7 @@ export function Logo({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2.5 rounded-lg px-1 py-1 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className ?? ""}`}
+      className={`flex items-center gap-2.5 rounded px-1 py-1 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className ?? ""}`}
       aria-label={ariaLabel}
     >
       <LogoMark size={size} />
@@ -97,7 +97,7 @@ export function Logo({
           <span className="text-sm font-bold tracking-tight text-slate-900">
             BidTool
           </span>
-          <span className="text-[11px] font-medium tracking-[0.14em] text-slate-500 uppercase">
+          <span className="text-xs font-medium tracking-[0.14em] text-slate-700 uppercase">
             {tagline}
           </span>
         </span>

@@ -280,11 +280,11 @@ export function EnrichResearchStep({
           </p>
         </div>
         <div className="space-y-4 p-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <div className="rounded border border-slate-400 bg-slate-50 p-3 text-sm text-slate-700">
             <p>
               File: <span className="font-semibold">{fileName}</span>
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Sheet: {sheetName} ·{" "}
               {unmatchedCount > 0
                 ? `${unmatchedCount.toLocaleString("vi-VN")} dòng chưa khớp catalog`
@@ -292,12 +292,12 @@ export function EnrichResearchStep({
             </p>
           </div>
 
-          <fieldset className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-            <legend className="px-1 text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+          <fieldset className="rounded border border-slate-400 bg-white p-3 text-sm text-slate-700">
+            <legend className="px-1 text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               Phạm vi nghiên cứu
             </legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
+              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-50">
                 <input
                   type="radio"
                   name="excel-research-scope"
@@ -311,13 +311,13 @@ export function EnrichResearchStep({
                   <span className="block font-semibold">
                     Chỉ dòng chưa xử lý
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-700">
                     {unresolvedRowNumbers.length.toLocaleString("vi-VN")} dòng
                     cần web
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
+              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-50">
                 <input
                   type="radio"
                   name="excel-research-scope"
@@ -331,7 +331,7 @@ export function EnrichResearchStep({
                   <span className="block font-semibold">
                     Tất cả dòng có tên
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-700">
                     Dùng khi muốn xác minh web toàn bộ file.
                   </span>
                 </span>
@@ -340,7 +340,7 @@ export function EnrichResearchStep({
           </fieldset>
 
           {isWorking ? (
-            <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+            <div className="rounded border border-violet-200 bg-violet-50 p-3">
               <div className="flex items-center justify-between text-xs font-semibold text-violet-900">
                 <span className="inline-flex items-center gap-1.5">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -369,11 +369,11 @@ export function EnrichResearchStep({
                 />
               </div>
               {isJobRunning && activeJob?.message ? (
-                <p className="mt-2 text-[11px] text-violet-700">
+                <p className="mt-2 text-xs text-violet-700">
                   {activeJob.message}
                 </p>
               ) : !isJobRunning ? (
-                <p className="mt-2 text-[11px] text-violet-700">
+                <p className="mt-2 text-xs text-violet-700">
                   Đang chuẩn bị — quá trình nghiên cứu sẽ bắt đầu trong giây
                   lát.
                 </p>

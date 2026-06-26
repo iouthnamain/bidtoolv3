@@ -88,7 +88,7 @@ export function AdminUpdateBanner() {
           >
             <ArrowUpCircle className="h-4 w-4" />
           </span>
-          <p className="min-w-0 text-xs font-semibold sm:text-sm">
+          <p className="min-w-0 text-xs font-semibold">
             Có bản cập nhật on-prem {versionStatus.latest}. Bạn đang chạy{" "}
             {versionStatus.current}
             {versionStatus.buildMetadata ? ` (${versionStatus.buildMetadata})` : ""}.
@@ -99,7 +99,7 @@ export function AdminUpdateBanner() {
             <button
               type="button"
               onClick={() => void copyCommand()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-amber-800 px-2.5 text-xs font-bold text-white transition-colors hover:bg-amber-900"
+              className="inline-flex h-8 items-center gap-1.5 rounded bg-amber-800 px-2.5 text-xs font-bold text-white transition-colors hover:bg-amber-900"
             >
               <Copy className="h-3.5 w-3.5" />
               Sao chép lệnh cập nhật
@@ -109,7 +109,7 @@ export function AdminUpdateBanner() {
             type="button"
             onClick={dismiss}
             aria-label="Ẩn thông báo cập nhật on-prem"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-amber-800 transition-colors hover:bg-amber-100"
+            className="flex h-8 w-8 items-center justify-center rounded text-amber-800 transition-colors hover:bg-amber-100"
           >
             <X className="h-4 w-4" />
           </button>

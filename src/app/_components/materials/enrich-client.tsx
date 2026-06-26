@@ -165,7 +165,7 @@ function confidenceColorClass(confidence: number): string {
   if (confidence >= ENRICHMENT_THRESHOLDS.medium) {
     return "bg-amber-50 text-amber-700 border-amber-200";
   }
-  return "bg-slate-50 text-slate-600 border-slate-200";
+  return "bg-slate-50 text-slate-600 border-slate-400";
 }
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
@@ -550,7 +550,7 @@ export function MaterialEnrichClient({
   return (
     <div className="space-y-4">
       {isJobPage ? (
-        <section className="panel p-4 sm:p-5">
+        <section className="panel p-4">
           <Link
             href="/materials/enrich"
             className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
@@ -561,14 +561,14 @@ export function MaterialEnrichClient({
       ) : null}
 
       {!isJobPage ? (
-        <section className="panel p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel p-4">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Làm giàu vật tư</p>
               <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
                 Tìm kiếm web và bổ sung catalog
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Chọn vật tư từ danh mục, chạy job enrichment để tìm thông số,
                 NCC, xuất xứ và catalog PDF từ nguồn đáng tin cậy.
               </p>
@@ -578,7 +578,7 @@ export function MaterialEnrichClient({
               Web enrichment
             </Badge>
             {activeProviders?.enrichment ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              <span className="inline-flex items-center gap-1 rounded-full border border-slate-400 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
                 <Bot className="h-3 w-3" aria-hidden />
                 {activeProviders.enrichment === "openrouter"
                   ? "OpenRouter"
@@ -589,8 +589,8 @@ export function MaterialEnrichClient({
             ) : null}
           </div>
 
-          <form className="mt-4 space-y-4" onSubmit={submitStart}>
-            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+          <form className="mt-4 space-y-2" onSubmit={submitStart}>
+            <div className="rounded border border-slate-400 bg-slate-50/80 p-3">
               <p className="text-sm font-semibold text-slate-900">
                 {materialIdsFromUrl.length > 0
                   ? `${materialIdsFromUrl.length.toLocaleString("vi-VN")} vật tư đã chọn`
@@ -606,7 +606,7 @@ export function MaterialEnrichClient({
               {materialIdsFromUrl.length === 0 ? (
                 <Link
                   href="/materials"
-                  className="mt-2 inline-flex text-xs font-semibold text-sky-700 hover:text-sky-900"
+                  className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:text-blue-900"
                 >
                   Mở danh mục vật tư →
                 </Link>
@@ -614,7 +614,7 @@ export function MaterialEnrichClient({
             </div>
 
             <fieldset className="space-y-2">
-              <legend className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              <legend className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                 Tùy chọn
               </legend>
               <label className="flex items-start gap-2 text-sm text-slate-700">
@@ -633,7 +633,7 @@ export function MaterialEnrichClient({
                   <span className="font-medium">
                     Bỏ qua vật tư đã đủ thông tin
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-slate-700">
                     Không xử lý các dòng đã có NCC, thông số và catalog PDF.
                   </span>
                 </span>
@@ -654,7 +654,7 @@ export function MaterialEnrichClient({
                   <span className="font-medium">
                     Tạo catalog PDF nếu không tìm thấy
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-slate-700">
                     Tạo PDF gắn nhãn “generated” từ thông tin đã xác minh.
                   </span>
                 </span>
@@ -676,7 +676,7 @@ export function MaterialEnrichClient({
                     Tự commit khi độ tin cậy ≥{" "}
                     {(ENRICHMENT_THRESHOLDS.high * 100).toFixed(0)}%
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-slate-700">
                     Ghi an toàn vào catalog mà không cần duyệt thủ công.
                   </span>
                 </span>
@@ -696,8 +696,8 @@ export function MaterialEnrichClient({
       ) : null}
 
       {!isJobPage ? (
-        <section className="panel p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel p-4">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Danh sách job</p>
               <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
@@ -717,13 +717,13 @@ export function MaterialEnrichClient({
           </div>
 
           {jobRows.length > 0 ? (
-            <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200">
+            <div className="mt-4 divide-y divide-slate-100 rounded border border-slate-400">
               {jobRows.map((job) => {
                 const active = isJobActive(job);
                 return (
                   <div
                     key={job.id}
-                    className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-slate-50"
+                    className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-50"
                   >
                     <button
                       type="button"
@@ -733,7 +733,7 @@ export function MaterialEnrichClient({
                       <p className="text-sm font-semibold text-slate-900">
                         Job {shortJobId(job.id)}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
+                      <p className="mt-0.5 text-xs text-slate-700">
                         {job.materialIds.length.toLocaleString("vi-VN")} vật tư
                         · {formatDateTime(job.startedAt)}
                       </p>
@@ -800,15 +800,15 @@ export function MaterialEnrichClient({
 
       {isJobPage && activeJob ? (
         <>
-          <section className="panel p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <section className="panel p-4">
+            <div className="flex flex-wrap items-start justify-between gap-1">
               <div>
                 <p className="section-title">Tiến độ job</p>
                 <h2 className="mt-1 text-base font-bold text-balance text-slate-950">
                   Job {shortJobId(activeJob.id)}
                 </h2>
                 {activeJob.currentMaterialName ? (
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-slate-700">
                     Đang xử lý: {activeJob.currentMaterialName}
                   </p>
                 ) : null}
@@ -873,7 +873,7 @@ export function MaterialEnrichClient({
               <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    isActive ? "bg-sky-500" : "bg-emerald-500"
+                    isActive ? "bg-blue-500" : "bg-emerald-500"
                   }`}
                   style={{ width: `${processedPercent}%` }}
                 />
@@ -896,7 +896,7 @@ export function MaterialEnrichClient({
           </section>
 
           <section className="panel overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-1 border-b border-slate-400 px-4 py-3">
               <h3 className="text-sm font-bold text-balance text-slate-900">
                 Chi tiết từng vật tư
               </h3>
@@ -974,7 +974,7 @@ export function MaterialEnrichClient({
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
+                  <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
                     <tr>
                       <th className="px-3 py-2">Vật tư</th>
                       <th className="px-3 py-2">Trạng thái</th>
@@ -997,11 +997,11 @@ export function MaterialEnrichClient({
                           <td className="px-3 py-2">
                             <Link
                               href={`/materials/${item.materialId}`}
-                              className="font-medium text-sky-700 hover:underline"
+                              className="font-medium text-blue-700 hover:underline"
                             >
                               {materialNameFromItem(item)}
                             </Link>
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-slate-700">
                               #{item.materialId}
                             </p>
                             {item.result.error ? (
@@ -1072,7 +1072,7 @@ export function MaterialEnrichClient({
           </section>
         </>
       ) : isJobPage && jobQuery.isLoading ? (
-        <div className="panel p-5 text-sm text-slate-600">
+        <div className="panel p-2 text-sm text-slate-600">
           <Loader2
             className="mr-2 inline-block h-4 w-4 animate-spin"
             aria-hidden
@@ -1080,7 +1080,7 @@ export function MaterialEnrichClient({
           Đang tải job…
         </div>
       ) : isJobPage && jobQuery.isError ? (
-        <div className="panel p-5">
+        <div className="panel p-2">
           <EmptyState
             title="Không tìm thấy job"
             description={
@@ -1171,8 +1171,8 @@ function StatCard({
   tone?: Parameters<typeof Badge>[0]["tone"];
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-      <dt className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+    <div className="rounded border border-slate-400 bg-slate-50/80 px-3 py-2">
+      <dt className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
         {label}
       </dt>
       <dd className="mt-1">
@@ -1279,7 +1279,7 @@ function EnrichmentReviewDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,900px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,900px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border border-slate-400 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
       onCancel={(event) => {
         event.preventDefault();
         if (!isCommitting && !isRejecting) {
@@ -1296,10 +1296,10 @@ function EnrichmentReviewDialog({
         }
       }}
     >
-      <div className="border-b border-slate-200 px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
+      <div className="border-b border-slate-400 px-2 py-4">
+        <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               Duyệt enrichment
             </p>
             <h3 className="mt-1 text-lg font-bold text-slate-950">
@@ -1316,7 +1316,7 @@ function EnrichmentReviewDialog({
           </div>
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={onClose}
             aria-label="Đóng"
           >
@@ -1325,7 +1325,7 @@ function EnrichmentReviewDialog({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -1340,8 +1340,8 @@ function EnrichmentReviewDialog({
           <div className="space-y-5">
             <div>
               <h4 className="text-sm font-bold text-slate-900">Trước / sau</h4>
-              <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+              <div className="mt-2 flex items-center gap-1 rounded border border-slate-400 bg-slate-50/80 p-3">
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
                   {item.materialImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -1357,10 +1357,10 @@ function EnrichmentReviewDialog({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-xs font-medium text-slate-700">
                     Ảnh vật tư hiện tại
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-700">
                     So sánh trực quan với ảnh ứng viên web bên dưới.
                   </p>
                 </div>
@@ -1427,7 +1427,7 @@ function EnrichmentReviewDialog({
                   );
                 })()}
                 {result.catalogPdfUrls.length > 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-700">
                     + {result.catalogPdfUrls.length.toLocaleString("vi-VN")}{" "}
                     catalog PDF sẽ được đính kèm.
                   </p>
@@ -1439,14 +1439,14 @@ function EnrichmentReviewDialog({
               <h4 className="text-sm font-bold text-slate-900">Bằng chứng</h4>
               <div className="mt-2 space-y-2">
                 {collectEvidence(result).length === 0 ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-700">
                     Chưa có bằng chứng trích xuất.
                   </p>
                 ) : (
                   collectEvidence(result).map((evidence, index) => (
                     <div
                       key={`${evidence.field}-${index}`}
-                      className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-xs"
+                      className="rounded border border-slate-400 bg-slate-50/80 p-3 text-xs"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="neutral">
@@ -1462,7 +1462,7 @@ function EnrichmentReviewDialog({
                           href={evidence.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-1.5 inline-flex items-center gap-1 text-sky-700 hover:underline"
+                          className="mt-1.5 inline-flex items-center gap-1 text-blue-700 hover:underline"
                         >
                           <ExternalLink className="h-3 w-3" aria-hidden />
                           {tryHostname(evidence.sourceUrl)}
@@ -1487,7 +1487,7 @@ function EnrichmentReviewDialog({
                   Đang tải ứng viên…
                 </div>
               ) : candidates.length === 0 ? (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-700">
                   Không có ứng viên web.
                 </p>
               ) : (
@@ -1495,10 +1495,10 @@ function EnrichmentReviewDialog({
                   {candidates.map((candidate) => (
                     <label
                       key={candidate.id}
-                      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
+                      className={`flex cursor-pointer items-start gap-1 rounded border p-3 ${
                         candidate.isSelected
-                          ? "border-sky-300 bg-sky-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
+                          ? "border-blue-300 bg-blue-50"
+                          : "border-slate-400 bg-white hover:bg-slate-50"
                       }`}
                     >
                       <input
@@ -1509,7 +1509,7 @@ function EnrichmentReviewDialog({
                         disabled={isSelecting}
                         onChange={() => onSelectCandidate(candidate.id)}
                       />
-                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
                         {candidate.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1532,7 +1532,7 @@ function EnrichmentReviewDialog({
                           href={candidate.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-0.5 inline-flex items-center gap-1 text-xs text-sky-700 hover:underline"
+                          className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
                           onClick={(event) => event.stopPropagation()}
                         >
                           <ExternalLink className="h-3 w-3" aria-hidden />
@@ -1548,7 +1548,7 @@ function EnrichmentReviewDialog({
                             {candidate.matchReasons.map((reason) => (
                               <span
                                 key={reason}
-                                className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600"
+                                className="rounded border border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600"
                               >
                                 {reason}
                               </span>
@@ -1577,7 +1577,7 @@ function EnrichmentReviewDialog({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="break-all text-sky-700 hover:underline"
+                        className="break-all text-blue-700 hover:underline"
                       >
                         {url}
                       </a>
@@ -1590,7 +1590,7 @@ function EnrichmentReviewDialog({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-400 px-2 py-4">
         <Button type="button" variant="secondary" onClick={onClose}>
           Đóng
         </Button>

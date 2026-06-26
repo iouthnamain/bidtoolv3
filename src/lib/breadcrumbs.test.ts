@@ -105,7 +105,7 @@ describe("buildBreadcrumbs", () => {
     expect(crumbs.map((c) => c.label)).toEqual([
       "Tổng quan",
       "Sản phẩm / vật tư",
-      "Scrape shop",
+      "Quét cửa hàng",
       "Chi tiết job",
     ]);
   });

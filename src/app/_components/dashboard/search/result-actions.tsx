@@ -91,7 +91,7 @@ export function ResultActions({
 }) {
   if (compact) {
     const iconButtonClass =
-      "inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60";
+      "inline-flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-600 transition-colors duration-0 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60";
 
     return (
       <div className="flex items-center gap-1.5">
@@ -140,7 +140,7 @@ export function ResultActions({
       {!isPackageItem(item) ? (
         <Link
           href={detailHrefForItem(item)}
-          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+          className="inline-flex items-center gap-1 rounded border border-slate-400 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
         >
           <Eye className="h-3.5 w-3.5" aria-hidden />
           Chi tiết
@@ -150,7 +150,7 @@ export function ResultActions({
         href={item.sourceUrl}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+        className="inline-flex items-center gap-1 rounded border border-slate-400 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
       >
         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
         Nguồn

@@ -42,7 +42,7 @@ const variantStyles: Record<ToastVariant, string> = {
   success: "border-emerald-300 bg-emerald-50 text-emerald-800",
   error: "border-rose-300 bg-rose-50 text-rose-800",
   warning: "border-amber-300 bg-amber-50 text-amber-800",
-  info: "border-sky-300 bg-sky-50 text-sky-800",
+  info: "border-blue-300 bg-blue-50 text-blue-800",
 };
 
 const variantIcons: Record<ToastVariant, ReactNode> = {
@@ -53,7 +53,7 @@ const variantIcons: Record<ToastVariant, ReactNode> = {
   warning: (
     <TriangleAlert className="h-4 w-4 text-amber-500" aria-hidden="true" />
   ),
-  info: <Info className="h-4 w-4 text-sky-500" aria-hidden="true" />,
+  info: <Info className="h-4 w-4 text-blue-500" aria-hidden="true" />,
 };
 
 let nextId = 0;
@@ -90,15 +90,15 @@ function ToastItem({
     <div
       role={isUrgent ? "alert" : "status"}
       aria-live={isUrgent ? "assertive" : "polite"}
-      className={`toast-enter flex items-start gap-2.5 rounded-md border px-3.5 py-2.5 text-sm font-medium shadow-md transition-[opacity,transform] duration-200 ${
+      className={`flex items-start gap-2 rounded border px-2 py-1.5 text-base font-medium shadow-[var(--shadow-flat)] ${
         variantStyles[toast.variant]
-      } ${exiting ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"}`}
+      } ${exiting ? "opacity-0" : "opacity-100"}`}
     >
       <span className="mt-0.5 shrink-0">{variantIcons[toast.variant]}</span>
       <span className="flex-1 leading-snug">{toast.message}</span>
       <button
         type="button"
-        className="-my-2 -mr-2 ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+        className="-my-2 -mr-2 ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         onClick={handleDismiss}
         aria-label="Đóng thông báo"
       >
@@ -145,7 +145,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-label="Thông báo"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-end gap-2 p-4 sm:p-6"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-end gap-2 p-4"
       >
         <div className="pointer-events-auto flex flex-col gap-2">
           {toasts.map((t) => (

@@ -81,8 +81,8 @@ function PortalShell({
   return (
     <div className="flex min-h-dvh flex-col bg-slate-50 text-slate-900">
       <RolePreviewBanner />
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+      <header className="sticky top-0 z-30 border-b border-slate-400/80 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-1 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-sm font-bold tracking-tight text-slate-950">
@@ -90,7 +90,7 @@ function PortalShell({
               </p>
               <Badge tone="warning">Chỉ xem</Badge>
             </div>
-            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-700">
               Cổng khách hàng · thông báo, job và watchlist thuộc tổ chức của bạn
             </p>
           </div>

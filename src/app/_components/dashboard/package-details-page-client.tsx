@@ -64,7 +64,7 @@ function EvidenceBlock(props: { title: string; items: string[] }) {
   }
 
   return (
-    <details className="mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+    <details className="mt-3 rounded border border-amber-200 bg-amber-50/80 p-3">
       <summary className="cursor-pointer text-sm font-medium text-amber-800">
         {props.title}
       </summary>
@@ -102,7 +102,7 @@ export function BidWinnerSourceDetailsPageClient({
 
   if (detailsQuery.isLoading) {
     return (
-      <div className="panel p-5 text-sm text-slate-600">
+      <div className="panel p-2 text-sm text-slate-600">
         Đang tải chi tiết {SEARCH_ENTITY_LABELS[entityType].toLowerCase()}…
       </div>
     );
@@ -145,24 +145,24 @@ export function BidWinnerSourceDetailsPageClient({
   return (
     <div className="space-y-4">
       <section id="source-overview" className="panel scroll-mt-6 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+            <p className="text-xs tracking-[0.14em] text-slate-700 uppercase">
               Source URL
             </p>
             <a
               href={details.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 block text-sm font-medium break-all text-sky-700 hover:underline"
+              className="mt-1 block text-sm font-medium break-all text-blue-700 hover:underline"
             >
               {details.sourceUrl}
             </a>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-slate-700">
               Domain: {detectDomain(details.sourceUrl)} • Cập nhật:{" "}
               {formatDateTime(details.fetchedAt)}
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Cache: {details.extractionMeta.fromCache ? "hit" : "miss"}
               {details.extractionMeta.cacheAgeMs !== null
                 ? ` • Tuổi cache: ${formatDurationMs(details.extractionMeta.cacheAgeMs)}`
@@ -196,7 +196,7 @@ export function BidWinnerSourceDetailsPageClient({
             </Button>
             <Link
               href={backHref}
-              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Quay lại Search
@@ -208,13 +208,13 @@ export function BidWinnerSourceDetailsPageClient({
           {details.pageTitle}
         </h2>
         {details.extractionMeta.sectionsDetected.length > 0 ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-slate-700">
             Sections detect được:{" "}
             {details.extractionMeta.sectionsDetected.join(" • ")}
           </p>
         ) : null}
         {details.extractionMeta.warnings.length > 0 ? (
-          <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2">
+          <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2">
             <p className="text-xs font-semibold tracking-[0.12em] text-amber-800 uppercase">
               Cảnh báo extraction
             </p>
@@ -229,10 +229,10 @@ export function BidWinnerSourceDetailsPageClient({
 
       <section
         id="source-tables"
-        className="grid scroll-mt-6 gap-3 sm:grid-cols-2"
+        className="grid scroll-mt-6 gap-1 sm:grid-cols-2"
       >
         <article className="panel p-4">
-          <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+          <p className="text-xs tracking-[0.14em] text-slate-700 uppercase">
             Products (heuristic)
           </p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -240,7 +240,7 @@ export function BidWinnerSourceDetailsPageClient({
           </p>
         </article>
         <article className="panel p-4">
-          <p className="text-xs tracking-[0.14em] text-slate-500 uppercase">
+          <p className="text-xs tracking-[0.14em] text-slate-700 uppercase">
             Available links
           </p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">
@@ -252,7 +252,7 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-commodity" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh mục hàng hóa</h3>
         {details.requiredTables.commodityCategories.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy dữ liệu cho bảng Danh mục hàng hóa.
           </p>
         ) : (
@@ -260,7 +260,7 @@ export function BidWinnerSourceDetailsPageClient({
             {details.requiredTables.commodityCategories.map((item, index) => (
               <li
                 key={`commodity-${index}-${item}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm text-slate-900"
               >
                 {item}
               </li>
@@ -278,7 +278,7 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-tbmt" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Nội dung TBMT</h3>
         {details.requiredTables.tenderNoticeContents.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy dữ liệu cho bảng Nội dung TBMT.
           </p>
         ) : (
@@ -286,7 +286,7 @@ export function BidWinnerSourceDetailsPageClient({
             {details.requiredTables.tenderNoticeContents.map((item, index) => (
               <li
                 key={`tbmt-${index}-${item}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm text-slate-900"
               >
                 {item}
               </li>
@@ -304,11 +304,11 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-documents" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Hồ sơ mời thầu</h3>
         {details.requiredTables.invitationDocuments.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy dữ liệu cho bảng Hồ sơ mời thầu.
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+          <div className="mt-3 overflow-x-auto rounded border border-slate-400">
             <table className="w-full min-w-[32rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
@@ -331,7 +331,7 @@ export function BidWinnerSourceDetailsPageClient({
                         href={doc.href}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all text-sky-700 hover:underline"
+                        className="break-all text-blue-700 hover:underline"
                       >
                         {doc.href}
                       </a>
@@ -353,7 +353,7 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-lots" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách các lô</h3>
         {details.requiredTables.lotList.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy dữ liệu cho bảng Danh sách các lô.
           </p>
         ) : (
@@ -361,7 +361,7 @@ export function BidWinnerSourceDetailsPageClient({
             {details.requiredTables.lotList.map((item, index) => (
               <li
                 key={`lot-${index}-${item}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm text-slate-900"
               >
                 {item}
               </li>
@@ -379,7 +379,7 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-products" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách products</h3>
         {details.products.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy products theo heuristic trên trang nguồn.
           </p>
         ) : (
@@ -387,10 +387,10 @@ export function BidWinnerSourceDetailsPageClient({
             {details.products.map((item, index) => (
               <li
                 key={`${item.source}-${item.text}-${index}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                className="rounded border border-slate-400 bg-slate-50 px-3 py-2"
               >
                 <p className="text-sm text-slate-900">{item.text}</p>
-                <p className="mt-1 text-[11px] tracking-[0.12em] text-slate-500 uppercase">
+                <p className="mt-1 text-xs tracking-[0.12em] text-slate-700 uppercase">
                   Nguồn parse: {item.source}
                 </p>
               </li>
@@ -402,11 +402,11 @@ export function BidWinnerSourceDetailsPageClient({
       <section id="source-links" className="panel scroll-mt-6 p-4">
         <h3 className="text-lg font-semibold">Danh sách links khả dụng</h3>
         {details.links.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-sm text-slate-600">
             Không tìm thấy link hợp lệ trên trang nguồn.
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+          <div className="mt-3 overflow-x-auto rounded border border-slate-400">
             <table className="w-full min-w-[40rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
@@ -427,11 +427,11 @@ export function BidWinnerSourceDetailsPageClient({
                     </td>
                     <td className="px-3 py-2 align-top whitespace-nowrap">
                       <span
-                        className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                           link.kind === "file"
                             ? "border-amber-200 bg-amber-50 text-amber-700"
                             : link.isExternal
-                              ? "border-sky-200 bg-sky-50 text-sky-700"
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
                               : "border-emerald-200 bg-emerald-50 text-emerald-700"
                         }`}
                       >
@@ -447,7 +447,7 @@ export function BidWinnerSourceDetailsPageClient({
                         href={link.href}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all text-sky-700 hover:underline"
+                        className="break-all text-blue-700 hover:underline"
                       >
                         {link.href}
                       </a>

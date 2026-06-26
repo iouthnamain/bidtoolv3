@@ -15,7 +15,7 @@ export default function Home() {
       <Logo href="/" ariaLabel="BidTool v3" tagline="Procurement OS" size="lg" />
       <Link
         href="/dashboard"
-        className="inline-flex min-h-10 items-center rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="inline-flex min-h-10 items-center rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
       >
         Vào dashboard
       </Link>

@@ -359,16 +359,16 @@ export function AboutVersionSection() {
         }
       />
 
-      <div className="space-y-4 p-5">
+      <div className="space-y-4 p-2">
         {versionLoading || !versionStatus ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1 sm:grid-cols-2">
             <SkeletonKpi />
             <SkeletonKpi />
             <SkeletonKpi />
             <SkeletonKpi />
           </div>
         ) : (
-          <dl className="grid gap-3 sm:grid-cols-2">
+          <dl className="grid gap-1 sm:grid-cols-2">
             {[
               {
                 label: "Phiên bản hiện tại",
@@ -399,9 +399,9 @@ export function AboutVersionSection() {
             ].map((item) => (
               <div
                 key={item.label}
-                className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3"
+                className="rounded border border-slate-400 bg-slate-50/80 px-3 py-3"
               >
-                <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                <dt className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                   {item.label}
                 </dt>
                 <dd className="mt-1 text-sm font-bold text-slate-950">
@@ -413,21 +413,21 @@ export function AboutVersionSection() {
         )}
 
         {showApplyButton && applyAction ? (
-          <div className="rounded-lg border border-sky-200 bg-gradient-to-br from-sky-50 to-white px-4 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <div className="rounded border border-blue-200 bg-gradient-to-br from-blue-50 to-white px-4 py-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold tracking-wide text-sky-700 uppercase">
+                <p className="text-xs font-semibold tracking-wide text-blue-700 uppercase">
                   Hành động cập nhật
                 </p>
                 {applyDescription ? (
-                  <p className="mt-2 text-sm leading-6 text-sky-950">
+                  <p className="mt-2 text-sm leading-6 text-blue-950">
                     {applyDescription}
                   </p>
                 ) : null}
                 {versionStatus?.updateCommand &&
                 (applyAction === "copy-onprem-command" ||
                   applyAction === "run-onprem") ? (
-                  <code className="mt-3 block overflow-x-auto rounded-md border border-sky-200/80 bg-white/80 px-3 py-2 text-xs text-slate-800">
+                  <code className="mt-3 block overflow-x-auto rounded border border-blue-200/80 bg-white/80 px-3 py-2 text-xs text-slate-800">
                     {versionStatus.updateCommand}
                   </code>
                 ) : null}
@@ -474,8 +474,8 @@ export function AboutVersionSection() {
         ) : null}
 
         {versionStatus?.changelog ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-            <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+          <div className="rounded border border-slate-400 bg-white px-4 py-3">
+            <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
               Ghi chú phát hành
             </p>
             <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
@@ -485,7 +485,7 @@ export function AboutVersionSection() {
         ) : null}
 
         {isDesktop && desktopUpdateState?.currentVersion ? (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-700">
             Desktop shell:{" "}
             <span className="font-semibold text-slate-700">
               {desktopUpdateState.currentVersion}

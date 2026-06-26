@@ -11,7 +11,7 @@ export default function SearchLayout({
     <SearchLayoutClient>
       <Suspense
         fallback={
-          <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-6 text-sm text-slate-600 shadow-sm">
+          <div className="rounded border border-slate-400/80 bg-white/95 px-4 py-6 text-sm text-slate-600 shadow-sm">
             Đang tải dữ liệu tìm kiếm public…
           </div>
         }

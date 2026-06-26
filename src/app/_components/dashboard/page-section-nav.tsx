@@ -90,10 +90,10 @@ export type PageSectionNavItem = {
 };
 
 const defaultToneStyles = {
-  linkActive: "border-sky-300 bg-sky-50 text-sky-950",
+  linkActive: "border-blue-300 bg-blue-50 text-blue-950",
   linkInactive:
-    "border-slate-200 bg-white text-slate-900 hover:border-sky-300 hover:bg-sky-50/70",
-  iconActive: "bg-sky-100 text-sky-700",
+    "border-slate-400 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50/70",
+  iconActive: "bg-blue-100 text-blue-700",
   iconInactive: "bg-slate-100 text-slate-600",
   description: "text-slate-600",
 };
@@ -109,12 +109,12 @@ const toneStyles: Record<
   }
 > = {
   sky: {
-    linkActive: "border-sky-400 bg-sky-100 text-sky-950 shadow-sm",
+    linkActive: "border-blue-400 bg-blue-100 text-blue-950 shadow-sm",
     linkInactive:
-      "border-sky-200 bg-sky-50/80 text-sky-950 hover:border-sky-300 hover:bg-sky-50",
-    iconActive: "bg-sky-200 text-sky-800",
-    iconInactive: "bg-sky-100 text-sky-700",
-    description: "text-sky-700",
+      "border-blue-200 bg-blue-50/80 text-blue-950 hover:border-blue-300 hover:bg-blue-50",
+    iconActive: "bg-blue-200 text-blue-800",
+    iconInactive: "bg-blue-100 text-blue-700",
+    description: "text-blue-700",
   },
   emerald: {
     linkActive: "border-emerald-400 bg-emerald-100 text-emerald-950 shadow-sm",
@@ -151,7 +151,7 @@ const toneStyles: Record<
   slate: {
     linkActive: "border-slate-400 bg-slate-100 text-slate-950 shadow-sm",
     linkInactive:
-      "border-slate-200 bg-slate-50/80 text-slate-950 hover:border-slate-300 hover:bg-slate-50",
+      "border-slate-400 bg-slate-50/80 text-slate-950 hover:border-slate-400 hover:bg-slate-50",
     iconActive: "bg-slate-200 text-slate-800",
     iconInactive: "bg-slate-100 text-slate-700",
     description: "text-slate-600",
@@ -235,7 +235,7 @@ export function PageSectionNav({
       <nav aria-label={title} className="space-y-2.5">
         <p className="section-title">
           {title}
-          <span className="ml-1.5 font-medium tracking-normal text-slate-400 normal-case">
+          <span className="ml-1.5 font-medium tracking-normal text-slate-600 normal-case">
             · {items.length} mục
           </span>
         </p>
@@ -253,12 +253,12 @@ export function PageSectionNav({
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 title={item.description}
-                className={`group flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-center transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-w-0 sm:shrink ${
+                className={`group flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded border px-2 py-2.5 text-center transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-w-0 sm:shrink ${
                   active ? tone.linkActive : inactive.linkInactive
                 }`}
               >
                 <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded ${
                     active ? tone.iconActive : inactive.iconInactive
                   }`}
                 >
@@ -279,7 +279,7 @@ export function PageSectionNav({
     <nav aria-label={title} className="space-y-2.5">
       <p className="section-title">
         {title}
-        <span className="ml-1.5 font-medium tracking-normal text-slate-400 normal-case">
+        <span className="ml-1.5 font-medium tracking-normal text-slate-600 normal-case">
           · {items.length} mục
         </span>
       </p>
@@ -298,19 +298,19 @@ export function PageSectionNav({
               key={`${item.href}-${item.label}`}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`group flex min-h-11 min-w-[9.25rem] shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-0 sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:py-3 ${
+              className={`group flex min-h-11 min-w-[9.25rem] shrink-0 items-center gap-2 rounded border px-3 py-2.5 transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-w-0 sm:shrink sm:items-start sm:gap-3 sm:py-3 ${
                 active ? tone.linkActive : inactive.linkInactive
               }`}
             >
               <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md sm:mt-0.5 ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded sm:mt-0.5 ${
                   active ? tone.iconActive : inactive.iconInactive
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-xs font-bold sm:text-sm">
+                <span className="block truncate text-xs font-bold">
                   {item.label}
                 </span>
                 <span

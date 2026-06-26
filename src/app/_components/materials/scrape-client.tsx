@@ -277,7 +277,7 @@ function emptyScrapedProduct(jobUrl: string): ScrapedProduct {
 }
 
 const scrapeFieldClass =
-  "min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-10 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function ScrapeProductDetailDialog({
   open,
@@ -333,7 +333,7 @@ function ScrapeProductDetailDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,920px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,920px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border border-slate-400 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
       aria-labelledby="scrape-product-detail-title"
       aria-describedby="scrape-product-detail-description"
       onCancel={(event) => {
@@ -348,10 +348,10 @@ function ScrapeProductDetailDialog({
         }
       }}
     >
-      <div className="border-b border-slate-200 px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
+      <div className="border-b border-slate-400 px-2 py-4">
+        <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               Chi tiết sản phẩm scrape
             </p>
             <h3
@@ -368,7 +368,7 @@ function ScrapeProductDetailDialog({
             </div>
             <p
               id="scrape-product-detail-description"
-              className="mt-2 text-xs text-slate-500"
+              className="mt-2 text-xs text-slate-700"
             >
               {scrapeModeLabel[job.scrapeMode]} · {scrapeMethodLabel[job.method]}{" "}
               · {detailEnrichmentLabel[job.detailEnrichment]}
@@ -376,7 +376,7 @@ function ScrapeProductDetailDialog({
           </div>
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded text-slate-700 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={onClose}
             aria-label="Đóng chi tiết sản phẩm"
           >
@@ -385,9 +385,9 @@ function ScrapeProductDetailDialog({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
         {!canEdit ? (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {job.status === "running" || job.status === "queued"
               ? "Job đang scrape. Bạn có thể xem chi tiết; lưu/xóa sản phẩm sau khi job dừng lại hoặc gặp lỗi."
               : "Job chưa sẵn sàng chỉnh sửa. Bạn có thể xem chi tiết sản phẩm."}
@@ -409,7 +409,7 @@ function ScrapeProductDetailDialog({
           ) : null}
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-1 md:grid-cols-2">
           <label className="grid gap-1 md:col-span-2">
             <span className="text-xs font-bold text-slate-700">Tên sản phẩm</span>
             <input
@@ -620,14 +620,14 @@ function ScrapeProductDetailDialog({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-400 px-2 py-4">
         <div className="flex flex-wrap gap-2">
           {product.sourceUrl ? (
             <a
               href={product.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900"
             >
               Mở trang nguồn
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -805,11 +805,11 @@ function ScrapeJobConfigBadges({ job }: { job: ScrapeJobListItem }) {
         {detailEnrichmentLabel[job.detailEnrichment]}
       </Badge>
       {job.scrapeMode === "limited" ? (
-        <span className="text-[11px] font-medium text-slate-500">
+        <span className="text-xs font-medium text-slate-700">
           {formatLimit(job.maxPages)} trang · {formatLimit(job.maxProducts)} SP
         </span>
       ) : (
-        <span className="text-[11px] font-medium text-slate-500">
+        <span className="text-xs font-medium text-slate-700">
           Không giới hạn
         </span>
       )}
@@ -827,7 +827,7 @@ const SCRAPE_JOBS_VIEW_MODE_KEY = "bidtool:scrape-jobs-view-mode:v1";
 const SCRAPE_JOBS_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
 const DEFAULT_SCRAPE_JOBS_PAGE_SIZE = 25;
 const scrapeJobControlClass =
-  "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:min-h-10";
+  "min-h-11 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
 
 type ScrapeJobSortBy =
   | "shop"
@@ -904,7 +904,7 @@ const scrapeJobColumnWidthClass: Record<string, string> = {
 
 const scrapeJobCellBaseClass: Record<string, string> = {
   select: "text-center align-top",
-  stt: "text-center align-top text-slate-500 tabular-nums",
+  stt: "text-center align-top text-slate-700 tabular-nums",
   shop: "align-top",
   config: "align-top",
   status: "align-top",
@@ -1020,10 +1020,10 @@ function ScrapeJobCard({
     <article
       className={
         focused
-          ? "rounded-xl border border-sky-300 bg-sky-50/80 p-3 shadow-[var(--shadow-raised)]"
+          ? "rounded border border-blue-300 bg-blue-50/80 p-3 shadow-[var(--shadow-raised)]"
           : selected
-            ? "rounded-xl border border-sky-200 bg-sky-50/50 p-3 shadow-[var(--shadow-raised)]"
-            : "rounded-xl border border-slate-200 bg-white p-3 shadow-[var(--shadow-raised)]"
+            ? "rounded border border-blue-200 bg-blue-50/50 p-3 shadow-[var(--shadow-raised)]"
+            : "rounded border border-slate-400 bg-white p-3 shadow-[var(--shadow-raised)]"
       }
     >
       <div className="flex min-w-0 items-start gap-2.5">
@@ -1034,25 +1034,25 @@ function ScrapeJobCard({
         />
         <button
           type="button"
-          className="min-w-0 flex-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="min-w-0 flex-1 rounded text-left focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           onClick={() => onFocus(job.id)}
           aria-current={focused ? "true" : undefined}
           aria-label={`Xem job ${hostFromUrl(job.url)}`}
         >
-          <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+          <span className="text-xs font-semibold text-slate-600 tabular-nums">
             STT {rowNumber.toLocaleString("vi-VN")}
           </span>
           <span className="block truncate text-sm font-semibold text-slate-950">
             {hostFromUrl(job.url)}
           </span>
-          <span className="mt-1 line-clamp-2 text-xs break-all text-slate-500">
+          <span className="mt-1 line-clamp-2 text-xs break-all text-slate-700">
             {job.url}
           </span>
         </button>
         {active ? (
           <button
             type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-amber-200 bg-white text-amber-800 transition-colors duration-150 hover:bg-amber-50 hover:text-amber-900 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-amber-200 bg-white text-amber-800 transition-colors duration-0 hover:bg-amber-50 hover:text-amber-900 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
             disabled={isStopping}
             onClick={() => onStop(job)}
             aria-label={`Dừng job ${hostFromUrl(job.url)}`}
@@ -1067,7 +1067,7 @@ function ScrapeJobCard({
         ) : (
           <button
             type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-800 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-rose-200 bg-white text-rose-700 transition-colors duration-0 hover:bg-rose-50 hover:text-rose-800 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-60"
             disabled={isDeleting}
             onClick={() => onDelete(job)}
             aria-label={`Xóa job ${hostFromUrl(job.url)}`}
@@ -1099,19 +1099,19 @@ function ScrapeJobCard({
         <p className="mt-2 text-xs text-slate-600">{stateDetail}</p>
       ) : null}
       {preview.detail ? (
-        <p className="mt-1 text-xs font-medium text-slate-500">
+        <p className="mt-1 text-xs font-medium text-slate-700">
           {preview.detail}
         </p>
       ) : null}
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md bg-white/80 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Thời gian</dt>
+        <div className="rounded bg-white/80 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Thời gian</dt>
           <dd className="mt-0.5 font-semibold text-slate-900 tabular-nums">
             {formatDuration(elapsedMsForJob(job, clockMs))}
           </dd>
         </div>
-        <div className="rounded-md bg-white/80 px-2 py-1.5">
-          <dt className="font-semibold text-slate-500">Hết hạn</dt>
+        <div className="rounded bg-white/80 px-2 py-1.5">
+          <dt className="font-semibold text-slate-700">Hết hạn</dt>
           <dd className="mt-0.5 truncate font-semibold text-slate-900">
             {formatDateTime(job.expiresAt)}
           </dd>
@@ -1510,7 +1510,7 @@ function ScrapeJobsList({
       {
         id: "stt",
         enableHiding: false,
-        header: () => <span className="text-slate-500">STT</span>,
+        header: () => <span className="text-slate-700">STT</span>,
         cell: ({ row }) => (
           <span>
             {(
@@ -1536,14 +1536,14 @@ function ScrapeJobsList({
         cell: ({ row }) => (
           <button
             type="button"
-            className="block w-full rounded-md text-left focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+            className="block w-full rounded text-left focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={() => onFocusJob(row.original.id)}
             aria-label={`Xem job ${hostFromUrl(row.original.url)}`}
           >
-            <span className="block truncate font-semibold text-slate-950 hover:text-sky-700">
+            <span className="block truncate font-semibold text-slate-950 hover:text-blue-700">
               {hostFromUrl(row.original.url)}
             </span>
-            <span className="mt-1 block truncate text-xs text-slate-500">
+            <span className="mt-1 block truncate text-xs text-slate-700">
               {row.original.url}
             </span>
           </button>
@@ -1595,7 +1595,7 @@ function ScrapeJobsList({
             <div>
               <Badge tone={preview.tone}>{preview.label}</Badge>
               {preview.detail ? (
-                <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                <p className="mt-1 line-clamp-2 text-xs text-slate-700">
                   {preview.detail}
                 </p>
               ) : null}
@@ -1669,7 +1669,7 @@ function ScrapeJobsList({
           return active ? (
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors duration-150 hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 transition-colors duration-0 hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
               disabled={stoppingJobId !== null}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1687,7 +1687,7 @@ function ScrapeJobsList({
           ) : (
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 transition-colors duration-0 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
               disabled={isDeletingJob}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1758,7 +1758,7 @@ function ScrapeJobsList({
   };
 
   const renderPaginationBar = () => (
-    <div className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-3 flex flex-col gap-1 rounded border border-slate-400 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div
         className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
         aria-live="polite"
@@ -1773,7 +1773,7 @@ function ScrapeJobsList({
         <label className="inline-flex items-center gap-2">
           <span>Số dòng</span>
           <select
-            className="h-10 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            className="h-10 rounded border border-slate-400 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             aria-label="Số dòng mỗi trang"
             value={pagination.pageSize}
             onChange={(event) => {
@@ -1803,7 +1803,7 @@ function ScrapeJobsList({
             max={totalPages}
             value={pageJumpValue}
             aria-label="Nhảy tới trang"
-            className="h-10 w-14 rounded-md border border-slate-300 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none sm:h-8"
+            className="h-10 w-14 rounded border border-slate-400 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             onChange={(event) => setPageJumpValue(event.target.value)}
             onBlur={submitPageJump}
             onKeyDown={(event) => {
@@ -1815,7 +1815,7 @@ function ScrapeJobsList({
         </label>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang đầu"
           disabled={pagination.pageIndex === 0}
           onClick={() => goToPage(0)}
@@ -1824,7 +1824,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang trước"
           disabled={pagination.pageIndex === 0}
           onClick={() => goToPage(pagination.pageIndex - 1)}
@@ -1833,7 +1833,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang sau"
           disabled={pagination.pageIndex + 1 >= totalPages}
           onClick={() => goToPage(pagination.pageIndex + 1)}
@@ -1842,7 +1842,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang cuối"
           disabled={pagination.pageIndex + 1 >= totalPages}
           onClick={() => goToPage(totalPages - 1)}
@@ -1860,43 +1860,43 @@ function ScrapeJobsList({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
         <button
           type="button"
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+          className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
           onClick={resetViewControls}
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-slate-500">Tổng job</p>
-            <ListChecks className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+            <p className="text-xs font-semibold text-slate-700">Tổng job</p>
+            <ListChecks className="h-3.5 w-3.5 text-slate-600" aria-hidden />
           </div>
           <p className="mt-0.5 text-base font-bold text-slate-950">
             {stats.total.toLocaleString("vi-VN")}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 text-xs font-medium text-slate-700">
             Bấm để xóa bộ lọc
           </p>
         </button>
         <button
           type="button"
-          className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+          className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
             activeOnly
-              ? "border-sky-400 ring-2 ring-sky-300"
-              : "border-sky-200 bg-sky-50/70"
+              ? "border-blue-400 ring-2 ring-blue-300"
+              : "border-blue-200 bg-blue-50/70"
           }`}
           onClick={() => setActiveOnly((current) => !current)}
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-sky-700">Đang chạy</p>
-            <Loader2 className="h-3.5 w-3.5 text-sky-600" aria-hidden />
+            <p className="text-xs font-semibold text-blue-700">Đang chạy</p>
+            <Loader2 className="h-3.5 w-3.5 text-blue-600" aria-hidden />
           </div>
-          <p className="mt-0.5 text-base font-bold text-sky-950 tabular-nums">
+          <p className="mt-0.5 text-base font-bold text-blue-950 tabular-nums">
             {stats.active.toLocaleString("vi-VN")}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-sky-700">
+          <p className="mt-0.5 text-xs font-medium text-blue-700">
             Lọc job đang scrape
           </p>
         </button>
         <button
           type="button"
-          className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${
+          className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${
             statusFilter === "completed"
               ? "border-emerald-400 ring-2 ring-emerald-300"
               : "border-emerald-200 bg-emerald-50/70"
@@ -1914,13 +1914,13 @@ function ScrapeJobsList({
           <p className="mt-0.5 text-base font-bold text-emerald-900 tabular-nums">
             {stats.completed.toLocaleString("vi-VN")}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-emerald-700">
+          <p className="mt-0.5 text-xs font-medium text-emerald-700">
             Lọc job hoàn tất
           </p>
         </button>
         <button
           type="button"
-          className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${
+          className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-violet-200 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none ${
             hasProductsOnly
               ? "border-violet-400 ring-2 ring-violet-300"
               : "border-violet-200 bg-violet-50/70"
@@ -1934,13 +1934,13 @@ function ScrapeJobsList({
           <p className="mt-0.5 text-base font-bold text-violet-950 tabular-nums">
             {stats.withProducts.toLocaleString("vi-VN")}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-violet-700">
+          <p className="mt-0.5 text-xs font-medium text-violet-700">
             Lọc job có preview SP
           </p>
         </button>
         <button
           type="button"
-          className={`rounded-lg border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${
+          className={`rounded border px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${
             errorOnly
               ? "border-amber-400 ring-2 ring-amber-300"
               : "border-amber-200 bg-amber-50/70"
@@ -1954,14 +1954,14 @@ function ScrapeJobsList({
           <p className="mt-0.5 text-base font-bold text-amber-900 tabular-nums">
             {stats.errored.toLocaleString("vi-VN")}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-amber-700">
+          <p className="mt-0.5 text-xs font-medium text-amber-700">
             Lọc job lỗi hoặc đã hủy
           </p>
         </button>
       </div>
 
-      <div className="grid gap-3 border-b border-slate-200 pb-3 lg:grid-cols-[minmax(14rem,1fr)_auto] lg:items-end">
-        <p className="text-xs text-slate-500" aria-live="polite">
+      <div className="grid gap-1 border-b border-slate-400 pb-3 lg:grid-cols-[minmax(14rem,1fr)_auto] lg:items-end">
+        <p className="text-xs text-slate-700" aria-live="polite">
           {totalFiltered === 0
             ? "Không có job khớp bộ lọc."
             : `${pageStart.toLocaleString("vi-VN")}-${pageEnd.toLocaleString(
@@ -1978,7 +1978,7 @@ function ScrapeJobsList({
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-400 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             onClick={() => setIsFiltersOpen((open) => !open)}
             aria-expanded={isFiltersOpen}
             aria-controls="scrape-jobs-filters-content"
@@ -1996,7 +1996,7 @@ function ScrapeJobsList({
             Đặt lại
           </Button>
           <div
-            className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-0.5 shadow-[var(--shadow-flat)]"
+            className="inline-flex items-center rounded border border-slate-400 bg-white p-0.5 shadow-[var(--shadow-flat)]"
             role="group"
             aria-label="Kiểu hiển thị"
           >
@@ -2005,9 +2005,9 @@ function ScrapeJobsList({
               aria-pressed={viewMode === "table"}
               title="Xem dạng bảng"
               onClick={() => setViewMode("table")}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-semibold transition-colors ${
                 viewMode === "table"
-                  ? "bg-sky-600 text-white"
+                  ? "bg-blue-600 text-white"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
             >
@@ -2019,9 +2019,9 @@ function ScrapeJobsList({
               aria-pressed={viewMode === "grid"}
               title="Xem dạng lưới"
               onClick={() => setViewMode("grid")}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs font-semibold transition-colors ${
                 viewMode === "grid"
-                  ? "bg-sky-600 text-white"
+                  ? "bg-blue-600 text-white"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
             >
@@ -2068,9 +2068,9 @@ function ScrapeJobsList({
             {showColumnPicker ? (
               <div
                 id="scrape-jobs-column-picker"
-                className="absolute top-full right-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+                className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-400 bg-white p-3 shadow-lg"
               >
-                <p className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Cột tùy chọn
                 </p>
                 <div className="mt-2 grid gap-2">
@@ -2088,14 +2088,14 @@ function ScrapeJobsList({
                           type="checkbox"
                           checked={tableColumn.getIsVisible()}
                           onChange={tableColumn.getToggleVisibilityHandler()}
-                          className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                          className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                         />
                         {column.label}
                       </label>
                     );
                   })}
                 </div>
-                <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                <p className="mt-3 text-xs leading-relaxed text-slate-700">
                   Bấm tiêu đề cột để sắp xếp. Bấm dòng để xem chi tiết job.
                 </p>
               </div>
@@ -2116,26 +2116,26 @@ function ScrapeJobsList({
 
       {activeFilterChips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold tracking-[0.12em] text-slate-400 uppercase">
+          <span className="text-xs font-bold tracking-[0.12em] text-slate-600 uppercase">
             Đang lọc
           </span>
           {activeFilterChips.map((chip) => (
             <button
               key={chip.key}
               type="button"
-              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 py-0.5 pr-1.5 pl-2.5 text-xs font-semibold text-sky-800 transition-colors hover:border-sky-300 hover:bg-sky-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+              className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 py-0.5 pr-1.5 pl-2.5 text-xs font-semibold text-blue-800 transition-colors hover:border-blue-300 hover:bg-blue-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               onClick={chip.onClear}
               aria-label={`Bỏ lọc ${chip.label}: ${chip.value}`}
               title={`Bỏ lọc ${chip.label}`}
             >
-              <span className="text-sky-500">{chip.label}:</span>
+              <span className="text-blue-500">{chip.label}:</span>
               <span className="max-w-40 truncate">{chip.value}</span>
               <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
             </button>
           ))}
           <button
             type="button"
-            className="ml-1 text-xs font-semibold text-slate-500 hover:text-slate-900 hover:underline"
+            className="ml-1 text-xs font-semibold text-slate-700 hover:text-slate-900 hover:underline"
             onClick={resetViewControls}
           >
             Xóa tất cả
@@ -2143,17 +2143,17 @@ function ScrapeJobsList({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="overflow-hidden rounded border border-slate-400">
         <button
           type="button"
-          className="flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="flex w-full items-center justify-between gap-1 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           onClick={() => setIsFiltersOpen((open) => !open)}
           aria-expanded={isFiltersOpen}
           aria-controls="scrape-jobs-filters-content"
         >
           <span className="flex min-w-0 items-center gap-2">
             <SlidersHorizontal
-              className="h-4 w-4 shrink-0 text-slate-500"
+              className="h-4 w-4 shrink-0 text-slate-700"
               aria-hidden
             />
             <span className="text-sm font-bold text-slate-950">
@@ -2161,11 +2161,11 @@ function ScrapeJobsList({
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
-            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+            <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
               {activeFilterCount.toLocaleString("vi-VN")} đang áp dụng
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
+              className={`h-4 w-4 text-slate-700  ${
                 isFiltersOpen ? "rotate-180" : ""
               }`}
               aria-hidden
@@ -2176,16 +2176,16 @@ function ScrapeJobsList({
         {isFiltersOpen ? (
           <div
             id="scrape-jobs-filters-content"
-            className="grid gap-3 border-t border-slate-200 bg-slate-50 p-3"
+            className="grid gap-1 border-t border-slate-400 bg-slate-50 p-3"
           >
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Tìm kiếm
                 </span>
                 <span className="relative">
                   <Search
-                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                     aria-hidden
                   />
                   <input
@@ -2198,7 +2198,7 @@ function ScrapeJobsList({
                 </span>
               </label>
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Trạng thái
                 </span>
                 <select
@@ -2219,7 +2219,7 @@ function ScrapeJobsList({
                 </select>
               </label>
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Cách đọc
                 </span>
                 <select
@@ -2240,7 +2240,7 @@ function ScrapeJobsList({
                 </select>
               </label>
               <label className="grid gap-1">
-                <span className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+                <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Bổ sung thông tin
                 </span>
                 <select
@@ -2261,11 +2261,11 @@ function ScrapeJobsList({
                 </select>
               </label>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-1">
               <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                  className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                   checked={activeOnly}
                   onChange={(event) => setActiveOnly(event.target.checked)}
                 />
@@ -2274,7 +2274,7 @@ function ScrapeJobsList({
               <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                  className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                   checked={hasProductsOnly}
                   onChange={(event) =>
                     setHasProductsOnly(event.target.checked)
@@ -2285,13 +2285,13 @@ function ScrapeJobsList({
               <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                  className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                   checked={errorOnly}
                   onChange={(event) => setErrorOnly(event.target.checked)}
                 />
                 Chỉ job lỗi / hủy
               </label>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-700">
                 Bấm tiêu đề cột để đổi thứ tự. Mặc định: job đang chạy lên đầu,
                 rồi mới nhất.
               </span>
@@ -2301,7 +2301,7 @@ function ScrapeJobsList({
       </div>
 
       {listCapped ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Danh sách đạt giới hạn {SCRAPE_JOBS_LIST_CAP} job gần nhất. Xóa bớt job
           cũ để xem các job khác.
         </p>
@@ -2316,7 +2316,7 @@ function ScrapeJobsList({
         <>
           {/* Grid / mobile cards */}
           <div
-            className={`grid gap-3 ${
+            className={`grid gap-1 ${
               viewMode === "grid"
                 ? "md:grid md:grid-cols-2 xl:grid-cols-3"
                 : "md:hidden"
@@ -2345,12 +2345,12 @@ function ScrapeJobsList({
 
           {/* Table */}
           <div
-            className={`hidden overflow-hidden rounded-lg border border-slate-200 ${
+            className={`hidden overflow-hidden rounded border border-slate-400 ${
               viewMode === "table" ? "md:block" : ""
             }`}
           >
             <table className="w-full table-fixed divide-y divide-slate-200 text-sm break-words">
-              <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-slate-100/50 text-left text-xs tracking-wide text-slate-600 uppercase shadow-[0_1px_0_0_rgb(226,232,240)]">
+              <thead className="sticky top-0 z-10 border-b border-slate-400 bg-slate-200 text-left text-xs font-bold tracking-wide text-slate-900 uppercase">
                 {pageTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
@@ -2380,12 +2380,12 @@ function ScrapeJobsList({
                       key={row.id}
                       tabIndex={0}
                       aria-selected={selected}
-                      className={`cursor-pointer transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none focus-visible:ring-inset ${
+                      className={`cursor-pointer transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none focus-visible:ring-inset ${
                         selected
-                          ? "bg-sky-50/80"
+                          ? "bg-blue-50/80"
                           : row.getIsSelected()
-                            ? "bg-sky-50/50"
-                            : "hover:bg-sky-50/40"
+                            ? "bg-blue-50/50"
+                            : "hover:bg-blue-50/40"
                       }`}
                       onClick={(event) =>
                         handleRowClick(event, row.original.id)
@@ -2484,7 +2484,7 @@ function ImportPreviewSummaryPanel({
           tone="neutral"
         />
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-700">
         Tổng {normalized.total.toLocaleString("vi-VN")} sản phẩm trong lần nhập
         này. Các sản phẩm trùng catalog sẽ được ghép tự động khi nhập.
       </p>
@@ -2506,14 +2506,14 @@ function PreviewCountCard({
     tone === "success"
       ? "border-emerald-200 bg-emerald-50 text-emerald-900"
       : tone === "info"
-        ? "border-sky-200 bg-sky-50 text-sky-900"
+        ? "border-blue-200 bg-blue-50 text-blue-900"
         : tone === "warning"
           ? "border-amber-200 bg-amber-50 text-amber-900"
-          : "border-slate-200 bg-slate-50 text-slate-700";
+          : "border-slate-400 bg-slate-50 text-slate-700";
 
   return (
-    <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+    <div className={`rounded border px-3 py-2 ${toneClass}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
         {label}
       </p>
       <p className="mt-1 text-lg font-bold tabular-nums">
@@ -3541,7 +3541,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         ) : null}
       </ConfirmDialog>
       {isJobPage ? (
-        <section className="panel p-4 sm:p-5">
+        <section className="panel p-4">
           <Link
             href="/materials/scrape"
             className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
@@ -3554,29 +3554,29 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       {!isJobPage ? (
       <>
       <section className="panel overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
+        <div className="border-b border-slate-400 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-violet-700" aria-hidden />
             <h2 className="text-sm font-bold text-slate-950">Cấu hình job scrape</h2>
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
+          <p className="mt-1 text-xs leading-5 text-slate-700">
             Job chạy nền trên server, theo pagination cùng domain và chỉ nhập
             vào catalog sau khi bạn duyệt sản phẩm.
           </p>
         </div>
 
-        <form onSubmit={submitScrape} className="space-y-4 p-4 sm:p-5">
+        <form onSubmit={submitScrape} className="space-y-4 p-4">
           <label className="grid gap-1.5">
             <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
               Shop URL
             </span>
             <span className="relative">
               <LinkIcon
-                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                 aria-hidden
               />
               <input
-                className="min-h-10 w-full rounded-lg border border-slate-300 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                className="min-h-10 w-full rounded border border-slate-400 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 placeholder="https://shop.example.com/category"
                 spellCheck={false}
                 value={shopUrl}
@@ -3587,20 +3587,20 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </span>
           </label>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-2 lg:grid-cols-3">
             <fieldset className="grid gap-1.5">
               <legend className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                 Phạm vi
               </legend>
-              <div className="grid grid-cols-2 rounded-lg border border-slate-300 bg-slate-50 p-0.5">
+              <div className="grid grid-cols-2 rounded border border-slate-400 bg-slate-50 p-0.5">
                 {(["limited", "all"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     className={
                       scrapeMode === mode
-                        ? "min-h-10 rounded-md bg-white px-2 text-xs font-bold text-sky-800 shadow-sm sm:min-h-8"
-                        : "min-h-10 rounded-md px-2 text-xs font-semibold text-slate-600 hover:text-slate-900 sm:min-h-8"
+                        ? "min-h-10 rounded bg-white px-2 text-xs font-bold text-blue-800 shadow-sm"
+                        : "min-h-10 rounded px-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
                     }
                     disabled={isStartingScrape}
                     onClick={() => setScrapeMode(mode)}
@@ -3616,7 +3616,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 Cách đọc
               </span>
               <select
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 value={scrapeMethod}
                 disabled={isStartingScrape}
                 onChange={(event) =>
@@ -3631,7 +3631,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 ))}
               </select>
               {!isAutoMethod ? (
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-700">
                   {scrapeMethodHelp[scrapeMethod]}
                 </span>
               ) : null}
@@ -3641,7 +3641,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 Bổ sung thông tin
               </span>
               <select
-                className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 value={detailEnrichment}
                 disabled={isStartingScrape}
                 onChange={(event) =>
@@ -3657,14 +3657,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-700">
                 {detailEnrichmentHelp[detailEnrichment]}
               </span>
             </label>
           </div>
 
           {showLimitFields ? (
-            <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
+            <div className="grid gap-2 sm:max-w-md sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                   Trang tối đa
@@ -3677,7 +3677,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   step={1}
                   inputMode="numeric"
                   autoComplete="off"
-                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                  className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                   value={maxPages}
                   disabled={isStartingScrape}
                   onChange={(event) =>
@@ -3704,7 +3704,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   step={1}
                   inputMode="numeric"
                   autoComplete="off"
-                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-9"
+                  className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                   value={maxProducts}
                   disabled={isStartingScrape}
                   onChange={(event) =>
@@ -3722,7 +3722,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           ) : null}
 
-          <div className="space-y-3 border-t border-slate-100 pt-4">
+          <div className="space-y-3 border-t border-slate-400 pt-4">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
@@ -3757,7 +3757,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 Bỏ chọn job
               </Button>
             </div>
-            <div className="flex flex-wrap gap-1.5 rounded-lg bg-slate-50 px-3 py-2">
+            <div className="flex flex-wrap gap-1.5 rounded bg-slate-50 px-3 py-2">
               <Badge tone="neutral">Theo pagination cùng domain</Badge>
               <Badge tone="neutral">Chặn ảnh / font / media</Badge>
               <Badge tone="neutral">Nhập sau khi duyệt</Badge>
@@ -3777,14 +3777,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         </form>
       </section>
 
-      <section className="panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="panel p-4">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <p className="section-title">Danh sách job</p>
             <h2 className="mt-1 text-base font-bold text-slate-950">
               Nhiều scrape chạy song song
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Mỗi job giữ cấu hình scrape đã chọn, trạng thái chạy và preview
               sản phẩm. Chọn một job để xem và nhập catalog.
             </p>
@@ -3823,7 +3823,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         <>
       {scrapeJobPollingError ? (
         <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-1">
             <p>Không cập nhật được tiến độ scrape: {scrapeJobPollingError}</p>
             <Button
               type="button"
@@ -3839,7 +3839,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
       {importJobPollingError ? (
         <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-1">
             <p>
               Không cập nhật được tiến độ nhập catalog: {importJobPollingError}
             </p>
@@ -3856,8 +3856,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {missingJobMessage ? (
-        <section className="panel border-amber-200 bg-amber-50 p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title text-amber-800">Không mở được job</p>
               <h2 className="mt-1 text-base font-bold text-amber-950">
@@ -3881,15 +3881,15 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {isJobDetailLoading ? (
-        <section className="panel p-4 sm:p-5" aria-live="polite">
-          <div className="flex items-start gap-3">
-            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-sky-600" aria-hidden />
+        <section className="panel p-4" aria-live="polite">
+          <div className="flex items-start gap-1">
+            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-blue-600" aria-hidden />
             <div>
               <p className="section-title">Đang mở job scrape</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
                 Tải trạng thái và preview sản phẩm…
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-700">
                 Trang sẽ tự cập nhật khi lấy được dữ liệu từ server.
               </p>
             </div>
@@ -3898,14 +3898,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {pendingScrapeJob && !activeJob ? (
-        <section className="panel p-4 sm:p-5" aria-live="polite">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel p-4" aria-live="polite">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Tiến độ job</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
                 {hostFromUrl(pendingScrapeJob.url)}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Đang tạo job nền trên server
               </p>
             </div>
@@ -3921,9 +3921,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
-              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-700">
+          <div className="mt-4 grid gap-1 lg:grid-cols-2">
+            <div className="rounded border border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-700">
                 <span>Trang</span>
                 <span>{formatLimit(pendingScrapeJob.maxPages)}</span>
               </div>
@@ -3934,8 +3934,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 tone="sky"
               />
             </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-700">
+            <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
+              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-700">
                 <span>Sản phẩm</span>
                 <span>{formatLimit(pendingScrapeJob.maxProducts)}</span>
               </div>
@@ -3949,19 +3949,19 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-4">
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Phạm vi: </span>
               {scrapeModeLabel[pendingScrapeJob.scrapeMode]}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Cách đọc: </span>
               {scrapeMethodLabel[pendingScrapeJob.method]}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Bổ sung: </span>
               {detailEnrichmentLabel[pendingScrapeJob.detailEnrichment]}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">URL: </span>
               <span className="break-all">{pendingScrapeJob.url}</span>
             </div>
@@ -3970,14 +3970,14 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {activeJob ? (
-        <section className="panel p-4 sm:p-5" aria-live="polite">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel p-4" aria-live="polite">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Tiến độ job</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
                 {hostFromUrl(activeJob.url)}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Job ID: {activeJob.id}
               </p>
             </div>
@@ -4013,9 +4013,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+          <div className="mt-4 grid gap-1 lg:grid-cols-2">
+            <div className="rounded border border-slate-400 bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
                 <span>Trang đã đọc</span>
                 <span>
                   {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
@@ -4029,8 +4029,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 tone="sky"
               />
             </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+            <div className="rounded border border-slate-400 bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
                 <span>Sản phẩm tìm thấy</span>
                 <span>
                   {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
@@ -4047,7 +4047,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Đang đọc: </span>
               <span className="break-all">
                 {activeJob.currentUrls.length > 0
@@ -4055,17 +4055,17 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   : "-"}
               </span>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">
                 Queue còn lại:{" "}
               </span>
               {activeJob.queueLength.toLocaleString("vi-VN")}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">Phạm vi: </span>
               {scrapeModeLabel[activeJob.scrapeMode]}
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="rounded border border-slate-400 bg-white px-3 py-2">
               <span className="font-semibold text-slate-800">
                 Cập nhật cuối:{" "}
               </span>
@@ -4079,8 +4079,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             <div
               className={
                 activeJob.status === "failed"
-                  ? "mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900"
-                  : "mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900"
+                  ? "mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900"
+                  : "mt-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900"
               }
             >
               {activeJobStopReason ? (
@@ -4091,7 +4091,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           ) : null}
 
           {isPartialImportableJob ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               Job dừng sớm — vẫn có thể nhập{" "}
               {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm đã thu
               thập sau khi duyệt preview.
@@ -4099,7 +4099,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           ) : null}
 
           {activeJob.detailEnrichment === "none" ? (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               Job này chỉ đọc trang danh mục. Nếu NCC, xuất xứ hoặc thông số bị
               thiếu, chạy lại với chế độ “Bổ sung thiếu” để đọc trang chi tiết
               sản phẩm.
@@ -4107,7 +4107,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           ) : null}
 
           {activeJob.failedPages.length > 0 ? (
-            <details className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            <details className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
               <summary className="cursor-pointer font-semibold">
                 {activeJob.failedPages.length.toLocaleString("vi-VN")} trang không
                 đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
@@ -4116,7 +4116,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 {activeJob.failedPages.slice(0, 10).map((page, index) => (
                   <li
                     key={`${page.url}-${index}`}
-                    className="rounded-md border border-amber-200 bg-white/80 px-2 py-1.5"
+                    className="rounded border border-amber-200 bg-white/80 px-2 py-1.5"
                   >
                     <a
                       href={page.url}
@@ -4145,7 +4145,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           {activeJob.maxPages != null &&
           activeJob.pagesVisited.length >= activeJob.maxPages &&
           activeJob.productCount === 0 ? (
-            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
+            <div className="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
               Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
               {activeJob.maxPages.toLocaleString("vi-VN")} trang nhưng không
               trích xuất được sản phẩm nào.
@@ -4158,7 +4158,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {activeJob ? (
-        <section id="material-scrape-products" className="panel p-4 sm:p-5">
+        <section id="material-scrape-products" className="panel p-4">
           <ConfirmDialog
             open={deleteProductTarget !== null}
             title={`Xóa "${deleteProductTarget?.name ?? ""}" khỏi job scrape?`}
@@ -4231,13 +4231,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             }}
           />
 
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Duyệt sản phẩm scrape</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
                 Job {shortJobId(activeJob.id)} · {hostFromUrl(activeJob.url)}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 {scrapeProducts.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
                 {scrapeModeLabel[activeJob.scrapeMode]} ·{" "}
                 {scrapeMethodLabel[activeJob.method]} ·{" "}
@@ -4252,7 +4252,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   Preview
                 </Badge>
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-slate-700">
                 Bấm một dòng sản phẩm để xem chi tiết, chỉnh sửa hoặc xóa trước
                 khi nhập catalog. Mã SP theo job:{" "}
                 <span className="font-semibold text-slate-700">
@@ -4367,13 +4367,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             <div
               className={
                 isImportActive
-                  ? "rounded-lg border border-sky-200 bg-sky-50 p-3"
-                  : "rounded-lg border border-slate-200 bg-white p-3"
+                  ? "rounded border border-blue-200 bg-blue-50 p-3"
+                  : "rounded border border-slate-400 bg-white p-3"
               }
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                  <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
                     Quá trình nhập catalog
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -4414,7 +4414,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+              <div className="mt-3 flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
                 <span>Tiến độ ghi DB</span>
                 <span>{activeImportJob ? `${importPercent ?? 0}%` : "0%"}</span>
               </div>
@@ -4452,13 +4452,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                     Mục hiện tại: {activeImportJob.currentProductName ?? "-"}
                   </p>
                   {activeImportJob.error ? (
-                    <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
+                    <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
                       {activeImportJob.error}
                     </p>
                   ) : null}
                 </>
               ) : (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-700">
                   Sẵn sàng ghi catalog sau khi chọn sản phẩm.
                 </p>
               )}
@@ -4467,7 +4467,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
           {scrapeProducts.length > 0 || activeJob.productCount > 0 ? (
             <>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-1 rounded border border-slate-400 bg-slate-50 p-3">
               <div className="flex flex-wrap gap-2">
                 {SCRAPE_QUALITY_FILTER_OPTIONS.map((filter) => (
                   <button
@@ -4475,8 +4475,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                     type="button"
                     className={
                       qualityFilter === filter
-                        ? "rounded-full border border-sky-400 bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-900"
-                        : "rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:border-sky-200"
+                        ? "rounded-full border border-blue-400 bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900"
+                        : "rounded-full border border-slate-400 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:border-blue-200"
                     }
                     onClick={() =>
                       setQualityFilter((current) =>
@@ -4492,7 +4492,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-sky-600"
+                  className="h-4 w-4 rounded border-slate-400 accent-blue-600"
                   checked={hideMissingNameProducts}
                   onChange={(event) =>
                     setHideMissingNameProducts(event.target.checked)
@@ -4503,7 +4503,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
 
             {isActive && scrapeProducts.length === 0 && activeJob.productCount > 0 ? (
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-slate-700">
                 Đang thu thập {activeJob.productCount.toLocaleString("vi-VN")}{" "}
                 sản phẩm — bảng preview sẽ hiện đầy đủ khi job dừng.
               </p>
@@ -4511,7 +4511,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
           {scrapeProducts.length > 0 ? (
             <>
-            <div className="mt-4 grid gap-3 lg:hidden">
+            <div className="mt-4 grid gap-1 lg:hidden">
               {pagedScrapeProducts.map((item, index) => {
                 const key = productKey(item);
                 const selected = selectedSourceUrls.has(key);
@@ -4547,9 +4547,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               })}
             </div>
 
-            <div className="mt-4 hidden overflow-x-auto rounded-lg border border-slate-200 lg:block">
+            <div className="mt-4 hidden overflow-x-auto rounded border border-slate-400 lg:block">
               <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
-                <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
+                <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
                   <tr>
                     <th className="w-10 px-3 py-2"> </th>
                     <th className="px-3 py-2">Mã SP</th>
@@ -4581,11 +4581,11 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         key={`${key}-${index}`}
                         tabIndex={0}
                         aria-selected={isDetailOpen}
-                        className={`cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none focus-visible:ring-inset ${
+                        className={`cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none focus-visible:ring-inset ${
                           isDetailOpen
-                            ? "bg-sky-100/80"
+                            ? "bg-blue-100/80"
                             : selected
-                              ? "bg-sky-50/70 hover:bg-sky-50"
+                              ? "bg-blue-50/70 hover:bg-blue-50"
                               : "hover:bg-slate-50"
                         }`}
                         onClick={() => openProductDetail(item)}
@@ -4602,7 +4602,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         <td className="px-3 py-2">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
+                            className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600"
                             checked={selected}
                             disabled={isImportActive}
                             onClick={(event) => event.stopPropagation()}
@@ -4617,10 +4617,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         </td>
                         <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
                           <span className="line-clamp-2">{item.name}</span>
-                          <span className="mt-1 block text-xs font-medium text-slate-500">
+                          <span className="mt-1 block text-xs font-medium text-slate-700">
                             {infoSummary || "Không có SKU / model / trạng thái"}
                           </span>
-                          <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700">
+                          <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
                             <Eye className="h-3 w-3" aria-hidden />
                             Xem chi tiết
                           </span>
@@ -4683,7 +4683,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             href={item.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                             onClick={(event) => event.stopPropagation()}
                             aria-label={`Mở trang nguồn của ${item.name}`}
                             title={item.sourceUrl}
@@ -4698,7 +4698,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openProductDetail(item);
@@ -4712,7 +4712,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                               <>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-white text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-amber-200 bg-white text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     openProductDetail(item);
@@ -4724,7 +4724,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                                 </button>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-200 bg-white text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
                                   disabled={deleteShopScrapeJobProduct.isPending}
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -4749,7 +4749,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           ) : null}
 
             {filteredScrapeProducts.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-1 text-xs text-slate-600">
                 <p>
                   Hiển thị{" "}
                   {(productPageIndex * productPageSize + 1).toLocaleString(
@@ -4767,7 +4767,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   <label className="flex items-center gap-2">
                     <span>Dòng/trang</span>
                     <select
-                      className="rounded-md border border-slate-300 bg-white px-2 py-1"
+                      className="rounded border border-slate-400 bg-white px-2 py-1"
                       value={productPageSize}
                       aria-label="Số sản phẩm mỗi trang"
                       onChange={(event) => {
@@ -4824,8 +4824,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {importResult ? (
-        <section className="panel p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <section className="panel p-4">
+          <div className="flex flex-wrap items-start justify-between gap-1">
             <div>
               <p className="section-title">Kết quả nhập</p>
               <h2 className="mt-1 text-base font-bold text-slate-950">
@@ -4855,9 +4855,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+          <div className="mt-4 overflow-x-auto rounded border border-slate-400">
             <table className="w-full min-w-[34rem] table-fixed divide-y divide-slate-200 text-sm break-words">
-              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-500 uppercase">
+              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
                 <tr>
                   <th className="px-3 py-2">Sản phẩm</th>
                   <th className="px-3 py-2">Trạng thái</th>
@@ -4871,7 +4871,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                     <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
                       <span className="line-clamp-2">{item.name}</span>
                       {item.message ? (
-                        <span className="mt-1 block text-xs font-medium text-slate-500">
+                        <span className="mt-1 block text-xs font-medium text-slate-700">
                           {item.message}
                         </span>
                       ) : null}
@@ -4886,7 +4886,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                         href={item.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="line-clamp-2 hover:text-sky-700 hover:underline"
+                        className="line-clamp-2 hover:text-blue-700 hover:underline"
                       >
                         {item.sourceUrl}
                       </a>
@@ -4895,13 +4895,13 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                       {item.materialId ? (
                         <Link
                           href={`/materials/${item.materialId}`}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-sky-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700"
                           aria-label={`Mở vật tư ${item.name}`}
                         >
                           <ArrowUpRight className="h-4 w-4" aria-hidden />
                         </Link>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-slate-600">-</span>
                       )}
                     </td>
                   </tr>

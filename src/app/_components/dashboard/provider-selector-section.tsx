@@ -32,7 +32,7 @@ const PROVIDER_META: Record<
 const FEATURES: { id: FeatureId; label: string; description: string; icon: typeof Bot }[] = [
   {
     id: "chat",
-    label: "Chat sandbox",
+    label: "Thử nghiệm chat",
     description: "Provider dùng cho trang chat thử nghiệm.",
     icon: MessageSquare,
   },
@@ -89,12 +89,12 @@ export function ProviderSelectorSection() {
         title="Chọn AI provider cho từng tính năng"
         description="Quyết định provider nào được dùng cho mỗi chức năng AI trong ứng dụng. Chỉ chọn được provider đã có API key."
         icon={Bot}
-        iconClassName="bg-sky-600 text-white"
+        iconClassName="bg-blue-600 text-white"
       />
 
-      <div className="space-y-5 p-5">
+      <div className="space-y-5 p-2">
         {isLoading ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1 sm:grid-cols-2">
             <SkeletonKpi />
             <SkeletonKpi />
           </div>
@@ -105,11 +105,11 @@ export function ProviderSelectorSection() {
             return (
               <fieldset
                 key={feature.id}
-                className="rounded-lg border border-slate-200 bg-white p-4"
+                className="rounded border border-slate-400 bg-white p-4"
               >
                 <legend className="sr-only">{feature.label}</legend>
-                <div className="mb-3 flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+                <div className="mb-3 flex items-start gap-1">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-blue-50 text-blue-700">
                     <FeatureIcon className="h-4 w-4" aria-hidden />
                   </span>
                   <div className="min-w-0">
@@ -140,10 +140,10 @@ export function ProviderSelectorSection() {
                           aria-pressed={isSelected}
                           disabled={!isConfigured || setActiveMutation.isPending}
                           onClick={() => handleSelect(feature.id, providerId)}
-                          className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
+                          className={`flex flex-col gap-1 rounded border p-3 text-left transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
                             isSelected
-                              ? "border-sky-500 bg-sky-50"
-                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-slate-400 bg-white hover:border-slate-400 hover:bg-slate-50"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -152,12 +152,12 @@ export function ProviderSelectorSection() {
                             </span>
                             {isSelected ? (
                               <Check
-                                className="h-4 w-4 shrink-0 text-sky-600"
+                                className="h-4 w-4 shrink-0 text-blue-600"
                                 aria-hidden
                               />
                             ) : null}
                           </div>
-                          <span className="text-xs leading-5 text-slate-500">
+                          <span className="text-xs leading-5 text-slate-700">
                             {meta.description}
                           </span>
                           <span className="mt-1">

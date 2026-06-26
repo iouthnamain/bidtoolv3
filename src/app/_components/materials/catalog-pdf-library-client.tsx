@@ -48,7 +48,7 @@ const sourceTypeLabel: Record<CatalogDocumentListItem["sourceType"], string> = {
 };
 
 const inputClass =
-  "min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const selectClass = `${inputClass} cursor-pointer pr-8`;
 
@@ -387,16 +387,16 @@ export function CatalogPdfLibraryClient({
             }
           />
 
-          <section className="panel p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <section className="panel p-2">
+            <div className="flex flex-wrap items-center justify-between gap-1">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-slate-500" aria-hidden />
+                <FileText className="h-4 w-4 text-slate-700" aria-hidden />
                 <h3 className="text-base font-bold text-slate-950">Thư viện</h3>
                 <Badge tone="info">{visibleDocuments.length} tài liệu</Badge>
               </div>
               <div className="relative w-full max-w-sm">
                 <Search
-                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                   aria-hidden
                 />
                 <input
@@ -490,7 +490,7 @@ export function CatalogPdfLibraryClient({
             ) : null}
 
             {listQuery.isLoading ? (
-              <p className="mt-4 text-sm text-slate-500">Đang tải…</p>
+              <p className="mt-4 text-sm text-slate-700">Đang tải…</p>
             ) : documents.length === 0 ? (
               <EmptyState
                 className="mt-4"
@@ -520,12 +520,12 @@ export function CatalogPdfLibraryClient({
               <div className="mt-4 overflow-hidden">
                 <table className="w-full table-fixed text-left text-sm break-words">
                   <thead>
-                    <tr className="border-b border-slate-200 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                    <tr className="border-b border-slate-400 text-xs font-semibold tracking-wide text-slate-700 uppercase">
                       <th className="w-8 px-2 py-2">
                         <input
                           type="checkbox"
                           aria-label="Chọn tất cả"
-                          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                          className="h-4 w-4 cursor-pointer rounded border-slate-400 text-blue-600 focus:ring-blue-500"
                           checked={allVisibleSelected}
                           onChange={toggleAllVisible}
                         />
@@ -546,11 +546,11 @@ export function CatalogPdfLibraryClient({
                       return (
                         <tr
                           key={document.id}
-                          className={`border-b border-slate-100 ${
+                          className={`border-b border-slate-400 ${
                             isChecked
-                              ? "bg-sky-50"
+                              ? "bg-blue-50"
                               : isSelected
-                                ? "bg-sky-50/70"
+                                ? "bg-blue-50/70"
                                 : "hover:bg-slate-50"
                           }`}
                         >
@@ -558,7 +558,7 @@ export function CatalogPdfLibraryClient({
                             <input
                               type="checkbox"
                               aria-label={`Chọn ${document.title}`}
-                              className="mt-1 h-4 w-4 cursor-pointer rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                              className="mt-1 h-4 w-4 cursor-pointer rounded border-slate-400 text-blue-600 focus:ring-blue-500"
                               checked={isChecked}
                               onChange={() => toggleRow(document.id)}
                             />
@@ -566,7 +566,7 @@ export function CatalogPdfLibraryClient({
                           <td className="px-2 py-2.5">
                             <button
                               type="button"
-                              className="text-left font-semibold text-slate-900 [overflow-wrap:anywhere] hover:text-sky-700"
+                              className="text-left font-semibold text-slate-900 [overflow-wrap:anywhere] hover:text-blue-700"
                               onClick={() =>
                                 router.push(`/catalog-pdfs/${document.id}`)
                               }
@@ -588,7 +588,7 @@ export function CatalogPdfLibraryClient({
                                 </Badge>
                               ))}
                               {updatedLabel ? (
-                                <span className="text-xs text-slate-400">
+                                <span className="text-xs text-slate-600">
                                   {updatedLabel}
                                 </span>
                               ) : null}
@@ -600,7 +600,7 @@ export function CatalogPdfLibraryClient({
                                 href={document.sourceUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900"
                               >
                                 <ExternalLink
                                   className="h-3.5 w-3.5"
@@ -609,7 +609,7 @@ export function CatalogPdfLibraryClient({
                                 Mở URL
                               </a>
                             ) : (
-                              <span className="text-xs text-slate-400">-</span>
+                              <span className="text-xs text-slate-600">-</span>
                             )}
                           </td>
                           <td className="px-2 py-2.5">
@@ -705,7 +705,7 @@ function KpiStrip({
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
       {items.map((item) => (
         <div key={item.label} className="panel px-4 py-3">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+          <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
             {item.label}
           </p>
           <p className={`mt-1 text-2xl font-bold tabular-nums ${item.tone}`}>
@@ -758,15 +758,15 @@ function NewDocumentView({
   const fileSizeLabel = uploadFile ? formatFileSize(uploadFile.size) : null;
 
   return (
-    <section className="panel p-5">
+    <section className="panel p-2">
       <h3 className="text-base font-bold text-slate-950">Thêm tài liệu</h3>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-4 grid gap-2 md:grid-cols-2">
         <form
-          className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
+          className="rounded border border-slate-400 bg-slate-50/60 p-4"
           onSubmit={onSubmitUrl}
         >
           <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-            <LinkIcon className="h-4 w-4 text-slate-500" aria-hidden />
+            <LinkIcon className="h-4 w-4 text-slate-700" aria-hidden />
             Từ URL PDF
           </h4>
           <div className="mt-3 grid gap-2">
@@ -805,11 +805,11 @@ function NewDocumentView({
         </form>
 
         <form
-          className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
+          className="rounded border border-slate-400 bg-slate-50/60 p-4"
           onSubmit={(event) => void onSubmitUpload(event)}
         >
           <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-            <Upload className="h-4 w-4 text-slate-500" aria-hidden />
+            <Upload className="h-4 w-4 text-slate-700" aria-hidden />
             Upload tệp PDF (tối đa 50 MB)
           </h4>
           <div className="mt-3 grid gap-2">
@@ -829,19 +829,19 @@ function NewDocumentView({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={onDropFile}
-              className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+              className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed px-4 py-6 text-center transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
                 isDragging
-                  ? "border-sky-400 bg-sky-50"
-                  : "border-slate-300 bg-white hover:border-sky-300 hover:bg-sky-50/40"
+                  ? "border-blue-400 bg-blue-50"
+                  : "border-slate-400 bg-white hover:border-blue-300 hover:bg-blue-50/40"
               }`}
             >
-              <Upload className="h-5 w-5 text-slate-400" aria-hidden />
+              <Upload className="h-5 w-5 text-slate-600" aria-hidden />
               {uploadFile ? (
                 <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                   <FileText className="h-4 w-4 text-emerald-600" aria-hidden />
                   {uploadFile.name}
                   {fileSizeLabel ? (
-                    <span className="font-normal text-slate-500">
+                    <span className="font-normal text-slate-700">
                       ({fileSizeLabel})
                     </span>
                   ) : null}
@@ -851,7 +851,7 @@ function NewDocumentView({
                   <span className="text-sm font-semibold text-slate-700">
                     Kéo thả PDF vào đây
                   </span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-700">
                     hoặc bấm để chọn tệp
                   </span>
                 </>
@@ -869,7 +869,7 @@ function NewDocumentView({
             {uploadFile ? (
               <button
                 type="button"
-                className="self-start text-xs font-semibold text-slate-500 hover:text-rose-600"
+                className="self-start text-xs font-semibold text-slate-700 hover:text-rose-600"
                 onClick={() => onPickFile(null)}
               >
                 Bỏ tệp đã chọn
@@ -1067,13 +1067,13 @@ function CatalogPdfDetailPanel({
 
   return (
     <section id="catalog-pdf-detail" className="space-y-4 scroll-mt-6">
-      <div className="panel flex flex-wrap items-center justify-between gap-3 p-5">
+      <div className="panel flex flex-wrap items-center justify-between gap-1 p-2">
         <div className="min-w-0">
           <h3 className="truncate text-base font-bold text-slate-950">
             {document?.title ?? `Chi tiết tài liệu #${documentId}`}
           </h3>
           {document ? (
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-700">
               #{documentId} · {sourceTypeLabel[document.sourceType]}
             </p>
           ) : null}
@@ -1089,8 +1089,8 @@ function CatalogPdfDetailPanel({
       </div>
 
       {detailQuery.isLoading || !document || !editForm ? (
-        <div className="panel p-5">
-          <p className="text-sm text-slate-500">Đang tải…</p>
+        <div className="panel p-2">
+          <p className="text-sm text-slate-700">Đang tải…</p>
         </div>
       ) : (
         <>
@@ -1109,9 +1109,9 @@ function CatalogPdfDetailPanel({
             copied={copied}
           />
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-2 xl:grid-cols-2">
             <form
-              className="panel p-5"
+              className="panel p-2"
               onSubmit={saveMetadata}
             >
               <h4 className="text-sm font-semibold text-slate-900">Metadata</h4>
@@ -1224,13 +1224,13 @@ function CatalogPdfDetailPanel({
               </div>
             </form>
 
-            <div className="panel p-5">
+            <div className="panel p-2">
               <h4 className="text-sm font-semibold text-slate-900">
                 Vật tư liên kết ({document.linkedMaterials.length})
               </h4>
               <div className="relative mt-3">
                 <Search
-                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                   aria-hidden
                 />
                 <input
@@ -1244,11 +1244,11 @@ function CatalogPdfDetailPanel({
               {materialKeyword.trim() ? (
                 <ul className="mt-2 space-y-1">
                   {materialSearch.isLoading ? (
-                    <li className="px-2 py-1 text-xs text-slate-500">
+                    <li className="px-2 py-1 text-xs text-slate-700">
                       Đang tìm…
                     </li>
                   ) : materialCandidates.length === 0 ? (
-                    <li className="px-2 py-1 text-xs text-slate-500">
+                    <li className="px-2 py-1 text-xs text-slate-700">
                       Không có vật tư phù hợp (hoặc đã gắn hết).
                     </li>
                   ) : (
@@ -1256,7 +1256,7 @@ function CatalogPdfDetailPanel({
                       <li key={material.id}>
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-sky-300 hover:bg-sky-50"
+                          className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
                           onClick={() =>
                             attachMaterials.mutate({
                               documentId,
@@ -1268,7 +1268,7 @@ function CatalogPdfDetailPanel({
                           <span className="min-w-0 flex-1 truncate font-medium">
                             {material.name}
                           </span>
-                          <span className="shrink-0 text-xs text-slate-500">
+                          <span className="shrink-0 text-xs text-slate-700">
                             {material.unit}
                           </span>
                         </button>
@@ -1289,16 +1289,16 @@ function CatalogPdfDetailPanel({
                   {document.linkedMaterials.map((material) => (
                     <li
                       key={material.id}
-                      className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/50 px-3 py-2"
+                      className="flex items-center justify-between gap-2 rounded border border-slate-400 bg-slate-50/50 px-3 py-2"
                     >
                       <div className="min-w-0 flex-1">
                         <Link
                           href={`/materials/${material.id}`}
-                          className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
+                          className="block truncate text-sm font-semibold text-slate-900 hover:text-blue-700"
                         >
                           {material.name}
                         </Link>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-slate-700">
                           {material.code ? `${material.code} · ` : ""}
                           {material.unit}
                         </span>
@@ -1329,16 +1329,16 @@ function CatalogPdfDetailPanel({
 
           {localFileUrl ? (
             <div className="panel overflow-hidden p-0">
-              <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-400 px-4 py-2.5">
                 <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-                  <FileText className="h-4 w-4 text-slate-500" aria-hidden />
+                  <FileText className="h-4 w-4 text-slate-700" aria-hidden />
                   Xem trước PDF
                 </h4>
                 <a
                   href={localFileUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900"
                 >
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                   Mở tab mới
@@ -1398,7 +1398,7 @@ function MetadataFacts({
   }
 
   return (
-    <div className="panel p-5">
+    <div className="panel p-2">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={document.localFilePath ? "success" : "warning"}>
           {document.localFilePath ? "Có bản cục bộ" : "Chỉ URL"}
@@ -1451,7 +1451,7 @@ function MetadataFacts({
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
           {facts.map((fact) => (
             <div key={fact.label}>
-              <dt className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              <dt className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
                 {fact.label}
               </dt>
               <dd className="mt-0.5 truncate text-sm font-medium text-slate-900 [overflow-wrap:anywhere]">

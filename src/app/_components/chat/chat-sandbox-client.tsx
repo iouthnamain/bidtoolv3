@@ -92,19 +92,19 @@ export function ChatSandboxClient() {
 
   return (
     <DashboardShell
-      title="Chat sandbox"
+      title="Thử nghiệm chat"
       description="Thử nghiệm chat qua OpenRouter. Tin nhắn được gửi từ server — API key không lộ ra trình duyệt."
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
         <div className="panel overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-slate-400 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-violet-600 text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded bg-violet-600 text-white">
                 <Bot className="h-4 w-4" aria-hidden />
               </span>
               <div>
                 <p className="text-sm font-bold text-slate-950">OpenRouter</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-700">
                   {config?.openRouter?.configured
                     ? `Key …${config?.openRouter?.keySuffix ?? "****"}`
                     : "Chưa cấu hình API key"}
@@ -118,7 +118,7 @@ export function ChatSandboxClient() {
               </Badge>
               <Link
                 href="/settings/ai"
-                className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-100"
+                className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100"
               >
                 <Settings2 className="h-3.5 w-3.5" aria-hidden />
                 Cài đặt
@@ -134,7 +134,7 @@ export function ChatSandboxClient() {
                 cta={
                   <Link
                     href="/settings/ai"
-                    className="inline-flex min-h-9 items-center justify-center rounded-md bg-sky-700 px-3.5 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800"
+                    className="inline-flex min-h-9 items-center justify-center rounded bg-blue-700 px-3.5 py-2 text-sm font-semibold text-white transition-colors duration-0 hover:bg-blue-800"
                   >
                     Cấu hình OpenRouter
                   </Link>
@@ -143,14 +143,14 @@ export function ChatSandboxClient() {
             </div>
           ) : (
             <>
-              <div className="flex max-h-[min(60vh,520px)] min-h-[320px] flex-col gap-3 overflow-y-auto bg-slate-50/80 p-4">
+              <div className="flex max-h-[min(60vh,520px)] min-h-[320px] flex-col gap-1 overflow-y-auto bg-slate-50/80 p-4">
                 {messages.length === 0 ? (
                   <div className="flex flex-1 items-center justify-center text-center">
                     <div className="max-w-md space-y-2">
                       <p className="text-sm font-semibold text-slate-700">
                         Bắt đầu cuộc hội thoại
                       </p>
-                      <p className="text-sm leading-6 text-slate-500">
+                      <p className="text-sm leading-6 text-slate-700">
                         Gửi tin nhắn để thử model qua OpenRouter. Enter để gửi,
                         Shift+Enter để xuống dòng.
                       </p>
@@ -165,19 +165,19 @@ export function ChatSandboxClient() {
                       }`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+                        className={`max-w-[85%] rounded px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
                           message.role === "user"
-                            ? "bg-sky-600 text-white"
-                            : "border border-slate-200 bg-white text-slate-900 shadow-sm"
+                            ? "bg-blue-600 text-white"
+                            : "border border-slate-400 bg-white text-slate-900 shadow-sm"
                         }`}
                       >
                         {message.content}
                         {message.model ? (
                           <p
-                            className={`mt-2 text-[11px] ${
+                            className={`mt-2 text-xs ${
                               message.role === "user"
-                                ? "text-sky-100"
-                                : "text-slate-400"
+                                ? "text-blue-100"
+                                : "text-slate-600"
                             }`}
                           >
                             {message.model}
@@ -190,7 +190,7 @@ export function ChatSandboxClient() {
 
                 {chatMutation.isPending ? (
                   <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
+                    <div className="inline-flex items-center gap-2 rounded border border-slate-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
                       <Loader2
                         className="h-4 w-4 animate-spin"
                         aria-hidden
@@ -203,13 +203,13 @@ export function ChatSandboxClient() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <div className="space-y-3 border-t border-slate-200 p-4">
-                <label className="block text-xs font-semibold tracking-[0.08em] text-slate-500 uppercase">
+              <div className="space-y-3 border-t border-slate-400 p-4">
+                <label className="block text-xs font-semibold tracking-[0.08em] text-slate-700 uppercase">
                   Model
                   <input
                     value={model}
                     onChange={(event) => setModel(event.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none"
+                    className="mt-1 h-10 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
                   />
                 </label>
 
@@ -221,7 +221,7 @@ export function ChatSandboxClient() {
                     rows={3}
                     disabled={chatMutation.isPending}
                     placeholder="Nhập tin nhắn…"
-                    className="min-h-[88px] flex-1 resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:bg-slate-100"
+                    className="min-h-[88px] flex-1 resize-y rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:bg-slate-100"
                   />
                   <Button
                     type="button"

@@ -19,12 +19,12 @@ export const metadata = createPageMetadata({
 const roleOrder: Role[] = ["admin", "manager", "staff", "customer"];
 
 const toneMap = {
-  sky: "border-sky-200 bg-sky-50 text-sky-900",
+  sky: "border-blue-200 bg-blue-50 text-blue-900",
   emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
   amber: "border-amber-200 bg-amber-50 text-amber-900",
   violet: "border-violet-200 bg-violet-50 text-violet-900",
   rose: "border-rose-200 bg-rose-50 text-rose-900",
-  slate: "border-slate-200 bg-slate-50 text-slate-900",
+  slate: "border-slate-400 bg-slate-50 text-slate-900",
 } as const;
 
 function BulletList({ items }: { items: readonly string[] }) {
@@ -45,13 +45,13 @@ export default function RoleHelpPage() {
     <article className="space-y-5">
       <Link
         href="/help"
-        className="inline-flex min-h-10 items-center text-xs font-semibold text-slate-700 transition-colors duration-150 hover:text-slate-950 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="inline-flex min-h-10 items-center text-xs font-semibold text-slate-700 transition-colors duration-0 hover:text-slate-950 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
       >
         ← Quay lại mục lục trợ giúp
       </Link>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <p className="section-title">RBAC</p>
             <h2 className="mt-1 text-xl font-extrabold tracking-tight text-slate-950">
@@ -67,13 +67,13 @@ export default function RoleHelpPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-2">
+      <section className="grid gap-1 lg:grid-cols-2">
         {roleOrder.map((role) => {
           const capability = ROLE_CAPABILITIES[role];
           return (
             <div
               key={role}
-              className={`rounded-xl border p-4 shadow-sm ${toneMap[capability.tone]}`}
+              className={`rounded border p-4 shadow-sm ${toneMap[capability.tone]}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-base font-bold">{ROLE_LABELS[role]}</h3>
@@ -82,21 +82,21 @@ export default function RoleHelpPage() {
                 </Badge>
               </div>
               <p className="mt-2 text-sm leading-6">{capability.summary}</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="mt-4 grid gap-1 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                  <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
                     Được xem
                   </p>
                   <BulletList items={capability.see} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                  <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
                     Được làm
                   </p>
                   <BulletList items={capability.do} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                  <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
                     Không làm
                   </p>
                   <BulletList items={capability.cannot} />

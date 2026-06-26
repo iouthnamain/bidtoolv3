@@ -16,7 +16,7 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     description: "Cấu hình API key và model mặc định cho chat sandbox.",
   },
   "/settings/desktop": {
-    title: "Desktop client",
+    title: "Ứng dụng desktop",
     description: "Cấu hình server URL cho Electron.",
   },
   "/settings/updates": {

@@ -69,11 +69,11 @@ export function WorkflowDetailOverviewClient({
 
   return (
     <section className="panel p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div>
           <Link
             href="/workflows"
-            className="inline-flex min-h-10 items-center rounded-md text-xs font-semibold text-slate-700 transition-colors duration-150 hover:text-slate-950 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex min-h-10 items-center rounded text-xs font-semibold text-slate-700 transition-colors duration-0 hover:text-slate-950 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Quay lại danh sách workflow
           </Link>
@@ -94,7 +94,7 @@ export function WorkflowDetailOverviewClient({
                     : "Chưa chạy"}
             </Badge>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-700">
             Trigger: {workflow.triggerType} • {workflow.runCount} lần chạy
           </p>
         </div>
@@ -125,36 +125,36 @@ export function WorkflowDetailOverviewClient({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+      <div className="mt-4 grid gap-1 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded border border-slate-400 bg-slate-50 p-4">
+          <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
             Cấu hình hiện tại
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {workflow.triggerSummary.map((item) => (
               <span
                 key={item}
-                className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600"
+                className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs text-slate-600"
               >
                 {item}
               </span>
             ))}
           </div>
           {filterConfig.savedFilterName ? (
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-slate-700">
               Tạo từ Smart View: {filterConfig.savedFilterName}
             </p>
           ) : null}
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+        <div className="rounded border border-slate-400 bg-slate-50 p-4">
+          <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
             Lần chạy gần nhất
           </p>
           <p className="mt-2 text-sm font-semibold text-slate-900">
             {formatDateTime(latestRun?.startedAt ?? null)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-700">
             {latestRun?.message ?? "Workflow chưa có lịch sử chạy."}
           </p>
         </div>

@@ -25,8 +25,8 @@ type LinkedDocument =
 
 const linkSourceLabel: Record<LinkedDocument["linkSource"], string> = {
   manual: "Thủ công",
-  scrape: "Scrape",
-  import: "Import",
+  scrape: "Quét",
+  import: "Nhập",
 };
 
 const sourceTypeLabel: Record<LinkedDocument["sourceType"], string> = {
@@ -64,7 +64,7 @@ function formatFileSize(size: number | null) {
 }
 
 const inputClass =
-  "min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 export function MaterialCatalogPdfSection({
   materialId,
@@ -204,10 +204,10 @@ export function MaterialCatalogPdfSection({
         onCancel={() => setDetachTarget(null)}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-1 border-b border-slate-400 bg-white px-2 py-4">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           onClick={() => setIsSectionOpen((open) => !open)}
           aria-expanded={isSectionOpen}
           aria-controls="material-documents-content"
@@ -218,7 +218,7 @@ export function MaterialCatalogPdfSection({
             {linkedDocuments.length} tài liệu
           </Badge>
           <ChevronDown
-            className={`ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${
+            className={`ml-auto h-4 w-4 shrink-0 text-slate-700  ${
               isSectionOpen ? "rotate-180" : ""
             }`}
             aria-hidden
@@ -226,7 +226,7 @@ export function MaterialCatalogPdfSection({
         </button>
         <Link
           href="/catalog-pdfs"
-          className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900"
         >
           Mở thư viện catalog PDF
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -236,17 +236,17 @@ export function MaterialCatalogPdfSection({
       {isSectionOpen ? (
         <div
           id="material-documents-content"
-          className="grid gap-4 p-5 xl:grid-cols-[0.85fr_1.15fr]"
+          className="grid gap-2 p-2 xl:grid-cols-[0.85fr_1.15fr]"
         >
         <div className="space-y-4">
-          <article className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+          <article className="rounded border border-slate-400 bg-slate-50/60 p-4">
             <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-              <Paperclip className="h-4 w-4 text-slate-500" aria-hidden />
+              <Paperclip className="h-4 w-4 text-slate-700" aria-hidden />
               Gắn tài liệu có sẵn
             </h4>
             <div className="relative mt-3">
               <Search
-                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
                 aria-hidden
               />
               <input
@@ -260,11 +260,11 @@ export function MaterialCatalogPdfSection({
             {attachKeyword.trim() ? (
               <ul className="mt-2 space-y-1">
                 {pickerQuery.isLoading ? (
-                  <li className="px-2 py-1 text-xs text-slate-500">
+                  <li className="px-2 py-1 text-xs text-slate-700">
                     Đang tìm...
                   </li>
                 ) : pickerCandidates.length === 0 ? (
-                  <li className="px-2 py-1 text-xs text-slate-500">
+                  <li className="px-2 py-1 text-xs text-slate-700">
                     Không có tài liệu phù hợp (hoặc đã gắn hết).
                   </li>
                 ) : (
@@ -272,7 +272,7 @@ export function MaterialCatalogPdfSection({
                     <li key={document.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-sky-300 hover:bg-sky-50"
+                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
                         onClick={() =>
                           attachDocument.mutate({
                             documentId: document.id,
@@ -284,7 +284,7 @@ export function MaterialCatalogPdfSection({
                         <span className="min-w-0 flex-1 truncate font-medium">
                           {document.title}
                         </span>
-                        <span className="shrink-0 text-xs text-slate-500">
+                        <span className="shrink-0 text-xs text-slate-700">
                           {document.linkedMaterialCount} vật tư
                         </span>
                       </button>
@@ -296,11 +296,11 @@ export function MaterialCatalogPdfSection({
           </article>
 
           <form
-            className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
+            className="rounded border border-slate-400 bg-slate-50/60 p-4"
             onSubmit={submitUrlDocument}
           >
             <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-              <LinkIcon className="h-4 w-4 text-slate-500" aria-hidden />
+              <LinkIcon className="h-4 w-4 text-slate-700" aria-hidden />
               Thêm từ URL PDF
             </h4>
             <div className="mt-3 grid gap-2">
@@ -332,18 +332,18 @@ export function MaterialCatalogPdfSection({
           </form>
 
           <form
-            className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
+            className="rounded border border-slate-400 bg-slate-50/60 p-4"
             onSubmit={(event) => void submitUpload(event)}
           >
             <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-              <Upload className="h-4 w-4 text-slate-500" aria-hidden />
+              <Upload className="h-4 w-4 text-slate-700" aria-hidden />
               Upload tệp PDF (tối đa 50 MB)
             </h4>
             <div className="mt-3 grid gap-2">
               <input
                 type="file"
                 accept=".pdf,application/pdf"
-                className="text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700"
+                className="text-sm text-slate-700 file:mr-3 file:rounded file:border file:border-slate-400 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700"
                 onChange={(event) =>
                   setUploadFile(event.target.files?.[0] ?? null)
                 }
@@ -368,12 +368,12 @@ export function MaterialCatalogPdfSection({
           </form>
         </div>
 
-        <article className="rounded-lg border border-slate-200 bg-white p-4">
+        <article className="rounded border border-slate-400 bg-white p-4">
           <h4 className="text-sm font-semibold text-slate-900">
             Tài liệu đã gắn
           </h4>
           {linkedQuery.isLoading ? (
-            <p className="mt-3 text-sm text-slate-500">Đang tải...</p>
+            <p className="mt-3 text-sm text-slate-700">Đang tải...</p>
           ) : linkedDocuments.length === 0 ? (
             <EmptyState
               className="mt-3"
@@ -388,7 +388,7 @@ export function MaterialCatalogPdfSection({
                 return (
                   <li
                     key={document.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50/50 p-3"
+                    className="rounded border border-slate-400 bg-slate-50/50 p-3"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -425,7 +425,7 @@ export function MaterialCatalogPdfSection({
                             href={document.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex min-h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-400 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                             Mở URL
@@ -436,7 +436,7 @@ export function MaterialCatalogPdfSection({
                             href={`/api/catalog-pdfs/${document.id}/file`}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex min-h-8 items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            className="inline-flex min-h-8 items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
                           >
                             <Download className="h-3.5 w-3.5" aria-hidden />
                             Mở PDF

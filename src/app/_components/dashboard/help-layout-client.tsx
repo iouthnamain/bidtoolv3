@@ -29,20 +29,20 @@ export function HelpLayoutClient({ children }: { children: React.ReactNode }) {
       sectionNavItems={helpSectionNavItems}
       sectionNavTitle="Mục trợ giúp chính"
     >
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-2 lg:grid-cols-[280px_1fr]">
         <aside className="lg:sticky lg:top-4 lg:self-start">
           <nav
             aria-label="Mục lục Trợ giúp"
             className="panel flex flex-col gap-1 p-3"
           >
-            <p className="px-2 pt-1 pb-2 text-[11px] font-semibold tracking-[0.14em] text-slate-400 uppercase">
+            <p className="px-2 pt-1 pb-2 text-xs font-semibold tracking-[0.14em] text-slate-600 uppercase">
               Mục lục
             </p>
             <Link
               href="/help"
-              className={`flex min-h-10 items-center rounded-md px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 ${
+              className={`flex min-h-10 items-center rounded px-2 py-1.5 text-sm transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                 pathname === "/help"
-                  ? "bg-sky-50 font-semibold text-sky-800"
+                  ? "bg-blue-50 font-semibold text-blue-800"
                   : "text-slate-700"
               }`}
             >
@@ -52,9 +52,9 @@ export function HelpLayoutClient({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.id}
                 href={`/help/${item.id}`}
-                className={`flex min-h-10 items-center rounded-md px-2 py-1.5 text-sm transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:min-h-8 ${
+                className={`flex min-h-10 items-center rounded px-2 py-1.5 text-sm transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   pathname === `/help/${item.id}`
-                    ? "bg-sky-50 font-semibold text-sky-800"
+                    ? "bg-blue-50 font-semibold text-blue-800"
                     : "text-slate-700"
                 }`}
               >

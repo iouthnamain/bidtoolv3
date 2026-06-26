@@ -32,7 +32,7 @@ export function Breadcrumbs() {
 
   return (
     <nav aria-label="Đường dẫn" className="min-w-0">
-      <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-medium text-slate-500">
+      <ol className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-medium text-slate-700">
         {crumbs.map((crumb, index) => {
           const label = enrichLabel(crumb);
           const isFirst = index === 0;
@@ -55,7 +55,7 @@ export function Breadcrumbs() {
               ) : (
                 <Link
                   href={crumb.href}
-                  className="max-w-[12rem] truncate rounded transition-colors duration-150 hover:text-slate-900 hover:underline focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="max-w-[12rem] truncate rounded transition-colors duration-0 hover:text-slate-900 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   {label}
                 </Link>

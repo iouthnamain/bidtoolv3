@@ -25,7 +25,7 @@ const documentLinks = [
   },
   {
     href: "/materials/scrape",
-    label: "Scrape shop vật tư",
+    label: "Quét cửa hàng vật tư",
     description: "Preview URL shop rồi nhập sản phẩm, giá và link nguồn.",
   },
   {
@@ -41,7 +41,7 @@ export default function DocumentsPage() {
       title="Documents"
       description="Tài liệu và file liên quan đến nguồn thầu"
     >
-      <section className="panel max-w-3xl p-4 sm:p-5">
+      <section className="panel max-w-3xl p-4">
         <p className="section-title">Documents</p>
         <h2 className="mt-1 text-base font-bold text-slate-950">
           Lối tắt tài liệu chính
@@ -51,12 +51,12 @@ export default function DocumentsPage() {
           file vật tư.
         </p>
 
-        <div className="mt-4 divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+        <div className="mt-4 divide-y divide-slate-200 rounded border border-slate-400 bg-white">
           {documentLinks.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="group flex items-center justify-between gap-4 px-3 py-3 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="group flex items-center justify-between gap-2 px-3 py-3 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-slate-950">
@@ -67,7 +67,7 @@ export default function DocumentsPage() {
                 </span>
               </span>
               <ChevronRight
-                className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-sky-700"
+                className="h-4 w-4 shrink-0 text-slate-600 group-hover:text-blue-700"
                 aria-hidden="true"
               />
             </Link>

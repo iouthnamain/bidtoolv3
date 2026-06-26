@@ -26,7 +26,7 @@ export function StepHeader({
   return (
     <nav
       aria-label="Các bước đối chiếu và nghiên cứu Excel"
-      className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]"
+      className="panel overflow-hidden rounded shadow-[var(--shadow-flat)]"
     >
       {/* Brand gradient progress bar */}
       <div
@@ -59,12 +59,12 @@ export function StepHeader({
                 aria-label={`Bước ${step.id}: ${step.label}${
                   isReachable ? "" : " (chưa mở)"
                 }`}
-                className={`inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed sm:text-sm ${
+                className={`inline-flex items-center gap-2 rounded px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed ${
                   isCurrent
-                    ? "bg-sky-700 text-white"
+                    ? "bg-blue-700 text-white"
                     : isReachable
                       ? "text-slate-900 hover:bg-slate-100"
-                      : "text-slate-400"
+                      : "text-slate-600"
                 }`}
               >
                 <span

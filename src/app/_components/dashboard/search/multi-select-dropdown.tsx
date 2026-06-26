@@ -116,22 +116,22 @@ export function MultiSelectDropdown({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-150 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="flex w-full items-center justify-between rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-0 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <span className="truncate">
           {summarizeSelected(selected, emptyLabel)}
         </span>
-        <span className="ml-2 shrink-0 text-xs text-slate-500">
+        <span className="ml-2 shrink-0 text-xs text-slate-700">
           {selected.length}
         </span>
       </button>
 
       {isOpen ? (
-        <div className="absolute z-20 mt-2 w-full rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+        <div className="absolute z-20 mt-2 w-full rounded border border-slate-400 bg-white p-3 shadow-xl">
           <input
             ref={searchRef}
-            className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+            className="w-full rounded border border-slate-400 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
             name="multiselect-search"
             aria-label="Tìm trong danh sách"
             autoComplete="off"
@@ -144,14 +144,14 @@ export function MultiSelectDropdown({
           <div className="mt-2 flex items-center justify-between text-xs">
             <button
               type="button"
-              className="rounded text-sky-700 transition-colors hover:text-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-blue-700 transition-colors hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               onClick={() => onChange(options)}
             >
               Chọn tất cả
             </button>
             <button
               type="button"
-              className="rounded text-slate-500 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-slate-700 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               onClick={() => onChange([])}
             >
               Bỏ chọn
@@ -162,10 +162,10 @@ export function MultiSelectDropdown({
             role="listbox"
             aria-label={ariaLabel}
             aria-multiselectable
-            className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2"
+            className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded border border-slate-400 bg-slate-50 p-2"
           >
             {filteredOptions.length === 0 ? (
-              <p className="text-xs text-slate-500">Không có mục phù hợp.</p>
+              <p className="text-xs text-slate-700">Không có mục phù hợp.</p>
             ) : (
               filteredOptions.map((item, index) => {
                 const isSelected = selectedSet.has(item);

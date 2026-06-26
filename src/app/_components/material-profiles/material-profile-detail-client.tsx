@@ -153,7 +153,7 @@ const materialProfileCompareFields: Array<{
 
 const searchTabs: Array<{ id: SearchTab; label: string }> = [
   { id: "material", label: "Vật tư hiện có" },
-  { id: "web", label: "Web search" },
+  { id: "web", label: "Tìm kiếm web" },
   { id: "ai", label: "AI search" },
 ];
 
@@ -337,25 +337,25 @@ function RawExcelFields({
 }) {
   if (fields.length === 0) return null;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className="rounded border border-slate-400 bg-white">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-500 uppercase hover:bg-slate-50"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-700 uppercase hover:bg-slate-50"
       >
         Raw Excel fields
-        <span className="text-[11px] font-semibold tracking-normal text-slate-400 normal-case">
+        <span className="text-xs font-semibold tracking-normal text-slate-600 normal-case">
           {expanded ? "Ẩn" : "Hiện"}
         </span>
       </button>
       {expanded ? (
-        <div className="grid max-h-52 gap-2 overflow-auto border-t border-slate-200 p-3 text-xs">
+        <div className="grid max-h-52 gap-2 overflow-auto border-t border-slate-400 p-3 text-xs">
           {fields.map(([key, value]) => (
             <div
               key={key}
-              className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded-md bg-slate-50 px-2 py-1"
+              className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded bg-slate-50 px-2 py-1"
             >
-              <span className="font-bold text-slate-500">{key}</span>
+              <span className="font-bold text-slate-700">{key}</span>
               <span className="break-words text-slate-800">
                 {stringValue(value)}
               </span>
@@ -382,7 +382,7 @@ function MaterialProfileStepHeader({
   return (
     <nav
       aria-label="Các bước hồ sơ vật tư"
-      className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]"
+      className="panel overflow-hidden rounded shadow-[var(--shadow-flat)]"
     >
       <div
         className="h-1.5 w-full bg-slate-100"
@@ -411,12 +411,12 @@ function MaterialProfileStepHeader({
                 disabled={!isReachable}
                 onClick={() => isReachable && onJump(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
-                className={`inline-flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed sm:text-sm ${
+                className={`inline-flex items-center gap-2 rounded px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed ${
                   isCurrent
-                    ? "bg-sky-700 text-white"
+                    ? "bg-blue-700 text-white"
                     : isReachable
                       ? "text-slate-900 hover:bg-slate-100"
-                      : "text-slate-400"
+                      : "text-slate-600"
                 }`}
               >
                 <span
@@ -464,13 +464,13 @@ function WorkbookGrid({
 
   return (
     <div
-      className={`${maxHeight} overflow-auto rounded-lg border border-slate-200 bg-white`}
+      className={`${maxHeight} overflow-auto rounded border border-slate-400 bg-white`}
     >
       <table className="min-w-full border-separate border-spacing-0 text-xs">
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={`${sheet.name}-${rowIndex}`}>
-              <th className="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 px-2 py-1 text-right font-semibold text-slate-500 tabular-nums">
+              <th className="sticky left-0 z-10 border-r border-b border-slate-400 bg-slate-100 px-2 py-1 text-right font-semibold text-slate-700 tabular-nums">
                 {rowIndex + 1}
               </th>
               {Array.from({ length: maxColumns }).map((_, colIndex) => {
@@ -487,14 +487,14 @@ function WorkbookGrid({
                 return (
                   <td
                     key={`${sheet.name}-${rowIndex}-${colIndex}`}
-                    className="min-w-36 border-r border-b border-slate-100"
+                    className="min-w-36 border-r border-b border-slate-400"
                   >
                     <input
                       value={value}
                       onChange={(event) =>
                         onEdit(rowIndex, colIndex, event.target.value)
                       }
-                      className={`h-8 w-full px-2 text-xs outline-none focus:bg-sky-50 ${
+                      className={`h-8 w-full px-2 text-xs outline-none focus:bg-blue-50 ${
                         isHeader
                           ? "bg-slate-50 font-bold text-slate-900"
                           : "bg-white text-slate-700"
@@ -541,8 +541,8 @@ function UploadStep({
   ];
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-      <div className="panel p-4 sm:p-5">
+    <section className="grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="panel p-4">
         <p className="section-title">Upload Excel</p>
         <h2 className="mt-1 text-lg font-bold text-slate-950">
           Chọn workbook làm việc
@@ -551,7 +551,7 @@ function UploadStep({
           File gốc được lưu lại để các bước sau có thể map vật tư, preview kết
           quả và export giữ layout.
         </p>
-        <label className="mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-sky-300 bg-gradient-to-br from-sky-50 to-white px-4 py-5 text-center text-sky-900 transition-colors hover:bg-sky-100">
+        <label className="mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-white px-4 py-2 text-center text-blue-900 transition-colors hover:bg-blue-100">
           {isUploading ? (
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
           ) : (
@@ -570,16 +570,16 @@ function UploadStep({
         </label>
       </div>
 
-      <aside className="panel p-4 sm:p-5">
+      <aside className="panel p-4">
         <p className="section-title">Checklist</p>
         <div className="mt-3 grid gap-2">
           {checklist.map((item) => (
             <div
               key={item.label}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+              className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${
                 item.done
                   ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : "border-slate-200 bg-white text-slate-500"
+                  : "border-slate-400 bg-white text-slate-700"
               }`}
             >
               <span
@@ -644,9 +644,9 @@ function WorkbookMappingStep({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="border-b border-slate-200 bg-gradient-to-r from-white via-sky-50 to-emerald-50 px-4 py-4 sm:px-5">
+      <div className="border-b border-slate-400 bg-gradient-to-r from-white via-blue-50 to-emerald-50 px-4 py-4 sm:px-5">
         <p className="section-title">Map & chỉnh workbook</p>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
           <div>
             <h2 className="text-lg font-bold text-slate-950">
               Map cột vật tư và chỉnh cell
@@ -676,8 +676,8 @@ function WorkbookMappingStep({
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 sm:p-5">
-        <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-2 p-4">
+        <div className="grid gap-1 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
               Sheet vật tư
@@ -685,7 +685,7 @@ function WorkbookMappingStep({
             <select
               value={selectedSheetName}
               onChange={(event) => onSheetChange(event.target.value)}
-              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-400 bg-white px-3 text-sm text-slate-900"
             >
               {sheets.map((sheet) => (
                 <option key={sheet.name} value={sheet.name}>
@@ -705,10 +705,10 @@ function WorkbookMappingStep({
               onChange={(event) =>
                 onHeaderRowChange(Math.max(1, Number(event.target.value)))
               }
-              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-400 bg-white px-3 text-sm text-slate-900"
             />
           </label>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <p className="font-bold text-slate-900">Điều kiện qua bước</p>
             <p className="mt-1">
               Cần map cột Tên vật tư rồi chạy match để mở bước duyệt vật tư.
@@ -716,10 +716,10 @@ function WorkbookMappingStep({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
           {mappingFields.map((field) => (
             <label key={field.key} className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold tracking-[0.12em] text-slate-600 uppercase">
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                 {field.label}
                 {"required" in field && field.required ? (
                   <span className="text-rose-500"> *</span>
@@ -730,7 +730,7 @@ function WorkbookMappingStep({
                 onChange={(event) =>
                   onMappingChange(field.key, event.target.value || null)
                 }
-                className="h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                className="h-9 rounded border border-slate-400 bg-white px-2 text-xs text-slate-900"
               >
                 <option value="">Không map</option>
                 {activeSheet.headers.map((header) => (
@@ -842,8 +842,8 @@ function ExportPreviewStep({
 
   return (
     <section className="space-y-4">
-      <div className="panel p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="panel p-4">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <p className="section-title">Preview kết quả</p>
             <h2 className="mt-1 text-lg font-bold text-slate-950">
@@ -881,8 +881,8 @@ function ExportPreviewStep({
           </div>
         </div>
         {preview ? (
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+          <div className="mt-4 grid gap-1 lg:grid-cols-2">
+            <div className="rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
               <p className="font-bold">Workbook edit warnings</p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Badge tone="warning" count={editSummary?.editedCellCount ?? 0}>
@@ -905,7 +905,7 @@ function ExportPreviewStep({
                 </Badge>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+            <div className="rounded border border-slate-400 bg-slate-50 px-3 py-3 text-sm text-slate-700">
               <p className="font-bold text-slate-950">Match/catalog counts</p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Badge tone="success" count={matchCounts?.matchedCount ?? 0}>
@@ -941,15 +941,15 @@ function ExportPreviewStep({
         />
       ) : (
         <div className="panel overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 bg-slate-50 px-4 py-3">
             {preview.sheets.map((sheet) => (
               <button
                 key={sheet.name}
                 type="button"
                 onClick={() => setActivePreviewSheetName(sheet.name)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
+                className={`rounded px-3 py-1.5 text-xs font-bold ${
                   activeSheet.name === sheet.name
-                    ? "bg-sky-700 text-white"
+                    ? "bg-blue-700 text-white"
                     : "bg-white text-slate-700 hover:bg-slate-100"
                 }`}
               >
@@ -958,7 +958,7 @@ function ExportPreviewStep({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-white px-4 py-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
               <span>{selectedRows.length} row selected</span>
               <span>{selectedColumns.length} column selected</span>
@@ -986,7 +986,7 @@ function ExportPreviewStep({
             </div>
           </div>
           {deletedRows.length + deletedColumns.length > 0 ? (
-            <div className="border-b border-slate-200 bg-rose-50 px-4 py-3 text-xs text-rose-950">
+            <div className="border-b border-slate-400 bg-rose-50 px-4 py-3 text-xs text-rose-950">
               <p className="font-bold">Deleted in export preview</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {deletedRows.map((rowNumber) => (
@@ -1017,20 +1017,20 @@ function ExportPreviewStep({
             </div>
           ) : null}
           <div className="p-4">
-            <div className="max-h-[640px] overflow-auto rounded-lg border border-slate-200 bg-white">
+            <div className="max-h-[640px] overflow-auto rounded border border-slate-400 bg-white">
               <table className="min-w-full border-separate border-spacing-0 text-xs">
                 <thead>
                   <tr>
-                    <th className="sticky top-0 left-0 z-20 border-r border-b border-slate-200 bg-slate-100 px-2 py-1 text-slate-500">
+                    <th className="sticky top-0 left-0 z-20 border-r border-b border-slate-400 bg-slate-100 px-2 py-1 text-slate-700">
                       #
                     </th>
                     {columnNumbers.map((colNumber, colIndex) => (
                       <th
                         key={`${activeSheet.name}-col-${colNumber}`}
-                        className={`sticky top-0 z-10 min-w-36 cursor-pointer border-r border-b border-slate-200 px-2 py-1 text-left font-bold ${
+                        className={`sticky top-0 z-10 min-w-36 cursor-pointer border-r border-b border-slate-400 px-2 py-1 text-left font-bold ${
                           selectedColumns.includes(colNumber)
-                            ? "bg-sky-100 text-sky-900"
-                            : "bg-slate-100 text-slate-500"
+                            ? "bg-blue-100 text-blue-900"
+                            : "bg-slate-100 text-slate-700"
                         }`}
                         onClick={() =>
                           setSelectedColumns((current) =>
@@ -1050,10 +1050,10 @@ function ExportPreviewStep({
                     return (
                       <tr key={`${activeSheet.name}-${rowNumber}`}>
                         <th
-                          className={`sticky left-0 z-10 cursor-pointer border-r border-b border-slate-200 px-2 py-1 text-right font-semibold tabular-nums ${
+                          className={`sticky left-0 z-10 cursor-pointer border-r border-b border-slate-400 px-2 py-1 text-right font-semibold tabular-nums ${
                             selectedRows.includes(rowNumber)
-                              ? "bg-sky-100 text-sky-900"
-                              : "bg-slate-100 text-slate-500"
+                              ? "bg-blue-100 text-blue-900"
+                              : "bg-slate-100 text-slate-700"
                           }`}
                           onClick={() =>
                             setSelectedRows((current) =>
@@ -1072,7 +1072,7 @@ function ExportPreviewStep({
                           return (
                             <td
                               key={`${activeSheet.name}-${rowNumber}-${colNumber}`}
-                              className="min-w-36 border-r border-b border-slate-100"
+                              className="min-w-36 border-r border-b border-slate-400"
                             >
                               <input
                                 value={value}
@@ -1084,7 +1084,7 @@ function ExportPreviewStep({
                                     event.target.value,
                                   )
                                 }
-                                className={`h-8 w-full px-2 text-xs outline-none focus:bg-sky-50 ${
+                                className={`h-8 w-full px-2 text-xs outline-none focus:bg-blue-50 ${
                                   edited
                                     ? "bg-amber-50 font-semibold text-amber-950"
                                     : "bg-white text-slate-700"
@@ -1459,18 +1459,18 @@ export function MaterialProfileDetailClient({
 
   if (query.isLoading || !detail) {
     return (
-      <div className="panel p-5 text-sm text-slate-600">Đang tải hồ sơ…</div>
+      <div className="panel p-2 text-sm text-slate-600">Đang tải hồ sơ…</div>
     );
   }
 
   const workspace = detail.workspace;
 
   return (
-    <div className="animate-rise space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-1">
         <Link
           href="/material-profiles"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-700 hover:underline"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Quay lại danh sách

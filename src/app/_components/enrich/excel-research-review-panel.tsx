@@ -132,7 +132,7 @@ export function ExcelResearchReviewPanel({
 
   if (rows.length === 0) {
     return (
-      <section className="panel p-5">
+      <section className="panel p-2">
         <EmptyState
           title="Không có dòng kết quả"
           description="Job hoàn tất nhưng chưa có dòng nào để xét duyệt."
@@ -211,12 +211,12 @@ export function ExcelResearchReviewPanel({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-slate-50 px-4 py-3">
         <div>
           <h3 className="text-sm font-bold text-slate-900 text-balance">
             Xét duyệt kết quả nghiên cứu web
           </h3>
-          <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
+          <p className="mt-1 flex flex-wrap gap-1 text-xs text-slate-700">
             <span className="tabular-nums">{summary.total.toLocaleString("vi-VN")} dòng</span>
             <span className="tabular-nums">
               {summary.needsReview.toLocaleString("vi-VN")} cần duyệt
@@ -242,7 +242,7 @@ export function ExcelResearchReviewPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 px-4 py-2">
+      <div className="flex flex-wrap gap-1.5 border-b border-slate-400 px-4 py-2">
         {filters.map((filter) => (
           <button
             key={filter.id}
@@ -261,7 +261,7 @@ export function ExcelResearchReviewPanel({
       </div>
 
       {onBulkApprove ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 bg-slate-50 px-4 py-2">
           <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
             <input
               type="checkbox"
@@ -272,7 +272,7 @@ export function ExcelResearchReviewPanel({
             Chọn tất cả ({bulkApprovableRows.length.toLocaleString("vi-VN")})
           </label>
           {selectedApprovable.length > 0 ? (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-700">
               Đã chọn {selectedApprovable.length.toLocaleString("vi-VN")} dòng
             </span>
           ) : null}
@@ -303,9 +303,9 @@ export function ExcelResearchReviewPanel({
       ) : null}
 
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-200 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
+        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
           {isTruncated ? (
-            <p className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+            <p className="bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
               Hiển thị {rows.length.toLocaleString("vi-VN")}/
               {listTotal.toLocaleString("vi-VN")} dòng. Lọc theo trạng thái để
               xem các dòng còn lại.
@@ -344,7 +344,7 @@ export function ExcelResearchReviewPanel({
                     <p className="truncate text-sm font-semibold text-slate-900">
                       {row.productName || `Dòng ${row.rowNumber}`}
                     </p>
-                    <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                    <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-700">
                       <span>Dòng {row.rowNumber}</span>
                       {pct != null ? (
                         <span
@@ -353,7 +353,7 @@ export function ExcelResearchReviewPanel({
                               ? "text-emerald-700"
                               : pct >= 50
                                 ? "text-amber-700"
-                                : "text-slate-500"
+                                : "text-slate-700"
                           }`}
                         >
                           {pct}%
@@ -530,10 +530,10 @@ function ExcelResearchRowDetailPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="rounded border border-slate-400 bg-slate-50 p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               Dòng Excel {row.rowNumber}
             </p>
             <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -551,7 +551,7 @@ function ExcelResearchRowDetailPanel({
           re-pick swaps the fill base to the chosen material; with no pick the
           plan is driven by the web-found values. */}
       {isDetailLoading ? (
-        <p className="text-xs text-slate-500">Đang tải kết quả…</p>
+        <p className="text-xs text-slate-700">Đang tải kết quả…</p>
       ) : (
         <FieldCompareEditor
           sheetLabel={`Dòng Excel ${row.rowNumber}`}
@@ -586,9 +586,9 @@ function ExcelResearchRowDetailPanel({
           {evidence.map((item) => (
             <div
               key={item.id}
-              className="flex gap-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
+              className="flex gap-2 rounded border border-slate-400 bg-white p-2 text-xs"
             >
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
                 {item.imageUrl && !failedImageIds.has(item.id) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -621,7 +621,7 @@ function ExcelResearchRowDetailPanel({
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-1 block truncate text-sky-600 hover:underline"
+                    className="mt-1 block truncate text-blue-600 hover:underline"
                   >
                     {item.url}
                   </a>

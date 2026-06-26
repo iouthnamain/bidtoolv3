@@ -127,7 +127,7 @@ export function AiSettingsSection() {
         action={
           <Link
             href="/chat"
-            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50"
+            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50"
           >
             Mở chat sandbox
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -135,11 +135,11 @@ export function AiSettingsSection() {
         }
       />
 
-      <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-6">
           <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+            <div className="flex items-start gap-1">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-violet-50 text-violet-700">
                 <KeyRound className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
@@ -150,7 +150,7 @@ export function AiSettingsSection() {
                     href="https://openrouter.ai/keys"
                     target="_blank"
                     rel="noreferrer"
-                    className="font-semibold text-sky-700 underline-offset-2 hover:underline"
+                    className="font-semibold text-blue-700 underline-offset-2 hover:underline"
                   >
                     openrouter.ai/keys
                   </a>
@@ -182,7 +182,7 @@ export function AiSettingsSection() {
                 placeholder={
                   config?.openRouter?.configured ? "••••••••••••••••" : "sk-or-v1-…"
                 }
-                className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="h-11 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
               />
             </FilterField>
 
@@ -220,7 +220,7 @@ export function AiSettingsSection() {
             </div>
           </div>
 
-          <div className="space-y-4 border-t border-slate-200 pt-6">
+          <div className="space-y-4 border-t border-slate-400 pt-6">
             <FilterField
               label="Model mặc định"
               htmlFor="openrouter-default-model"
@@ -233,7 +233,7 @@ export function AiSettingsSection() {
                 value={defaultModel}
                 disabled={isLoading}
                 onChange={(event) => setDefaultModel(event.target.value)}
-                className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none"
+                className="h-11 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
               />
               <datalist id="openrouter-model-suggestions">
                 {POPULAR_MODELS.map((model) => (
@@ -254,19 +254,19 @@ export function AiSettingsSection() {
           </div>
         </div>
 
-        <aside className="rounded-lg border border-slate-200 bg-slate-950 p-4 text-white">
-          <p className="text-xs font-semibold tracking-[0.14em] text-slate-400 uppercase">
+        <aside className="rounded border border-slate-400 bg-slate-950 p-4 text-white">
+          <p className="text-xs font-semibold tracking-[0.14em] text-slate-600 uppercase">
             Trạng thái
           </p>
-          <dl className="mt-4 space-y-4 text-sm">
+          <dl className="mt-4 space-y-2 text-sm">
             <div>
-              <dt className="text-slate-400">Nguồn key</dt>
+              <dt className="text-slate-600">Nguồn key</dt>
               <dd className="mt-1 font-semibold">
                 {config?.openRouter ? sourceLabel(config.openRouter.source) : "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400">Key</dt>
+              <dt className="text-slate-600">Key</dt>
               <dd className="mt-1">
                 <Badge tone={config?.openRouter?.configured ? "success" : "neutral"}>
                   {config?.openRouter?.configured
@@ -278,13 +278,13 @@ export function AiSettingsSection() {
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400">Model mặc định</dt>
+              <dt className="text-slate-600">Model mặc định</dt>
               <dd className="mt-1 font-mono text-xs font-semibold break-all">
                 {config?.openRouter?.defaultModel ?? "—"}
               </dd>
             </div>
             <div>
-              <dt className="text-slate-400">Có thể sửa key</dt>
+              <dt className="text-slate-600">Có thể sửa key</dt>
               <dd className="mt-1">
                 <Badge tone={config?.openRouter?.canEdit ? "success" : "neutral"}>
                   {config?.openRouter?.canEdit ? "Có" : "Không"}

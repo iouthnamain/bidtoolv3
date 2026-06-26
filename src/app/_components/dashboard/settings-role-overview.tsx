@@ -44,8 +44,8 @@ export function SettingsRoleOverview() {
   const manager = ROLE_CAPABILITIES.manager;
 
   return (
-    <section className="rounded-xl border border-violet-200 bg-violet-50/80 p-4 shadow-sm sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">{ROLE_LABELS.manager}</Badge>
@@ -68,7 +68,7 @@ export function SettingsRoleOverview() {
             <Link
               key={link.href}
               href={link.href}
-              className="rounded-lg border border-violet-200 bg-white px-3 py-3 transition-colors duration-150 hover:border-violet-300 hover:bg-violet-50 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none"
+              className="rounded border border-violet-200 bg-white px-3 py-3 transition-colors duration-0 hover:border-violet-300 hover:bg-violet-50 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none"
             >
               <Icon className="h-4 w-4 text-violet-700" aria-hidden="true" />
               <p className="mt-2 text-sm font-bold text-slate-950">

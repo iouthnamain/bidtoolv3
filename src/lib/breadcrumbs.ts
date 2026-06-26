@@ -39,7 +39,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/search/projects": "Dự án",
 
   // Documents
-  "/documents": "Documents",
+  "/documents": "Tài liệu",
 
   // Materials
   "/materials": "Sản phẩm / vật tư",
@@ -47,7 +47,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials/import": "Nhập catalog",
   "/materials/enrich": "Làm giàu vật tư",
   "/materials/enrich/jobs/:jobId": "Chi tiết job làm giàu",
-  "/materials/scrape": "Scrape shop",
+  "/materials/scrape": "Quét cửa hàng",
   "/materials/scrape/jobs/:jobId": "Chi tiết job",
   "/materials/:id": "Chi tiết vật tư",
   "/materials/:id/prices": "Nguồn giá",
@@ -69,9 +69,9 @@ const ROUTE_LABELS: Record<string, string> = {
   "/catalog-pdfs/:id": "Chi tiết tài liệu",
 
   // Saved items
-  "/saved-items": "Bộ lọc & Watchlist",
-  "/saved-items/smart-views": "Smart Views",
-  "/saved-items/watchlist": "Watchlist",
+  "/saved-items": "Bộ lọc & theo dõi",
+  "/saved-items/smart-views": "Bộ lọc thông minh",
+  "/saved-items/watchlist": "Danh sách theo dõi",
 
   // Workflows
   "/workflows": "Quy trình",
@@ -89,12 +89,12 @@ const ROUTE_LABELS: Record<string, string> = {
   "/help/:slug": "Chủ đề",
 
   // Chat
-  "/chat": "Chat sandbox",
+  "/chat": "Thử nghiệm chat",
 
   // Settings
   "/settings": "Cài đặt",
   "/settings/ai": "OpenRouter",
-  "/settings/desktop": "Desktop client",
+  "/settings/desktop": "Ứng dụng desktop",
   "/settings/updates": "Cập nhật",
 
   // Source detail pages (reached from search results)

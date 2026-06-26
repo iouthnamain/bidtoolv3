@@ -150,7 +150,7 @@ export function ManualProductForm({
   const title = selectedCandidate ? "Sửa vật tư" : "Thêm vật tư";
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className="rounded border border-slate-400 bg-white">
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
@@ -159,15 +159,15 @@ export function ManualProductForm({
       >
         <span>Chỉnh sửa thủ công</span>
         {expanded ? (
-          <ChevronUp className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <ChevronUp className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
         ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
         )}
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t border-slate-200 px-3 py-3">
-          <p className="text-xs text-slate-500">
+        <div className="space-y-3 border-t border-slate-400 px-3 py-3">
+          <p className="text-xs text-slate-700">
             {title}: nhập đủ 8 trường để áp dụng cho dòng hoặc lưu vào vật tư.
           </p>
 
@@ -177,7 +177,7 @@ export function ManualProductForm({
               type="text"
               value={values.name}
               onChange={(event) => setField("name", event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+              className="mt-1 w-full rounded border border-slate-400 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             />
           </label>
 
@@ -191,7 +191,7 @@ export function ManualProductForm({
                 type="text"
                 value={values[field] ?? ""}
                 onChange={(event) => setField(field, event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                className="mt-1 w-full rounded border border-slate-400 px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               />
             </label>
           ))}

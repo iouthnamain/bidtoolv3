@@ -85,7 +85,7 @@ export function ReviewPanel({
 
   if (rows.length === 0) {
     return (
-      <section className="panel p-5">
+      <section className="panel p-2">
         <EmptyState title={emptyTitle} description={emptyDescription} />
       </section>
     );
@@ -276,12 +276,12 @@ export function ReviewPanel({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-slate-50 px-4 py-3">
         <div>
           <h3 className="text-sm font-bold text-slate-900 text-balance">
             Xét duyệt & chọn sản phẩm
           </h3>
-          <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
+          <p className="mt-1 flex flex-wrap gap-1 text-xs text-slate-700">
             <span className="tabular-nums">
               {summary.totalRows.toLocaleString("vi-VN")} dòng
             </span>
@@ -307,7 +307,7 @@ export function ReviewPanel({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 px-4 py-2">
         <div className="flex flex-wrap gap-1.5">
           {filters.map((filter) => (
             <button
@@ -349,7 +349,7 @@ export function ReviewPanel({
       </div>
 
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-200 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
+        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
           {filtered.map((row) => {
             const meta = STATUS_META[row.status];
             const decision = decisions.get(row.originalRowIndex);
@@ -364,7 +364,7 @@ export function ReviewPanel({
                 onClick={() => setSelectedRowIndex(row.originalRowIndex)}
                 aria-selected={isSelected}
                 className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
-                  isSelected ? "bg-sky-50" : "hover:bg-slate-50"
+                  isSelected ? "bg-blue-50" : "hover:bg-slate-50"
                 }`}
               >
                 <Badge tone={meta.tone}>{meta.label}</Badge>
@@ -377,7 +377,7 @@ export function ReviewPanel({
                   <p className="truncate text-sm font-semibold text-slate-900">
                     {name}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-700">
                     Dòng {row.originalRowIndex}
                     {decision?.materialId != null
                       ? ` · đã chọn (${decision.acceptedFields.size} ô)`
@@ -396,7 +396,7 @@ export function ReviewPanel({
             );
           })}
           {filtered.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-slate-500">
+            <p className="px-3 py-6 text-center text-xs text-slate-700">
               Không có dòng nào ở bộ lọc này.
             </p>
           ) : null}

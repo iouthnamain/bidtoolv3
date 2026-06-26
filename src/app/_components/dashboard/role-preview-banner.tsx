@@ -59,7 +59,7 @@ export function RolePreviewBanner() {
             id="role-preview-select"
             value={activeRole ?? "off"}
             onChange={(event) => handleRoleChange(event.target.value)}
-            className="h-8 rounded-md border border-amber-300 bg-white px-2 text-xs font-semibold text-amber-950 shadow-sm focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
+            className="h-8 rounded border border-amber-300 bg-white px-2 text-xs font-semibold text-amber-950 shadow-sm focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
           >
             <option value="off">Tắt preview</option>
             {ROLES.map((role) => (
@@ -72,7 +72,7 @@ export function RolePreviewBanner() {
             <button
               type="button"
               onClick={() => preview.clear()}
-              className="rounded-md px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
+              className="rounded px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
             >
               Tắt
             </button>

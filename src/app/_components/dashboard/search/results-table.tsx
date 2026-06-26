@@ -84,8 +84,8 @@ const ResultCard = memo(function ResultCard({
   addWatchlist: AddWatchlist;
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex items-start gap-3">
+    <article className="rounded border border-slate-400 bg-white p-3 shadow-sm">
+      <div className="flex items-start gap-1">
         <input
           type="checkbox"
           className="mt-1"
@@ -96,13 +96,13 @@ const ResultCard = memo(function ResultCard({
         <div className="min-w-0 flex-1">
           <PrimaryResultLink
             item={item}
-            className="inline-flex max-w-full items-start gap-1 text-sm leading-5 font-semibold text-slate-950 transition-colors duration-150 hover:text-sky-700 hover:underline"
+            className="inline-flex max-w-full items-start gap-1 text-sm leading-5 font-semibold text-slate-950 transition-colors duration-0 hover:text-blue-700 hover:underline"
           >
             {item.title}
           </PrimaryResultLink>
           <PrimaryResultLink
             item={item}
-            className="mt-1 inline-flex max-w-full items-start gap-1 text-xs text-slate-500 transition-colors duration-150 hover:text-sky-700 hover:underline"
+            className="mt-1 inline-flex max-w-full items-start gap-1 text-xs text-slate-700 transition-colors duration-0 hover:text-blue-700 hover:underline"
           >
             {item.externalId} • {item.province}
           </PrimaryResultLink>
@@ -110,32 +110,32 @@ const ResultCard = memo(function ResultCard({
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">Đơn vị</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-600">Đơn vị</dt>
           <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
             {ownerTextForItem(item)}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">Lĩnh vực</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-600">Lĩnh vực</dt>
           <dd className="mt-0.5 line-clamp-2 font-medium text-slate-700">
             {fieldTextForItem(item)}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">Ngân sách</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-600">Ngân sách</dt>
           <dd className="mt-0.5 font-mono font-semibold text-slate-800">
             {formatCurrency(item.budget)}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">Ngày đăng</dt>
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-600">Ngày đăng</dt>
           <dd className="mt-0.5 font-medium text-slate-700">
             {formatDate(item.publishedAt)}
           </dd>
         </div>
-        <div className="rounded-md bg-slate-50 px-2 py-1.5">
-          <dt className="text-slate-400">
+        <div className="rounded bg-slate-50 px-2 py-1.5">
+          <dt className="text-slate-600">
             {deadlineHeaderForEntity(item.entityType)}
           </dt>
           <dd className="mt-0.5 font-medium text-slate-700">
@@ -163,7 +163,7 @@ const ResultRow = memo(function ResultRow({
   addWatchlist: AddWatchlist;
 }) {
   return (
-    <tr className="align-top transition-colors duration-150 hover:bg-slate-50/80">
+    <tr className="align-top transition-colors duration-0 hover:bg-slate-50/80">
       <td className="px-3 py-3">
         <input
           type="checkbox"
@@ -184,17 +184,17 @@ const ResultRow = memo(function ResultRow({
         <div>
           <PrimaryResultLink
             item={item}
-            className="inline-flex max-w-full items-start gap-1 font-semibold text-slate-900 transition-colors duration-150 hover:text-sky-700 hover:underline"
+            className="inline-flex max-w-full items-start gap-1 font-semibold text-slate-900 transition-colors duration-0 hover:text-blue-700 hover:underline"
           >
             {item.title}
           </PrimaryResultLink>
           {item.entityType === "package" ? (
-            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-700">
               <span className="min-w-0 [overflow-wrap:anywhere]">
                 {item.category}
               </span>
               <span
-                className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700"
+                className="inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700"
                 title={`Match score ${item.matchScore}%`}
               >
                 Match {item.matchScore}%
@@ -202,11 +202,11 @@ const ResultRow = memo(function ResultRow({
             </p>
           ) : null}
           {item.entityType === "plan" ? (
-            <p className="mt-1 text-xs text-slate-500">{item.planName}</p>
+            <p className="mt-1 text-xs text-slate-700">{item.planName}</p>
           ) : null}
           {item.entityType === "project" && item.relatedPlans.length > 0 ? (
             <div className="mt-1 space-y-1">
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-700">
                 KHLCNT liên quan: {item.relatedPlanCount}
               </p>
               <div className="flex flex-wrap gap-1">
@@ -216,7 +216,7 @@ const ResultRow = memo(function ResultRow({
                     href={plan.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700 hover:bg-sky-100"
+                    className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-100"
                   >
                     {plan.title}
                   </a>
@@ -299,9 +299,9 @@ export function ResultsTable(props: {
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+      <div className="hidden overflow-x-auto rounded border border-slate-400 md:block">
         <table className="w-full min-w-[920px] table-fixed divide-y divide-slate-200 bg-white text-sm break-words">
-          <thead className="bg-white text-left text-[13px] font-semibold text-slate-500">
+          <thead className="bg-white text-left text-[13px] font-semibold text-slate-700">
             <tr>
               <th className="w-10 px-3 py-4">
                 <input

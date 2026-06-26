@@ -31,11 +31,11 @@ function roleTone(role: string | null | undefined) {
 }
 
 const inputClass =
-  "h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
+  "h-11 w-full rounded border border-slate-400 bg-white px-3 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
 const labelClass =
   "text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase";
 const selectClass =
-  "h-9 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
+  "h-9 rounded border border-slate-400 bg-white px-2 text-xs text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
 
 export function UserManagementSection() {
   const { can, isPending: sessionPending, role: myRole, user: me } =
@@ -164,7 +164,7 @@ export function UserManagementSection() {
           icon={Users}
         />
         <div className="px-5 py-6">
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Bạn không có quyền truy cập mục này.
           </p>
         </div>
@@ -183,17 +183,17 @@ export function UserManagementSection() {
         icon={Users}
       />
 
-      <div className="space-y-6 p-5">
+      <div className="space-y-6 p-2">
         {/* Create user */}
         <form
           onSubmit={handleCreate}
-          className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
+          className="rounded border border-slate-400 bg-slate-50/60 p-4"
         >
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-            <UserPlus className="h-4 w-4 text-sky-700" aria-hidden />
+            <UserPlus className="h-4 w-4 text-blue-700" aria-hidden />
             Thêm người dùng
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1 sm:grid-cols-2">
             <div className="flex flex-col gap-1">
               <label htmlFor="nu-name">
                 <span className={labelClass}>Họ tên</span>
@@ -281,14 +281,14 @@ export function UserManagementSection() {
                     khách hàng.
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-700">
                     Tài khoản khách hàng chỉ thấy dữ liệu thuộc tổ chức này.
                   </span>
                 )}
               </div>
             ) : (
               <div className="flex flex-col justify-end sm:col-span-2">
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-700">
                   Người dùng nội bộ (admin/quản lý/nhân viên) không thuộc tổ chức
                   nào.
                 </span>
@@ -313,10 +313,10 @@ export function UserManagementSection() {
         </form>
 
         {/* User list */}
-        <div className="overflow-hidden rounded-lg border border-slate-200">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+        <div className="overflow-hidden rounded border border-slate-400">
+          <div className="flex items-center justify-between border-b border-slate-400 bg-slate-50 px-4 py-2.5">
             <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <ShieldCheck className="h-4 w-4 text-slate-500" aria-hidden />
+              <ShieldCheck className="h-4 w-4 text-slate-700" aria-hidden />
               Danh sách người dùng
             </span>
             <Button
@@ -330,7 +330,7 @@ export function UserManagementSection() {
           </div>
 
           {users.length === 0 && !usersQuery.isLoading ? (
-            <p className="px-4 py-6 text-sm text-slate-500">
+            <p className="px-4 py-6 text-sm text-slate-700">
               Chưa có người dùng nào.
             </p>
           ) : (
@@ -343,7 +343,7 @@ export function UserManagementSection() {
                 return (
                   <li
                     key={row.id}
-                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -358,14 +358,14 @@ export function UserManagementSection() {
                         ) : null}
                         {isSelf ? <Badge tone="neutral">Bạn</Badge> : null}
                       </div>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                      <p className="mt-0.5 truncate text-xs text-slate-700">
                         {row.email}
                         {row.tenantName ? ` · ${row.tenantName}` : ""}
                       </p>
                     </div>
 
                     {locked ? (
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-600">
                         Chỉ admin quản lý được tài khoản admin.
                       </span>
                     ) : (

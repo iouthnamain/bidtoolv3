@@ -38,10 +38,10 @@ const emptyForm: MaterialCreateFormState = {
 };
 
 const inputClass =
-  "min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-10";
+  "min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const textareaClass =
-  "min-h-32 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-32 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function Field({
   label,
@@ -180,11 +180,11 @@ export function MaterialCreateClient() {
       onSubmit={(event) => submit(event)}
     >
       <section className="panel p-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <Link
               href="/materials"
-              className="inline-flex min-h-10 items-center gap-1 rounded-md py-1.5 pr-2 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900 sm:min-h-0 sm:py-0"
+              className="inline-flex min-h-10 items-center gap-1 rounded py-1.5 pr-2 text-xs font-semibold text-slate-700 transition-colors hover:text-slate-900 sm:py-0"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
               Quay lại danh mục
@@ -225,27 +225,27 @@ export function MaterialCreateClient() {
         </div>
 
         {actionError ? (
-          <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {actionError}
           </div>
         ) : null}
       </section>
 
       <section className="panel p-4">
-        <div className="border-b border-slate-200 pb-3">
+        <div className="border-b border-slate-400 pb-3">
           <div className="flex items-center gap-2">
-            <PackagePlus className="h-4 w-4 text-sky-700" aria-hidden />
+            <PackagePlus className="h-4 w-4 text-blue-700" aria-hidden />
             <h3 className="text-sm font-bold text-slate-950">
               Thông tin catalog
             </h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-700">
             Các trường tên và ĐVT là bắt buộc; giá, nguồn và thông số có thể bổ
             sung sau trong trang chi tiết.
           </p>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 grid gap-1 md:grid-cols-2">
           <Field label="Mã vật tư">
             <input
               name="code"

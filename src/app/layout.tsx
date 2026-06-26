@@ -90,7 +90,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="vi" className={`${beVietnamPro.variable}`}>
-      <body className="app-bg text-slate-900 antialiased">
+      <body className="app-bg text-ink-1 antialiased">
         <TRPCReactProvider>
           <ToastProvider>{children}</ToastProvider>
         </TRPCReactProvider>

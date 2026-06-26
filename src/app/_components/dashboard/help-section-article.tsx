@@ -11,7 +11,7 @@ export function HelpSectionArticle({ section }: { section: Section }) {
   return (
     <article className="panel overflow-hidden">
       <div className="grid gap-0 xl:grid-cols-[1fr_420px]">
-        <div className="min-w-0 p-4 sm:p-5">
+        <div className="min-w-0 p-4">
           <p className="section-title">{section.eyebrow}</p>
           <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900">
             {section.title}
@@ -33,8 +33,8 @@ export function HelpSectionArticle({ section }: { section: Section }) {
           ) : null}
 
           {section.notes && section.notes.length > 0 ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-              <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+            <div className="mt-4 rounded border border-slate-400 bg-slate-50 px-3 py-3">
+              <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
                 Lưu ý
               </p>
               <ul className="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-6 text-slate-600">
@@ -53,7 +53,7 @@ export function HelpSectionArticle({ section }: { section: Section }) {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="inline-flex items-center rounded bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-0 hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   {link.label} →
                 </Link>
@@ -63,8 +63,8 @@ export function HelpSectionArticle({ section }: { section: Section }) {
         </div>
 
         {section.image ? (
-          <figure className="border-t border-slate-200 bg-slate-50 p-3 xl:border-t-0 xl:border-l">
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <figure className="border-t border-slate-400 bg-slate-50 p-3 xl:border-t-0 xl:border-l">
+            <div className="overflow-hidden rounded border border-slate-400 bg-white shadow-sm">
               <Image
                 src={section.image.src}
                 alt={section.image.alt}
@@ -74,7 +74,7 @@ export function HelpSectionArticle({ section }: { section: Section }) {
                 sizes="(min-width: 1280px) 420px, 100vw"
               />
             </div>
-            <figcaption className="mt-2 text-xs leading-5 text-slate-500">
+            <figcaption className="mt-2 text-xs leading-5 text-slate-700">
               {section.image.caption}
             </figcaption>
           </figure>

@@ -79,9 +79,9 @@ export function MatchCompareDrawer({
     <aside
       role="complementary"
       aria-label="Đối chiếu vật tư"
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-[-8px_0_24px_-12px_rgba(15,23,42,0.25)]"
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-slate-400 bg-white shadow-[-8px_0_24px_-12px_rgba(15,23,42,0.25)]"
     >
-        <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+        <header className="flex items-start justify-between gap-1 border-b border-slate-400 p-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="section-title">Đối chiếu vật tư catalog</p>
@@ -94,7 +94,7 @@ export function MatchCompareDrawer({
             <h2 className="mt-1 truncate text-base font-bold text-balance text-slate-950">
               {product.name}
             </h2>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-700">
               {product.unit ? <Badge tone="neutral">{product.unit}</Badge> : null}
               {product.manufacturer ? (
                 <Badge tone="info">{product.manufacturer}</Badge>
@@ -107,7 +107,7 @@ export function MatchCompareDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            className="shrink-0 rounded p-1.5 text-slate-700 hover:bg-slate-100 hover:text-slate-700"
             aria-label="Đóng"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -115,7 +115,7 @@ export function MatchCompareDrawer({
         </header>
 
         {hasMultiple ? (
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-400 bg-slate-50 px-4 py-2">
             <Button
               type="button"
               variant="secondary"
@@ -126,7 +126,7 @@ export function MatchCompareDrawer({
             >
               Trước
             </Button>
-            <span className="text-xs font-medium text-slate-500 tabular-nums">
+            <span className="text-xs font-medium text-slate-700 tabular-nums">
               Sản phẩm {safeIndex + 1} / {total}
             </span>
             <Button
@@ -149,7 +149,7 @@ export function MatchCompareDrawer({
               Đang tìm vật tư tương tự…
             </div>
           ) : query.isError ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
               Không thể đối chiếu: {query.error.message}
             </div>
           ) : candidates.length === 0 ? (
@@ -162,14 +162,14 @@ export function MatchCompareDrawer({
               {candidates.map((candidate) => (
                 <li
                   key={candidate.materialId}
-                  className="rounded-lg border border-slate-200 p-3"
+                  className="rounded border border-slate-400 p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900">
                         {candidate.name}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
+                      <p className="mt-0.5 text-xs text-slate-700">
                         {candidate.unit} · ID {candidate.materialId}
                       </p>
                     </div>
@@ -186,7 +186,7 @@ export function MatchCompareDrawer({
                           key={field.key}
                           className="flex items-center gap-2 text-xs"
                         >
-                          <dt className="w-20 shrink-0 text-slate-500">
+                          <dt className="w-20 shrink-0 text-slate-700">
                             {field.label}
                           </dt>
                           <dd className="flex flex-1 items-center gap-2">
@@ -211,12 +211,12 @@ export function MatchCompareDrawer({
         </div>
 
         {product.sourceUrl ? (
-          <footer className="border-t border-slate-200 p-3">
+          <footer className="border-t border-slate-400 p-3">
             <a
               href={product.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-sky-700 hover:underline"
+              className="inline-flex items-center gap-1.5 text-xs text-blue-700 hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               Xem trang nguồn

@@ -24,26 +24,26 @@ export default async function AdminPage() {
   return (
     <RoleDashboardFrame
       role="admin"
-      eyebrow="Command dashboard"
-      title="Admin command center"
+      eyebrow="Bảng điều khiển quản trị"
+      title="Trung tâm quản trị"
       description="Một màn hình dày thông tin cho quản trị: user, tenant, trạng thái hệ thống và rủi ro vận hành cần xử lý."
     >
       <MetricStrip
         metrics={[
           {
-            label: "Users",
+            label: "Người dùng",
             value: governance.totalUsers,
             hint: `${governance.usersByRole.admin} admin · ${governance.usersByRole.manager} manager`,
             tone: "info",
           },
           {
-            label: "Tenants",
+            label: "Tổ chức",
             value: governance.totalTenants,
             hint: `${governance.tenantlessCustomers} customer chưa gán tenant`,
             tone: governance.tenantlessCustomers > 0 ? "warning" : "success",
           },
           {
-            label: "Operations",
+            label: "Vận hành",
             value: operations.totalMaterials,
             hint: `${operations.totalPackages} gói · ${operations.totalCatalogDocuments} PDF`,
             tone: "neutral",
@@ -55,13 +55,13 @@ export default async function AdminPage() {
             tone: operations.failedJobs > 0 ? "critical" : "success",
           },
           {
-            label: "Workflows",
+            label: "Quy trình",
             value: operations.activeWorkflows,
             hint: `${operations.failedWorkflowRuns} lần chạy lỗi`,
             tone: operations.failedWorkflowRuns > 0 ? "warning" : "success",
           },
           {
-            label: "Version",
+            label: "Phiên bản",
             value: version?.current ?? "N/A",
             hint: version?.surface ?? "Không đọc được",
             tone: version?.updateAvailable ? "warning" : "neutral",
@@ -69,9 +69,9 @@ export default async function AdminPage() {
         ]}
       />
 
-      <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-1 xl:grid-cols-[1.1fr_0.9fr]">
         <WorkQueuePanel
-          title="Attention needed"
+          title="Cần chú ý"
           description="Rủi ro tổng hợp từ workflow, user/tenant và thông báo chưa đọc."
           items={snapshot.attentionQueue}
         />

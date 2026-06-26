@@ -65,29 +65,29 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-auto w-full max-w-sm rounded-lg border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40 backdrop:backdrop-blur-sm"
+      className="fixed inset-0 z-50 m-auto w-full max-w-md rounded border border-slate-400 bg-white p-0 shadow-[var(--shadow-overlay)] backdrop:bg-slate-900/45"
       onKeyDown={handleKeyDown}
       onClick={handleBackdropClick}
       aria-labelledby="confirm-dialog-title"
       aria-describedby={description ? "confirm-dialog-desc" : undefined}
     >
-      <div className="p-5" onClick={(e) => e.stopPropagation()}>
+      <div className="p-2" onClick={(e) => e.stopPropagation()}>
         <h2
           id="confirm-dialog-title"
-          className="text-base font-semibold text-slate-900"
+          className="text-lg font-semibold text-slate-900"
         >
           {title}
         </h2>
         {description ? (
           <p
             id="confirm-dialog-desc"
-            className="mt-1.5 text-sm leading-relaxed text-slate-600"
+            className="mt-1 text-base leading-snug text-slate-800"
           >
             {description}
           </p>
         ) : null}
         {children}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-2 flex justify-end gap-1">
           <Button
             variant="secondary"
             size="sm"

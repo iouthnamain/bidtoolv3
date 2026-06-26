@@ -21,8 +21,8 @@ function ListColumn({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
-      <div className="flex items-center gap-2 text-xs font-bold tracking-wide text-slate-500 uppercase">
+    <div className="rounded border border-slate-400 bg-white px-3 py-3">
+      <div className="flex items-center gap-2 text-xs font-bold tracking-wide text-slate-700 uppercase">
         {icon}
         {title}
       </div>
@@ -48,8 +48,8 @@ export function RoleHomeClient() {
   const capability = ROLE_CAPABILITIES[role];
 
   return (
-    <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="mb-4 rounded border border-slate-400 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">{ROLE_LABELS[role]}</Badge>
@@ -64,13 +64,13 @@ export function RoleHomeClient() {
         </div>
         <Link
           href={getRoleLandingPath(role)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-colors duration-150 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+          className="inline-flex items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         >
           Mở landing
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+      <div className="mt-4 grid gap-1 lg:grid-cols-3">
         <ListColumn
           title="Được xem"
           items={capability.see}

@@ -376,7 +376,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
 
   if (jobQuery.isError || !jobQuery.data) {
     return (
-      <section className="panel p-5 text-sm text-rose-800">
+      <section className="panel p-2 text-sm text-rose-800">
         Không tìm thấy job nghiên cứu.
       </section>
     );
@@ -412,13 +412,13 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
               <Badge tone={JOB_STATUS_TONE[status]}>
                 {JOB_STATUS_LABEL[status]}
               </Badge>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-700">
                 Sheet {job.sheetName} · cập nhật {formatDateTime(job.updatedAt)}
               </span>
             </div>
 
             {isJobBusy && activeJob ? (
-              <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+              <div className="rounded border border-violet-200 bg-violet-50 p-3">
                 <div className="flex items-center justify-between text-xs font-semibold text-violet-900">
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -441,7 +441,7 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
                   />
                 </div>
                 {activeJob.message ? (
-                  <p className="mt-2 text-[11px] text-violet-700">
+                  <p className="mt-2 text-xs text-violet-700">
                     {activeJob.message}
                   </p>
                 ) : null}
@@ -539,15 +539,15 @@ export function ExcelResearchJobDetail({ jobId }: { jobId: string }) {
   return (
     <>
       <section className="panel p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <p className="text-xs font-semibold text-slate-500">
+            <p className="text-xs font-semibold text-slate-700">
               Job {shortJobId(jobId)}
             </p>
             <h2 className="mt-0.5 text-base font-bold text-slate-950 text-balance">
               {job.sourceFileName}
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Sheet {job.sheetName} · <span className="tabular-nums">{job.totalRows.toLocaleString("vi-VN")}</span> dòng
             </p>
           </div>

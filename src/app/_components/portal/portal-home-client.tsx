@@ -78,10 +78,10 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+    <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-400 pb-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+          <span className="flex h-8 w-8 items-center justify-center rounded bg-blue-50 text-blue-700">
             {icon}
           </span>
           <h2 className="text-sm font-bold text-slate-900">{title}</h2>
@@ -95,7 +95,7 @@ function SectionCard({
 
 function EmptyRow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-4 text-center text-xs text-slate-500">
+    <p className="rounded border border-dashed border-slate-400 bg-slate-50/60 px-3 py-4 text-center text-xs text-slate-700">
       {children}
     </p>
   );
@@ -128,10 +128,10 @@ function NotificationsSection() {
           {items.map((item) => (
             <li
               key={item.id}
-              className={`rounded-lg border px-3 py-2.5 ${
+              className={`rounded border px-3 py-2.5 ${
                 item.isRead
-                  ? "border-slate-200 bg-white"
-                  : "border-sky-200 bg-sky-50/50"
+                  ? "border-slate-400 bg-white"
+                  : "border-blue-200 bg-blue-50/50"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -145,7 +145,7 @@ function NotificationsSection() {
                   {item.body}
                 </p>
               ) : null}
-              <p className="mt-1 text-[11px] text-slate-400">
+              <p className="mt-1 text-xs text-slate-600">
                 {formatDateTime(item.createdAt)}
               </p>
             </li>
@@ -174,7 +174,7 @@ function ResearchJobsSection() {
           {items.map((job) => (
             <li
               key={job.id}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+              className="rounded border border-slate-400 bg-white px-3 py-2.5"
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere] text-slate-900">
@@ -184,11 +184,11 @@ function ResearchJobsSection() {
                   {jobStatusLabel(job.status)}
                 </Badge>
               </div>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 {job.processedRows}/{job.totalRows} dòng đã xử lý
                 {job.matchedRows > 0 ? ` · ${job.matchedRows} khớp` : ""}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-400">
+              <p className="mt-0.5 text-xs text-slate-600">
                 {formatDateTime(job.createdAt)}
               </p>
             </li>
@@ -218,7 +218,7 @@ function EnrichmentJobsSection() {
           {items.map((job) => (
             <li
               key={job.id}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+              className="rounded border border-slate-400 bg-white px-3 py-2.5"
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
@@ -228,11 +228,11 @@ function EnrichmentJobsSection() {
                   {jobStatusLabel(job.status)}
                 </Badge>
               </div>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 {job.processed}/{job.total} mục đã xử lý
                 {job.matched > 0 ? ` · ${job.matched} khớp` : ""}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-400">
+              <p className="mt-0.5 text-xs text-slate-600">
                 {formatDateTime(job.startedAt)}
               </p>
             </li>
@@ -266,12 +266,12 @@ function WatchlistSection() {
           {items.slice(0, 8).map((item) => (
             <li
               key={item.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2"
             >
               <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
                 {item.label}
               </span>
-              <span className="shrink-0 text-[11px] text-slate-400">
+              <span className="shrink-0 text-xs text-slate-600">
                 {formatDateTime(item.createdAt)}
               </span>
             </li>
@@ -305,13 +305,13 @@ function SavedFiltersSection() {
           {items.slice(0, 8).map((filter) => (
             <li
               key={filter.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2"
             >
               <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
                 {filter.name}
               </span>
               {filter.keyword ? (
-                <span className="shrink-0 truncate text-[11px] text-slate-400">
+                <span className="shrink-0 truncate text-xs text-slate-600">
                   {filter.keyword}
                 </span>
               ) : null}
@@ -339,10 +339,10 @@ export function PortalHomeClient() {
 
   return (
     <div className="space-y-3">
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-amber-700">
+      <section className="rounded border border-amber-200 bg-amber-50 p-4 text-amber-950 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-1">
+          <div className="flex gap-1">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-white text-amber-700">
               <Eye className="h-4 w-4" aria-hidden="true" />
             </span>
             <div>
@@ -390,20 +390,20 @@ export function PortalHomeClient() {
         ].map((metric) => (
           <article
             key={metric.label}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
+            className="rounded border border-slate-400 bg-white px-3 py-2.5 shadow-sm"
           >
-            <p className="text-[11px] font-bold tracking-[0.14em] text-slate-500 uppercase">
+            <p className="text-xs font-bold tracking-[0.14em] text-slate-700 uppercase">
               {metric.label}
             </p>
             <p className="mt-1 text-xl font-extrabold text-slate-950 tabular-nums">
               {metric.value}
             </p>
-            <p className="mt-0.5 text-xs text-slate-500">{metric.hint}</p>
+            <p className="mt-0.5 text-xs text-slate-700">{metric.hint}</p>
           </article>
         ))}
       </section>
       <NotificationsSection />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-2 lg:grid-cols-2">
         <ResearchJobsSection />
         <EnrichmentJobsSection />
         <WatchlistSection />

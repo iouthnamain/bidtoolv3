@@ -164,7 +164,7 @@ export function DesktopSettingsSection() {
     <section id="desktop-client" className="panel scroll-mt-6 overflow-hidden">
       <SettingsSectionHeader
         eyebrow="Desktop"
-        title="Desktop client"
+        title="Ứng dụng desktop"
         description="Trỏ ứng dụng Electron tới server on-prem của khách hàng, hoặc dùng server local đi kèm."
         icon={MonitorCog}
         iconClassName="bg-slate-950 text-white"
@@ -174,8 +174,8 @@ export function DesktopSettingsSection() {
         }}
         action={
           isDesktop ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              <p className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm">
+              <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                 Chế độ
               </p>
               <p className="mt-0.5 font-bold text-slate-950">{activeMode}</p>
@@ -192,10 +192,10 @@ export function DesktopSettingsSection() {
           />
         </div>
       ) : (
-        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div id="desktop-server" className="scroll-mt-6 space-y-5">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+            <div className="flex items-start gap-1">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-blue-50 text-blue-700">
                 <Server className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
@@ -229,7 +229,7 @@ export function DesktopSettingsSection() {
                   setFormError(null);
                 }}
                 placeholder="http://localhost:13000"
-                className="h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 transition-colors duration-150 focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="h-11 w-full rounded border border-slate-400 bg-white px-3 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
               />
             </FilterField>
 
@@ -267,26 +267,26 @@ export function DesktopSettingsSection() {
 
           <aside
             id="desktop-config"
-            className="scroll-mt-6 rounded-lg border border-slate-200 bg-slate-950 p-4 text-white"
+            className="scroll-mt-6 rounded border border-slate-400 bg-slate-950 p-4 text-white"
           >
-            <p className="text-xs font-semibold tracking-[0.14em] text-slate-400 uppercase">
+            <p className="text-xs font-semibold tracking-[0.14em] text-slate-600 uppercase">
               Cấu hình hiện tại
             </p>
-            <dl className="mt-4 space-y-4 text-sm">
+            <dl className="mt-4 space-y-2 text-sm">
               <div>
-                <dt className="text-slate-400">Nguồn</dt>
+                <dt className="text-slate-600">Nguồn</dt>
                 <dd className="mt-1 font-semibold">
                   {sourceLabel(config.source)}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Server</dt>
+                <dt className="text-slate-600">Server</dt>
                 <dd className="mt-1 font-semibold break-all">
                   {config.serverUrl ?? "Chưa cấu hình server remote"}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Có thể sửa</dt>
+                <dt className="text-slate-600">Có thể sửa</dt>
                 <dd className="mt-1">
                   <Badge tone={config.canEdit ? "success" : "neutral"}>
                     {config.canEdit ? "Có" : "Không"}

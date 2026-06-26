@@ -19,7 +19,7 @@ function InlineText({ text }: { text: string }) {
         part.startsWith("`") && part.endsWith("`") ? (
           <code
             key={`${part}-${index}`}
-            className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[0.92em] font-semibold text-slate-800"
+            className="rounded border border-slate-400 bg-white px-1.5 py-0.5 text-[0.92em] font-semibold text-slate-800"
           >
             {part.slice(1, -1)}
           </code>
@@ -33,7 +33,7 @@ function InlineText({ text }: { text: string }) {
 
 export function FlowMap() {
   return (
-    <div className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-3">
+    <div className="rounded border border-cyan-100 bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-3">
       <div className="grid gap-2 md:grid-cols-5">
         {flowNodes.map((node, index) => (
           <div key={node.step} className="relative">
@@ -43,8 +43,8 @@ export function FlowMap() {
                 className="absolute top-5 -left-3 hidden h-px w-6 bg-cyan-300 md:block"
               />
             ) : null}
-            <div className="h-full rounded-xl border border-cyan-200 bg-white/85 p-3 shadow-sm">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-cyan-900 text-[11px] font-bold text-white">
+            <div className="h-full rounded border border-cyan-200 bg-white/85 p-3 shadow-sm">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-cyan-900 text-xs font-bold text-white">
                 {node.step}
               </span>
               <h3 className="mt-3 text-sm font-bold text-slate-950">
@@ -63,17 +63,17 @@ export function FlowMap() {
 
 function LocalStackVisual() {
   return (
-    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <p className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+    <div className="mt-4 rounded border border-slate-400 bg-slate-50 p-3">
+      <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
         Sơ đồ chạy local
       </p>
       <div className="mt-3 grid gap-2 md:grid-cols-4">
         {localStackLayers.map((layer) => (
           <div
             key={layer.step}
-            className="rounded-xl border border-slate-200 bg-white p-3"
+            className="rounded border border-slate-400 bg-white p-3"
           >
-            <span className="inline-flex rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold tracking-wide text-white">
+            <span className="inline-flex rounded-full bg-slate-900 px-2 py-1 text-xs font-bold tracking-wide text-white">
               {layer.step}
             </span>
             <h3 className="mt-2 text-sm font-bold text-slate-950">
@@ -91,13 +91,13 @@ function LocalStackVisual() {
 
 function SourceMatrixVisual() {
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+    <div className="mt-4 overflow-hidden rounded border border-slate-400">
       <div className="bg-slate-900 px-3 py-2 text-xs font-bold tracking-wide text-white uppercase">
         Ma trận độ chính xác nguồn BidWinner
       </div>
       <div className="overflow-x-auto bg-white">
         <table className="w-full min-w-[34rem] text-left text-sm break-words">
-          <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+          <thead className="bg-slate-50 text-xs text-slate-700 uppercase">
             <tr>
               <th className="px-3 py-2 font-bold">Mode</th>
               <th className="px-3 py-2 font-bold">Từ nguồn public</th>
@@ -131,7 +131,7 @@ function SourceMatrixVisual() {
 
 function ImportPipelineVisual() {
   return (
-    <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3">
+    <div className="mt-4 rounded border border-emerald-100 bg-emerald-50/60 p-3">
       <p className="text-xs font-bold tracking-wide text-emerald-800 uppercase">
         Pipeline import
       </p>
@@ -139,13 +139,13 @@ function ImportPipelineVisual() {
         {importPipeline.map((step, index) => (
           <div
             key={step.step}
-            className="rounded-xl border border-emerald-200 bg-white p-3"
+            className="rounded border border-emerald-200 bg-white p-3"
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-1">
               <span className="text-sm font-bold text-slate-950">
                 {step.step}
               </span>
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
                 {String(index + 1).padStart(2, "0")}
               </span>
             </div>
@@ -168,18 +168,18 @@ function LocalCommandsVisual() {
       {localCommands.map((item) => (
         <div
           key={item.command}
-          className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+          className="rounded border border-slate-400 bg-slate-50 p-3"
         >
-          <code className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-900">
+          <code className="rounded border border-slate-400 bg-white px-2 py-1 text-xs font-bold text-slate-900">
             {item.command}
           </code>
-          <p className="mt-2 text-xs font-bold text-slate-500 uppercase">
+          <p className="mt-2 text-xs font-bold text-slate-700 uppercase">
             Khi dùng
           </p>
           <p className="mt-1 text-sm leading-5 text-slate-700">
             <InlineText text={item.when} />
           </p>
-          <p className="mt-2 text-xs font-bold text-slate-500 uppercase">
+          <p className="mt-2 text-xs font-bold text-slate-700 uppercase">
             Kết quả
           </p>
           <p className="mt-1 text-sm leading-5 text-slate-700">
@@ -197,7 +197,7 @@ function TroubleshootingVisual() {
       {troubleshootingCards.map((card) => (
         <div
           key={card.symptom}
-          className="rounded-xl border border-amber-200 bg-amber-50/60 p-3"
+          className="rounded border border-amber-200 bg-amber-50/60 p-3"
         >
           <h3 className="text-sm font-bold text-slate-950">{card.symptom}</h3>
           <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-slate-700">
@@ -205,7 +205,7 @@ function TroubleshootingVisual() {
               <li key={check}>{check}</li>
             ))}
           </ul>
-          <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-slate-700">
+          <p className="mt-3 rounded bg-white px-3 py-2 text-xs leading-5 text-slate-700">
             <span className="font-bold text-amber-800">Cách xử lý: </span>
             <InlineText text={card.action} />
           </p>

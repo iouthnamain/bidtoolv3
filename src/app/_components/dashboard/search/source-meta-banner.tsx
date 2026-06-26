@@ -25,14 +25,14 @@ export function SourceMetaBanner({ result }: { result: SearchResult }) {
 
   return (
     <div className="space-y-2">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+      <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-700">
         <p>
           Nguồn public:{" "}
           <a
             href={result.sourceMeta.pageUrl}
             target="_blank"
             rel="noreferrer"
-            className="font-semibold text-sky-700 hover:underline"
+            className="font-semibold text-blue-700 hover:underline"
           >
             {result.sourceMeta.pageUrl}
           </a>
@@ -49,14 +49,14 @@ export function SourceMetaBanner({ result }: { result: SearchResult }) {
       {result.sourceMeta.notices.map((notice) => (
         <div
           key={notice}
-          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
+          className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800"
         >
           {notice}
         </div>
       ))}
 
       {result.windowTruncated ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Bộ lọc đang chạy trên {result.scannedCount.toLocaleString("vi-VN")}{" "}
           mục đầu của nguồn (giới hạn để giữ tốc độ). Nguồn còn nhiều dữ liệu
           hơn — hãy thu hẹp bộ lọc hoặc dùng tiêu chí lấy chính xác từ nguồn để
@@ -65,7 +65,7 @@ export function SourceMetaBanner({ result }: { result: SearchResult }) {
       ) : null}
 
       {result.warning ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {result.warning}
         </div>
       ) : null}
@@ -80,7 +80,7 @@ export function ResultMatchSummary({ result }: { result: SearchResult }) {
 
   if ((result.items[0]?.entityType ?? "package") !== "package") {
     return (
-      <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium text-sky-600">
+      <div className="border-l-4 border-blue-400 bg-white px-4 py-3 text-sm font-medium text-blue-600">
         Tìm thấy{" "}
         <span className="text-emerald-600">
           {count} {entityLabel.toLowerCase()}
@@ -91,13 +91,13 @@ export function ResultMatchSummary({ result }: { result: SearchResult }) {
   }
 
   return (
-    <div className="border-l-4 border-sky-400 bg-white px-4 py-3 text-sm font-medium">
-      <span className="text-sky-600">Tìm thấy </span>
+    <div className="border-l-4 border-blue-400 bg-white px-4 py-3 text-sm font-medium">
+      <span className="text-blue-600">Tìm thấy </span>
       <span className="text-emerald-600">{count} gói thầu </span>
       <span className="text-emerald-600">chưa đóng thầu </span>
-      <span className="text-sky-600">trong tên gói thầu | bên mời thầu </span>
+      <span className="text-blue-600">trong tên gói thầu | bên mời thầu </span>
       <span className="text-emerald-600">tại các tỉnh thành phố </span>
-      <span className="text-sky-600">bạn lựa chọn</span>
+      <span className="text-blue-600">bạn lựa chọn</span>
     </div>
   );
 }

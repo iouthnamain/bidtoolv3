@@ -59,7 +59,7 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
 
   return (
     <div
-      className={`rounded-xl border px-4 py-3 ${
+      className={`rounded border px-4 py-3 ${
         hasErrors
           ? "border-rose-200 bg-rose-50 text-rose-900"
           : hasWarnings
@@ -67,7 +67,7 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
             : "border-emerald-200 bg-emerald-50 text-emerald-900"
       }`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div className="flex items-start gap-2">
           {hasErrors ? (
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -85,13 +85,13 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
         </div>
         <Link
           href="/materials"
-          className="rounded-md bg-white/70 px-2.5 py-1.5 text-xs font-bold text-slate-800 hover:bg-white"
+          className="rounded bg-white/70 px-2.5 py-1.5 text-xs font-bold text-slate-800 hover:bg-white"
         >
           Xem danh mục
         </Link>
       </div>
       {result.errors.length > 0 ? (
-        <details className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
+        <details className="mt-2 rounded bg-white/60 px-3 py-2 text-xs">
           <summary className="cursor-pointer font-semibold">
             {result.errors.length.toLocaleString("vi-VN")} lỗi chi tiết
           </summary>
@@ -103,7 +103,7 @@ function ResultPanel({ result }: { result: ImportResult | null }) {
         </details>
       ) : null}
       {(result.warnings?.length ?? 0) > 0 ? (
-        <details className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs">
+        <details className="mt-2 rounded bg-white/60 px-3 py-2 text-xs">
           <summary className="cursor-pointer font-semibold">
             {(result.warnings?.length ?? 0).toLocaleString("vi-VN")} cảnh báo
           </summary>
@@ -129,7 +129,7 @@ function XlsxPreviewPanel({
     return (
       <section
         id="materials-xlsx-preview"
-        className="panel scroll-mt-6 rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900"
+        className="panel scroll-mt-6 rounded border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-900"
       >
         Đang đọc file và tạo preview…
       </section>
@@ -153,51 +153,51 @@ function XlsxPreviewPanel({
   return (
     <section
       id="materials-xlsx-preview"
-      className="panel scroll-mt-6 overflow-hidden border-sky-100"
+      className="panel scroll-mt-6 overflow-hidden border-blue-100"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-white via-sky-50 to-emerald-50 px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-gradient-to-r from-white via-blue-50 to-emerald-50 px-4 py-4">
         <div>
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Preview trước khi nhập
           </p>
           <p className="mt-1 text-lg font-bold text-slate-950">{sheet.name}</p>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-slate-700">
             Header dòng {sheet.activeHeaderRowIndex};{" "}
             {sheet.rowCount.toLocaleString("vi-VN")} dòng dữ liệu đọc được.
           </p>
         </div>
-        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 tabular-nums">
+        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 tabular-nums">
           {sheet.previewRows.length.toLocaleString("vi-VN")} dòng preview
         </span>
       </div>
 
-      <div className="grid gap-3 p-4">
+      <div className="grid gap-1 p-4">
         {mappingEntries.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {mappingEntries.map(([label, value]) => (
               <span
                 key={`${label}-${value}`}
-                className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
               >
                 {label}: {value}
               </span>
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Chưa nhận diện được cột tên vật tư. Kiểm tra lại header trước khi
             nhập.
           </div>
         )}
 
         {sheet.warnings.length > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {sheet.warnings[0]}
           </div>
         ) : null}
 
         {sheet.previewRows.length > 0 ? (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <div className="overflow-x-auto rounded border border-slate-400">
             <table className="w-full min-w-[44rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="bg-slate-100 text-left text-slate-600 uppercase">
                 <tr>
@@ -214,7 +214,7 @@ function XlsxPreviewPanel({
               <tbody className="divide-y divide-slate-100 bg-white">
                 {sheet.previewRows.map((row) => (
                   <tr key={`${sheet.name}-${row.rowNumber}`}>
-                    <td className="px-3 py-2 font-semibold text-slate-500 tabular-nums">
+                    <td className="px-3 py-2 font-semibold text-slate-700 tabular-nums">
                       {row.rowNumber}
                     </td>
                     <td className="max-w-72 px-3 py-2 font-semibold text-slate-900">
@@ -248,7 +248,7 @@ function XlsxPreviewPanel({
             </table>
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+          <div className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-700">
             Không có dòng preview phù hợp với mapping hiện tại.
           </div>
         )}
@@ -409,10 +409,10 @@ export function MaterialImportClient() {
   return (
     <div className="space-y-4">
       {showStatusPanel ? (
-        <section className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+        <section className="grid gap-1 md:grid-cols-[1fr_auto] md:items-start">
           <ResultPanel result={lastResult} />
           {importError ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
               <div className="flex items-start gap-2">
                 <AlertTriangle
                   className="mt-0.5 h-4 w-4 shrink-0"
@@ -424,23 +424,23 @@ export function MaterialImportClient() {
           ) : null}
           <Link
             href="/materials/new"
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             Thêm thủ công
           </Link>
         </section>
       ) : null}
 
-      <section className="grid gap-4">
+      <section className="grid gap-2">
         <article className="panel overflow-hidden">
-          <div className="border-b border-sky-200 bg-sky-50 px-4 py-3">
+          <div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-700 text-white">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded bg-blue-700 text-white">
                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
               </span>
               <div>
-                <h3 className="text-sm font-bold text-sky-950">Upload Excel</h3>
-                <p className="text-xs text-sky-800">
+                <h3 className="text-sm font-bold text-blue-950">Upload Excel</h3>
+                <p className="text-xs text-blue-800">
                   Tự dò header `.xlsx`; nhập tên sheet nếu workbook có nhiều
                   trang.
                 </p>
@@ -448,12 +448,12 @@ export function MaterialImportClient() {
             </div>
           </div>
 
-          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
+          <div className="grid gap-2 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
             <label
-              className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-offset-2 sm:min-h-44 sm:gap-3 sm:py-6 ${
+              className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 sm:min-h-44 sm:gap-3 sm:py-6 ${
                 xlsxFile
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                  : "border-sky-300 bg-gradient-to-br from-sky-50 to-white text-sky-900 hover:bg-sky-100"
+                  : "border-blue-300 bg-gradient-to-br from-blue-50 to-white text-blue-900 hover:bg-blue-100"
               }`}
             >
               <input
@@ -465,14 +465,14 @@ export function MaterialImportClient() {
                   void handleExcelFile(event.target.files?.[0] ?? null)
                 }
               />
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded bg-white shadow-sm">
                 {xlsxFile ? (
                   <CheckCircle2
                     className="h-5 w-5 text-emerald-700"
                     aria-hidden
                   />
                 ) : (
-                  <Upload className="h-5 w-5 text-sky-700" aria-hidden />
+                  <Upload className="h-5 w-5 text-blue-700" aria-hidden />
                 )}
               </span>
               <span className="text-sm font-bold">Chọn file Excel</span>
@@ -480,14 +480,14 @@ export function MaterialImportClient() {
                 {xlsxFile ? xlsxFile.name : ".xlsx"}
               </span>
             </label>
-            <div className="grid gap-3">
+            <div className="grid gap-1">
               {xlsxPreview ? (
                 <label className="grid gap-1">
-                  <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Sheet preview
                   </span>
                   <select
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="rounded border border-slate-400 px-3 py-2 text-sm"
                     value={activePreviewSheet?.name ?? ""}
                     onChange={(event) => setSheetName(event.target.value)}
                   >
@@ -501,21 +501,21 @@ export function MaterialImportClient() {
                 </label>
               ) : (
                 <label className="grid gap-1">
-                  <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+                  <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                     Sheet cần nhập
                   </span>
                   <input
                     name="sheetName"
                     autoComplete="off"
                     spellCheck={false}
-                    className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none sm:min-h-10"
+                    className="min-h-11 rounded border border-slate-400 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                     placeholder="Tên sheet tuỳ chọn…"
                     value={sheetName}
                     onChange={(event) => setSheetName(event.target.value)}
                   />
                 </label>
               )}
-              <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              <div className="grid gap-2 rounded border border-slate-400 bg-slate-50 p-3 text-xs text-slate-600">
                 <p className="flex items-center gap-1.5 font-bold text-slate-800">
                   <Info className="h-3.5 w-3.5" aria-hidden />
                   Cột Excel được nhận diện
@@ -532,7 +532,7 @@ export function MaterialImportClient() {
                   ].map((label) => (
                     <span
                       key={label}
-                      className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600"
+                      className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-600"
                     >
                       {label}
                     </span>
@@ -574,11 +574,11 @@ export function MaterialImportClient() {
         isLoading={previewXlsx.isPending}
       />
 
-      <section className="grid gap-4">
+      <section className="grid gap-2">
         <article className="panel overflow-hidden">
           <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded bg-emerald-700 text-white">
                 <TableProperties className="h-4 w-4" aria-hidden />
               </span>
               <div>
@@ -590,27 +590,27 @@ export function MaterialImportClient() {
             </div>
           </div>
 
-          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="grid gap-2 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start">
+            <div className="rounded border border-slate-400 bg-slate-50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold text-slate-700">Header CSV</p>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                  className="inline-flex items-center gap-1.5 rounded bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
                   onClick={() => setCsv(csvExample)}
                 >
                   <Clipboard className="h-3.5 w-3.5" aria-hidden />
                   Dùng mẫu
                 </button>
               </div>
-              <code className="mt-2 block rounded-lg bg-white px-3 py-2 text-[11px] leading-5 break-words whitespace-pre-wrap text-slate-600">
+              <code className="mt-2 block rounded bg-white px-3 py-2 text-xs leading-5 break-words whitespace-pre-wrap text-slate-600">
                 {csvHeader}
               </code>
             </div>
 
             <div>
               <textarea
-                className="h-40 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs leading-5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 focus-visible:outline-none sm:h-56"
+                className="h-40 w-full rounded border border-slate-400 px-3 py-2 font-mono text-xs leading-5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 focus-visible:outline-none sm:h-56"
                 name="materialsCsv"
                 autoComplete="off"
                 spellCheck={false}
@@ -639,7 +639,7 @@ export function MaterialImportClient() {
                   </Button>
                   <Link
                     href="/materials"
-                    className="inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                    className="inline-flex items-center rounded px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
                   >
                     Xem danh mục
                   </Link>

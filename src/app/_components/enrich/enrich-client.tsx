@@ -557,11 +557,11 @@ export function MaterialEnrichClient() {
   );
 
   return (
-    <div className="animate-rise space-y-4">
+    <div className="space-y-2">
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
 
       {error ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <p>{error}</p>
@@ -759,10 +759,10 @@ function UploadStep({
   ];
 
   return (
-    <section className="panel overflow-hidden rounded-xl shadow-[var(--shadow-flat)]">
-      <div className="border-b border-sky-200 bg-sky-50 px-4 py-3">
+    <section className="panel overflow-hidden rounded shadow-[var(--shadow-flat)]">
+      <div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sky-700 text-white">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded bg-blue-700 text-white">
             <FileSpreadsheet className="h-4 w-4" aria-hidden />
           </span>
           <h3 className="text-sm font-extrabold text-slate-900 text-balance">
@@ -771,12 +771,12 @@ function UploadStep({
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)] lg:items-start">
+      <div className="grid gap-2 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)] lg:items-start">
         <label
-          className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-sky-500 sm:min-h-44 ${
+          className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 sm:min-h-44 ${
             file
               ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-              : "border-sky-300 bg-gradient-to-br from-sky-50 to-white text-sky-900 hover:bg-sky-100"
+              : "border-blue-300 bg-gradient-to-br from-blue-50 to-white text-blue-900 hover:bg-blue-100"
           }`}
         >
           <input
@@ -785,11 +785,11 @@ function UploadStep({
             className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             onChange={(event) => onFile(event.target.files?.[0] ?? null)}
           />
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded bg-white shadow-sm">
             {file ? (
               <CheckCircle2 className="h-5 w-5 text-emerald-700" aria-hidden />
             ) : (
-              <Upload className="h-5 w-5 text-sky-700" aria-hidden />
+              <Upload className="h-5 w-5 text-blue-700" aria-hidden />
             )}
           </span>
           <span className="text-sm font-bold">Chọn file Excel</span>
@@ -798,14 +798,14 @@ function UploadStep({
           </span>
         </label>
 
-        <div className="grid gap-3">
+        <div className="grid gap-1">
           {preview ? (
             <label className="grid gap-1">
-              <span className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+              <span className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                 Sheet
               </span>
               <select
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                className="rounded border border-slate-400 px-3 py-2 text-sm"
                 value={activeSheet?.name ?? ""}
                 onChange={(event) => onSheetChange(event.target.value)}
               >
@@ -817,7 +817,7 @@ function UploadStep({
               </select>
             </label>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500 shadow-[var(--shadow-flat)]">
+            <div className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-700 shadow-[var(--shadow-flat)]">
               {isPreviewLoading ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -830,7 +830,7 @@ function UploadStep({
           )}
 
           {activeSheet ? (
-            <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 shadow-[var(--shadow-flat)]">
+            <div className="grid gap-1 rounded border border-slate-400 bg-slate-50 p-3 text-xs text-slate-600 shadow-[var(--shadow-flat)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-extrabold text-slate-900">Map cột Excel</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -873,10 +873,10 @@ function UploadStep({
                             event.target.value || null,
                           )
                         }
-                        className={`rounded-lg border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+                        className={`rounded border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
                           field.required && !activeMapping[field.key]
                             ? "border-amber-300 bg-amber-50"
-                            : "border-slate-300 bg-white"
+                            : "border-slate-400 bg-white"
                         }`}
                       >
                         <option value="">Không map</option>
@@ -895,10 +895,10 @@ function UploadStep({
                 {checklist.map((item) => (
                   <span
                     key={item.label}
-                    className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                    className={`rounded-full px-2 py-1 text-xs font-semibold ${
                       item.done
                         ? "bg-emerald-50 text-emerald-700"
-                        : "bg-white text-slate-500"
+                        : "bg-white text-slate-700"
                     }`}
                   >
                     {item.done ? "✓ " : ""}
@@ -908,7 +908,7 @@ function UploadStep({
               </div>
 
               {!hasNameColumn ? (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
+                <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">
                   Chưa map cột tên vật tư. Chọn cột ở trường “Tên vật tư” để
                   tiếp tục đối chiếu.
                 </p>
@@ -945,8 +945,8 @@ function EnrichXlsxPreviewPanel({
 }) {
   if (isLoading) {
     return (
-      <div className="border-t border-slate-200 px-4 py-4">
-        <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+      <div className="border-t border-slate-400 px-4 py-4">
+        <div className="flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           Đang đọc file và tạo preview…
         </div>
@@ -966,32 +966,32 @@ function EnrichXlsxPreviewPanel({
   const headers = sheet.headers.length > 0 ? sheet.headers : ["(trống)"];
 
   return (
-    <div className="border-t border-slate-200">
-      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+    <div className="border-t border-slate-400">
+      <div className="flex flex-wrap items-start justify-between gap-1 px-4 py-3">
         <div>
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Xem trước Excel
           </p>
           <p className="mt-1 text-sm font-bold text-slate-900">{sheet.name}</p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-700">
             Header dòng {sheet.activeHeaderRowIndex};{" "}
             {sheet.rowCount.toLocaleString("vi-VN")} dòng dữ liệu.
           </p>
         </div>
-        <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 tabular-nums">
+        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 tabular-nums">
           {sheet.previewRows.length.toLocaleString("vi-VN")} dòng preview
         </span>
       </div>
 
       <div className="px-4 pb-4">
         {sheet.warnings.length > 0 ? (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {sheet.warnings[0]}
           </div>
         ) : null}
 
         {sheet.previewRows.length > 0 ? (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <div className="overflow-x-auto rounded border border-slate-400">
             <table className="w-full min-w-[36rem] divide-y divide-slate-200 text-sm break-words">
               <thead className="bg-slate-100 text-left text-xs font-bold text-slate-600 uppercase">
                 <tr>
@@ -1003,7 +1003,7 @@ function EnrichXlsxPreviewPanel({
                       key={header}
                       className={`max-w-48 px-3 py-2 whitespace-nowrap ${
                         mappedHeaders.has(header)
-                          ? "bg-sky-100 text-sky-900"
+                          ? "bg-blue-100 text-blue-900"
                           : ""
                       }`}
                     >
@@ -1015,7 +1015,7 @@ function EnrichXlsxPreviewPanel({
               <tbody className="divide-y divide-slate-100 bg-white">
                 {sheet.previewRows.map((row, index) => (
                   <tr key={row.key}>
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-700 tabular-nums whitespace-nowrap">
                       {sheet.activeHeaderRowIndex + index + 1}
                     </td>
                     {headers.map((header) => (
@@ -1034,7 +1034,7 @@ function EnrichXlsxPreviewPanel({
             </table>
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+          <div className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-700">
             Không có dòng dữ liệu để preview trên sheet này.
           </div>
         )}
@@ -1094,13 +1094,13 @@ function EnrichExportPreviewPanel({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+    <div className="overflow-hidden rounded border border-slate-400 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 px-4 py-3">
         <div>
-          <p className="text-xs font-bold tracking-[0.12em] text-slate-500 uppercase">
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Xem trước xuất file
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-700">
             {preview.totalExportable.toLocaleString("vi-VN")} dòng sẽ được xuất
             {preview.truncated
               ? ` · hiển thị ${preview.rows.length.toLocaleString("vi-VN")} dòng đầu`
@@ -1121,7 +1121,7 @@ function EnrichExportPreviewPanel({
       </div>
 
       {preview.rows.length === 0 ? (
-        <p className="px-4 py-6 text-center text-xs text-slate-500">
+        <p className="px-4 py-6 text-center text-xs text-slate-700">
           Chưa có ô nào được chọn để xuất.
         </p>
       ) : (
@@ -1146,7 +1146,7 @@ function EnrichExportPreviewPanel({
                   const currentValue = rowEdits?.[cell.field] ?? cell.after;
                   return (
                     <tr key={`${row.originalRowIndex}-${cell.field}`}>
-                    <td className="px-3 py-2 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
+                    <td className="px-3 py-2 font-semibold text-slate-700 tabular-nums whitespace-nowrap">
                       {row.originalRowIndex}
                     </td>
                     <td className="max-w-40 truncate px-3 py-2 text-slate-700">
@@ -1155,7 +1155,7 @@ function EnrichExportPreviewPanel({
                     <td className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">
                       {FIELD_LABELS[cell.field]}
                     </td>
-                    <td className="max-w-32 truncate px-3 py-2 text-slate-500">
+                    <td className="max-w-32 truncate px-3 py-2 text-slate-700">
                       {cell.before || "(trống)"}
                     </td>
                     <td className="min-w-48 px-3 py-2">
@@ -1172,11 +1172,11 @@ function EnrichExportPreviewPanel({
                             event.target.value,
                           )
                         }
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                        className="w-full rounded border border-slate-400 bg-white px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         aria-label={`Chỉnh ${FIELD_LABELS[cell.field]} dòng ${row.originalRowIndex}`}
                       />
                     </td>
-                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                    <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span>{isForced ? "Ghi đè bắt buộc" : (actionLabels[cell.action] ?? cell.action)}</span>
                         <button
@@ -1184,7 +1184,7 @@ function EnrichExportPreviewPanel({
                           onClick={() =>
                             onSheetEdit(row.originalRowIndex, cell.field, null)
                           }
-                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         >
                           Reset ô
                         </button>
@@ -1193,7 +1193,7 @@ function EnrichExportPreviewPanel({
                           onClick={() =>
                             onSheetEdit(row.originalRowIndex, cell.field, "")
                           }
-                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         >
                           Xóa giá trị
                         </button>
@@ -1202,16 +1202,16 @@ function EnrichExportPreviewPanel({
                           onClick={() =>
                             onToggleSheetOverwrite(row.originalRowIndex, cell.field)
                           }
-                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         >
-                          {isForced ? "Bỏ ghi đè" : "Force overwrite"}
+                          {isForced ? "Bỏ ghi đè" : "Ghi đè bắt buộc"}
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             onSkipSheetField(row.originalRowIndex, cell.field)
                           }
-                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         >
                           Bỏ qua field
                         </button>
@@ -1220,14 +1220,14 @@ function EnrichExportPreviewPanel({
                             <button
                               type="button"
                               onClick={() => onResetRowSheetEdits(row.originalRowIndex)}
-                              className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                             >
                               Reset dòng
                             </button>
                             <button
                               type="button"
                               onClick={() => onSkipSheetRow(row.originalRowIndex)}
-                              className="rounded border border-rose-200 px-1.5 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                              className="rounded border border-rose-200 px-1.5 py-0.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                             >
                               Bỏ qua dòng
                             </button>
@@ -1248,7 +1248,7 @@ function EnrichExportPreviewPanel({
                               );
                             })
                           }
-                          className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none"
+                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         >
                           Áp dụng ô trống
                         </button>
@@ -1263,8 +1263,8 @@ function EnrichExportPreviewPanel({
         </div>
       )}
       {preview.rows.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2">
-          <p className="text-xs text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-400 bg-slate-50 px-4 py-2">
+          <p className="text-xs text-slate-700">
             Chỉnh trực tiếp giá trị cuối cùng trước khi xuất. Giá trị sửa ở đây
             sẽ ưu tiên hơn kết quả catalog/web.
           </p>
@@ -1356,22 +1356,22 @@ function ExportStep({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
         <h3 className="text-sm font-bold text-slate-900 text-balance">Xuất file</h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-700">
           Xem trước các ô sẽ điền, sau đó tải file đối chiếu catalog hoặc file
           nghiên cứu web nếu đã chạy bước 3.
         </p>
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5">
           {stats.map((stat) => (
             <div
               key={stat.label}
-              className="rounded-xl border border-slate-200 bg-white p-3"
+              className="rounded border border-slate-400 bg-white p-3"
             >
-              <p className="text-xs font-medium text-slate-500">{stat.label}</p>
+              <p className="text-xs font-medium text-slate-700">{stat.label}</p>
               <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
                 {stat.value.toLocaleString("vi-VN")}
               </p>
@@ -1392,7 +1392,7 @@ function ExportStep({
           onSkipSheetRow={onSkipSheetRow}
         />
 
-        <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 rounded border border-slate-400 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
           <span className="font-semibold text-slate-800">
             Sẵn sàng xuất: {nothingToExport ? "chưa" : "có"}
           </span>
@@ -1404,7 +1404,7 @@ function ExportStep({
         </div>
 
         {hasResearchJob ? (
-          <p className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
+          <p className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
             File nghiên cứu web:{" "}
             {researchApprovedCount.toLocaleString("vi-VN")} dòng đã duyệt/khớp
             sẽ được xuất (xem chi tiết ở bước 3).
@@ -1413,7 +1413,7 @@ function ExportStep({
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {hasResearchJob ? (
-            <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
               <Button
                 variant="primary"
                 leftIcon={<Download className="h-4 w-4" />}
@@ -1422,13 +1422,13 @@ function ExportStep({
               >
                 Xuất file nghiên cứu web (.xlsx)
               </Button>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-700">
                 Điền theo kết quả nghiên cứu web đã duyệt ở bước 3.
               </p>
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
             <Button
               variant={hasResearchJob ? "secondary" : "primary"}
               leftIcon={<Download className="h-4 w-4" />}
@@ -1438,12 +1438,12 @@ function ExportStep({
             >
               Xuất file đối chiếu catalog (.xlsx)
             </Button>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-700">
               Giữ nguyên file gốc và điền các ô bạn đã chọn ở bước đối chiếu.
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
             <Button
               variant="secondary"
               disabled={isExporting || nothingToExport}
@@ -1451,7 +1451,7 @@ function ExportStep({
             >
               Tải bản chuẩn
             </Button>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-700">
               Tạo file mới theo cột chuẩn, chỉ gồm dữ liệu đã đối chiếu.
             </p>
           </div>

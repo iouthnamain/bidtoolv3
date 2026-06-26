@@ -36,12 +36,12 @@ export function PortalUserControl({
   const displayName = name && name.length > 0 ? name : email;
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-1">
       <div className="hidden min-w-0 text-right sm:block">
         <p className="truncate text-xs font-semibold text-slate-800">
           {displayName}
         </p>
-        <p className="truncate text-[11px] text-slate-500">{email}</p>
+        <p className="truncate text-xs text-slate-700">{email}</p>
       </div>
       <button
         type="button"
@@ -49,7 +49,7 @@ export function PortalUserControl({
         disabled={isSigningOut}
         aria-label="Đăng xuất"
         title="Đăng xuất"
-        className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors duration-0 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
       >
         <LogOut className="h-4 w-4" aria-hidden="true" />
         <span className="hidden sm:inline">Đăng xuất</span>

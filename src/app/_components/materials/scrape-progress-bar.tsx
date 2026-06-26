@@ -13,7 +13,7 @@ export function ScrapeProgressBar({
   active: boolean;
   tone: "sky" | "emerald";
 }) {
-  const colorClass = tone === "sky" ? "bg-sky-600" : "bg-emerald-600";
+  const colorClass = tone === "sky" ? "bg-blue-600" : "bg-emerald-600";
   const animated = percent == null && active;
 
   return (

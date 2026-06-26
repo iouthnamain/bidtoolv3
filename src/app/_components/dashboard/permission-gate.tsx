@@ -43,7 +43,7 @@ export function PermissionGate({
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+    <div className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="neutral">{ROLE_LABELS[role]}</Badge>
         <span>

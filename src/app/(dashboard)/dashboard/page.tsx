@@ -56,7 +56,7 @@ export default async function DashboardPage() {
           ]}
         />
 
-        <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid gap-1 xl:grid-cols-[0.95fr_1.05fr]">
           <WorkQueuePanel
             title="Role preview start"
             description="Dùng banner preview phía trên để chuyển sang dashboard riêng từng vai trò."
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
               },
               {
                 href: "/search/packages",
-                label: "Legacy search",
+                label: "Tìm kiếm cũ",
                 description: "Auth off/no preview vẫn dùng được.",
                 icon: Search,
               },

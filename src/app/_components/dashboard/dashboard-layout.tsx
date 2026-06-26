@@ -101,7 +101,7 @@ function ChevronIcon({
 }) {
   return (
     <ChevronRight
-      className={`${className} transition-transform duration-150 ${
+      className={`${className}  ${
         expanded ? "rotate-90" : ""
       }`}
       aria-hidden="true"
@@ -130,9 +130,9 @@ function NavLink({
   return (
     <div className="flex flex-col">
       <div
-        className={`group relative flex items-center rounded-md text-sm font-medium transition-colors duration-150 ${
+        className={`group relative flex items-center rounded text-sm font-medium transition-colors duration-0 ${
           isActive
-            ? "border-r-2 border-r-sky-600 bg-gradient-to-r from-sky-50 to-transparent font-bold text-sky-900"
+            ? "border-r-2 border-r-blue-600 bg-blue-50 font-bold text-blue-900"
             : "text-slate-700 hover:bg-slate-100"
         } ${collapsed ? "justify-center" : ""}`}
       >
@@ -142,15 +142,15 @@ function NavLink({
           title={collapsed ? item.label : undefined}
           aria-current={isActive ? "page" : undefined}
           aria-label={collapsed ? item.label : undefined}
-          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+          className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
             collapsed ? "justify-center" : ""
           }`}
         >
           <span
             className={`relative flex h-6 w-6 shrink-0 items-center justify-center ${
               isActive
-                ? "text-sky-700"
-                : "text-slate-500 group-hover:text-slate-700"
+                ? "text-blue-700"
+                : "text-slate-700 group-hover:text-slate-700"
             }`}
           >
             <NavItemIcon icon={item.icon} className="h-4 w-4" />
@@ -158,7 +158,7 @@ function NavLink({
               <span
                 className={`absolute -top-1.5 -right-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 py-0.5 text-xs leading-none font-bold ${
                   isActive
-                    ? "bg-sky-700 text-white"
+                    ? "bg-blue-700 text-white"
                     : "bg-rose-500 font-bold text-white"
                 }`}
                 aria-label={`${item.badgeCount} mục mới`}
@@ -175,10 +175,10 @@ function NavLink({
             onClick={onToggleExpand}
             aria-label={expanded ? "Thu gọn mục con" : "Mở rộng mục con"}
             aria-expanded={expanded}
-            className={`mr-1 flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:h-6 sm:w-6 ${
+            className={`mr-1 flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:h-6 sm:w-6 ${
               isActive
-                ? "text-sky-700 hover:bg-sky-100"
-                : "text-slate-500 hover:bg-slate-200"
+                ? "text-blue-700 hover:bg-blue-100"
+                : "text-slate-700 hover:bg-slate-200"
             }`}
           >
             <ChevronIcon expanded={expanded} />
@@ -187,13 +187,13 @@ function NavLink({
       </div>
 
       {hasSubItems && !collapsed && expanded ? (
-        <ul className="mt-0.5 ml-6 flex flex-col gap-0.5 border-l border-slate-200 pl-2">
+        <ul className="mt-0.5 ml-6 flex flex-col gap-0.5 border-l border-slate-400 pl-2">
           {item.subItems!.map((sub: RoleSurfaceSubNavItem) => (
             <li key={sub.href}>
               <Link
                 href={sub.href}
                 onClick={onNavigate}
-                className="flex min-h-9 touch-manipulation items-center rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1 focus-visible:outline-none sm:min-h-0 sm:py-1"
+                className="flex min-h-9 touch-manipulation items-center rounded px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-0 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
               >
                 {sub.label}
               </Link>
@@ -237,13 +237,13 @@ function SidebarNav({
 
   return (
     <nav
-      className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1"
+      className="flex flex-1 flex-col gap-1 overflow-y-auto pr-1"
       aria-label="Điều hướng bảng điều khiển"
     >
       {navSections.map((section) => (
         <div key={section.id} className="flex flex-col gap-1">
           {!collapsed ? (
-            <p className="px-2 pt-1 pb-0.5 text-[10px] font-bold tracking-[0.16em] text-slate-400 uppercase">
+            <p className="px-2 pt-1 pb-0.5 text-xs font-bold tracking-[0.16em] text-slate-600 uppercase">
               {section.title}
             </p>
           ) : (
@@ -293,7 +293,7 @@ function CollapseToggle({
       onClick={onToggle}
       aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
       title={`${collapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
-      className={`flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
+      className={`flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-600 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
     >
       {collapsed ? (
         <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
@@ -318,12 +318,12 @@ function BrandHeader({ collapsed }: { collapsed: boolean }) {
           className={`ml-11 max-w-[9.5rem] gap-1.5 border ${
             isPreview
               ? "border-amber-200 bg-amber-50 text-amber-800"
-              : "border-sky-200 bg-sky-50 text-sky-700"
-          } px-2 py-0.5 text-[10px] tracking-[0.08em] uppercase shadow-sm`}
+              : "border-blue-200 bg-blue-50 text-blue-700"
+          } px-2 py-0.5 text-xs tracking-[0.08em] uppercase shadow-sm`}
         >
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              isPreview ? "bg-amber-500" : "bg-sky-500"
+              isPreview ? "bg-amber-500" : "bg-blue-500"
             }`}
             aria-hidden="true"
           />
@@ -413,18 +413,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <RoleRouteGuard />
       <a
         href="#main-content"
-        className="pointer-events-none fixed top-3 left-3 z-[60] inline-flex min-h-10 -translate-y-20 items-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white opacity-0 transition-[opacity,transform] duration-150 focus:pointer-events-auto focus:translate-y-0 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="pointer-events-none fixed top-3 left-3 z-[60] inline-flex min-h-10 -translate-y-20 items-center rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white opacity-0 transition-[opacity,transform] duration-0 focus:pointer-events-auto focus:translate-y-0 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
       >
         Bỏ qua điều hướng
       </a>
       <aside
-        className={`hidden shrink-0 flex-col border-slate-200/80 bg-white/95 backdrop-blur duration-200 ease-out sm:flex sm:h-screen sm:border-r ${
+        className={`hidden shrink-0 flex-col border-slate-400/80 bg-white/95 backdrop-blur duration-0 ease-out sm:flex sm:h-screen sm:border-r ${
           hasLoadedSidebarPreference ? "transition-[width]" : "transition-none"
         } ${sidebarCollapsed ? "sm:w-16" : "sm:w-60"}`}
         aria-label="Thanh điều hướng chính"
       >
         <div
-          className={`flex shrink-0 border-b border-slate-200/70 px-3 py-3 ${
+          className={`flex shrink-0 border-b border-slate-400/70 px-3 py-3 ${
             sidebarCollapsed
               ? "flex-col items-center gap-2"
               : "items-center justify-between gap-2"
@@ -441,11 +441,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <SidebarNav collapsed={sidebarCollapsed} />
         </div>
 
-        <div className="shrink-0 space-y-2 border-t border-slate-200/70 px-2 py-2">
+        <div className="shrink-0 space-y-2 border-t border-slate-400/70 px-2 py-2">
           <UserControl collapsed={sidebarCollapsed} />
           <SidebarUpdatePill collapsed={sidebarCollapsed} />
           {!sidebarCollapsed ? (
-            <span className="block px-1 text-[11px] text-slate-400">
+            <span className="block px-1 text-xs text-slate-600">
               Ctrl/Cmd + B để thu gọn
             </span>
           ) : null}
@@ -453,13 +453,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur sm:hidden">
+        <header className="flex shrink-0 items-center justify-between gap-1 border-b border-slate-400/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur sm:hidden">
           <BrandHeader collapsed={false} />
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Mở menu điều hướng"
-            className="flex h-11 w-11 items-center justify-center rounded-md border border-slate-300 text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="flex h-11 w-11 items-center justify-center rounded border border-slate-400 text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -489,21 +489,21 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <aside
             role="dialog"
             aria-modal="true"
-            className="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2rem))] flex-col overscroll-contain border-r border-slate-200 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl sm:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2rem))] flex-col overscroll-contain border-r border-slate-400 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl sm:hidden"
             aria-label="Thanh điều hướng chính"
           >
-            <div className="flex items-center justify-between border-b border-slate-200/70 px-3 py-3">
+            <div className="flex items-center justify-between border-b border-slate-400/70 px-3 py-3">
               <BrandHeader collapsed={false} />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Đóng menu"
-                className="flex h-11 w-11 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="flex h-11 w-11 items-center justify-center rounded border border-slate-400 text-slate-600 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-2 py-3">
+            <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-3">
               <SidebarNav onNavigate={() => setMobileOpen(false)} />
             </div>
           </aside>

@@ -21,15 +21,15 @@ export function SettingsSectionHeader({
   title,
   description,
   icon: Icon,
-  iconClassName = "bg-sky-50 text-sky-700",
+  iconClassName = "bg-blue-50 text-blue-700",
   badge,
   action,
 }: SettingsSectionHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 items-start gap-3">
+    <div className="flex flex-col gap-2 border-b border-slate-400 px-2 py-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 items-start gap-1">
         <span
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${iconClassName}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded ${iconClassName}`}
         >
           <Icon className="h-4 w-4" aria-hidden />
         </span>

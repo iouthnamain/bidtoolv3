@@ -6,7 +6,7 @@ import { MaterialScrapeClient } from "~/app/_components/materials/scrape-client"
 export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
-  title: "Scrape shop vật tư",
+  title: "Quét cửa hàng vật tư",
   description:
     "Chạy job scrape shop nhiều trang, theo dõi tiến độ rồi nhập sản phẩm vào catalog vật tư.",
   path: "/materials/scrape",
@@ -17,7 +17,7 @@ export default function ScrapeMaterialsPage() {
   return (
     <Suspense
       fallback={
-        <div className="panel p-5 text-sm text-slate-600">
+        <div className="panel p-2 text-sm text-slate-600">
           Đang tải công cụ scrape shop…
         </div>
       }

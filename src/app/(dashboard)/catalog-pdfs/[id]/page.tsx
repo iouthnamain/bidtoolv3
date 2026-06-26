@@ -32,7 +32,7 @@ export default async function CatalogPdfDetailPage({
   }
 
   return (
-    <Suspense fallback={<div className="panel p-5 text-sm text-slate-600">Đang tải…</div>}>
+    <Suspense fallback={<div className="panel p-2 text-sm text-slate-600">Đang tải…</div>}>
       <CatalogPdfLibraryClient view="detail" initialDocumentId={id} />
     </Suspense>
   );

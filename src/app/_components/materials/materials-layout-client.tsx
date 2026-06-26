@@ -19,7 +19,7 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     description: "Upload Excel hoặc dán CSV để tạo danh mục catalog hàng loạt.",
   },
   "/materials/scrape": {
-    title: "Scrape shop vật tư",
+    title: "Quét cửa hàng vật tư",
     description:
       "Chạy job scrape nhiều trang, theo dõi tiến độ rồi nhập sản phẩm vào catalog.",
   },

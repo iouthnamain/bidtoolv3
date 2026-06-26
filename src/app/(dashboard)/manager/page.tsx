@@ -11,7 +11,7 @@ import {
 import { getRoleDashboardSnapshot } from "~/app/_lib/role-dashboard-data";
 
 export const metadata = createPageMetadata({
-  title: "Manager dashboard",
+  title: "Bảng điều khiển quản lý",
   description: "Dashboard governance cho quản lý người dùng, tenant và cấu hình.",
   path: "/manager",
   noIndex: true,
@@ -28,20 +28,20 @@ export default async function ManagerPage() {
   return (
     <RoleDashboardFrame
       role="manager"
-      eyebrow="Governance dashboard"
-      title="Manager governance board"
+      eyebrow="Bảng điều khiển điều hành"
+      title="Bảng điều hành quản lý"
       description="Không gian quản lý tập trung vào user, tenant và cấu hình. Các tác vụ nghiệp vụ được cố ý ẩn khỏi dashboard này."
     >
       <MetricStrip
         metrics={[
           {
-            label: "Users",
+            label: "Người dùng",
             value: governance.totalUsers,
             hint: `${governance.usersByRole.staff} staff · ${governance.usersByRole.customer} customer`,
             tone: "info",
           },
           {
-            label: "Tenants",
+            label: "Tổ chức",
             value: governance.totalTenants,
             hint: "Tổ chức khách hàng",
             tone: "neutral",
@@ -61,9 +61,9 @@ export default async function ManagerPage() {
         ]}
       />
 
-      <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+      <div className="grid gap-1 xl:grid-cols-[0.95fr_1.05fr]">
         <WorkQueuePanel
-          title="Governance queue"
+          title="Hàng đợi điều hành"
           description="Các tài khoản cần hoàn thiện trước khi khách hàng dùng portal."
           items={governanceQueue}
           emptyText="Không có customer nào thiếu tenant."

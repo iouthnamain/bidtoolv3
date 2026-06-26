@@ -132,10 +132,10 @@ function countMaterialSources(
 }
 
 const inputClass =
-  "min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const textareaClass =
-  "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none";
+  "rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function Field({
   label,
@@ -179,7 +179,7 @@ function LockableField({
         </span>
         <button
           type="button"
-          className="inline-flex items-center rounded p-0.5 text-slate-400 transition hover:text-amber-600"
+          className="inline-flex items-center rounded p-0.5 text-slate-600 transition hover:text-amber-600"
           title={
             locked
               ? "Đã khóa — không ghi đè khi scrape lại"
@@ -213,8 +213,8 @@ function MaterialImagePreview({ material }: { material: Material }) {
         Ảnh sản phẩm
       </span>
       {showPlaceholder ? (
-        <div className="flex h-40 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white text-center sm:h-48">
-          <div className="flex flex-col items-center gap-2 px-3 text-slate-400">
+        <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-slate-400 bg-gradient-to-b from-slate-50 to-white text-center sm:h-48">
+          <div className="flex flex-col items-center gap-2 px-3 text-slate-600">
             <Package className="h-8 w-8" aria-hidden />
             <span className="text-xs font-medium">Chưa có ảnh</span>
           </div>
@@ -225,7 +225,7 @@ function MaterialImagePreview({ material }: { material: Material }) {
           alt=""
           referrerPolicy="no-referrer"
           loading="lazy"
-          className="h-40 w-full rounded-xl border border-slate-200 object-contain shadow-[var(--shadow-flat)] sm:h-48 sm:max-w-xs"
+          className="h-40 w-full rounded border border-slate-400 object-contain shadow-[var(--shadow-flat)] sm:h-48 sm:max-w-xs"
           onError={() => setFailed(true)}
         />
       )}
@@ -247,49 +247,49 @@ function SummaryTile({
   tone?: "neutral" | "sky" | "emerald" | "amber";
 }) {
   const toneClass = {
-    neutral: "border-slate-200 bg-white text-slate-500",
-    sky: "border-sky-200 bg-sky-50/80 text-sky-700",
+    neutral: "border-slate-400 bg-white text-slate-700",
+    sky: "border-blue-200 bg-blue-50/80 text-blue-700",
     emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-700",
     amber: "border-amber-200 bg-amber-50/80 text-amber-700",
   }[tone];
 
   const valueToneClass = {
     neutral: "text-slate-950",
-    sky: "text-sky-950",
+    sky: "text-blue-950",
     emerald: "text-emerald-800",
     amber: "text-amber-800",
   }[tone];
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 shadow-[var(--shadow-flat)] transition-shadow hover:shadow-[var(--shadow-raised)]">
+    <div className="relative overflow-hidden rounded border border-slate-400 bg-white px-3.5 py-3.5 shadow-[var(--shadow-flat)] transition-shadow ">
       {/* Top accent line */}
       <div
         className={`absolute inset-x-0 top-0 h-[3px] ${
           tone === "emerald"
             ? "bg-emerald-500"
             : tone === "sky"
-              ? "bg-sky-500"
+              ? "bg-blue-500"
               : tone === "amber"
                 ? "bg-amber-400"
                 : "bg-slate-200"
         }`}
       />
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-1">
         <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded border ${toneClass}`}
           aria-hidden
         >
           {icon}
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold tracking-[0.12em] text-slate-500 uppercase">
+          <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             {label}
           </p>
           <div className={`stat-value mt-1.5 text-lg leading-snug font-extrabold [overflow-wrap:anywhere] ${valueToneClass}`}>
             {value}
           </div>
           {helper ? (
-            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-1 text-xs leading-relaxed text-slate-700">
               {helper}
             </p>
           ) : null}
@@ -312,12 +312,12 @@ function DetailRow({
     value === null || value === undefined || value === "" ? "-" : value;
 
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-slate-100 bg-white px-3.5 py-2.5 shadow-[var(--shadow-flat)]">
-      <span className="mt-0.5 text-slate-400" aria-hidden>
+    <div className="flex items-start gap-2.5 rounded border border-slate-400 bg-white px-3.5 py-2.5 shadow-[var(--shadow-flat)]">
+      <span className="mt-0.5 text-slate-600" aria-hidden>
         {icon}
       </span>
       <div className="min-w-0">
-        <dt className="text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+        <dt className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
           {label}
         </dt>
         <dd className="mt-0.5 text-sm font-medium [overflow-wrap:anywhere] text-slate-900">
@@ -355,8 +355,8 @@ function PriceSourceCard({
   const canRefresh = source.mode === "linked" && !!source.url;
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <li className="rounded border border-slate-400 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="min-w-0 text-sm font-bold [overflow-wrap:anywhere] text-slate-950">
@@ -391,14 +391,14 @@ function PriceSourceCard({
               href={source.url}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex max-w-full items-center gap-1 truncate text-xs font-medium text-sky-700 hover:underline"
+              className="mt-2 inline-flex max-w-full items-center gap-1 truncate text-xs font-medium text-blue-700 hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="truncate">{source.url}</span>
             </a>
           ) : null}
           {source.note ? (
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <p className="mt-1 text-xs leading-5 text-slate-700">
               {source.note}
             </p>
           ) : null}
@@ -889,7 +889,7 @@ export function MaterialDetailClient({
 
   if (materialQuery.isLoading) {
     return (
-      <div className="panel p-5 text-sm text-slate-600">
+      <div className="panel p-2 text-sm text-slate-600">
         Đang tải chi tiết vật tư…
       </div>
     );
@@ -906,7 +906,7 @@ export function MaterialDetailClient({
         cta={
           <Link
             href="/materials"
-            className="inline-flex items-center rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+            className="inline-flex items-center rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
           >
             Quay lại danh mục
           </Link>
@@ -917,7 +917,7 @@ export function MaterialDetailClient({
 
   if (!form) {
     return (
-      <div className="panel p-5 text-sm text-slate-600">
+      <div className="panel p-2 text-sm text-slate-600">
         Đang tải chi tiết vật tư…
       </div>
     );
@@ -964,20 +964,20 @@ export function MaterialDetailClient({
         id="material-overview"
         className="panel scroll-mt-6 overflow-hidden"
       >
-        <div className="border-b border-slate-200 bg-white px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row">
+        <div className="border-b border-slate-400 bg-white px-2 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
               <MaterialImagePreview material={material} />
               <div className="min-w-0 flex-1">
               <Link
                 href="/materials"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 transition-colors hover:text-slate-900"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 Quay lại danh mục
               </Link>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+                <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
                   Catalog vật tư
                 </p>
                 {material.code ? (
@@ -1012,7 +1012,7 @@ export function MaterialDetailClient({
                   href={material.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   <ExternalLink className="h-4 w-4" aria-hidden />
                   Mở nguồn
@@ -1048,18 +1048,18 @@ export function MaterialDetailClient({
         </div>
 
         {successMessage ? (
-          <div className="mx-5 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="mx-5 mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {successMessage}
           </div>
         ) : null}
         {actionError ? (
-          <div className="mx-5 mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <div className="mx-5 mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {actionError}
           </div>
         ) : null}
 
         <div className="p-5">
-          <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <dl className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
             <SummaryTile
               label="Đơn giá"
               value={formatMoney(
@@ -1111,14 +1111,14 @@ export function MaterialDetailClient({
             />
           </dl>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <article className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500">
+          <div className="mt-4 grid gap-2 xl:grid-cols-[1.1fr_0.9fr]">
+            <article className="rounded border border-slate-400 bg-slate-50 px-4 py-3">
+              <div className="flex items-start gap-1">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-400 bg-white text-slate-700">
                   <FileText className="h-4 w-4" aria-hidden />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                     Thông số kỹ thuật
                   </p>
                   <p className="mt-1 text-sm leading-6 [overflow-wrap:anywhere] text-slate-800">
@@ -1128,10 +1128,10 @@ export function MaterialDetailClient({
               </div>
             </article>
 
-            <article className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <article className="rounded border border-slate-400 bg-white px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-1">
                 <div>
-                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                     Mức sẵn sàng
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-950">
@@ -1153,10 +1153,10 @@ export function MaterialDetailClient({
                     <button
                       key={item.label}
                       type="button"
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-sky-200 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none ${
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
                         item.done
                           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-50 text-slate-500"
+                          : "border-slate-400 bg-slate-50 text-slate-700"
                       }`}
                       onClick={() => scrollToSection(targetSection)}
                     >
@@ -1177,7 +1177,7 @@ export function MaterialDetailClient({
         id="material-prices"
         className="panel scroll-mt-6 overflow-hidden"
       >
-        <div className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
+        <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4 text-emerald-700" aria-hidden />
@@ -1185,7 +1185,7 @@ export function MaterialDetailClient({
                 Link sản phẩm và giá
               </h3>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Lưu link tham khảo, giá cố định, hoặc lấy giá mới từ trang sản
               phẩm rồi áp dụng vào đơn giá.
             </p>
@@ -1199,17 +1199,17 @@ export function MaterialDetailClient({
 
         <div
           id="material-prices-content"
-          className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[0.85fr_1.15fr]"
+          className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[0.85fr_1.15fr]"
         >
-        <article className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="border-b border-slate-200 pb-3">
+        <article className="rounded border border-slate-400 bg-white p-2">
+          <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Thêm nguồn giá</h4>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Điền link sản phẩm hoặc giá cố định để lưu vào catalog.
             </p>
           </div>
 
-          <form className="mt-4 grid gap-3" onSubmit={addSource}>
+          <form className="mt-4 grid gap-1" onSubmit={addSource}>
             <Field label="Tên nguồn">
               <input
                 name="priceSourceLabel"
@@ -1226,7 +1226,7 @@ export function MaterialDetailClient({
               />
             </Field>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1 sm:grid-cols-2">
               <Field label="Kiểu giá">
                 <select
                   name="priceSourceMode"
@@ -1277,7 +1277,7 @@ export function MaterialDetailClient({
                   }
                 />
               ) : (
-                <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                   Không cần URL khi dùng giá cố định.
                 </p>
               )}
@@ -1318,11 +1318,11 @@ export function MaterialDetailClient({
               />
             </Field>
 
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+            <label className="flex items-center gap-2 rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
               <input
                 name="priceSourcePrimary"
                 type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-sky-700"
+                className="h-4 w-4 rounded border-slate-400 text-blue-700"
                 checked={priceSourceForm.isPrimary}
                 onChange={(event) =>
                   setPriceSourceForm({
@@ -1346,12 +1346,12 @@ export function MaterialDetailClient({
           </form>
         </article>
 
-        <article className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="border-b border-slate-200 pb-3">
+        <article className="rounded border border-slate-400 bg-white p-2">
+          <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">
               Nguồn giá đã lưu
             </h4>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Giá link được dò từ nội dung trang; giá cố định có thể áp dụng
               ngay cho vật tư.
             </p>
@@ -1419,7 +1419,7 @@ export function MaterialDetailClient({
         id="material-edit"
         className="panel scroll-mt-6 overflow-hidden"
       >
-        <div className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left">
+        <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Pencil className="h-4 w-4 text-amber-700" aria-hidden />
@@ -1427,7 +1427,7 @@ export function MaterialDetailClient({
                 Thông tin vật tư
               </h3>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật
               tư.
             </p>
@@ -1436,18 +1436,18 @@ export function MaterialDetailClient({
 
         <div
           id="material-edit-content"
-          className="grid gap-4 border-t border-slate-200 p-5 xl:grid-cols-[1.25fr_0.75fr]"
+          className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[1.25fr_0.75fr]"
         >
-        <article className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="border-b border-slate-200 pb-3">
+        <article className="rounded border border-slate-400 bg-white p-2">
+          <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-700">
               Cập nhật mã, tên, đơn giá, thông số và metadata catalog. Biểu
               tượng khóa giúp giữ trường khi scrape/import lại.
             </p>
           </div>
 
-          <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={save}>
+          <form className="mt-4 grid gap-1 md:grid-cols-2" onSubmit={save}>
             <LockableField
               label="Mã vật tư"
               fieldKey="code"
@@ -1598,7 +1598,7 @@ export function MaterialDetailClient({
                   setForm({ ...form, sourceUrl: event.target.value })
                 }
               />
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Trường cũ, chỉ lưu link tham khảo. Nên dùng mục Nguồn giá để
                 quản lý link, cập nhật và áp dụng giá.
               </p>
@@ -1635,7 +1635,7 @@ export function MaterialDetailClient({
         </article>
 
         <aside className="space-y-4">
-          <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <article className="rounded border border-slate-400 bg-white p-2">
             <h3 className="text-sm font-bold text-slate-950">
               Thiết lập vật tư
             </h3>
@@ -1668,12 +1668,12 @@ export function MaterialDetailClient({
             </dl>
           </article>
 
-          <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <article className="rounded border border-slate-400 bg-white p-2">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-950">Ảnh sản phẩm</h3>
               <button
                 type="button"
-                className="inline-flex items-center rounded p-0.5 text-slate-400 transition hover:text-amber-600"
+                className="inline-flex items-center rounded p-0.5 text-slate-600 transition hover:text-amber-600"
                 title={
                   fieldLocks.imageUrl
                     ? "Đã khóa — không ghi đè khi scrape lại"
@@ -1693,7 +1693,7 @@ export function MaterialDetailClient({
             </div>
           </article>
 
-          <article className="rounded-lg border border-slate-200 bg-white p-5">
+          <article className="rounded border border-slate-400 bg-white p-2">
             <h3 className="text-sm font-bold text-slate-950">Metadata</h3>
             <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
@@ -1712,7 +1712,7 @@ export function MaterialDetailClient({
       ) : null}
 
       {view === "edit" && isDirty ? (
-        <div className="sticky bottom-4 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-xl border border-sky-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+        <div className="sticky bottom-4 z-20 mx-auto flex max-w-3xl items-center justify-between gap-1 rounded border border-blue-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
           <p className="text-sm font-semibold text-slate-800">
             Có thay đổi chưa lưu
           </p>

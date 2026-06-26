@@ -91,7 +91,7 @@ export function EnrichJobsList({
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div>
           <p className="section-title">Danh sách job</p>
           <h2 className="mt-1 text-base font-bold text-slate-950 text-balance">
@@ -128,7 +128,7 @@ export function EnrichJobsList({
           ) : null}
         </div>
       ) : (
-        <div className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200">
+        <div className="mt-4 divide-y divide-slate-100 rounded border border-slate-400">
           {jobRows.map((job) => (
             <JobListRow key={job.id} job={job} onOpen={() => focusJob(job.id)} />
           ))}
@@ -155,7 +155,7 @@ function JobListRow({
       : "Mở";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 p-3 hover:bg-slate-50">
+    <div className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-50">
       <button
         type="button"
         className="min-w-0 flex-1 text-left"
@@ -164,13 +164,13 @@ function JobListRow({
         <p className="truncate text-sm font-semibold text-slate-900">
           {job.sourceFileName}
         </p>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-slate-700">
           Job {shortJobId(job.id)} · {job.sheetName} ·{" "}
           {formatDateTime(job.updatedAt)}
         </p>
         {active ? (
           <div className="mt-2 max-w-xs">
-            <div className="flex justify-between text-[11px] font-semibold text-violet-800">
+            <div className="flex justify-between text-xs font-semibold text-violet-800">
               <span>Đang chạy</span>
               <span className="tabular-nums">
                 {job.processedRows.toLocaleString("vi-VN")}/{job.totalRows.toLocaleString("vi-VN")}
@@ -189,7 +189,7 @@ function JobListRow({
             </div>
           </div>
         ) : (
-          <p className="mt-1 text-[11px] text-slate-500 tabular-nums">
+          <p className="mt-1 text-xs text-slate-700 tabular-nums">
             {job.processedRows.toLocaleString("vi-VN")}/
             {job.totalRows.toLocaleString("vi-VN")} dòng
             {job.needsReviewRows > 0

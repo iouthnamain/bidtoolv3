@@ -51,12 +51,12 @@ const SOURCE_DETAIL_ROUTES: Record<SourceDetailWatchlistType, string> = {
 };
 
 const WATCHLIST_TYPE_PILL_CLASS: Record<WatchlistType, string> = {
-  package: "border-sky-200 bg-sky-50 text-sky-700",
+  package: "border-blue-200 bg-blue-50 text-blue-700",
   plan: "border-emerald-200 bg-emerald-50 text-emerald-700",
   project: "border-indigo-200 bg-indigo-50 text-indigo-700",
   inviter: "border-amber-200 bg-amber-50 text-amber-800",
   competitor: "border-rose-200 bg-rose-50 text-rose-700",
-  commodity: "border-slate-300 bg-slate-100 text-slate-700",
+  commodity: "border-slate-400 bg-slate-100 text-slate-700",
 };
 
 const EMPTY_WATCHLIST: WatchlistItem[] = [];
@@ -118,7 +118,7 @@ function getDomain(url: string) {
 
 function LoadingPanel({ message }: { message: string }) {
   return (
-    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+    <div className="mt-3 rounded border border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-600">
       {message}
     </div>
   );
@@ -127,7 +127,7 @@ function LoadingPanel({ message }: { message: string }) {
 function WatchlistTypeBadge({ type }: { type: WatchlistType }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${WATCHLIST_TYPE_PILL_CLASS[type]}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${WATCHLIST_TYPE_PILL_CLASS[type]}`}
     >
       {WATCHLIST_TYPE_LABELS[type]}
     </span>
@@ -163,15 +163,15 @@ function WatchlistDetailsPanel({
 
   if (!item) {
     return (
-      <aside className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5">
+      <aside className="rounded border border-dashed border-slate-400 bg-slate-50 px-4 py-2">
         <div className="flex h-full min-h-60 flex-col items-center justify-center text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-400 ring-1 ring-slate-200">
+          <div className="flex h-10 w-10 items-center justify-center rounded bg-white text-slate-600 ring-1 ring-slate-200">
             <Eye className="h-5 w-5" aria-hidden />
           </div>
           <p className="mt-3 text-sm font-semibold text-slate-900">
             Chọn một mục để xem chi tiết
           </p>
-          <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+          <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-700">
             Gói thầu, KHLCNT và dự án sẽ tải preview từ trang nguồn. Các mục như
             bên mời thầu hoặc hàng hóa sẽ mở lại trang tìm kiếm theo tên đã lưu.
           </p>
@@ -183,12 +183,12 @@ function WatchlistDetailsPanel({
   const details = detailsQuery.data;
 
   return (
-    <aside className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <aside className="rounded border border-slate-400 bg-slate-50/80 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-1">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <WatchlistTypeBadge type={item.type} />
-            <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+            <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
               Watchlist #{item.id}
             </span>
           </div>
@@ -199,8 +199,8 @@ function WatchlistDetailsPanel({
       </div>
 
       <dl className="mt-4 grid gap-2 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-          <dt className="inline-flex items-center gap-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+        <div className="rounded border border-slate-400 bg-white px-3 py-2">
+          <dt className="inline-flex items-center gap-1 text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
             <Hash className="h-3.5 w-3.5" aria-hidden />
             Ref key
           </dt>
@@ -208,8 +208,8 @@ function WatchlistDetailsPanel({
             {item.refKey}
           </dd>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-          <dt className="inline-flex items-center gap-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+        <div className="rounded border border-slate-400 bg-white px-3 py-2">
+          <dt className="inline-flex items-center gap-1 text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
             <CalendarClock className="h-3.5 w-3.5" aria-hidden />
             Đã lưu
           </dt>
@@ -222,7 +222,7 @@ function WatchlistDetailsPanel({
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
           href={detailHref ?? searchHref}
-          className="inline-flex items-center justify-center gap-1.5 rounded-md bg-sky-700 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="inline-flex items-center justify-center gap-1.5 rounded bg-blue-700 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors duration-0 hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           {detailHref ? "Mở trang chi tiết" : "Mở trong Tìm kiếm"}
@@ -232,7 +232,7 @@ function WatchlistDetailsPanel({
             href={details.sourceUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             Mở nguồn
@@ -249,13 +249,13 @@ function WatchlistDetailsPanel({
       </div>
 
       {detailHref ? (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mt-4 rounded border border-slate-400 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+              <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
                 Preview chi tiết nguồn
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-700">
                 Tải trực tiếp từ BidWinner theo ref key đã lưu.
               </p>
             </div>
@@ -271,11 +271,11 @@ function WatchlistDetailsPanel({
           </div>
 
           {detailsQuery.isLoading ? (
-            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+            <div className="mt-3 rounded border border-slate-400 bg-slate-50 px-3 py-4 text-sm text-slate-600">
               Đang tải preview chi tiết…
             </div>
           ) : detailsQuery.isError ? (
-            <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+            <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
               <p className="font-semibold">Không tải được preview nguồn</p>
               <p className="mt-1 text-xs leading-relaxed">
                 {detailsQuery.error?.message ??
@@ -288,35 +288,35 @@ function WatchlistDetailsPanel({
                 <p className="text-sm leading-snug font-semibold [overflow-wrap:anywhere] text-slate-950">
                   {details.pageTitle}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-700">
                   {getDomain(details.sourceUrl)} • Cập nhật{" "}
                   {formatDateTime(details.fetchedAt)}
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 text-center">
-                <div className="border-r border-slate-200 px-2 py-2">
+              <div className="grid grid-cols-3 overflow-hidden rounded border border-slate-400 text-center">
+                <div className="border-r border-slate-400 px-2 py-2">
                   <p className="text-lg font-bold text-slate-950">
                     {details.products.length}
                   </p>
-                  <p className="text-[11px] text-slate-500">Products</p>
+                  <p className="text-xs text-slate-700">Products</p>
                 </div>
-                <div className="border-r border-slate-200 px-2 py-2">
+                <div className="border-r border-slate-400 px-2 py-2">
                   <p className="text-lg font-bold text-slate-950">
                     {details.links.length}
                   </p>
-                  <p className="text-[11px] text-slate-500">Links</p>
+                  <p className="text-xs text-slate-700">Links</p>
                 </div>
                 <div className="px-2 py-2">
                   <p className="text-lg font-bold text-slate-950">
                     {details.requiredTables.invitationDocuments.length}
                   </p>
-                  <p className="text-[11px] text-slate-500">HSMT</p>
+                  <p className="text-xs text-slate-700">HSMT</p>
                 </div>
               </div>
 
               {details.extractionMeta.warnings.length > 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2">
                   <p className="text-xs font-semibold text-amber-900">
                     Cảnh báo extraction
                   </p>
@@ -332,14 +332,14 @@ function WatchlistDetailsPanel({
 
               {details.products.length > 0 ? (
                 <div>
-                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-500 uppercase">
+                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
                     Products detect được
                   </p>
                   <ul className="mt-2 space-y-1">
                     {details.products.slice(0, 3).map((product, index) => (
                       <li
                         key={`${product.source}-${product.text}-${index}`}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700"
+                        className="rounded border border-slate-400 bg-slate-50 px-2.5 py-2 text-xs text-slate-700"
                       >
                         <span className="[overflow-wrap:anywhere]">
                           {product.text}
@@ -353,7 +353,7 @@ function WatchlistDetailsPanel({
           ) : null}
         </div>
       ) : (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+        <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-3">
           <p className="text-sm font-semibold text-amber-950">
             Loại này chưa có trang chi tiết riêng
           </p>
@@ -438,11 +438,11 @@ export function WatchlistSection() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-sky-50 px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="border-b border-slate-400 bg-gradient-to-r from-slate-50 via-white to-blue-50 px-2 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <h2 className="text-base font-bold text-slate-950">Watchlist</h2>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-700">
               Theo dõi những mục cần quay lại sau. Chọn một dòng để xem preview
               chi tiết ngay trên trang này.
             </p>
@@ -458,7 +458,7 @@ export function WatchlistSection() {
           <LoadingPanel message="Đang tải Watchlist…" />
         </div>
       ) : watchlistQuery.error ? (
-        <div className="m-5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+        <div className="m-5 rounded border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
           <p className="font-semibold">Không tải được Watchlist</p>
           <p className="mt-1 text-xs leading-relaxed">
             {watchlistQuery.error.message || "Vui lòng thử lại sau."}
@@ -482,7 +482,7 @@ export function WatchlistSection() {
             cta={
               <Link
                 href="/search/packages"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-sky-800 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="inline-flex items-center justify-center gap-1.5 rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors duration-0 hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <Search className="h-4 w-4" aria-hidden />
                 Đến trang Tìm kiếm
@@ -493,7 +493,7 @@ export function WatchlistSection() {
       ) : (
         <div className="p-5">
           {actionError ? (
-            <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {actionError}
             </div>
           ) : null}
@@ -502,10 +502,10 @@ export function WatchlistSection() {
             <button
               type="button"
               aria-pressed={activeFilter === "all"}
-              className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+              className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                 activeFilter === "all"
                   ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
               }`}
               onClick={() => {
                 setActiveFilter("all");
@@ -514,7 +514,7 @@ export function WatchlistSection() {
             >
               <ListFilter className="h-3.5 w-3.5" aria-hidden />
               Tất cả
-              <span className="rounded-full bg-white/20 px-1.5 text-[11px] tabular-nums">
+              <span className="rounded-full bg-white/20 px-1.5 text-xs tabular-nums">
                 {watchlist.length}
               </span>
             </button>
@@ -523,10 +523,10 @@ export function WatchlistSection() {
                 key={type}
                 type="button"
                 aria-pressed={activeFilter === type}
-                className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+                className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   activeFilter === type
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
                 onClick={() => {
                   setActiveFilter(type);
@@ -534,21 +534,21 @@ export function WatchlistSection() {
                 }}
               >
                 {WATCHLIST_TYPE_LABELS[type]}
-                <span className="rounded-full bg-white/20 px-1.5 text-[11px] tabular-nums">
+                <span className="rounded-full bg-white/20 px-1.5 text-xs tabular-nums">
                   {typeCounts[type]}
                 </span>
               </button>
             ))}
           </div>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="mt-4 grid gap-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+            <div className="overflow-hidden rounded border border-slate-400 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-slate-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-bold text-slate-950">
                     Danh sách theo dõi
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-700">
                     {filteredWatchlist.length} / {watchlist.length} mục đang
                     hiển thị
                   </p>
@@ -573,28 +573,28 @@ export function WatchlistSection() {
                     return (
                       <li
                         key={item.id}
-                        className={`flex flex-col gap-3 px-4 py-3 transition-colors duration-150 sm:flex-row sm:items-start sm:justify-between ${
+                        className={`flex flex-col gap-1 px-4 py-3 transition-colors duration-0 sm:flex-row sm:items-start sm:justify-between ${
                           isSelected
-                            ? "bg-sky-50/80"
+                            ? "bg-blue-50/80"
                             : "bg-white hover:bg-slate-50"
                         }`}
                       >
                         <button
                           type="button"
                           aria-current={isSelected ? "true" : undefined}
-                          className="min-w-0 flex-1 text-left focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                          className="min-w-0 flex-1 text-left focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                           onClick={() => setSelectedItemId(item.id)}
                         >
                           <div className="flex flex-wrap items-center gap-1.5">
                             <WatchlistTypeBadge type={item.type} />
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                            <span className="rounded-full border border-slate-400 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
                               #{item.id}
                             </span>
                           </div>
                           <p className="mt-2 text-sm leading-snug font-semibold [overflow-wrap:anywhere] text-slate-950">
                             {item.label}
                           </p>
-                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-700">
                             <span className="inline-flex min-w-0 items-center gap-1">
                               <Hash className="h-3.5 w-3.5 shrink-0" />
                               <span className="break-all">{item.refKey}</span>
@@ -617,7 +617,7 @@ export function WatchlistSection() {
                           </Button>
                           <Link
                             href={openHref}
-                            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                             {detailHref ? "Mở" : "Tìm"}

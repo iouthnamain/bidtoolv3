@@ -11,18 +11,18 @@ export function WorkflowAlertsClient() {
 
   return (
     <section className="panel p-4">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-400 pb-2">
         <h2 className="text-sm font-bold">Thông báo từ workflow</h2>
         <Link
           href="/notifications"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"
         >
           <Bell className="h-3.5 w-3.5" aria-hidden />
           Mở trung tâm thông báo
         </Link>
       </div>
 
-      <p className="mt-3 text-xs text-slate-500">
+      <p className="mt-3 text-xs text-slate-700">
         Cảnh báo gần đây được tạo ra từ các lần chạy workflow.
       </p>
 
@@ -38,7 +38,7 @@ export function WorkflowAlertsClient() {
           notifications.map((item) => (
             <li
               key={item.id}
-              className="rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2"
+              className="rounded border border-slate-400 bg-slate-50/90 px-3 py-2"
             >
               <p className="leading-tight font-semibold text-slate-900">
                 {item.title}

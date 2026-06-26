@@ -123,19 +123,19 @@ export function WorkflowDetailEditClient({
 
   return (
     <section className="panel p-4">
-      <div className="border-b border-slate-200 pb-3">
+      <div className="border-b border-slate-400 pb-3">
         <h2 className="text-sm font-bold">Chỉnh sửa workflow</h2>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-700">
           Form này giữ nguyên trigger type cũ nếu cần, nhưng criteria đã dùng
           chung cho đủ 5 chế độ tìm kiếm.
         </p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4 grid gap-1 md:grid-cols-2">
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Tên workflow</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
@@ -144,7 +144,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Loại trigger</span>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2"
+            className="rounded border border-slate-400 bg-white px-3 py-2"
             value={triggerType}
             onChange={(event) =>
               setTriggerType(event.target.value as typeof triggerType)
@@ -159,7 +159,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Chế độ tìm kiếm</span>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2"
+            className="rounded border border-slate-400 bg-white px-3 py-2"
             value={searchMode}
             onChange={(event) =>
               setSearchMode(event.target.value as SearchMode)
@@ -176,7 +176,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Match tối thiểu</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={minMatchScore}
             onChange={(event) => setMinMatchScore(event.target.value)}
             type="number"
@@ -188,7 +188,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm md:col-span-2">
           <span className="font-medium text-slate-700">Từ khóa</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="ví dụ: thiết bị mạng, vật tư y tế"
@@ -200,7 +200,7 @@ export function WorkflowDetailEditClient({
             Tỉnh / thành (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={provinces}
             onChange={(event) => setProvinces(event.target.value)}
             placeholder="Đà Nẵng, Hà Nội"
@@ -212,7 +212,7 @@ export function WorkflowDetailEditClient({
             Lĩnh vực gói (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={packageCategories}
             onChange={(event) => setPackageCategories(event.target.value)}
             placeholder="Y tế, Công nghệ thông tin"
@@ -224,7 +224,7 @@ export function WorkflowDetailEditClient({
             Classify ID (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={classifyIds}
             onChange={(event) => setClassifyIds(event.target.value)}
             placeholder="1, 12, 145"
@@ -236,7 +236,7 @@ export function WorkflowDetailEditClient({
             Lĩnh vực KHLCNT (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={planFields}
             onChange={(event) => setPlanFields(event.target.value)}
             placeholder="Xây dựng, Y tế"
@@ -248,7 +248,7 @@ export function WorkflowDetailEditClient({
             HTLCNT (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={procurementMethods}
             onChange={(event) => setProcurementMethods(event.target.value)}
             placeholder="Đấu thầu rộng rãi"
@@ -260,7 +260,7 @@ export function WorkflowDetailEditClient({
             Nhóm dự án (phân tách dấu phẩy)
           </span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={projectGroups}
             onChange={(event) => setProjectGroups(event.target.value)}
             placeholder="Nhóm A, Nhóm B"
@@ -270,7 +270,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Ngân sách từ</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={budgetMin}
             onChange={(event) => setBudgetMin(event.target.value)}
             type="number"
@@ -281,7 +281,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Ngân sách đến</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             value={budgetMax}
             onChange={(event) => setBudgetMax(event.target.value)}
             type="number"
@@ -292,7 +292,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Ngày từ</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             type="date"
             value={publishedFrom}
             onChange={(event) => setPublishedFrom(event.target.value)}
@@ -302,7 +302,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Ngày đến</span>
           <input
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="rounded border border-slate-400 px-3 py-2"
             type="date"
             value={publishedTo}
             onChange={(event) => setPublishedTo(event.target.value)}

@@ -147,7 +147,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/materials/scrape",
-    label: "Scrape shop",
+    label: "Quét cửa hàng",
     description: "Preview URL shop rồi nhập sản phẩm vào catalog.",
     icon: "search",
     tone: "violet",
