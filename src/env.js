@@ -52,6 +52,7 @@ export const env = createEnv({
       .positive()
       .default(7),
     SEARXNG_BASE_URL: z.string().url().optional(),
+    SEARXNG_API_KEY: z.string().optional(),
     BIDTOOL_EXCEL_RESEARCH_DIR: z.string().optional(),
     BETTER_AUTH_SECRET: z.string().optional(),
     BETTER_AUTH_URL: z.string().url().optional(),
@@ -106,6 +107,7 @@ export const env = createEnv({
     EXCEL_RESEARCH_BATCH_SIZE: process.env.EXCEL_RESEARCH_BATCH_SIZE,
     EXCEL_RESEARCH_JOB_TTL_DAYS: process.env.EXCEL_RESEARCH_JOB_TTL_DAYS,
     SEARXNG_BASE_URL: process.env.SEARXNG_BASE_URL,
+    SEARXNG_API_KEY: process.env.SEARXNG_API_KEY,
     BIDTOOL_EXCEL_RESEARCH_DIR: process.env.BIDTOOL_EXCEL_RESEARCH_DIR,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
     BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,

@@ -39,6 +39,7 @@ import {
   fetchKnownSourceCandidates,
   rankSearchResults,
   searchWebForProduct,
+  summarizeWebSearchFailures,
   type WebSearchResult,
 } from "~/server/services/material-web-search";
 
@@ -157,11 +158,11 @@ function knownSourceUrls(
 
 function buildSkippedError(searchWarnings: string[]) {
   const hint =
-    "Không tìm thấy nguồn web. Chạy `docker compose up searxng -d` và đặt SEARXNG_BASE_URL=http://localhost:8888, hoặc thêm sourceUrl cho vật tư.";
+    "Không tìm thấy nguồn web. Kiểm tra SEARXNG_BASE_URL (và SEARXNG_API_KEY nếu có) trên Vercel, hoặc thêm sourceUrl cho vật tư.";
   if (searchWarnings.length === 0) {
     return hint;
   }
-  return `${hint} Chi tiết: ${searchWarnings.slice(0, 3).join(" | ")}`;
+  return `${hint} Chi tiết: ${summarizeWebSearchFailures(searchWarnings)}`;
 }
 
 function resolveItemStatus(

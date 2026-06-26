@@ -60,11 +60,11 @@ describe("searchQueryWithFallback", () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = requestUrl(input);
-      if (url.includes("/search")) {
+      if (url.includes("searxng.test")) {
         throw new Error("fetch failed");
       }
       return new Response(
-        `<a class="result__a" href="https://duck.example/item">Product</a><a class="result__snippet">Specs</a>`,
+        `<a rel="nofollow" class="result__a" href="https://duck.example/item">Product</a><a class="result__snippet">Specs</a>`,
         { status: 200, headers: { "Content-Type": "text/html" } },
       );
     });
@@ -81,6 +81,87 @@ describe("searchQueryWithFallback", () => {
         requestUrl(url).includes("duckduckgo"),
       ),
     ).toBe(true);
+  });
+
+  it("falls back to SearXNG HTML when JSON API returns 403", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (!url.includes("searxng.test")) {
+        throw new Error("DuckDuckGo should not be called");
+      }
+      if (url.includes("format=json")) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      return new Response(
+        `<article class="result result-default category-general"><a href="https://example.com/spec.pdf" class="url_header" rel="noreferrer"></a><h3><a href="https://example.com/spec.pdf" rel="noreferrer">Catalog PDF</a></h3><p class="content">Product datasheet</p></article>`,
+        { status: 200, headers: { "Content-Type": "text/html" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results, warnings } = await searchQueryWithFallback("ống PVC");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.url).toBe("https://example.com/spec.pdf");
+    expect(warnings.some((warning) => warning.includes("403"))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends SearXNG auth header when SEARXNG_API_KEY is configured", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_API_KEY", "secret-token");
+
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.headers).toMatchObject({
+          Authorization: "Bearer secret-token",
+        });
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Catalog PDF",
+                url: "https://example.com/spec.pdf",
+                content: "Product datasheet",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results } = await searchQueryWithFallback("ống PVC");
+
+    expect(results).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses DuckDuckGo Lite result-link markup", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes("lite.duckduckgo.com")) {
+        return new Response(
+          `<a rel="nofollow" href="https://binhminh.vn/pvc" class='result-link'>Ống PVC</a>`,
+          { status: 200, headers: { "Content-Type": "text/html" } },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results } = await searchQueryWithFallback("ống PVC");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.url).toBe("https://binhminh.vn/pvc");
   });
 
   it("returns empty results without throwing when all providers fail", async () => {

@@ -32,6 +32,7 @@ export const SETTING_KEYS = {
   excelResearchRowConcurrency: "excel_research_row_concurrency",
   excelResearchJobTtlDays: "excel_research_job_ttl_days",
   searxngBaseUrl: "searxng_base_url",
+  searxngApiKey: "searxng_api_key",
   enrichmentItemConcurrency: "enrichment_item_concurrency",
   enrichmentWebConcurrency: "enrichment_web_concurrency",
   enrichmentAiConcurrency: "enrichment_ai_concurrency",
@@ -823,6 +824,16 @@ export async function resolveExcelResearchJobTtlDays(): Promise<number> {
 
 export async function resolveSearxngBaseUrl(): Promise<string | null> {
   return resolveOperationalSetting("searxngBaseUrl");
+}
+
+export async function resolveSearxngApiKey(): Promise<string | null> {
+  const envKey = env.SEARXNG_API_KEY?.trim();
+  if (envKey) {
+    return envKey;
+  }
+  const stored = await getSetting("searxng_api_key");
+  const trimmed = stored?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
 export async function resolveExcelResearchDir(): Promise<string | null> {

@@ -3,6 +3,7 @@ import "server-only";
 import {
   resolveEnrichmentSearchCacheTtlMs,
   resolveEnrichmentWebConcurrency,
+  resolveSearxngApiKey,
   resolveSearxngBaseUrl,
 } from "~/server/services/app-settings";
 import { createAsyncLimiter } from "~/server/services/concurrency";
@@ -23,8 +24,57 @@ const DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/";
 const DUCKDUCKGO_LITE_URL = "https://lite.duckduckgo.com/lite/";
 const MARKETPLACE_DOMAINS = ["shopee.vn", "lazada.vn", "tiki.vn", "sendo.vn"];
 const SEARCH_TIMEOUT_MS = 12_000;
-const DEFAULT_USER_AGENT =
+const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+type ProviderSearchResponse = {
+  results: WebSearchResult[];
+  warnings: string[];
+};
+
+function buildSearchHeaders(options?: {
+  accept?: string;
+  referer?: string;
+  contentType?: string;
+  authHeaders?: Record<string, string>;
+}): Record<string, string> {
+  const headers: Record<string, string> = {
+    "User-Agent": BROWSER_USER_AGENT,
+    Accept:
+      options?.accept ??
+      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cache-Control": "no-cache",
+    ...options?.authHeaders,
+  };
+  if (options?.referer) {
+    headers.Referer = options.referer;
+  }
+  if (options?.contentType) {
+    headers["Content-Type"] = options.contentType;
+  }
+  return headers;
+}
+
+async function resolveSearxngAuthHeaders(): Promise<Record<string, string>> {
+  const apiKey = await resolveSearxngApiKey();
+  if (!apiKey) {
+    return {};
+  }
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
+function duckDuckGoBlockedMessage(html: string) {
+  const normalized = html.toLowerCase();
+  if (
+    normalized.includes("anomaly-modal") ||
+    normalized.includes("bots use duckduckgo") ||
+    normalized.includes("please complete the following challenge")
+  ) {
+    return "DuckDuckGo chặn truy vấn từ máy chủ (bot detection).";
+  }
+  return null;
+}
 
 export type WebSearchResponse = {
   results: WebSearchResult[];
@@ -106,17 +156,62 @@ function parseDuckDuckGoLiteHtml(
 ): WebSearchResult[] {
   const results: WebSearchResult[] = [];
   const seen = new Set<string>();
-  const linkPattern =
-    /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const linkPatterns = [
+    /<a[^>]*rel=["']nofollow["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]*href=["']([^"']+)["'][^>]*rel=["']nofollow["'][^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]*class=["'][^"']*result-link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+  ];
 
-  let match: RegExpExecArray | null;
-  while ((match = linkPattern.exec(html)) !== null) {
-    const rawUrl = unwrapDuckDuckGoRedirect(match[1] ?? "");
-    const title = stripHtmlTags(match[2] ?? "");
-    if (!rawUrl || !title || rawUrl.includes("duckduckgo.com")) {
-      continue;
+  for (const linkPattern of linkPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = linkPattern.exec(html)) !== null) {
+      const rawUrl = unwrapDuckDuckGoRedirect(match[1] ?? "");
+      const title = stripHtmlTags(match[2] ?? "");
+      if (!rawUrl || !title || rawUrl.includes("duckduckgo.com")) {
+        continue;
+      }
+      if (seen.has(rawUrl)) {
+        continue;
+      }
+      seen.add(rawUrl);
+      results.push({
+        title,
+        url: rawUrl,
+        domain: extractDomain(rawUrl),
+        snippet: "",
+        query,
+        rankScore: 0,
+      });
     }
-    if (seen.has(rawUrl)) {
+  }
+
+  return results;
+}
+
+function parseSearxngHtml(html: string, query: string): WebSearchResult[] {
+  const results: WebSearchResult[] = [];
+  const seen = new Set<string>();
+  const articlePattern =
+    /<article[^>]*class="[^"]*\bresult\b[^"]*"[^>]*>([\s\S]*?)<\/article>/gi;
+
+  let articleMatch: RegExpExecArray | null;
+  while ((articleMatch = articlePattern.exec(html)) !== null) {
+    const block = articleMatch[1] ?? "";
+    const urlMatch =
+      /href="([^"]+)"[^>]*class="[^"]*\burl_header\b[^"]*"/i.exec(block) ??
+      /class="[^"]*\burl_header\b[^"]*"[^>]*href="([^"]+)"/i.exec(block);
+    const titleMatch =
+      /<h3[^>]*>[\s\S]*?<a[^>]*href="[^"]+"[^>]*>([\s\S]*?)<\/a>/i.exec(
+        block,
+      );
+    const snippetMatch =
+      /<p[^>]*class="[^"]*\bcontent\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i.exec(block);
+
+    const rawUrl = urlMatch?.[1]?.trim() ?? "";
+    const title = stripHtmlTags(titleMatch?.[1] ?? "");
+    const snippet = stripHtmlTags(snippetMatch?.[1] ?? "");
+    if (!rawUrl || !title || seen.has(rawUrl)) {
       continue;
     }
     seen.add(rawUrl);
@@ -124,7 +219,7 @@ function parseDuckDuckGoLiteHtml(
       title,
       url: rawUrl,
       domain: extractDomain(rawUrl),
-      snippet: "",
+      snippet,
       query,
       rankScore: 0,
     });
@@ -209,57 +304,74 @@ async function searxngBaseUrls(): Promise<string[]> {
 async function searchSearxngQuery(
   query: string,
   signal?: AbortSignal,
-): Promise<WebSearchResult[]> {
+): Promise<ProviderSearchResponse> {
   const warnings: string[] = [];
+  const authHeaders = await resolveSearxngAuthHeaders();
 
   for (const base of await searxngBaseUrls()) {
-    try {
-      const url = new URL("/search", `${base}/`);
-      url.searchParams.set("q", query);
-      url.searchParams.set("format", "json");
-      url.searchParams.set("language", "vi-VN");
-      url.searchParams.set("engines", "google,bing");
+    const referer = `${base.replace(/\/$/, "")}/`;
 
-      const response = await fetch(url.toString(), {
-        headers: { Accept: "application/json" },
+    try {
+      const jsonUrl = new URL("/search", `${base}/`);
+      jsonUrl.searchParams.set("q", query);
+      jsonUrl.searchParams.set("format", "json");
+      jsonUrl.searchParams.set("language", "vi-VN");
+      jsonUrl.searchParams.set("engines", "google,bing");
+
+      const jsonResponse = await fetch(jsonUrl.toString(), {
+        headers: buildSearchHeaders({
+          accept: "application/json, text/plain, */*",
+          referer,
+          authHeaders,
+        }),
         signal: searchTimeoutSignal(signal),
       });
 
-      if (!response.ok) {
-        warnings.push(`SearXNG (${base}): HTTP ${response.status}.`);
+      if (jsonResponse.ok) {
+        const data = (await jsonResponse.json()) as {
+          results?: Array<{
+            title?: string;
+            url?: string;
+            content?: string;
+          }>;
+        };
+
+        const results = mapSearxngJsonResults(data.results ?? [], query);
+        if (results.length > 0) {
+          return { results, warnings };
+        }
+        warnings.push(`SearXNG (${base}): không có kết quả JSON cho "${query}".`);
+      } else if (jsonResponse.status === 403) {
+        warnings.push(
+          `SearXNG (${base}): JSON API bị từ chối (HTTP 403), thử HTML.`,
+        );
+      } else {
+        warnings.push(`SearXNG (${base}): HTTP ${jsonResponse.status}.`);
+      }
+
+      const htmlUrl = new URL("/search", `${base}/`);
+      htmlUrl.searchParams.set("q", query);
+      htmlUrl.searchParams.set("language", "vi-VN");
+      htmlUrl.searchParams.set("engines", "google,bing");
+
+      const htmlResponse = await fetch(htmlUrl.toString(), {
+        headers: buildSearchHeaders({ referer, authHeaders }),
+        signal: searchTimeoutSignal(signal),
+      });
+
+      if (!htmlResponse.ok) {
+        warnings.push(
+          `SearXNG (${base}): HTML search HTTP ${htmlResponse.status}.`,
+        );
         continue;
       }
 
-      const data = (await response.json()) as {
-        results?: Array<{
-          title?: string;
-          url?: string;
-          content?: string;
-        }>;
-      };
-
-      const results = (data.results ?? [])
-        .map((item) => {
-          const normalizedUrl = item.url?.trim() ?? "";
-          const title = item.title?.trim() ?? "";
-          if (!normalizedUrl || !title) {
-            return null;
-          }
-          return {
-            title,
-            url: normalizedUrl,
-            domain: extractDomain(normalizedUrl),
-            snippet: item.content?.trim() ?? "",
-            query,
-            rankScore: 0,
-          } satisfies WebSearchResult;
-        })
-        .filter((item): item is WebSearchResult => item != null);
-
-      if (results.length > 0) {
-        return results;
+      const html = await htmlResponse.text();
+      const htmlResults = parseSearxngHtml(html, query);
+      if (htmlResults.length > 0) {
+        return { results: htmlResults, warnings };
       }
-      warnings.push(`SearXNG (${base}): không có kết quả cho "${query}".`);
+      warnings.push(`SearXNG (${base}): không có kết quả HTML cho "${query}".`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
@@ -271,7 +383,30 @@ async function searchSearxngQuery(
     log.warn("searxng_warnings", { query, warnings });
   }
 
-  return [];
+  return { results: [], warnings };
+}
+
+function mapSearxngJsonResults(
+  items: Array<{ title?: string; url?: string; content?: string }>,
+  query: string,
+): WebSearchResult[] {
+  return items
+    .map((item) => {
+      const normalizedUrl = item.url?.trim() ?? "";
+      const title = item.title?.trim() ?? "";
+      if (!normalizedUrl || !title) {
+        return null;
+      }
+      return {
+        title,
+        url: normalizedUrl,
+        domain: extractDomain(normalizedUrl),
+        snippet: item.content?.trim() ?? "",
+        query,
+        rankScore: 0,
+      } satisfies WebSearchResult;
+    })
+    .filter((item): item is WebSearchResult => item != null);
 }
 
 async function searchDuckDuckGoEndpoint(
@@ -279,14 +414,16 @@ async function searchDuckDuckGoEndpoint(
   query: string,
   parser: (html: string, query: string) => WebSearchResult[],
   signal?: AbortSignal,
-): Promise<WebSearchResult[]> {
+): Promise<ProviderSearchResponse> {
+  const referer = endpoint.includes("lite")
+    ? "https://lite.duckduckgo.com/"
+    : "https://html.duckduckgo.com/";
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": DEFAULT_USER_AGENT,
-      Accept: "text/html,application/xhtml+xml",
-    },
+    headers: buildSearchHeaders({
+      contentType: "application/x-www-form-urlencoded",
+      referer,
+    }),
     body: new URLSearchParams({ q: query }).toString(),
     signal: searchTimeoutSignal(signal),
   });
@@ -298,16 +435,21 @@ async function searchDuckDuckGoEndpoint(
   }
 
   const html = await response.text();
-  return parser(html, query);
+  const blockedMessage = duckDuckGoBlockedMessage(html);
+  if (blockedMessage) {
+    return { results: [], warnings: [blockedMessage] };
+  }
+
+  return { results: parser(html, query), warnings: [] };
 }
 
 async function searchDuckDuckGoQuery(
   query: string,
   signal?: AbortSignal,
-): Promise<WebSearchResult[]> {
+): Promise<ProviderSearchResponse> {
   const attempts: Array<{
     label: string;
-    run: () => Promise<WebSearchResult[]>;
+    run: () => Promise<ProviderSearchResponse>;
   }> = [
     {
       label: "DuckDuckGo Lite",
@@ -334,9 +476,10 @@ async function searchDuckDuckGoQuery(
   const warnings: string[] = [];
   for (const attempt of attempts) {
     try {
-      const results = await attempt.run();
+      const { results, warnings: attemptWarnings } = await attempt.run();
+      warnings.push(...attemptWarnings);
       if (results.length > 0) {
-        return results;
+        return { results, warnings };
       }
       warnings.push(`${attempt.label}: không có kết quả cho "${query}".`);
     } catch (error) {
@@ -350,7 +493,7 @@ async function searchDuckDuckGoQuery(
     log.warn("duckduckgo_warnings", { query, warnings });
   }
 
-  return [];
+  return { results: [], warnings };
 }
 
 async function _fetchUrlAsSearchResult(
@@ -365,10 +508,9 @@ async function _fetchUrlAsSearchResult(
 
   try {
     const response = await fetch(trimmed, {
-      headers: {
-        "User-Agent": DEFAULT_USER_AGENT,
-        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-      },
+      headers: buildSearchHeaders({
+        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+      }),
       signal: searchTimeoutSignal(signal),
       redirect: "follow",
     });
@@ -439,7 +581,7 @@ async function _searchQueryWithFallback(
   const warnings: string[] = [];
   const providers: Array<{
     name: string;
-    run: () => Promise<WebSearchResult[]>;
+    run: () => Promise<ProviderSearchResponse>;
   }> = [
     {
       name: "SearXNG",
@@ -453,11 +595,14 @@ async function _searchQueryWithFallback(
 
   for (const provider of providers) {
     try {
-      const results = await provider.run();
+      const { results, warnings: providerWarnings } = await provider.run();
+      warnings.push(...providerWarnings);
       if (results.length > 0) {
         return { results, warnings };
       }
-      warnings.push(`${provider.name}: không có kết quả cho "${query}".`);
+      if (providerWarnings.length === 0) {
+        warnings.push(`${provider.name}: không có kết quả cho "${query}".`);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
@@ -466,6 +611,14 @@ async function _searchQueryWithFallback(
   }
 
   return { results: [], warnings };
+}
+
+export function summarizeWebSearchFailures(warnings: string[]): string {
+  if (warnings.length === 0) {
+    return "Không tìm thấy kết quả tìm kiếm web.";
+  }
+  const unique = [...new Set(warnings.map((warning) => warning.trim()))];
+  return unique.slice(0, 4).join(" | ");
 }
 
 async function _searchWebForProduct(
