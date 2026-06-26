@@ -324,6 +324,8 @@ echo "[3/5] Refreshing dependencies, Docker services (Postgres + SearXNG), and d
 if ! bun run dev:update; then
   echo
   echo "[ERROR] 'bun run dev:update' failed. See the messages above." >&2
+  echo "        If the error mentions missing DB columns, ensure every drizzle/*.sql file" >&2
+  echo "        is listed in drizzle/meta/_journal.json, then run: bun run db:migrate" >&2
   exit 1
 fi
 echo
