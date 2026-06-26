@@ -155,6 +155,43 @@ function afterFieldInputClass(field: FillableField) {
     : "w-full rounded border border-slate-500 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none";
 }
 
+const MULTILINE_FIELDS = new Set<FillableField>(["specText"]);
+
+function isMultilineField(field: FillableField) {
+  return MULTILINE_FIELDS.has(field);
+}
+
+function multilineFieldRows(value: string) {
+  const lineCount = value.split("\n").filter((line) => line.trim()).length;
+  return Math.min(12, Math.max(3, lineCount + 1));
+}
+
+function renderAfterFieldInput(
+  field: FillableField,
+  value: string,
+  onChange: (value: string) => void,
+) {
+  const className = afterFieldInputClass(field);
+  if (isMultilineField(field)) {
+    return (
+      <textarea
+        value={value}
+        rows={multilineFieldRows(value)}
+        onChange={(event) => onChange(event.target.value)}
+        className={`${className} min-h-20 resize-y whitespace-pre-wrap`}
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={`min-w-0 flex-1 ${className}`}
+    />
+  );
+}
+
 export function FieldCompareEditor({
   sheetLabel,
   sheetName,
@@ -620,20 +657,19 @@ export function FieldCompareEditor({
                           <td className="py-2 pr-2 align-top font-semibold text-slate-600">
                             {FIELD_LABELS[field]}
                           </td>
-                          <td className={`py-2 pr-2 align-top ${beforeFieldClass(field)}`}>
+                          <td
+                            className={`py-2 pr-2 align-top ${beforeFieldClass(field)} ${
+                              isMultilineField(field) ? "whitespace-pre-wrap" : ""
+                            }`}
+                          >
                             {beforeDisplay}
                           </td>
                           <td className="py-2 pr-2 align-top">
                             {isFillable ? (
                               enableInlineEdit ? (
-                                <input
-                                  type="text"
-                                  value={afterValue}
-                                  onChange={(event) =>
-                                    onEditValue(field, event.target.value)
-                                  }
-                                  className={`min-w-0 flex-1 ${afterFieldInputClass(field)}`}
-                                />
+                                renderAfterFieldInput(field, afterValue, (next) =>
+                                  onEditValue(field, next),
+                                )
                               ) : (
                                 <span className={afterFieldTextClass(field)}>
                                   {afterDisplay}
@@ -735,14 +771,11 @@ export function FieldCompareEditor({
                       <>
                         <span className="text-slate-600">→</span>
                         {enableInlineEdit ? (
-                          <input
-                            type="text"
-                            value={editedValues[field] ?? cell.after}
-                            onChange={(event) =>
-                              onEditValue(field, event.target.value)
-                            }
-                            className={`min-w-0 flex-1 ${afterFieldInputClass(field)}`}
-                          />
+                          renderAfterFieldInput(
+                            field,
+                            editedValues[field] ?? cell.after,
+                            (next) => onEditValue(field, next),
+                          )
                         ) : (
                           <span className={`min-w-0 flex-1 truncate ${afterFieldTextClass(field)}`}>
                             {formatCompareFieldValue(
