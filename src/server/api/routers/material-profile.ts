@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import type { SerializedRowDecision } from "~/lib/materials/review-decision";
 import {
   createTRPCRouter,
   protectedProcedure,
@@ -24,6 +25,8 @@ import {
   updateMaterialProfileExportEditState,
   updateMaterialProfileItemEnrichmentDraft,
   updateMaterialProfileItem,
+  updateMaterialProfileItemReviewDecision,
+  batchUpdateMaterialProfileItemReviewDecisions,
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
 } from "~/server/services/material-profile-workspaces";
@@ -65,6 +68,25 @@ const exportEditStateSchema = z.object({
   deletedRows: sheetNumberMapSchema.default({}),
   deletedColumns: sheetNumberMapSchema.default({}),
   updatedAt: z.string().optional(),
+});
+
+const serializedRowDecisionSchema = z.object({
+  materialId: z.number().int().positive().nullable(),
+  acceptedFields: z.array(z.string()),
+  overwriteFields: z.array(z.string()).optional(),
+  editedValues: z.record(z.string()).optional(),
+  webProposedFields: z.record(z.string()).optional(),
+  webEvidence: z
+    .array(
+      z.object({
+        field: z.string(),
+        snippet: z.string(),
+        sourceUrl: z.string().optional(),
+      }),
+    )
+    .optional(),
+  webSearchStatus: z.enum(["idle", "pending", "done", "error"]).optional(),
+  skipped: z.boolean().optional(),
 });
 
 export const materialProfileRouter = createTRPCRouter({
@@ -173,6 +195,48 @@ export const materialProfileRouter = createTRPCRouter({
     )
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() => updateMaterialProfileItem(ctx.db, input)),
+    ),
+
+  updateItemReviewDecision: requirePermission("material:write")
+    .input(
+      z.object({
+        itemId: z.number().int().positive(),
+        decision: serializedRowDecisionSchema,
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileItemReviewDecision(ctx.db, {
+          itemId: input.itemId,
+          decision: input.decision as SerializedRowDecision,
+        }),
+      ),
+    ),
+
+  batchUpdateItemReviewDecisions: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        decisions: z
+          .array(
+            z.object({
+              itemId: z.number().int().positive(),
+              decision: serializedRowDecisionSchema,
+            }),
+          )
+          .min(1)
+          .max(500),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        batchUpdateMaterialProfileItemReviewDecisions(ctx.db, {
+          workspaceId: input.workspaceId,
+          decisions: input.decisions.map((entry) => ({
+            itemId: entry.itemId,
+            decision: entry.decision as SerializedRowDecision,
+          })),
+        }),
+      ),
     ),
 
   updateItemEnrichmentDraft: requirePermission("material:write")

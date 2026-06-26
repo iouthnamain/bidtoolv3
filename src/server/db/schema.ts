@@ -714,6 +714,10 @@ export const excelWorkspaceItems = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    reviewDecisionJson: jsonb("review_decision_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     matchStatus: productMatchStatusEnum("match_status")
       .notNull()
       .default("unmatched"),

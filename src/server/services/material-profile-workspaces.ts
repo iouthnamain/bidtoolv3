@@ -5,6 +5,17 @@ import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
+import {
+  deriveMatchStatus,
+  deserializeRowDecision,
+  type SerializedRowDecision,
+  serializeRowDecision,
+} from "~/lib/materials/review-decision";
+import {
+  snapshotStatusFromItem,
+  topCandidateMaterialIdFromItem,
+  type WorkspaceItemForReview,
+} from "~/lib/materials/workspace-review-row";
 import type {
   ColumnMapping,
   ParsedWorkbookSheet,
@@ -975,6 +986,131 @@ export async function updateMaterialProfileItem(
     .where(eq(excelWorkspaceItems.id, input.itemId))
     .returning();
   return updated;
+}
+
+function workspaceItemForReview(item: WorkspaceItem): WorkspaceItemForReview {
+  return {
+    id: item.id,
+    originalRowIndex: item.originalRowIndex,
+    productName: item.productName,
+    specText: item.specText,
+    unit: item.unit,
+    vendorHint: item.vendorHint,
+    originHint: item.originHint,
+    unitPrice: item.unitPrice,
+    currency: item.currency,
+    originalDataJson: item.originalDataJson,
+    enrichedSnapshotJson: item.enrichedSnapshotJson,
+  };
+}
+
+export async function updateMaterialProfileItemReviewDecision(
+  db: AppDb,
+  input: {
+    itemId: number;
+    decision: SerializedRowDecision;
+  },
+) {
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.id, input.itemId))
+    .limit(1);
+  if (!item) {
+    throw new MaterialProfileWorkspaceError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng.",
+    );
+  }
+
+  const reviewItem = workspaceItemForReview(item);
+  const snapshotStatus = snapshotStatusFromItem(reviewItem);
+  const topCandidateMaterialId = topCandidateMaterialIdFromItem(reviewItem);
+  const decision = deserializeRowDecision(input.decision);
+  if (!decision) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Quyết định duyệt không hợp lệ.",
+    );
+  }
+
+  const matchStatus = deriveMatchStatus(
+    decision,
+    snapshotStatus,
+    topCandidateMaterialId,
+  );
+  const now = new Date().toISOString();
+  const [updated] = await db
+    .update(excelWorkspaceItems)
+    .set({
+      reviewDecisionJson: serializeRowDecision(decision),
+      materialId: decision.materialId,
+      matchStatus,
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaceItems.id, input.itemId))
+    .returning();
+
+  return updated;
+}
+
+export async function batchUpdateMaterialProfileItemReviewDecisions(
+  db: AppDb,
+  input: {
+    workspaceId: number;
+    decisions: Array<{ itemId: number; decision: SerializedRowDecision }>;
+  },
+) {
+  if (input.decisions.length === 0) {
+    return { updatedCount: 0, items: [] as WorkspaceItem[] };
+  }
+
+  const workspace = await requireWorkspace(db, input.workspaceId);
+  const itemIds = Array.from(
+    new Set(input.decisions.map((entry) => entry.itemId)),
+  );
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.workspaceId, workspace.id),
+        inArray(excelWorkspaceItems.id, itemIds),
+      ),
+    );
+
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const now = new Date().toISOString();
+  const updatedItems: WorkspaceItem[] = [];
+
+  for (const entry of input.decisions) {
+    const item = itemById.get(entry.itemId);
+    if (!item) continue;
+    const reviewItem = workspaceItemForReview(item);
+    const snapshotStatus = snapshotStatusFromItem(reviewItem);
+    const topCandidateMaterialId = topCandidateMaterialIdFromItem(reviewItem);
+    const decision = deserializeRowDecision(entry.decision);
+    if (!decision) continue;
+
+    const matchStatus = deriveMatchStatus(
+      decision,
+      snapshotStatus,
+      topCandidateMaterialId,
+    );
+    const [updated] = await db
+      .update(excelWorkspaceItems)
+      .set({
+        reviewDecisionJson: serializeRowDecision(decision),
+        materialId: decision.materialId,
+        matchStatus,
+        updatedAt: now,
+      })
+      .where(eq(excelWorkspaceItems.id, entry.itemId))
+      .returning();
+    if (updated) updatedItems.push(updated);
+  }
+
+  return { updatedCount: updatedItems.length, items: updatedItems };
 }
 
 export async function updateMaterialProfileItemEnrichmentDraft(

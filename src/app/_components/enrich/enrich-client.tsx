@@ -26,31 +26,23 @@ import {
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
+import { ReviewPanel } from "~/app/_components/materials/review/review-panel";
+import type { ReviewRowStatus } from "~/app/_components/materials/review/review-types";
 import {
-  ManualProductForm,
-  type ManualProductValues,
-} from "~/app/_components/enrich/manual-product-dialog";
-import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
-import {
-  applySavedMaterialToDecision,
-  applyWebSearchToDecision,
   buildExportPreviewRows,
   countFieldsToFill,
   countResolvedRows,
-  effectiveAcceptedFieldValues,
   isExportableDecision,
-  webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
 import {
-  buildFillPlan,
-  buildFillPlanWithEdits,
-  candidateToFields,
   FIELD_LABELS,
   type FillableField,
-  FILLABLE_FIELDS,
 } from "~/lib/materials/excel-enrich-fields";
-import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrichment-types";
-import { parseOptionalNumber } from "~/lib/materials/format";
+import type { RowDecision } from "~/lib/materials/review-decision";
+import {
+  matchRowToReviewRow,
+  reviewSummaryFromRows,
+} from "~/lib/materials/workspace-review-row";
 import type { ColumnKey } from "~/server/services/excel-workbook";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -58,7 +50,6 @@ type EnrichPreview = RouterOutputs["material"]["enrichPreviewXlsx"];
 type EnrichPreviewSheet = EnrichPreview["sheets"][number];
 type MatchResponse = RouterOutputs["material"]["enrichMatchRows"];
 type MatchRow = MatchResponse["results"][number];
-type FillPlanCell = MatchRow["fillPlan"][number];
 type EnrichColumnMapping = Record<string, string | null>;
 type SheetEdits = Record<string, Partial<Record<FillableField, string>>>;
 
@@ -81,15 +72,6 @@ const MAPPING_FIELDS: Array<{
 function rowEditKey(rowIndex: number) {
   return String(rowIndex);
 }
-
-const STATUS_META: Record<
-  MatchRow["status"],
-  { label: string; tone: "success" | "warning" | "neutral" }
-> = {
-  auto: { label: "Tự động", tone: "success" },
-  review: { label: "Cần duyệt", tone: "warning" },
-  unmatched: { label: "Chưa khớp", tone: "neutral" },
-};
 
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -125,45 +107,6 @@ function downloadBase64Xlsx(fileName: string, base64: string) {
   URL.revokeObjectURL(url);
 }
 
-// Per-row, user-editable decision state: chosen material + ticked fields.
-type RowDecision = {
-  materialId: number | null;
-  acceptedFields: Set<FillableField>;
-  // Fields the user chose to force-overwrite even though the sheet already has a
-  // value (Contract O: fed into buildFillPlan as `forceOverwrite` and exported
-  // as `overwriteFields`).
-  overwriteFields?: Set<FillableField>;
-  // Per-field inline edits: user-typed values that override the candidate's
-  // value at export time. Threaded into the export decision as `valueOverrides`.
-  editedValues?: Partial<Record<FillableField, string>>;
-  webProposedFields?: Partial<Record<FillableField, string>>;
-  webEvidence?: MaterialEnrichmentEvidence[];
-  webSearchStatus?: "idle" | "pending" | "done" | "error";
-  // User explicitly chose to skip this row (vs. simply not decided yet).
-  skipped?: boolean;
-};
-
-/**
- * Derive a fill plan + the set of fillable fields for an arbitrary chosen
- * candidate, computed client-side. The server only returns a fill plan for the
- * row's auto/review match; when the user picks a different card (including a
- * manual-search result) we recompute against the sheet's own field values.
- */
-function planForCandidate(
-  sheetFields: Partial<Record<FillableField, string>>,
-  candidate: EnrichCandidate | null,
-): { plan: FillPlanCell[]; fillable: Set<FillableField> } {
-  if (!candidate) return { plan: [], fillable: new Set() };
-  const materialFields = candidateToFields(candidate);
-  const plan = buildFillPlan(sheetFields, materialFields);
-  const fillable = new Set<FillableField>(
-    plan
-      .filter((cell) => cell.action === "filled")
-      .map((cell) => cell.field),
-  );
-  return { plan, fillable };
-}
-
 const EMPTY_JOB_ID = "00000000-0000-0000-0000-000000000000";
 
 // The whole workbook is base64-encoded and sent in the request body (preview,
@@ -188,7 +131,7 @@ export function MaterialEnrichClient() {
   const [decisions, setDecisions] = useState<Map<number, RowDecision>>(
     () => new Map(),
   );
-  const [statusFilter, setStatusFilter] = useState<MatchRow["status"] | "all">(
+  const [statusFilter, setStatusFilter] = useState<ReviewRowStatus | "all">(
     "all",
   );
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
@@ -598,6 +541,21 @@ export function MaterialEnrichClient() {
     runResearchExport();
   };
 
+  const reviewRows = useMemo(
+    () => matchData?.results.map((row) => matchRowToReviewRow(row)) ?? [],
+    [matchData],
+  );
+  const reviewSummary = useMemo(
+    () =>
+      reviewRows.length > 0
+        ? {
+            totalRows: matchData?.matchedRows ?? reviewRows.length,
+            ...reviewSummaryFromRows(reviewRows),
+          }
+        : { totalRows: 0, auto: 0, review: 0, unmatched: 0 },
+    [matchData?.matchedRows, reviewRows],
+  );
+
   return (
     <div className="animate-rise space-y-4">
       <StepHeader current={step} maxReached={maxReached} onJump={setStep} />
@@ -629,8 +587,9 @@ export function MaterialEnrichClient() {
       ) : null}
 
       {step === 2 && matchData ? (
-        <ReviewStep
-          matchData={matchData}
+        <ReviewPanel
+          rows={reviewRows}
+          summary={reviewSummary}
           decisions={decisions}
           updateDecision={updateDecision}
           applyDecisions={setDecisions}
@@ -641,8 +600,27 @@ export function MaterialEnrichClient() {
           fieldsToFill={fieldsToFill}
           matchedCount={matchedCount}
           pendingUnmatched={pendingUnmatched}
-          onContinue={() => reach(3)}
-          onSkipToExport={() => reach(4)}
+          headerActions={
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={reviewRows.length === 0}
+                onClick={() => reach(4)}
+              >
+                Bỏ qua web → xuất file
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Globe className="h-3.5 w-3.5" />}
+                disabled={reviewRows.length === 0}
+                onClick={() => reach(3)}
+              >
+                Tiếp tục nghiên cứu web
+              </Button>
+            </>
+          }
         />
       ) : null}
 
@@ -1065,792 +1043,6 @@ function EnrichXlsxPreviewPanel({
   );
 }
 
-function ReviewStep({
-  matchData,
-  decisions,
-  updateDecision,
-  applyDecisions,
-  statusFilter,
-  setStatusFilter,
-  selectedRowIndex,
-  setSelectedRowIndex,
-  fieldsToFill,
-  matchedCount,
-  pendingUnmatched,
-  onContinue,
-  onSkipToExport,
-}: {
-  matchData: MatchResponse;
-  decisions: Map<number, RowDecision>;
-  updateDecision: (rowIndex: number, next: RowDecision) => void;
-  applyDecisions: (
-    updater: (prev: Map<number, RowDecision>) => Map<number, RowDecision>,
-  ) => void;
-  statusFilter: MatchRow["status"] | "all";
-  setStatusFilter: (value: MatchRow["status"] | "all") => void;
-  selectedRowIndex: number | null;
-  setSelectedRowIndex: (value: number | null) => void;
-  fieldsToFill: number;
-  matchedCount: number;
-  pendingUnmatched: number;
-  onContinue: () => void;
-  onSkipToExport: () => void;
-}) {
-  const toast = useToast();
-  const webSearch = api.material.enrichWebSearchRow.useMutation();
-  const selectedRowIndexRef = useRef(selectedRowIndex);
-  selectedRowIndexRef.current = selectedRowIndex;
-  const rows = matchData.results;
-
-  const filtered =
-    statusFilter === "all"
-      ? rows
-      : rows.filter((row) => row.status === statusFilter);
-
-  // Reset selection to the first filtered row when the active filter excludes
-  // the currently-selected row (so the detail pane never shows a hidden row).
-  useEffect(() => {
-    if (filtered.length === 0) return;
-    if (!filtered.some((row) => row.originalRowIndex === selectedRowIndex)) {
-      setSelectedRowIndex(filtered[0]!.originalRowIndex);
-    }
-  }, [filtered, selectedRowIndex, setSelectedRowIndex]);
-
-  if (rows.length === 0) {
-    return (
-      <section className="panel p-5">
-        <EmptyState
-          title="Không có dòng để đối chiếu"
-          description="File không có dòng dữ liệu hợp lệ với cột tên vật tư đã chọn."
-        />
-      </section>
-    );
-  }
-
-  // Counts derived from the user's decisions so chips/headers reflect manual
-  // picks and skips, not just the server's static classification.
-  const reviewCount = rows.filter((row) => row.status === "review").length;
-  const filters: Array<{
-    id: MatchRow["status"] | "all";
-    label: string;
-    count: number;
-  }> = [
-    { id: "all", label: "Tất cả", count: rows.length },
-    { id: "auto", label: STATUS_META.auto.label, count: matchData.summary.auto },
-    { id: "review", label: STATUS_META.review.label, count: reviewCount },
-    { id: "unmatched", label: STATUS_META.unmatched.label, count: pendingUnmatched },
-  ];
-
-  const selectedRow =
-    rows.find((row) => row.originalRowIndex === selectedRowIndex) ?? null;
-  const webPendingCount = Array.from(decisions.values()).filter(
-    (decision) => decision.webSearchStatus === "pending",
-  ).length;
-  const savedToMaterialsCount = Array.from(decisions.values()).filter(
-    (decision) => decision.materialId != null,
-  ).length;
-
-  const catalogFieldsForRow = (
-    row: MatchRow,
-    materialId: number | null,
-  ): Partial<Record<FillableField, string>> | null => {
-    if (materialId == null) return null;
-    const candidate =
-      row.candidates.find((c) => c.materialId === materialId) ?? null;
-    return candidate ? candidateToFields(candidate) : null;
-  };
-
-  const handleWebSearch = (row: MatchRow) => {
-    const rowIndex = row.originalRowIndex;
-    const decision = decisions.get(rowIndex) ?? {
-      materialId: null,
-      acceptedFields: new Set<FillableField>(),
-    };
-    updateDecision(rowIndex, {
-      ...decision,
-      webSearchStatus: "pending",
-      webEvidence: [],
-    });
-
-    const catalogFieldsAtStart = catalogFieldsForRow(row, decision.materialId);
-
-    webSearch.mutate(
-      {
-        name: row.name,
-        code: row.sheetFields.code,
-        manufacturer: row.sheetFields.manufacturer,
-        specText: row.sheetFields.specText,
-        unit: row.sheetFields.unit,
-        category: row.sheetFields.category,
-      },
-      {
-        onSuccess: (result) => {
-          applyDecisions((prev) => {
-            const current = prev.get(rowIndex);
-            if (!current) return prev;
-            const targetRow = rows.find(
-              (r) => r.originalRowIndex === rowIndex,
-            );
-            if (!targetRow) return prev;
-
-            if (Object.keys(result.fields).length === 0) {
-              const next = new Map(prev);
-              next.set(rowIndex, {
-                ...current,
-                webSearchStatus: "error",
-              });
-              return next;
-            }
-
-            const catalog = catalogFieldsForRow(
-              targetRow,
-              current.materialId,
-            );
-            const next = new Map(prev);
-            next.set(
-              rowIndex,
-              applyWebSearchToDecision(
-                current,
-                targetRow.sheetFields,
-                catalog,
-                result,
-              ),
-            );
-            return next;
-          });
-
-          if (rowIndex === selectedRowIndexRef.current) {
-            if (Object.keys(result.fields).length === 0) {
-              toast.warning("Không tìm thấy thông tin sản phẩm trên web.");
-            } else {
-              const gapCount = Object.keys(
-                webFieldsAfterGapFill(
-                  row.sheetFields,
-                  catalogFieldsAtStart,
-                  result.fields,
-                ),
-              ).length;
-              toast.success(`Đã điền ${gapCount} trường từ web.`);
-            }
-          }
-        },
-        onError: (error) => {
-          applyDecisions((prev) => {
-            const current = prev.get(rowIndex);
-            if (!current) return prev;
-            const next = new Map(prev);
-            next.set(rowIndex, {
-              ...current,
-              webSearchStatus: "error",
-            });
-            return next;
-          });
-          if (rowIndex === selectedRowIndexRef.current) {
-            toast.error(
-              error.message || "Không tìm được thông tin trên web.",
-            );
-          }
-        },
-      },
-    );
-  };
-
-  const confirmAllAuto = () => {
-    applyDecisions((prev) => {
-      const next = new Map(prev);
-      for (const row of rows) {
-        if (row.status !== "auto" || !row.topCandidate) continue;
-        const accepted = new Set<FillableField>(
-          row.fillPlan
-            .filter((cell) => cell.action === "filled")
-            .map((cell) => cell.field),
-        );
-        next.set(row.originalRowIndex, {
-          materialId: row.topCandidate.materialId,
-          acceptedFields: accepted,
-        });
-      }
-      return next;
-    });
-  };
-
-  const skipAllUnmatched = () => {
-    applyDecisions((prev) => {
-      const next = new Map(prev);
-      for (const row of rows) {
-        if (row.status !== "unmatched") continue;
-        // Don't clobber an unmatched row the user already matched manually.
-        if (prev.get(row.originalRowIndex)?.materialId != null) continue;
-        next.set(row.originalRowIndex, {
-          materialId: null,
-          acceptedFields: new Set(),
-          skipped: true,
-        });
-      }
-      return next;
-    });
-  };
-
-  return (
-    <section className="panel overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
-        <div>
-          <h3 className="text-sm font-bold text-slate-900 text-balance">
-            Xét duyệt & chọn sản phẩm
-          </h3>
-          <p className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
-            <span className="tabular-nums">{matchData.matchedRows.toLocaleString("vi-VN")} dòng</span>
-            <span className="tabular-nums">{matchedCount.toLocaleString("vi-VN")} đã chọn</span>
-            <span className="tabular-nums">{fieldsToFill.toLocaleString("vi-VN")} ô sẽ điền</span>
-            <span className="tabular-nums">
-              {pendingUnmatched.toLocaleString("vi-VN")} chưa khớp
-            </span>
-            <span className="tabular-nums">
-              {webPendingCount.toLocaleString("vi-VN")} đang tìm web
-            </span>
-            <span className="tabular-nums">
-              {savedToMaterialsCount.toLocaleString("vi-VN")} đã lưu vật tư
-            </span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={rows.length === 0}
-            onClick={onSkipToExport}
-          >
-            Bỏ qua web → xuất file
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<Globe className="h-3.5 w-3.5" />}
-            disabled={rows.length === 0}
-            onClick={onContinue}
-          >
-            Tiếp tục nghiên cứu web
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
-        <div className="flex flex-wrap gap-1.5">
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => setStatusFilter(filter.id)}
-              aria-pressed={statusFilter === filter.id}
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-                statusFilter === filter.id
-                  ? "bg-slate-800 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              {filter.label} ({filter.count.toLocaleString("vi-VN")})
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex flex-wrap gap-1.5">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={matchData.summary.auto === 0}
-            onClick={confirmAllAuto}
-          >
-            Xác nhận tất cả ≥ 85%
-          </Button>
-          <Button
-            variant="warning"
-            size="sm"
-            disabled={pendingUnmatched === 0}
-            onClick={skipAllUnmatched}
-          >
-            Bỏ qua chưa khớp
-            {pendingUnmatched > 0 ? ` (${pendingUnmatched.toLocaleString("vi-VN")})` : ""}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        {/* Master: row list */}
-        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-200 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
-          {filtered.map((row) => {
-            const meta = STATUS_META[row.status];
-            const decision = decisions.get(row.originalRowIndex);
-            const isSelected = row.originalRowIndex === selectedRowIndex;
-            const name = row.name.trim()
-              ? row.name
-              : (row.topCandidate?.name ?? `Dòng ${row.originalRowIndex}`);
-            return (
-              <button
-                key={row.originalRowIndex}
-                type="button"
-                onClick={() => setSelectedRowIndex(row.originalRowIndex)}
-                aria-selected={isSelected}
-                className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
-                  isSelected ? "bg-sky-50" : "hover:bg-slate-50"
-                }`}
-              >
-                <Badge tone={meta.tone}>{meta.label}</Badge>
-                {decision?.webSearchStatus === "pending" ? (
-                  <Badge tone="info">Đang tìm web</Badge>
-                ) : decision?.webSearchStatus === "error" ? (
-                  <Badge tone="critical">Web lỗi</Badge>
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {name}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Dòng {row.originalRowIndex}
-                    {decision?.materialId != null
-                      ? ` · đã chọn (${decision.acceptedFields.size} ô)`
-                      : decision?.skipped
-                        ? " · đã bỏ qua"
-                        : decision &&
-                            isExportableDecision(decision)
-                          ? ` · đã điền (${decision.acceptedFields.size} ô)`
-                          : decision?.webSearchStatus === "error"
-                            ? " · tìm web thất bại"
-                            : row.status === "unmatched"
-                            ? " · chưa chọn"
-                            : ""}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
-          {filtered.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-slate-500">
-              Không có dòng nào ở bộ lọc này.
-            </p>
-          ) : null}
-        </div>
-
-        {/* Detail: chooser for the selected row */}
-        <div className="min-w-0 p-4">
-          {selectedRow ? (
-            <MatchChooser
-              key={selectedRow.originalRowIndex}
-              row={selectedRow}
-              decision={decisions.get(selectedRow.originalRowIndex)}
-              onChange={(next) =>
-                updateDecision(selectedRow.originalRowIndex, next)
-              }
-              onWebSearch={() => handleWebSearch(selectedRow)}
-              isWebSearchPending={
-                decisions.get(selectedRow.originalRowIndex)?.webSearchStatus ===
-                "pending"
-              }
-            />
-          ) : (
-            <EmptyState
-              title="Chọn một dòng"
-              description="Chọn một dòng ở danh sách bên trái để xem ứng viên ghép."
-            />
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MatchChooser({
-  row,
-  decision,
-  onChange,
-  onWebSearch,
-  isWebSearchPending,
-}: {
-  row: MatchRow;
-  decision: RowDecision | undefined;
-  onChange: (next: RowDecision) => void;
-  onWebSearch: () => void;
-  isWebSearchPending: boolean;
-}) {
-  const toast = useToast();
-  const utils = api.useUtils();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debounced, setDebounced] = useState("");
-
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(searchTerm.trim()), 300);
-    return () => clearTimeout(id);
-  }, [searchTerm]);
-
-  const searchQuery = api.material.enrichSearchMaterials.useQuery(
-    { query: debounced },
-    { enabled: debounced.length > 0 },
-  );
-  const upsertMaterial = api.material.upsertMaterial.useMutation();
-
-  const selectedId = decision?.materialId ?? null;
-  const accepted = decision?.acceptedFields ?? new Set<FillableField>();
-  const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
-  const editedValues = decision?.editedValues ?? {};
-  const webProposedFields = decision?.webProposedFields ?? {};
-  const webEvidence = decision?.webEvidence ?? [];
-  const webSearchStatus = decision?.webSearchStatus;
-
-  const sheetFields: Partial<Record<FillableField, string>> = row.sheetFields;
-
-  const searchCandidates = (searchQuery.data?.candidates ??
-    []) as EnrichCandidate[];
-  const showingSearch = debounced.length > 0;
-  const cards: EnrichCandidate[] = showingSearch
-    ? searchCandidates
-    : row.candidates;
-
-  const selectedCandidate =
-    selectedId != null
-      ? (cards.find((candidate) => candidate.materialId === selectedId) ??
-        row.candidates.find((candidate) => candidate.materialId === selectedId) ??
-        null)
-      : null;
-
-  const catalogFields = selectedCandidate
-    ? candidateToFields(selectedCandidate)
-    : null;
-
-  const choose = (candidate: EnrichCandidate) => {
-    const { fillable } = planForCandidate(sheetFields, candidate);
-    const candidateFields = candidateToFields(candidate);
-    const webGaps = webFieldsAfterGapFill(
-      sheetFields,
-      candidateFields,
-      webProposedFields,
-    );
-    const nextAccepted = new Set(fillable);
-    const nextEdited = { ...editedValues };
-    for (const [field, value] of Object.entries(webGaps)) {
-      const fillableField = field as FillableField;
-      nextAccepted.add(fillableField);
-      if (!(fillableField in nextEdited)) {
-        nextEdited[fillableField] = value;
-      }
-    }
-    onChange({
-      materialId: candidate.materialId,
-      acceptedFields: nextAccepted,
-      overwriteFields: new Set(),
-      editedValues: nextEdited,
-      webProposedFields,
-      webEvidence,
-      webSearchStatus,
-    });
-  };
-
-  const isSkipped = decision?.skipped === true;
-
-  const toggleSkip = () => {
-    onChange({
-      materialId: null,
-      acceptedFields: new Set(),
-      overwriteFields: new Set(),
-      editedValues: {},
-      webProposedFields: {},
-      webEvidence: [],
-      skipped: !isSkipped,
-    });
-  };
-
-  const toggleField = (field: FillableField) => {
-    const next = new Set(accepted);
-    const nextOverwrite = new Set(overwrite);
-    if (next.has(field)) {
-      next.delete(field);
-      nextOverwrite.delete(field);
-    } else {
-      next.add(field);
-    }
-    onChange({
-      materialId: selectedId,
-      acceptedFields: next,
-      overwriteFields: nextOverwrite,
-      editedValues,
-      webProposedFields,
-      webEvidence,
-      webSearchStatus,
-    });
-  };
-
-  const toggleOverwrite = (field: FillableField) => {
-    const nextOverwrite = new Set(overwrite);
-    const nextAccepted = new Set(accepted);
-    if (nextOverwrite.has(field)) {
-      nextOverwrite.delete(field);
-      nextAccepted.delete(field);
-    } else {
-      nextOverwrite.add(field);
-      nextAccepted.add(field);
-    }
-    onChange({
-      materialId: selectedId,
-      acceptedFields: nextAccepted,
-      overwriteFields: nextOverwrite,
-      editedValues,
-      webProposedFields,
-      webEvidence,
-      webSearchStatus,
-    });
-  };
-
-  const editValue = (field: FillableField, value: string) => {
-    const nextEdited = { ...editedValues, [field]: value };
-    const nextAccepted = new Set(accepted);
-    nextAccepted.add(field);
-    onChange({
-      materialId: selectedId,
-      acceptedFields: nextAccepted,
-      overwriteFields: overwrite,
-      editedValues: nextEdited,
-      webProposedFields,
-      webEvidence,
-      webSearchStatus,
-    });
-  };
-
-  const applyManualValues = (values: ManualProductValues) => {
-    const nextAccepted = new Set<FillableField>();
-    const nextEdited: Partial<Record<FillableField, string>> = {};
-    for (const field of FILLABLE_FIELDS) {
-      if (field === "currency") continue;
-      const value = values[field]?.trim() ?? "";
-      if (value) {
-        nextEdited[field] = value;
-        nextAccepted.add(field);
-      }
-    }
-    onChange({
-      materialId: null,
-      acceptedFields: nextAccepted,
-      overwriteFields: new Set(),
-      editedValues: nextEdited,
-      webProposedFields: {},
-      webEvidence: [],
-    });
-  };
-
-  const runWebSearch = () => {
-    onWebSearch();
-  };
-
-  const saveCurrentToMaterials = () => {
-    const effective = effectiveAcceptedFieldValues(
-      sheetFields,
-      catalogFields,
-      {
-        acceptedFields: accepted,
-        editedValues,
-        webProposedFields,
-        overwriteFields: overwrite,
-      },
-    );
-    const unit = effective.unit?.trim() ?? sheetFields.unit?.trim() ?? "";
-    const name = row.name.trim();
-    if (!name) {
-      toast.error("Tên vật tư không được để trống.");
-      return;
-    }
-    if (!unit) {
-      toast.error("ĐVT không được để trống.");
-      return;
-    }
-    if (accepted.size === 0) {
-      toast.error("Chọn ít nhất một trường trước khi lưu.");
-      return;
-    }
-
-    const trimmedOrUndefined = (value: string | undefined) => {
-      const trimmed = value?.trim();
-      if (!trimmed) {
-        return undefined;
-      }
-      return trimmed;
-    };
-
-    upsertMaterial.mutate(
-      {
-        id: selectedId ?? undefined,
-        patch: {
-          name,
-          unit,
-          code: trimmedOrUndefined(effective.code),
-          category: trimmedOrUndefined(effective.category),
-          specText: trimmedOrUndefined(effective.specText),
-          manufacturer: trimmedOrUndefined(effective.manufacturer),
-          originCountry: trimmedOrUndefined(effective.originCountry),
-          defaultUnitPrice: parseOptionalNumber(
-            effective.defaultUnitPrice ?? "",
-          ),
-          sourceUrl: trimmedOrUndefined(effective.sourceUrl),
-          currency: "VND",
-        },
-      },
-      {
-        onSuccess: (material) => {
-          if (!material) {
-            toast.error("Không lưu được vật tư.");
-            return;
-          }
-          void utils.material.enrichSearchMaterials.invalidate();
-          onChange(
-            applySavedMaterialToDecision(material.id, effective, decision),
-          );
-          toast.success(
-            selectedId != null
-              ? "Đã cập nhật vật tư."
-              : "Đã lưu vào vật tư.",
-          );
-        },
-        onError: (error) => {
-          if (error.data?.code === "CONFLICT") {
-            toast.error("Mã vật tư đã tồn tại.");
-            return;
-          }
-          toast.error(error.message || "Không lưu được vật tư.");
-        },
-      },
-    );
-  };
-
-  const handleSavedToCatalog = (
-    materialId: number,
-    values: ManualProductValues,
-  ) => {
-    const savedFields: Partial<Record<FillableField, string>> = {};
-    for (const field of FILLABLE_FIELDS) {
-      if (field === "currency") continue;
-      const value = values[field]?.trim() ?? "";
-      if (value) savedFields[field] = value;
-    }
-    void utils.material.enrichSearchMaterials.invalidate();
-    onChange(applySavedMaterialToDecision(materialId, savedFields, decision));
-  };
-
-  const clearDecision = () => {
-    onChange({
-      materialId: null,
-      acceptedFields: new Set(),
-      overwriteFields: new Set(),
-      editedValues: {},
-      webProposedFields: {},
-      webEvidence: [],
-    });
-  };
-
-  const hasWebOrManualDecision =
-    Object.keys(webProposedFields).length > 0 ||
-    (selectedId == null &&
-      (accepted.size > 0 ||
-        Object.values(editedValues).some(
-          (value) => (value ?? "").trim().length > 0,
-        )));
-
-  const canSaveToMaterials = accepted.size > 0 && !isWebSearchPending;
-  const isSavingMaterial = upsertMaterial.isPending;
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={runWebSearch}
-          disabled={isWebSearchPending || !row.name.trim()}
-        >
-          {isWebSearchPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : (
-            <Globe className="h-4 w-4" aria-hidden />
-          )}
-          Tìm web
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={saveCurrentToMaterials}
-          disabled={!canSaveToMaterials || isSavingMaterial}
-          title={
-            canSaveToMaterials
-              ? "Lưu các trường đã chọn vào danh mục vật tư"
-              : "Chọn ít nhất một trường để lưu"
-          }
-        >
-          {isSavingMaterial ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : null}
-          Lưu vào vật tư
-        </Button>
-      </div>
-
-      <FieldCompareEditor
-        sheetLabel={`Dòng Excel ${row.originalRowIndex}`}
-        sheetName={row.name}
-        sheetFields={sheetFields}
-        proposedFields={webProposedFields}
-        selectedMaterialId={selectedId}
-        accepted={accepted}
-        overwrite={overwrite}
-        editedValues={editedValues}
-        onToggleField={toggleField}
-        onToggleOverwrite={toggleOverwrite}
-        onEditValue={editValue}
-        onClear={clearDecision}
-        enableCandidateGrid
-        candidates={cards}
-        recommendedMaterialId={row.topCandidate?.materialId ?? null}
-        searchTerm={searchTerm}
-        onSearchTermChange={setSearchTerm}
-        isSearching={searchQuery.isLoading}
-        showingSearch={showingSearch}
-        onChoose={choose}
-        enableInlineEdit
-        enableSkip
-        isSkipped={isSkipped}
-        onToggleSkip={toggleSkip}
-        forceShowDecision={hasWebOrManualDecision}
-      />
-
-      {webEvidence.length > 0 && !isWebSearchPending ? (
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-slate-700">Bằng chứng web</p>
-          {webEvidence.slice(0, 6).map((item, index) => (
-            <div
-              key={`${item.field}-${item.sourceUrl ?? index}`}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-xs"
-            >
-              <p className="font-semibold text-slate-700">
-                {FIELD_LABELS[item.field as FillableField] ?? item.field}
-              </p>
-              <p className="mt-0.5 text-slate-600">{item.snippet}</p>
-              {item.sourceUrl ? (
-                <a
-                  href={item.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-block text-sky-700 hover:underline"
-                >
-                  {item.sourceUrl}
-                </a>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <ManualProductForm
-        productName={row.name}
-        sheetFields={sheetFields}
-        selectedCandidate={selectedCandidate}
-        onApplyToRow={applyManualValues}
-        onSavedToCatalog={handleSavedToCatalog}
-      />
-    </div>
-  );
-}
 
 function EnrichExportPreviewPanel({
   matchData,
