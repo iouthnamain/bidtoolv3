@@ -84,7 +84,7 @@ const ResultCard = memo(function ResultCard({
   addWatchlist: AddWatchlist;
 }) {
   return (
-    <article className="rounded border border-slate-400 bg-white p-3 shadow-sm">
+    <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 shadow-sm">
       <div className="flex items-start gap-1">
         <input
           type="checkbox"
@@ -163,7 +163,7 @@ const ResultRow = memo(function ResultRow({
   addWatchlist: AddWatchlist;
 }) {
   return (
-    <tr className="align-top transition-colors duration-0 hover:bg-slate-50/80">
+    <tr className="align-top transition-colors duration-0 hover:bg-slate-100/80">
       <td className="px-3 py-3">
         <input
           type="checkbox"

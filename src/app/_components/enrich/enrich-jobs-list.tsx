@@ -155,7 +155,7 @@ function JobListRow({
       : "Mở";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-50">
+    <div className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-100">
       <button
         type="button"
         className="min-w-0 flex-1 text-left"

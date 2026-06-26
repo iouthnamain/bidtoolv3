@@ -10,7 +10,7 @@ import { usePermissions } from "~/lib/use-permissions";
 import { api } from "~/trpc/react";
 
 const inputClass =
-  "h-11 w-full rounded border border-slate-400 bg-white px-3 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
+  "h-11 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100";
 const labelClass =
   "text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase";
 
@@ -197,7 +197,7 @@ export function TenantManagementSection() {
                           value={editingName}
                           onChange={(e) => setEditingName(e.target.value)}
                           disabled={busy}
-                          className="h-9 flex-1 rounded border border-slate-400 bg-white px-2 text-sm text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
+                          className="h-9 flex-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-sm text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
                           autoFocus
                         />
                         <Button

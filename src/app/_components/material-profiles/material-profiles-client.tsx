@@ -150,7 +150,7 @@ export function MaterialProfilesClient() {
                 value={noticeNumber}
                 onChange={(event) => setNoticeNumber(event.target.value)}
                 placeholder="VD: IB2600190527-00"
-                className="h-11 rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                className="h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
               />
             </label>
             <Button
@@ -219,7 +219,7 @@ export function MaterialProfilesClient() {
                                   cancelEditing();
                                 }
                               }}
-                              className="h-9 w-full min-w-44 rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                              className="h-9 w-full min-w-44 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                               autoFocus
                             />
                           ) : (

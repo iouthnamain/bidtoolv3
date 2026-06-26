@@ -50,7 +50,7 @@ export default function RoleHelpPage() {
         ← Quay lại mục lục trợ giúp
       </Link>
 
-      <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+      <section className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
             <p className="section-title">Phân quyền</p>

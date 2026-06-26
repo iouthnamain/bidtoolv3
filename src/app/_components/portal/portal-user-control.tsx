@@ -49,7 +49,7 @@ export function PortalUserControl({
         disabled={isSigningOut}
         aria-label="Đăng xuất"
         title="Đăng xuất"
-        className="inline-flex items-center gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors duration-0 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-medium text-slate-600 transition-colors duration-0 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
       >
         <LogOut className="h-4 w-4" aria-hidden="true" />
         <span className="hidden sm:inline">Đăng xuất</span>

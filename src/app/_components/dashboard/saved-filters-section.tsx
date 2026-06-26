@@ -98,7 +98,9 @@ export function SavedFiltersSection() {
       await utils.search.listSavedFilters.invalidate();
     },
     onError: (error) => {
-      setActionError(error.message || "Không thể xóa bộ lọc thông minh.");
+      const message = error.message || "Không thể xóa bộ lọc thông minh.";
+      setActionError(message);
+      toast.error(message);
       setDeleteTarget(null);
     },
   });
@@ -113,9 +115,10 @@ export function SavedFiltersSection() {
       }
     },
     onError: (error) => {
-      setActionError(
-        error.message || "Không thể tạo workflow từ bộ lọc thông minh hiện tại.",
-      );
+      const message =
+        error.message || "Không thể tạo workflow từ bộ lọc thông minh hiện tại.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -233,7 +236,7 @@ export function SavedFiltersSection() {
                       <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
                         {SEARCH_MODE_LABELS[filter.mode]}
                       </span>
-                      <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
+                      <span className="rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-0.5 text-xs font-semibold text-slate-600">
                         {
                           notificationFrequencyLabels[
                             filter.notificationFrequency
@@ -257,7 +260,7 @@ export function SavedFiltersSection() {
                   {criteria.map((chip) => (
                     <span
                       key={`${filter.id}-${chip}`}
-                      className="inline-flex rounded-full border border-slate-400 bg-white px-2 py-1 text-xs font-medium text-slate-600"
+                      className="inline-flex rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-medium text-slate-600"
                     >
                       {chip}
                     </span>
@@ -276,7 +279,7 @@ export function SavedFiltersSection() {
                     href={buildSavedFilterHref(filter, {
                       savedFilterId: filter.id,
                     })}
-                    className="inline-flex items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    className="inline-flex items-center justify-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                   >
                     <Edit3 className="h-3.5 w-3.5" aria-hidden />
                     Chỉnh sửa

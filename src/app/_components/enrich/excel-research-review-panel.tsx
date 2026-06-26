@@ -320,7 +320,7 @@ export function ExcelResearchReviewPanel({
               <div
                 key={row.id}
                 className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
-                  isSelected ? "bg-violet-50" : "hover:bg-slate-50"
+                  isSelected ? "bg-violet-50" : "hover:bg-slate-100"
                 }`}
               >
                 {onBulkApprove ? (
@@ -586,7 +586,7 @@ function ExcelResearchRowDetailPanel({
           {evidence.map((item) => (
             <div
               key={item.id}
-              className="flex gap-2 rounded border border-slate-400 bg-white p-2 text-xs"
+              className="flex gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2 text-xs"
             >
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
                 {item.imageUrl && !failedImageIds.has(item.id) ? (

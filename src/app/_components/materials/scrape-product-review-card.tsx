@@ -50,7 +50,7 @@ export function ScrapeProductReviewCard({
       className={
         selected
           ? "rounded border border-blue-200 bg-blue-50 p-3 shadow-sm"
-          : "rounded border border-slate-400 bg-white p-3 shadow-sm"
+          : "rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 shadow-sm"
       }
     >
       <div className="flex items-start gap-1">
@@ -136,7 +136,7 @@ export function ScrapeProductReviewCard({
           href={sourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-400 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+          className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           Nguồn

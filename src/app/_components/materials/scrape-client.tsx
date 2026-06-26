@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { wideModalDialogClass } from "~/app/_components/ui/dialog-classes";
 import { MatchCompareDrawer } from "~/app/_components/materials/match-compare-drawer";
 import { ScrapeProgressBar } from "~/app/_components/materials/scrape-progress-bar";
 import { ScrapeProductReviewCard } from "~/app/_components/materials/scrape-product-review-card";
@@ -277,7 +278,7 @@ function emptyScrapedProduct(jobUrl: string): ScrapedProduct {
 }
 
 const scrapeFieldClass =
-  "min-h-10 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-10 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function ScrapeProductDetailDialog({
   open,
@@ -333,7 +334,7 @@ function ScrapeProductDetailDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,920px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border border-slate-400 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      className={wideModalDialogClass}
       aria-labelledby="scrape-product-detail-title"
       aria-describedby="scrape-product-detail-description"
       onCancel={(event) => {
@@ -376,7 +377,7 @@ function ScrapeProductDetailDialog({
           </div>
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded text-slate-700 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded border border-slate-500 bg-white text-slate-700 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={onClose}
             aria-label="Đóng chi tiết sản phẩm"
           >
@@ -827,7 +828,7 @@ const SCRAPE_JOBS_VIEW_MODE_KEY = "bidtool:scrape-jobs-view-mode:v1";
 const SCRAPE_JOBS_PAGE_SIZE_OPTIONS = [25, 50, 80, 100] as const;
 const DEFAULT_SCRAPE_JOBS_PAGE_SIZE = 25;
 const scrapeJobControlClass =
-  "min-h-11 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
+  "min-h-11 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
 
 type ScrapeJobSortBy =
   | "shop"
@@ -1023,7 +1024,7 @@ function ScrapeJobCard({
           ? "rounded border border-blue-300 bg-blue-50/80 p-3 shadow-[var(--shadow-raised)]"
           : selected
             ? "rounded border border-blue-200 bg-blue-50/50 p-3 shadow-[var(--shadow-raised)]"
-            : "rounded border border-slate-400 bg-white p-3 shadow-[var(--shadow-raised)]"
+            : "rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 shadow-[var(--shadow-raised)]"
       }
     >
       <div className="flex min-w-0 items-start gap-2.5">
@@ -1669,7 +1670,7 @@ function ScrapeJobsList({
           return active ? (
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 transition-colors duration-0 hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-amber-500 bg-white text-amber-800 shadow-[var(--shadow-flat)] transition-colors duration-0 hover:border-amber-600 hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
               disabled={stoppingJobId !== null}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1687,7 +1688,7 @@ function ScrapeJobsList({
           ) : (
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-700 transition-colors duration-0 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-500 bg-white text-rose-700 shadow-[var(--shadow-flat)] transition-colors duration-0 hover:border-rose-600 hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1 focus-visible:outline-none disabled:opacity-60"
               disabled={isDeletingJob}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1758,7 +1759,7 @@ function ScrapeJobsList({
   };
 
   const renderPaginationBar = () => (
-    <div className="mt-3 flex flex-col gap-1 rounded border border-slate-400 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-3 flex flex-col gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div
         className="flex flex-wrap items-center gap-2 text-xs text-slate-600"
         aria-live="polite"
@@ -1773,7 +1774,7 @@ function ScrapeJobsList({
         <label className="inline-flex items-center gap-2">
           <span>Số dòng</span>
           <select
-            className="h-10 rounded border border-slate-400 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
+            className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             aria-label="Số dòng mỗi trang"
             value={pagination.pageSize}
             onChange={(event) => {
@@ -1803,7 +1804,7 @@ function ScrapeJobsList({
             max={totalPages}
             value={pageJumpValue}
             aria-label="Nhảy tới trang"
-            className="h-10 w-14 rounded border border-slate-400 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
+            className="h-10 w-14 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             onChange={(event) => setPageJumpValue(event.target.value)}
             onBlur={submitPageJump}
             onKeyDown={(event) => {
@@ -1815,7 +1816,7 @@ function ScrapeJobsList({
         </label>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang đầu"
           disabled={pagination.pageIndex === 0}
           onClick={() => goToPage(0)}
@@ -1824,7 +1825,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang trước"
           disabled={pagination.pageIndex === 0}
           onClick={() => goToPage(pagination.pageIndex - 1)}
@@ -1833,7 +1834,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang sau"
           disabled={pagination.pageIndex + 1 >= totalPages}
           onClick={() => goToPage(pagination.pageIndex + 1)}
@@ -1842,7 +1843,7 @@ function ScrapeJobsList({
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang cuối"
           disabled={pagination.pageIndex + 1 >= totalPages}
           onClick={() => goToPage(totalPages - 1)}
@@ -1860,7 +1861,7 @@ function ScrapeJobsList({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
         <button
           type="button"
-          className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+          className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
           onClick={resetViewControls}
         >
           <div className="flex items-center justify-between gap-2">
@@ -1996,7 +1997,7 @@ function ScrapeJobsList({
             Đặt lại
           </Button>
           <div
-            className="inline-flex items-center rounded border border-slate-400 bg-white p-0.5 shadow-[var(--shadow-flat)]"
+            className="inline-flex items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-0.5"
             role="group"
             aria-label="Kiểu hiển thị"
           >
@@ -2068,7 +2069,7 @@ function ScrapeJobsList({
             {showColumnPicker ? (
               <div
                 id="scrape-jobs-column-picker"
-                className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-400 bg-white p-3 shadow-lg"
+                className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 shadow-lg"
               >
                 <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                   Cột tùy chọn
@@ -2161,7 +2162,7 @@ function ScrapeJobsList({
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2">
-            <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
+            <span className="rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-0.5 text-xs font-semibold text-slate-600">
               {activeFilterCount.toLocaleString("vi-VN")} đang áp dụng
             </span>
             <ChevronDown
@@ -3576,7 +3577,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 aria-hidden
               />
               <input
-                className="min-h-10 w-full rounded border border-slate-400 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                className="min-h-10 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 placeholder="https://shop.example.com/category"
                 spellCheck={false}
                 value={shopUrl}
@@ -3616,7 +3617,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 Cách đọc
               </span>
               <select
-                className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 value={scrapeMethod}
                 disabled={isStartingScrape}
                 onChange={(event) =>
@@ -3641,7 +3642,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 Bổ sung thông tin
               </span>
               <select
-                className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                 value={detailEnrichment}
                 disabled={isStartingScrape}
                 onChange={(event) =>
@@ -3677,7 +3678,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   step={1}
                   inputMode="numeric"
                   autoComplete="off"
-                  className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                  className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                   value={maxPages}
                   disabled={isStartingScrape}
                   onChange={(event) =>
@@ -3704,7 +3705,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   step={1}
                   inputMode="numeric"
                   autoComplete="off"
-                  className="min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                  className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                   value={maxProducts}
                   disabled={isStartingScrape}
                   onChange={(event) =>
@@ -3949,19 +3950,19 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-4">
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">Phạm vi: </span>
               {scrapeModeLabel[pendingScrapeJob.scrapeMode]}
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">Cách đọc: </span>
               {scrapeMethodLabel[pendingScrapeJob.method]}
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">Bổ sung: </span>
               {detailEnrichmentLabel[pendingScrapeJob.detailEnrichment]}
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">URL: </span>
               <span className="break-all">{pendingScrapeJob.url}</span>
             </div>
@@ -4047,7 +4048,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
           </div>
 
           <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">Đang đọc: </span>
               <span className="break-all">
                 {activeJob.currentUrls.length > 0
@@ -4055,17 +4056,17 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   : "-"}
               </span>
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">
                 Queue còn lại:{" "}
               </span>
               {activeJob.queueLength.toLocaleString("vi-VN")}
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">Phạm vi: </span>
               {scrapeModeLabel[activeJob.scrapeMode]}
             </div>
-            <div className="rounded border border-slate-400 bg-white px-3 py-2">
+            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
               <span className="font-semibold text-slate-800">
                 Cập nhật cuối:{" "}
               </span>
@@ -4368,7 +4369,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
               className={
                 isImportActive
                   ? "rounded border border-blue-200 bg-blue-50 p-3"
-                  : "rounded border border-slate-400 bg-white p-3"
+                  : "rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3"
               }
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4476,7 +4477,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                     className={
                       qualityFilter === filter
                         ? "rounded-full border border-blue-400 bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900"
-                        : "rounded-full border border-slate-400 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:border-blue-200"
+                        : "rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-1 text-xs font-semibold text-slate-600 hover:border-blue-200"
                     }
                     onClick={() =>
                       setQualityFilter((current) =>
@@ -4586,7 +4587,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             ? "bg-blue-100/80"
                             : selected
                               ? "bg-blue-50/70 hover:bg-blue-50"
-                              : "hover:bg-slate-50"
+                              : "hover:bg-slate-100"
                         }`}
                         onClick={() => openProductDetail(item)}
                         onKeyDown={(event) => {
@@ -4683,7 +4684,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                             href={item.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                             onClick={(event) => event.stopPropagation()}
                             aria-label={`Mở trang nguồn của ${item.name}`}
                             title={item.sourceUrl}
@@ -4698,7 +4699,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                           <div className="inline-flex items-center gap-1">
                             <button
                               type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openProductDetail(item);
@@ -4767,7 +4768,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   <label className="flex items-center gap-2">
                     <span>Dòng/trang</span>
                     <select
-                      className="rounded border border-slate-400 bg-white px-2 py-1"
+                      className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1"
                       value={productPageSize}
                       aria-label="Số sản phẩm mỗi trang"
                       onChange={(event) => {
@@ -4895,7 +4896,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                       {item.materialId ? (
                         <Link
                           href={`/materials/${item.materialId}`}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-blue-700"
                           aria-label={`Mở vật tư ${item.name}`}
                         >
                           <ArrowUpRight className="h-4 w-4" aria-hidden />

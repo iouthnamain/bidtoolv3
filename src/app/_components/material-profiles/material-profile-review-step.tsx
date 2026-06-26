@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReviewPanel } from "~/app/_components/materials/review/review-panel";
 import type { ReviewRowStatus } from "~/app/_components/materials/review/review-types";
 import { Button, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import {
   countFieldsToFill,
   countResolvedRows,
@@ -98,13 +99,19 @@ export function MaterialProfileReviewStep({
   decisionsRef.current = decisions;
 
   const utils = api.useUtils();
+  const toast = useToast();
   const updateReviewDecision =
-    api.materialProfile.updateItemReviewDecision.useMutation();
+    api.materialProfile.updateItemReviewDecision.useMutation({
+      onError: (error) =>
+        toast.error(error.message || "Không lưu được quyết định."),
+    });
   const batchUpdateReviewDecisions =
     api.materialProfile.batchUpdateItemReviewDecisions.useMutation({
       onSuccess: () => {
         void utils.materialProfile.get.invalidate({ workspaceId });
       },
+      onError: (error) =>
+        toast.error(error.message || "Không lưu được quyết định hàng loạt."),
     });
 
   useEffect(() => {
@@ -194,6 +201,12 @@ export function MaterialProfileReviewStep({
     try {
       await flushDecisions();
       onContinue();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không lưu được quyết định trước khi tiếp tục.",
+      );
     } finally {
       setIsFlushing(false);
     }

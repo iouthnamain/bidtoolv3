@@ -90,7 +90,7 @@ export function AdminHubClient() {
             <Link
               key={card.href}
               href={card.href}
-              className="group rounded border border-slate-400 bg-white p-4 shadow-sm transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/60 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="group rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/60 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <div className="flex items-start justify-between gap-1">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-blue-50 text-blue-700 group-hover:bg-blue-100">

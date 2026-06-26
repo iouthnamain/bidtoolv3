@@ -38,10 +38,10 @@ const emptyForm: MaterialCreateFormState = {
 };
 
 const inputClass =
-  "min-h-11 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const textareaClass =
-  "min-h-32 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-32 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function Field({
   label,
@@ -150,9 +150,12 @@ export function MaterialCreateClient() {
       }
 
       router.push(`/materials/${material.id}`);
+      toast.success(`Đã thêm "${material.name}".`);
     },
     onError: (error) => {
-      setActionError(error.message || "Không thể tạo vật tư.");
+      const message = error.message || "Không thể tạo vật tư.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { Button } from "./button";
+import { modalDialogClass } from "./dialog-classes";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -65,7 +66,7 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed inset-0 z-50 m-auto w-full max-w-md rounded border border-slate-400 bg-white p-0 shadow-[var(--shadow-overlay)] backdrop:bg-slate-900/45"
+      className={modalDialogClass}
       onKeyDown={handleKeyDown}
       onClick={handleBackdropClick}
       aria-labelledby="confirm-dialog-title"

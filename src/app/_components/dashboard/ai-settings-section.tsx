@@ -127,7 +127,7 @@ export function AiSettingsSection() {
         action={
           <Link
             href="/chat"
-            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50"
+            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100"
           >
             Mở chat sandbox
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -182,7 +182,7 @@ export function AiSettingsSection() {
                 placeholder={
                   config?.openRouter?.configured ? "••••••••••••••••" : "sk-or-v1-…"
                 }
-                className="h-11 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
+                className="h-11 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
               />
             </FilterField>
 
@@ -233,7 +233,7 @@ export function AiSettingsSection() {
                 value={defaultModel}
                 disabled={isLoading}
                 onChange={(event) => setDefaultModel(event.target.value)}
-                className="h-11 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
+                className="h-11 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 font-mono text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
               />
               <datalist id="openrouter-model-suggestions">
                 {POPULAR_MODELS.map((model) => (

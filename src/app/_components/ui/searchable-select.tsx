@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
+import { FloatingPanel } from "~/app/_components/ui/floating-panel";
+
 type SearchableSelectProps = {
   value: string;
   onChange: (value: string) => void;
@@ -26,6 +28,7 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -42,7 +45,11 @@ export function SearchableSelect({
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -70,7 +77,7 @@ export function SearchableSelect({
     <div ref={rootRef} className={`relative ${className}`}>
       <button
         type="button"
-        className="flex min-h-11 w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
+        className="flex min-h-11 w-full items-center justify-between gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-controls={listId}
@@ -85,12 +92,12 @@ export function SearchableSelect({
         />
       </button>
 
-      {open ? (
+      <FloatingPanel anchorRef={rootRef} contentRef={panelRef} open={open}>
         <div
           id={listId}
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded border border-slate-400 bg-white shadow-lg"
+          className="flex h-full max-h-[inherit] flex-col overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-overlay)]"
         >
-          <div className="border-b border-slate-400 p-2">
+          <div className="shrink-0 border-b border-slate-400 p-2">
             <input
               ref={searchInputRef}
               type="search"
@@ -102,14 +109,14 @@ export function SearchableSelect({
             />
           </div>
           <ul
-            className="max-h-56 overflow-y-auto py-1 text-sm"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain py-1 text-sm"
             role="listbox"
             aria-label={ariaLabel}
           >
             <li role="option" aria-selected={!value}>
               <button
                 type="button"
-                className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${!value ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-700"}`}
+                className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-100 ${!value ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-700"}`}
                 onClick={() => selectOption("")}
               >
                 {emptyOptionLabel}
@@ -124,7 +131,7 @@ export function SearchableSelect({
                 <li key={option} role="option" aria-selected={value === option}>
                   <button
                     type="button"
-                    className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-50 ${value === option ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-800"}`}
+                    className={`flex min-h-10 w-full items-center px-3 py-2 text-left hover:bg-slate-100 ${value === option ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-800"}`}
                     onClick={() => selectOption(option)}
                   >
                     {option}
@@ -134,13 +141,13 @@ export function SearchableSelect({
             )}
           </ul>
           {truncated ? (
-            <p className="border-t border-slate-400 px-3 py-2 text-xs text-amber-700">
+            <p className="shrink-0 border-t border-slate-400 px-3 py-2 text-xs text-amber-700">
               Hiển thị tối đa 200 giá trị — dùng ô tìm kiếm chính nếu không
               thấy.
             </p>
           ) : null}
         </div>
-      ) : null}
+      </FloatingPanel>
     </div>
   );
 }

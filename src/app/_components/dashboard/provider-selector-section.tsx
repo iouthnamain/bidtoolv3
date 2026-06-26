@@ -105,7 +105,7 @@ export function ProviderSelectorSection() {
             return (
               <fieldset
                 key={feature.id}
-                className="rounded border border-slate-400 bg-white p-4"
+                className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4"
               >
                 <legend className="sr-only">{feature.label}</legend>
                 <div className="mb-3 flex items-start gap-1">
@@ -143,7 +143,7 @@ export function ProviderSelectorSection() {
                           className={`flex flex-col gap-1 rounded border p-3 text-left transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
                             isSelected
                               ? "border-blue-500 bg-blue-50"
-                              : "border-slate-400 bg-white hover:border-slate-400 hover:bg-slate-50"
+                              : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">

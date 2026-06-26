@@ -35,7 +35,7 @@ export function DashboardShell({
               {description}
             </p>
           </div>
-          <div className="rounded border border-slate-400 bg-white px-2 py-1 text-xs font-bold tracking-wide text-slate-700 shadow-[var(--shadow-flat)]">
+          <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-bold tracking-wide text-slate-700">
             BidTool v3
           </div>
         </div>

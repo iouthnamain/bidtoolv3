@@ -48,7 +48,7 @@ const sourceTypeLabel: Record<CatalogDocumentListItem["sourceType"], string> = {
 };
 
 const inputClass =
-  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const selectClass = `${inputClass} cursor-pointer pr-8`;
 
@@ -551,7 +551,7 @@ export function CatalogPdfLibraryClient({
                               ? "bg-blue-50"
                               : isSelected
                                 ? "bg-blue-50/70"
-                                : "hover:bg-slate-50"
+                                : "hover:bg-slate-100"
                           }`}
                         >
                           <td className="px-2 py-2.5 align-top">
@@ -1256,7 +1256,7 @@ function CatalogPdfDetailPanel({
                       <li key={material.id}>
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
+                          className="flex w-full items-center justify-between gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
                           onClick={() =>
                             attachMaterials.mutate({
                               documentId,

@@ -295,7 +295,7 @@ export function JobsListClient() {
               className={`inline-flex min-h-10 items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                 activeFilter === filterKey
                   ? "border-transparent text-white"
-                  : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
               }`}
               style={
                 activeFilter === filterKey
@@ -418,7 +418,7 @@ function JobRow({
   );
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-50">
+    <div className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-100">
       {onOpen ? (
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
           {body}

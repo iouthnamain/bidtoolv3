@@ -168,7 +168,7 @@ export function ChatSandboxClient() {
                         className={`max-w-[85%] rounded px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
                           message.role === "user"
                             ? "bg-blue-600 text-white"
-                            : "border border-slate-400 bg-white text-slate-900 shadow-sm"
+                            : "border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-900 shadow-sm"
                         }`}
                       >
                         {message.content}
@@ -190,7 +190,7 @@ export function ChatSandboxClient() {
 
                 {chatMutation.isPending ? (
                   <div className="flex justify-start">
-                    <div className="inline-flex items-center gap-2 rounded border border-slate-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+                    <div className="inline-flex items-center gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3 text-sm text-slate-700 shadow-sm">
                       <Loader2
                         className="h-4 w-4 animate-spin"
                         aria-hidden
@@ -209,7 +209,7 @@ export function ChatSandboxClient() {
                   <input
                     value={model}
                     onChange={(event) => setModel(event.target.value)}
-                    className="mt-1 h-10 w-full rounded border border-slate-400 bg-white px-3 font-mono text-sm text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
+                    className="mt-1 h-10 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 font-mono text-sm text-slate-900 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none"
                   />
                 </label>
 
@@ -221,7 +221,7 @@ export function ChatSandboxClient() {
                     rows={3}
                     disabled={chatMutation.isPending}
                     placeholder="Nhập tin nhắn…"
-                    className="min-h-[88px] flex-1 resize-y rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:bg-slate-100"
+                    className="min-h-[88px] flex-1 resize-y rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors duration-0 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none disabled:bg-slate-100"
                   />
                   <Button
                     type="button"

@@ -146,7 +146,7 @@ export function WorkflowsListClient() {
             className={`inline-flex min-h-10 items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
               activeFilter === filterKey
                 ? "border-transparent text-white"
-                : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
+                : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
             }`}
             style={activeFilter === filterKey ? { background: 'linear-gradient(135deg, #0e7490, #0369a1)' } : undefined}
           >

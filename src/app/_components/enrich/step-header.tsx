@@ -2,6 +2,8 @@
 
 import { Check } from "lucide-react";
 
+import { stepNavReachableClass } from "~/app/_components/ui/button-classes";
+
 export type EnrichStep = 1 | 2 | 3 | 4;
 
 const STEPS: Array<{ id: EnrichStep; label: string }> = [
@@ -63,7 +65,7 @@ export function StepHeader({
                   isCurrent
                     ? "bg-blue-700 text-white"
                     : isReachable
-                      ? "text-slate-900 hover:bg-slate-100"
+                      ? stepNavReachableClass
                       : "text-slate-600"
                 }`}
               >

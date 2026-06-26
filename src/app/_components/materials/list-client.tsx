@@ -161,7 +161,7 @@ const catalogStatusOptions: Array<{ value: CatalogStatus; label: string }> = [
 ];
 
 const materialControlClass =
-  "min-h-11 w-full rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
+  "min-h-11 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 shadow-sm transition-colors focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none";
 
 type MaterialViewSearchParams = {
   get(name: string): string | null;
@@ -331,7 +331,7 @@ function MaterialMobileCard({
       className={`rounded border p-4 shadow-[var(--shadow-raised)] transition-all duration-0 ${
         row.getIsSelected()
           ? "border-blue-200 bg-blue-50/80"
-          : "border-slate-400 bg-white"
+          : "border-slate-500 bg-white shadow-sm"
       }`}
     >
       <div className="flex items-start gap-1">
@@ -405,7 +405,7 @@ function MaterialMobileCard({
         <div className="flex shrink-0 gap-1.5">
           <Link
             href={`/materials/${material.id}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             aria-label={`Mở chi tiết ${material.name}`}
           >
             <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -1305,7 +1305,7 @@ export function MaterialsListClient() {
           <div className="flex justify-end gap-1.5">
             <Link
               href={`/materials/${row.original.id}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-blue-700"
               aria-label={`Mở chi tiết ${row.original.name}`}
             >
               <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -1423,7 +1423,7 @@ export function MaterialsListClient() {
 
   const renderPaginationBar = (placement: "top" | "bottom") => (
     <div
-      className={`flex flex-col gap-1 rounded border border-slate-400 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
+      className={`flex flex-col gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${
         placement === "top" ? "mt-3" : "mt-3"
       }`}
     >
@@ -1442,7 +1442,7 @@ export function MaterialsListClient() {
         <label className="inline-flex items-center gap-2">
           <span>Số dòng</span>
           <select
-            className="h-10 rounded border border-slate-400 bg-white px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
+            className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             aria-label="Số dòng mỗi trang"
             value={pagination.pageSize}
             onChange={(event) => {
@@ -1477,7 +1477,7 @@ export function MaterialsListClient() {
             max={totalPages}
             value={pageJumpValue}
             aria-label="Nhảy tới trang"
-            className="h-10 w-14 rounded border border-slate-400 bg-white px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
+            className="h-10 w-14 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-center text-xs font-semibold text-slate-800 shadow-sm focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 focus-visible:outline-none sm:h-8"
             onChange={(event) => setPageJumpValue(event.target.value)}
             onBlur={submitPageJump}
             onKeyDown={(event) => {
@@ -1489,7 +1489,7 @@ export function MaterialsListClient() {
         </label>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang đầu"
           disabled={!canGoToPreviousPage || isFetching}
           onClick={() => goToPage(0)}
@@ -1498,7 +1498,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang trước"
           disabled={!canGoToPreviousPage || isFetching}
           onClick={() => goToPage(pagination.pageIndex - 1)}
@@ -1507,7 +1507,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang sau"
           disabled={!canGoToNextPage || isFetching}
           onClick={() => goToPage(pagination.pageIndex + 1)}
@@ -1516,7 +1516,7 @@ export function MaterialsListClient() {
         </button>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-400 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
+          className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 sm:h-8 sm:w-8"
           aria-label="Trang cuối"
           disabled={!canGoToNextPage || isFetching}
           onClick={() => goToPage(totalPages - 1)}
@@ -1569,7 +1569,7 @@ export function MaterialsListClient() {
             </Link>
             <Link
               href="/materials/import"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               Nhập sheet
@@ -1589,7 +1589,7 @@ export function MaterialsListClient() {
           <PermissionGate permission="scrape:run">
             <Link
               href="/materials/scrape"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               <Search className="h-4 w-4" aria-hidden />
               Quét cửa hàng
@@ -1600,7 +1600,7 @@ export function MaterialsListClient() {
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
           <button
             type="button"
-            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1712,7 +1712,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1732,7 +1732,7 @@ export function MaterialsListClient() {
           </button>
           <button
             type="button"
-            className="rounded border border-slate-400 bg-white px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-2 text-left shadow-sm transition hover:ring-2 hover:ring-slate-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={scrollToCatalog}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1805,7 +1805,7 @@ export function MaterialsListClient() {
                 Đặt lại
               </Button>
               <div
-                className="inline-flex items-center rounded border border-slate-400 bg-white p-0.5 shadow-[var(--shadow-flat)]"
+                className="inline-flex items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-0.5"
                 role="group"
                 aria-label="Kiểu hiển thị"
               >
@@ -1877,7 +1877,7 @@ export function MaterialsListClient() {
                 {showColumnPicker ? (
                   <div
                     id="material-column-picker"
-                    className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-400 bg-white p-3 shadow-lg"
+                    className="absolute top-full right-0 z-20 mt-2 w-56 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 shadow-lg"
                   >
                     <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
                       Cột tùy chọn
@@ -1965,7 +1965,7 @@ export function MaterialsListClient() {
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
+                <span className="rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-0.5 text-xs font-semibold text-slate-600">
                   {activeFilterCount.toLocaleString("vi-VN")} đang áp dụng
                 </span>
                 <ChevronDown
@@ -2204,7 +2204,7 @@ export function MaterialsListClient() {
             <label
               className={`inline-flex items-center gap-2 rounded border px-3 py-2 text-xs font-semibold ${
                 visibleMaterials.length === 0
-                  ? "cursor-not-allowed border-slate-400 bg-white text-slate-600"
+                  ? "cursor-not-allowed border-slate-500 bg-white text-slate-900 shadow-sm"
                   : "cursor-pointer border-blue-200 bg-white text-slate-800 hover:bg-blue-50"
               }`}
             >
@@ -2449,7 +2449,7 @@ export function MaterialsListClient() {
                     <li key={document.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-violet-300 hover:bg-violet-50"
+                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-violet-300 hover:bg-violet-50"
                         onClick={() =>
                           attachPdfToMaterials.mutate({
                             documentId: document.id,
@@ -2518,7 +2518,7 @@ export function MaterialsListClient() {
             {!showInitialLoading &&
             !catalogError &&
             visibleRows.length === 0 ? (
-              <div className="rounded border border-slate-400 bg-white px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
+              <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-6 sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <EmptyState
                   title="Chưa có sản phẩm / vật tư."
                   description="Tạo thủ công hoặc nhập sheet để bắt đầu danh mục catalog."
@@ -2532,7 +2532,7 @@ export function MaterialsListClient() {
                       </Link>
                       <Link
                         href="/materials/import"
-                        className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                       >
                         Nhập sheet
                       </Link>
@@ -2683,13 +2683,13 @@ export function MaterialsListClient() {
                             </Link>
                             <Link
                               href="/materials/import"
-                              className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                             >
                               Nhập sheet
                             </Link>
                             <Link
                               href="/materials/scrape"
-                              className="inline-flex items-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                             >
                               Quét cửa hàng
                             </Link>

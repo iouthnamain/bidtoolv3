@@ -474,7 +474,7 @@ export function AboutVersionSection() {
         ) : null}
 
         {versionStatus?.changelog ? (
-          <div className="rounded border border-slate-400 bg-white px-4 py-3">
+          <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
             <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
               Ghi chú phát hành
             </p>

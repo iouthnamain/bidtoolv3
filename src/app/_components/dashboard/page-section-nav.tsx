@@ -90,11 +90,11 @@ export type PageSectionNavItem = {
 };
 
 const defaultToneStyles = {
-  linkActive: "border-blue-300 bg-blue-50 text-blue-950",
+  linkActive: "border-blue-400 bg-blue-100 text-blue-950 shadow-sm",
   linkInactive:
-    "border-slate-400 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50/70",
-  iconActive: "bg-blue-100 text-blue-700",
-  iconInactive: "bg-slate-100 text-slate-600",
+    "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-blue-400 hover:bg-blue-50",
+  iconActive: "bg-blue-200 text-blue-800",
+  iconInactive: "bg-slate-200 text-slate-700",
   description: "text-slate-600",
 };
 
@@ -111,7 +111,7 @@ const toneStyles: Record<
   blue: {
     linkActive: "border-blue-400 bg-blue-100 text-blue-950 shadow-sm",
     linkInactive:
-      "border-blue-200 bg-blue-50/80 text-blue-950 hover:border-blue-300 hover:bg-blue-50",
+      "border-blue-300 bg-white text-blue-950 shadow-sm hover:border-blue-400 hover:bg-blue-50",
     iconActive: "bg-blue-200 text-blue-800",
     iconInactive: "bg-blue-100 text-blue-700",
     description: "text-blue-700",
@@ -119,7 +119,7 @@ const toneStyles: Record<
   emerald: {
     linkActive: "border-emerald-400 bg-emerald-100 text-emerald-950 shadow-sm",
     linkInactive:
-      "border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:border-emerald-300 hover:bg-emerald-50",
+      "border-emerald-300 bg-white text-emerald-950 shadow-sm hover:border-emerald-400 hover:bg-emerald-50",
     iconActive: "bg-emerald-200 text-emerald-800",
     iconInactive: "bg-emerald-100 text-emerald-700",
     description: "text-emerald-700",
@@ -127,7 +127,7 @@ const toneStyles: Record<
   amber: {
     linkActive: "border-amber-400 bg-amber-100 text-amber-950 shadow-sm",
     linkInactive:
-      "border-amber-200 bg-amber-50/80 text-amber-950 hover:border-amber-300 hover:bg-amber-50",
+      "border-amber-300 bg-white text-amber-950 shadow-sm hover:border-amber-400 hover:bg-amber-50",
     iconActive: "bg-amber-200 text-amber-800",
     iconInactive: "bg-amber-100 text-amber-700",
     description: "text-amber-700",
@@ -135,7 +135,7 @@ const toneStyles: Record<
   violet: {
     linkActive: "border-violet-400 bg-violet-100 text-violet-950 shadow-sm",
     linkInactive:
-      "border-violet-200 bg-violet-50/80 text-violet-950 hover:border-violet-300 hover:bg-violet-50",
+      "border-violet-300 bg-white text-violet-950 shadow-sm hover:border-violet-400 hover:bg-violet-50",
     iconActive: "bg-violet-200 text-violet-800",
     iconInactive: "bg-violet-100 text-violet-700",
     description: "text-violet-700",
@@ -143,17 +143,17 @@ const toneStyles: Record<
   rose: {
     linkActive: "border-rose-400 bg-rose-100 text-rose-950 shadow-sm",
     linkInactive:
-      "border-rose-200 bg-rose-50/80 text-rose-950 hover:border-rose-300 hover:bg-rose-50",
+      "border-rose-300 bg-white text-rose-950 shadow-sm hover:border-rose-400 hover:bg-rose-50",
     iconActive: "bg-rose-200 text-rose-800",
     iconInactive: "bg-rose-100 text-rose-700",
     description: "text-rose-700",
   },
   slate: {
-    linkActive: "border-slate-400 bg-slate-100 text-slate-950 shadow-sm",
+    linkActive: "border-slate-500 bg-slate-200 text-slate-950 shadow-sm",
     linkInactive:
-      "border-slate-400 bg-slate-50/80 text-slate-950 hover:border-slate-400 hover:bg-slate-50",
-    iconActive: "bg-slate-200 text-slate-800",
-    iconInactive: "bg-slate-100 text-slate-700",
+      "border-slate-500 bg-white text-slate-950 shadow-sm hover:border-slate-600 hover:bg-slate-100",
+    iconActive: "bg-slate-300 text-slate-900",
+    iconInactive: "bg-slate-200 text-slate-700",
     description: "text-slate-600",
   },
 };
@@ -240,7 +240,7 @@ export function PageSectionNav({
           </span>
         </p>
 
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 md:grid-cols-4 xl:grid-cols-6">
+        <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible sm:pb-0 md:grid-cols-4 xl:grid-cols-6">
           {items.map((item) => {
             const Icon = iconMap[item.icon];
             const active = isItemActive(pathname, item);
@@ -284,7 +284,7 @@ export function PageSectionNav({
         </span>
       </p>
 
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-4">
+      <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-4">
         {items.map((item) => {
           const Icon = iconMap[item.icon];
           const active = isItemActive(pathname, item);

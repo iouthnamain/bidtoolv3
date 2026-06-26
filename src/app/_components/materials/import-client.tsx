@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 function fileToBase64(file: File) {
@@ -259,6 +260,7 @@ function XlsxPreviewPanel({
 
 export function MaterialImportClient() {
   const utils = api.useUtils();
+  const toast = useToast();
   const previewRequestIdRef = useRef(0);
   const [xlsxFile, setXlsxFile] = useState<File | null>(null);
   const [xlsxBase64, setXlsxBase64] = useState<string | null>(null);
@@ -283,6 +285,9 @@ export function MaterialImportClient() {
 
   const importXlsx = api.material.importMaterialsXlsx.useMutation({
     onSuccess: async (result) => {
+      toast.success(
+        `Đã nhập ${result.inserted.toLocaleString("vi-VN")} vật tư từ Excel${result.skipped > 0 ? `, bỏ qua ${result.skipped.toLocaleString("vi-VN")}` : ""}.`,
+      );
       setLastResult({
         source: "Excel",
         inserted: result.inserted,
@@ -302,6 +307,7 @@ export function MaterialImportClient() {
       ]);
     },
     onError: (error) => {
+      toast.error(error.message || "Không thể nhập file Excel.");
       setLastResult(null);
       setImportError(error.message || "Không thể nhập file Excel.");
     },
@@ -309,6 +315,9 @@ export function MaterialImportClient() {
 
   const importCsv = api.material.importMaterialsCsv.useMutation({
     onSuccess: async (result) => {
+      toast.success(
+        `Đã nhập ${result.inserted.toLocaleString("vi-VN")} vật tư từ CSV${result.skipped > 0 ? `, bỏ qua ${result.skipped.toLocaleString("vi-VN")}` : ""}.`,
+      );
       setLastResult({
         source: "CSV",
         inserted: result.inserted,
@@ -324,6 +333,7 @@ export function MaterialImportClient() {
       ]);
     },
     onError: (error) => {
+      toast.error(error.message || "Không thể nhập CSV.");
       setLastResult(null);
       setImportError(error.message || "Không thể nhập CSV.");
     },
@@ -370,6 +380,7 @@ export function MaterialImportClient() {
             if (requestId !== previewRequestIdRef.current) {
               return;
             }
+            toast.error(error.message || "Không thể tạo preview Excel.");
             setXlsxPreview(null);
             setImportError(error.message || "Không thể tạo preview Excel.");
           },
@@ -379,9 +390,10 @@ export function MaterialImportClient() {
       if (requestId !== previewRequestIdRef.current) {
         return;
       }
-      setImportError(
-        error instanceof Error ? error.message : "Không đọc được tệp Excel.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Không đọc được tệp Excel.";
+      toast.error(message);
+      setImportError(message);
     }
   };
 
@@ -424,7 +436,7 @@ export function MaterialImportClient() {
           ) : null}
           <Link
             href="/materials/new"
-            className="inline-flex items-center justify-center rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
           >
             Thêm thủ công
           </Link>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { parseCsvList } from "~/lib/search-criteria";
 import { SEARCH_MODE_LABELS, type SearchMode } from "~/lib/search-modes";
 import { normalizeWorkflowFilterConfig } from "~/lib/workflow-config";
@@ -36,6 +37,7 @@ export function WorkflowDetailEditClient({
     { initialData: initialWorkflow },
   );
   const utils = api.useUtils();
+  const toast = useToast();
   const workflow = workflowQuery.data;
   const initialFilterConfig = normalizeWorkflowFilterConfig(
     initialWorkflow.triggerConfig,
@@ -108,10 +110,14 @@ export function WorkflowDetailEditClient({
 
   const updateWorkflow = api.workflow.update.useMutation({
     onSuccess: async () => {
+      toast.success("Đã lưu workflow.");
       await Promise.all([
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.list.invalidate(),
       ]);
+    },
+    onError: () => {
+      toast.error("Không thể lưu workflow.");
     },
   });
 
@@ -144,7 +150,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Loại trigger</span>
           <select
-            className="rounded border border-slate-400 bg-white px-3 py-2"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2"
             value={triggerType}
             onChange={(event) =>
               setTriggerType(event.target.value as typeof triggerType)
@@ -159,7 +165,7 @@ export function WorkflowDetailEditClient({
         <label className="grid gap-1.5 text-sm">
           <span className="font-medium text-slate-700">Chế độ tìm kiếm</span>
           <select
-            className="rounded border border-slate-400 bg-white px-3 py-2"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2"
             value={searchMode}
             onChange={(event) =>
               setSearchMode(event.target.value as SearchMode)

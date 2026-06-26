@@ -293,7 +293,7 @@ function CollapseToggle({
       onClick={onToggle}
       aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
       title={`${collapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
-      className={`flex h-8 w-8 items-center justify-center rounded border border-slate-400 bg-white text-slate-600 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
+      className={`flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-600 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
     >
       {collapsed ? (
         <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
@@ -470,9 +470,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         <AdminUpdateBanner />
         <main
           id="main-content"
-          className="min-h-0 flex-1 overflow-y-auto bg-slate-50"
+          className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-slate-50"
         >
-          <div className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+          <div className="mx-auto w-full min-w-0 max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}
           </div>
         </main>

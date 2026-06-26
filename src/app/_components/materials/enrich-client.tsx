@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, ConfirmDialog, EmptyState } from "~/app/_components/ui";
+import { wideModalDialogClass } from "~/app/_components/ui/dialog-classes";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   ENRICHABLE_FIELDS,
@@ -723,7 +724,7 @@ export function MaterialEnrichClient({
                 return (
                   <div
                     key={job.id}
-                    className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-50"
+                    className="flex flex-wrap items-center justify-between gap-1 p-3 hover:bg-slate-100"
                   >
                     <button
                       type="button"
@@ -993,7 +994,7 @@ export function MaterialEnrichClient({
                         item.status,
                       );
                       return (
-                        <tr key={item.id} className="hover:bg-slate-50/80">
+                        <tr key={item.id} className="hover:bg-slate-100/80">
                           <td className="px-3 py-2">
                             <Link
                               href={`/materials/${item.materialId}`}
@@ -1279,7 +1280,7 @@ function EnrichmentReviewDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[min(92dvh,900px)] w-[min(960px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded border border-slate-400 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50"
+      className={wideModalDialogClass}
       onCancel={(event) => {
         event.preventDefault();
         if (!isCommitting && !isRejecting) {
@@ -1316,7 +1317,7 @@ function EnrichmentReviewDialog({
           </div>
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded border border-slate-500 bg-white text-slate-700 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
             onClick={onClose}
             aria-label="Đóng"
           >
@@ -1498,7 +1499,7 @@ function EnrichmentReviewDialog({
                       className={`flex cursor-pointer items-start gap-1 rounded border p-3 ${
                         candidate.isSelected
                           ? "border-blue-300 bg-blue-50"
-                          : "border-slate-400 bg-white hover:bg-slate-50"
+                          : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       <input

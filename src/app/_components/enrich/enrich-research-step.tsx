@@ -292,12 +292,12 @@ export function EnrichResearchStep({
             </p>
           </div>
 
-          <fieldset className="rounded border border-slate-400 bg-white p-3 text-sm text-slate-700">
+          <fieldset className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3 text-sm text-slate-700">
             <legend className="px-1 text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
               Phạm vi nghiên cứu
             </legend>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-50">
+              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-100">
                 <input
                   type="radio"
                   name="excel-research-scope"
@@ -317,7 +317,7 @@ export function EnrichResearchStep({
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-50">
+              <label className="flex cursor-pointer items-start gap-2 rounded border border-slate-400 px-3 py-2 hover:bg-slate-100">
                 <input
                   type="radio"
                   name="excel-research-scope"

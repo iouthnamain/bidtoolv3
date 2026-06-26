@@ -60,7 +60,7 @@ export function ProductCandidateCard({
       className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         isSelected
           ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
-          : "border-slate-400 bg-white hover:border-slate-400 hover:bg-slate-50"
+          : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
       }`}
     >
       {isRecommended ? (
@@ -71,7 +71,7 @@ export function ProductCandidateCard({
       ) : null}
       {hotkeyIndex && hotkeyIndex <= 9 ? (
         <span
-          className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 bg-white text-xs font-bold text-slate-700 tabular-nums"
+          className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-xs font-bold text-slate-700 tabular-nums"
           aria-hidden
         >
           {hotkeyIndex}

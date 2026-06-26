@@ -51,12 +51,12 @@ export default function DocumentsPage() {
           file vật tư.
         </p>
 
-        <div className="mt-4 divide-y divide-slate-200 rounded border border-slate-400 bg-white">
+        <div className="mt-4 divide-y divide-slate-200 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
           {documentLinks.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="group flex items-center justify-between gap-2 px-3 py-3 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="group flex items-center justify-between gap-2 px-3 py-3 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-slate-950">

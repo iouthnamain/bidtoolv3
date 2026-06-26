@@ -49,12 +49,18 @@ export function NotificationsPageClient() {
 
   const markAsRead = api.notification.markAsRead.useMutation({
     onSuccess: invalidateAll,
+    onError: () => {
+      toast.error("Không thể đánh dấu đã đọc.");
+    },
   });
 
   const markAllAsRead = api.notification.markAllAsRead.useMutation({
     onSuccess: async () => {
       toast.success("Đã đánh dấu tất cả đã đọc.");
       await invalidateAll();
+    },
+    onError: () => {
+      toast.error("Không thể đánh dấu tất cả đã đọc.");
     },
   });
 
@@ -63,6 +69,9 @@ export function NotificationsPageClient() {
       toast.success(`Đã đánh dấu ${result.count} mục đã đọc.`);
       sel.clear();
       await invalidateAll();
+    },
+    onError: () => {
+      toast.error("Không thể đánh dấu đã đọc.");
     },
   });
 
@@ -183,7 +192,7 @@ export function NotificationsPageClient() {
                   />
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded border border-slate-400 bg-white text-white transition-colors peer-checked:border-blue-700 peer-checked:bg-blue-700"
+                    className="pointer-events-none flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-white transition-colors peer-checked:border-blue-700 peer-checked:bg-blue-700"
                   >
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   </span>

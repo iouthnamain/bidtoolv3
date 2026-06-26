@@ -26,6 +26,7 @@ import {
   getSearchPathForMode,
   readSearchModeFromPathname,
 } from "~/lib/search-routes";
+import { useToast } from "~/app/_components/ui/toast";
 import { api } from "~/trpc/react";
 
 import { selectedKey, type FormState, type SearchItem } from "./search-types";
@@ -183,6 +184,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     draftCriteria.publishedFrom > draftCriteria.publishedTo;
 
   const utils = api.useUtils();
+  const toast = useToast();
 
   const savedFilterQuery = api.search.getSavedFilter.useQuery(
     { id: savedFilterId ?? 0 },
@@ -257,7 +259,9 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
-      setSmartViewSuccess(`Đã lưu bộ lọc thông minh "${savedFilter.name}".`);
+      const message = `Đã lưu bộ lọc thông minh "${savedFilter.name}".`;
+      setSmartViewSuccess(message);
+      toast.success(message);
       setSmartViewName(savedFilter.name);
       setSavedFilterId(savedFilter.id);
       setSmartViewFrequency(savedFilter.notificationFrequency);
@@ -265,14 +269,18 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể lưu bộ lọc thông minh.");
+      const message = error.message ?? "Không thể lưu bộ lọc thông minh.";
+      setSaveError(message);
+      toast.error(message);
     },
   });
 
   const updateSavedFilter = api.search.updateSavedFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
-      setSmartViewSuccess(`Đã cập nhật bộ lọc thông minh "${savedFilter.name}".`);
+      const message = `Đã cập nhật bộ lọc thông minh "${savedFilter.name}".`;
+      setSmartViewSuccess(message);
+      toast.success(message);
       setSmartViewName(savedFilter.name);
       setSmartViewFrequency(savedFilter.notificationFrequency);
       hydratedSavedFilterKeyRef.current = `${savedFilter.id}:${savedFilter.updatedAt}`;
@@ -283,28 +291,37 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể cập nhật bộ lọc thông minh.");
+      const message = error.message ?? "Không thể cập nhật bộ lọc thông minh.";
+      setSaveError(message);
+      toast.error(message);
     },
   });
 
   const addWatchlist = api.watchlist.addItem.useMutation({
     onSuccess: async (_item, variables) => {
-      setWatchlistSuccess(`Đã thêm "${variables.label}" vào danh sách theo dõi.`);
+      const message = `Đã thêm "${variables.label}" vào danh sách theo dõi.`;
+      setWatchlistSuccess(message);
+      toast.success(message);
       await utils.watchlist.listItems.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể thêm vào watchlist.");
     },
   });
 
   const saveSelectedResults = api.search.saveSelectedResults.useMutation({
     onSuccess: async (saveResult) => {
       setSaveSelectedError(null);
-      setSaveSelectedSuccess(
-        `Đã lưu ${saveResult.savedCount} mục, bỏ qua ${saveResult.skippedCount} mục trùng.`,
-      );
+      const message = `Đã lưu ${saveResult.savedCount} mục, bỏ qua ${saveResult.skippedCount} mục trùng.`;
+      setSaveSelectedSuccess(message);
+      toast.success(message);
       setSelectedKeys(new Set<string>());
     },
     onError: (error) => {
       setSaveSelectedSuccess(null);
-      setSaveSelectedError(error.message ?? "Không thể lưu các mục đã chọn.");
+      const message = error.message ?? "Không thể lưu các mục đã chọn.";
+      setSaveSelectedError(message);
+      toast.error(message);
     },
   });
 

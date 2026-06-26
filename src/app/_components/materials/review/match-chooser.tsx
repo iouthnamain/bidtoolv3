@@ -385,7 +385,7 @@ export function MatchChooser({
           {webEvidence.slice(0, 6).map((item, index) => (
             <div
               key={`${item.field}-${item.sourceUrl ?? index}`}
-              className="rounded border border-slate-400 bg-white p-2 text-xs"
+              className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2 text-xs"
             >
               <p className="font-semibold text-slate-700">
                 {FIELD_LABELS[item.field as FillableField] ?? item.field}

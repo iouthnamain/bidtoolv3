@@ -150,12 +150,12 @@ export function ManualProductForm({
   const title = selectedCandidate ? "Sửa vật tư" : "Thêm vật tư";
 
   return (
-    <div className="rounded border border-slate-400 bg-white">
+    <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
       >
         <span>Chỉnh sửa thủ công</span>
         {expanded ? (

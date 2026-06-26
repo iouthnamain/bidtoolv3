@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, BellPlus, RefreshCw } from "lucide-react";
 
 import { Button, EmptyState } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { api } from "~/trpc/react";
 import {
   SEARCH_ENTITY_LABELS,
@@ -89,14 +90,19 @@ export function BidWinnerSourceDetailsPageClient({
   backHref = "/search",
 }: PackageDetailsPageClientProps) {
   const utils = api.useUtils();
+  const toast = useToast();
   const detailsQuery = api.search.getSourceDetails.useQuery({
     entityType,
     externalId,
     sourceUrl: sourceUrl?.trim() ? sourceUrl : undefined,
   });
   const addWatchlist = api.watchlist.addItem.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_item, variables) => {
+      toast.success(`Đã thêm "${variables.label}" vào danh sách theo dõi.`);
       await utils.watchlist.listItems.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Không thể thêm vào watchlist.");
     },
   });
 
@@ -196,7 +202,7 @@ export function BidWinnerSourceDetailsPageClient({
             </Button>
             <Link
               href={backHref}
-              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Quay lại Search

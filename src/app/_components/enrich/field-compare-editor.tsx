@@ -222,7 +222,7 @@ export function FieldCompareEditor({
                 key={field}
                 className={`rounded border px-1.5 py-0.5 text-xs ${
                   value
-                    ? "border-slate-400 bg-white text-slate-600"
+                    ? "border-slate-500 bg-white text-slate-900 shadow-sm"
                     : "border-dashed border-slate-400 bg-transparent text-slate-600"
                 }`}
               >
@@ -299,7 +299,7 @@ export function FieldCompareEditor({
 
       {/* Fill plan: per-field accept / overwrite / inline edit */}
       {hasDecision ? (
-        <div className="rounded border border-slate-400 bg-white p-3">
+        <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
           <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             Sẽ điền vào dòng
           </p>
@@ -338,7 +338,7 @@ export function FieldCompareEditor({
                           onChange={(event) =>
                             onEditValue(field, event.target.value)
                           }
-                          className="min-w-0 flex-1 rounded border border-slate-400 bg-white px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          className="min-w-0 flex-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-0.5 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         />
                       ) : (
                         <span className="truncate font-medium text-emerald-700">
@@ -356,7 +356,7 @@ export function FieldCompareEditor({
                       className={`ml-auto rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
                         overwrite.has(field)
                           ? "border-amber-300 bg-amber-100 text-amber-800"
-                          : "border-slate-400 bg-white text-slate-700 hover:bg-slate-100"
+                          : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       Ghi đè

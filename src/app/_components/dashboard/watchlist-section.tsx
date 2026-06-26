@@ -188,7 +188,7 @@ function WatchlistDetailsPanel({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <WatchlistTypeBadge type={item.type} />
-            <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
+            <span className="rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-0.5 text-xs font-semibold text-slate-700">
               Danh sách theo dõi #{item.id}
             </span>
           </div>
@@ -199,7 +199,7 @@ function WatchlistDetailsPanel({
       </div>
 
       <dl className="mt-4 grid gap-2 sm:grid-cols-2">
-        <div className="rounded border border-slate-400 bg-white px-3 py-2">
+        <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
           <dt className="inline-flex items-center gap-1 text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
             <Hash className="h-3.5 w-3.5" aria-hidden />
             Ref key
@@ -208,7 +208,7 @@ function WatchlistDetailsPanel({
             {item.refKey}
           </dd>
         </div>
-        <div className="rounded border border-slate-400 bg-white px-3 py-2">
+        <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
           <dt className="inline-flex items-center gap-1 text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
             <CalendarClock className="h-3.5 w-3.5" aria-hidden />
             Đã lưu
@@ -232,7 +232,7 @@ function WatchlistDetailsPanel({
             href={details.sourceUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="inline-flex items-center justify-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             Mở nguồn
@@ -249,7 +249,7 @@ function WatchlistDetailsPanel({
       </div>
 
       {detailHref ? (
-        <div className="mt-4 rounded border border-slate-400 bg-white p-3">
+        <div className="mt-4 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
@@ -390,7 +390,9 @@ export function WatchlistSection() {
     },
     onError: (error) => {
       setDeleteTarget(null);
-      setActionError(error.message || "Không thể xóa mục Watchlist.");
+      const message = error.message || "Không thể xóa mục Watchlist.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -505,7 +507,7 @@ export function WatchlistSection() {
               className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                 activeFilter === "all"
                   ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
               }`}
               onClick={() => {
                 setActiveFilter("all");
@@ -526,7 +528,7 @@ export function WatchlistSection() {
                 className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
                   activeFilter === type
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-400 bg-white text-slate-700 hover:bg-slate-50"
+                    : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
                 }`}
                 onClick={() => {
                   setActiveFilter(type);
@@ -542,7 +544,7 @@ export function WatchlistSection() {
           </div>
 
           <div className="mt-4 grid gap-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
-            <div className="overflow-hidden rounded border border-slate-400 bg-white">
+            <div className="overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-slate-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-bold text-slate-950">
@@ -576,7 +578,7 @@ export function WatchlistSection() {
                         className={`flex flex-col gap-1 px-4 py-3 transition-colors duration-0 sm:flex-row sm:items-start sm:justify-between ${
                           isSelected
                             ? "bg-blue-50/80"
-                            : "bg-white hover:bg-slate-50"
+                            : "bg-white hover:bg-slate-100"
                         }`}
                       >
                         <button
@@ -617,7 +619,7 @@ export function WatchlistSection() {
                           </Button>
                           <Link
                             href={openHref}
-                            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                            className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                             {detailHref ? "Mở" : "Tìm"}

@@ -1,4 +1,15 @@
 export { Button } from "./button";
+export {
+  buttonBaseClass,
+  buttonSizeClass,
+  buttonVariantClass,
+  inlineIconButtonClass,
+  inlineSecondaryButtonClass,
+  stepNavReachableClass,
+  tabButtonInactiveClass,
+} from "./button-classes";
+export { modalDialogClass, wideModalDialogClass } from "./dialog-classes";
+export { FloatingPanel } from "./floating-panel";
 export { Badge } from "./badge";
 export { FilterField } from "./filter-field";
 export { SearchableSelect } from "./searchable-select";

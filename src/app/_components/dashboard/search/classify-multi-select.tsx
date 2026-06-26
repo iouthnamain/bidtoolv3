@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import { FloatingPanel } from "~/app/_components/ui/floating-panel";
+
 type ClassifyOption = {
   id: number;
   name: string;
@@ -58,6 +60,7 @@ export function ClassifyMultiSelect({
   emptyLabel,
 }: ClassifyMultiSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -71,7 +74,11 @@ export function ClassifyMultiSelect({
     }
 
     const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !containerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -152,7 +159,7 @@ export function ClassifyMultiSelect({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className="flex w-full items-center justify-between rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-0 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="flex w-full items-center justify-between rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-0 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((previous) => !previous)}
       >
         <span className="truncate">{selectedSummary || emptyLabel}</span>
@@ -161,11 +168,13 @@ export function ClassifyMultiSelect({
         </span>
       </button>
 
-      {isOpen ? (
-        <div className="absolute z-20 mt-2 w-full rounded border border-slate-400 bg-white p-3 shadow-xl">
+      <FloatingPanel anchorRef={containerRef} contentRef={panelRef} open={isOpen}>
+        <div
+          className="flex h-full max-h-[inherit] flex-col overflow-hidden rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-overlay)]"
+        >
           <input
             ref={searchRef}
-            className="w-full rounded border border-slate-400 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+            className="w-full rounded border border-slate-400 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
             name="classify-search"
             aria-label="Tìm ngành nghề"
             autoComplete="off"
@@ -178,7 +187,7 @@ export function ClassifyMultiSelect({
           <div className="mt-2 flex items-center justify-between text-xs">
             <button
               type="button"
-              className="rounded text-blue-700 transition-colors hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-blue-700 transition-colors hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
               onClick={() =>
                 onChange(normalizeIds(options.map((item) => item.id)))
               }
@@ -187,7 +196,7 @@ export function ClassifyMultiSelect({
             </button>
             <button
               type="button"
-              className="rounded text-slate-700 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-slate-700 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
               onClick={() => onChange([])}
             >
               Bỏ chọn
@@ -198,7 +207,7 @@ export function ClassifyMultiSelect({
             role="listbox"
             aria-label={ariaLabel}
             aria-multiselectable
-            className="mt-2 max-h-72 space-y-1 overflow-y-auto rounded border border-slate-400 bg-slate-50 p-2"
+            className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-y-contain rounded border border-slate-400 bg-slate-50 p-2"
           >
             {filteredOptions.length === 0 ? (
               <p className="text-xs text-slate-700">Không có mục phù hợp.</p>
@@ -235,7 +244,7 @@ export function ClassifyMultiSelect({
             )}
           </div>
         </div>
-      ) : null}
+      </FloatingPanel>
     </div>
   );
 }

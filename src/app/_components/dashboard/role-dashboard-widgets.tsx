@@ -50,7 +50,7 @@ export function RoleDashboardFrame({
 
   return (
     <section className="flex min-h-full flex-col gap-1">
-      <header className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+      <header className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -122,7 +122,7 @@ export function WorkQueuePanel({
   emptyText?: string;
 }) {
   return (
-    <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+    <section className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
       <div className="flex items-start justify-between gap-1 border-b border-slate-400 pb-3">
         <div>
           <p className="section-title">{title}</p>
@@ -161,7 +161,7 @@ export function WorkQueuePanel({
             return (
               <li key={item.id}>
                 {item.href ? (
-                  <Link href={item.href} className="block hover:bg-slate-50">
+                  <Link href={item.href} className="block hover:bg-slate-100">
                     {content}
                   </Link>
                 ) : (
@@ -178,7 +178,7 @@ export function WorkQueuePanel({
 
 export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
   return (
-    <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
+    <section className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <p className="section-title">Lối tắt</p>

@@ -34,7 +34,7 @@ export function SkeletonCard({ className }: SkeletonProps) {
   return (
     <div
       aria-hidden
-      className={`rounded border border-slate-400 bg-white p-4 ${className ?? ""}`}
+      className={`rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 ${className ?? ""}`}
     >
       <div className="flex items-center gap-1">
         <Skeleton className="h-10 w-10 rounded" />
@@ -55,7 +55,7 @@ export function SkeletonKpi() {
   return (
     <div
       aria-hidden
-      className="rounded border border-slate-400 bg-white p-4"
+      className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4"
     >
       <Skeleton className="mb-3 h-3 w-20" />
       <Skeleton className="h-8 w-20" />
@@ -76,7 +76,7 @@ export function SkeletonTable({
   return (
     <div
       aria-hidden
-      className={`overflow-hidden rounded border border-slate-400 bg-white ${className ?? ""}`}
+      className={`overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] ${className ?? ""}`}
     >
       <div className="border-b border-slate-400 bg-slate-50/80 px-4 py-3">
         <div className="flex gap-2">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { normalizeStringList } from "~/lib/search-criteria";
+import { FloatingPanel } from "~/app/_components/ui/floating-panel";
 
 import { summarizeSelected } from "./search-format";
 
@@ -24,6 +25,7 @@ export function MultiSelectDropdown({
   emptyLabel,
 }: MultiSelectDropdownProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -36,7 +38,11 @@ export function MultiSelectDropdown({
     }
 
     const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !containerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -116,7 +122,7 @@ export function MultiSelectDropdown({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className="flex w-full items-center justify-between rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-0 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+        className="flex w-full items-center justify-between rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-700 shadow-sm transition-colors duration-0 hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <span className="truncate">
@@ -127,11 +133,13 @@ export function MultiSelectDropdown({
         </span>
       </button>
 
-      {isOpen ? (
-        <div className="absolute z-20 mt-2 w-full rounded border border-slate-400 bg-white p-3 shadow-xl">
+      <FloatingPanel anchorRef={containerRef} contentRef={panelRef} open={isOpen}>
+        <div
+          className="flex h-full max-h-[inherit] flex-col overflow-hidden rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-overlay)]"
+        >
           <input
             ref={searchRef}
-            className="w-full rounded border border-slate-400 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+            className="w-full rounded border border-slate-400 px-2.5 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
             name="multiselect-search"
             aria-label="Tìm trong danh sách"
             autoComplete="off"
@@ -144,14 +152,14 @@ export function MultiSelectDropdown({
           <div className="mt-2 flex items-center justify-between text-xs">
             <button
               type="button"
-              className="rounded text-blue-700 transition-colors hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-blue-700 transition-colors hover:text-blue-800 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
               onClick={() => onChange(options)}
             >
               Chọn tất cả
             </button>
             <button
               type="button"
-              className="rounded text-slate-700 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+              className="rounded text-slate-700 transition-colors hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus-visible:outline-none"
               onClick={() => onChange([])}
             >
               Bỏ chọn
@@ -162,7 +170,7 @@ export function MultiSelectDropdown({
             role="listbox"
             aria-label={ariaLabel}
             aria-multiselectable
-            className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded border border-slate-400 bg-slate-50 p-2"
+            className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-y-contain rounded border border-slate-400 bg-slate-50 p-2"
           >
             {filteredOptions.length === 0 ? (
               <p className="text-xs text-slate-700">Không có mục phù hợp.</p>
@@ -193,7 +201,7 @@ export function MultiSelectDropdown({
             )}
           </div>
         </div>
-      ) : null}
+      </FloatingPanel>
     </div>
   );
 }

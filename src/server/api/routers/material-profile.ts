@@ -13,6 +13,7 @@ import {
   bulkUpdateMaterialProfileItems,
   createMaterialProfileWorkspace,
   deleteMaterialProfileWorkspace,
+  exportMaterialProfileDownloadBundle,
   exportMaterialProfileWorkspace,
   getMaterialProfileWorkspace,
   listMaterialProfileWorkspaces,
@@ -337,6 +338,14 @@ export const materialProfileRouter = createTRPCRouter({
           input.workspaceId,
           input.outputDirPath,
         ),
+      ),
+    ),
+
+  exportDownloadBundle: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        exportMaterialProfileDownloadBundle(ctx.db, input.workspaceId),
       ),
     ),
 

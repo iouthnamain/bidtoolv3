@@ -226,12 +226,18 @@ export function MaterialEnrichClient() {
               ),
             );
           },
-          onError: (err) =>
-            setError(err.message || "Không tạo được preview Excel."),
+          onError: (err) => {
+            const message = err.message || "Không tạo được preview Excel.";
+            setError(message);
+            toast.error(message);
+          },
         },
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không đọc được tệp Excel.");
+      const message =
+        err instanceof Error ? err.message : "Không đọc được tệp Excel.";
+      setError(message);
+      toast.error(message);
     }
   };
 
@@ -272,13 +278,20 @@ export function MaterialEnrichClient() {
           setDecisions(seeded);
           setSelectedRowIndex(result.results[0]?.originalRowIndex ?? null);
           reach(2);
+          toast.success(
+            `Đã đối chiếu ${result.matchedRows.toLocaleString("vi-VN")} dòng.`,
+          );
           if (result.truncated) {
             toast.warning(
               `Chỉ đối chiếu ${result.matchedRows.toLocaleString("vi-VN")}/${result.totalRows.toLocaleString("vi-VN")} dòng (giới hạn).`,
             );
           }
         },
-        onError: (err) => setError(err.message || "Không đối chiếu được."),
+        onError: (err) => {
+          const message = err.message || "Không đối chiếu được.";
+          setError(message);
+          toast.error(message);
+        },
       },
     );
   };
@@ -876,7 +889,7 @@ function UploadStep({
                         className={`rounded border px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
                           field.required && !activeMapping[field.key]
                             ? "border-amber-300 bg-amber-50"
-                            : "border-slate-400 bg-white"
+                            : "border-slate-500 bg-white shadow-sm"
                         }`}
                       >
                         <option value="">Không map</option>
@@ -1094,7 +1107,7 @@ function EnrichExportPreviewPanel({
   };
 
   return (
-    <div className="overflow-hidden rounded border border-slate-400 bg-white">
+    <div className="overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 px-4 py-3">
         <div>
           <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
@@ -1172,7 +1185,7 @@ function EnrichExportPreviewPanel({
                             event.target.value,
                           )
                         }
-                        className="w-full rounded border border-slate-400 bg-white px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                        className="w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                         aria-label={`Chỉnh ${FIELD_LABELS[cell.field]} dòng ${row.originalRowIndex}`}
                       />
                     </td>
@@ -1369,7 +1382,7 @@ function ExportStep({
           {stats.map((stat) => (
             <div
               key={stat.label}
-              className="rounded border border-slate-400 bg-white p-3"
+              className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3"
             >
               <p className="text-xs font-medium text-slate-700">{stat.label}</p>
               <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
@@ -1413,7 +1426,7 @@ function ExportStep({
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {hasResearchJob ? (
-            <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
+            <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
               <Button
                 variant="primary"
                 leftIcon={<Download className="h-4 w-4" />}
@@ -1428,7 +1441,7 @@ function ExportStep({
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
             <Button
               variant={hasResearchJob ? "secondary" : "primary"}
               leftIcon={<Download className="h-4 w-4" />}
@@ -1443,7 +1456,7 @@ function ExportStep({
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5 rounded border border-slate-400 bg-white p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
             <Button
               variant="secondary"
               disabled={isExporting || nothingToExport}

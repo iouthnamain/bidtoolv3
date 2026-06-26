@@ -30,7 +30,7 @@ export function HelpIndexContent() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="inline-flex min-h-10 items-center rounded border border-slate-400 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="inline-flex min-h-10 items-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 {link.label} →
               </Link>
@@ -61,7 +61,7 @@ export function HelpIndexContent() {
               {helpMetrics.map((metric) => (
                 <div
                   key={metric.label}
-                  className="rounded border border-slate-400 bg-white px-3 py-3"
+                  className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-3"
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-black text-cyan-900">
@@ -91,7 +91,7 @@ export function HelpIndexContent() {
             <Link
               key={item.href}
               href={item.href}
-              className="group flex flex-col justify-between rounded border border-slate-400 bg-white px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/70 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="group flex flex-col justify-between rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/70 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <span>
                 <span className="block text-sm font-bold text-slate-950">
@@ -145,7 +145,7 @@ export function HelpIndexContent() {
             <Link
               key={section.id}
               href={`/help/${section.id}`}
-              className="rounded border border-slate-400 bg-white px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/70 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50/70 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               <span className="block text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
                 {section.eyebrow}

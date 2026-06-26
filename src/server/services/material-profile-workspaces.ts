@@ -1863,11 +1863,38 @@ export async function openMaterialProfileOutputFolder(
   return { outputDirPath };
 }
 
-export async function exportMaterialProfileWorkspace(
+type MaterialProfileExportBundle = {
+  excelFileName: string;
+  excelBuffer: Buffer;
+  catalogFiles: Array<{ fileName: string; buffer: Buffer }>;
+  missingCount: number;
+  warnings: string[];
+  catalogCount: number;
+};
+
+async function markMaterialProfileWorkspaceExported(
   db: AppDb,
   workspaceId: number,
-  outputDirPathInput: string,
+  excelFileName: string,
+  outputDirPath: string | null,
 ) {
+  const now = new Date().toISOString();
+  await db
+    .update(excelWorkspaces)
+    .set({
+      status: "catalog_generated",
+      exportFileName: excelFileName,
+      outputDirPath,
+      exportedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaces.id, workspaceId));
+}
+
+async function buildMaterialProfileExportBundle(
+  db: AppDb,
+  workspaceId: number,
+): Promise<{ workspace: Workspace; bundle: MaterialProfileExportBundle }> {
   const workspace = await requireWorkspace(db, workspaceId);
   const items = await db
     .select()
@@ -1890,12 +1917,10 @@ export async function exportMaterialProfileWorkspace(
 
   const noticeNumber = workspace.noticeNumber ?? workspace.name;
   const prefix = buildMaterialProfileOutputPrefix(noticeNumber);
-  const outputDir = await assertExportDirWritable(outputDirPathInput);
-  const catalogDir = path.join(outputDir, "Catalog");
-  await mkdir(catalogDir, { recursive: true });
 
   const copiedCatalogByDocKey = new Map<string, string>();
   const usedCatalogNames = new Set<string>();
+  const catalogBuffersByFileName = new Map<string, Buffer>();
   const catalogFilesByMaterial = new Map<number, string[]>();
   const missingRows: Array<Array<string | number | null>> = [];
   const warnings: string[] = [];
@@ -1958,7 +1983,7 @@ export async function exportMaterialProfileWorkspace(
               "Tài liệu catalog chưa có file local hoặc URL PDF.",
             );
           }
-          await writeFile(path.join(catalogDir, fileName), buffer);
+          catalogBuffersByFileName.set(fileName, buffer);
           copiedCatalogByDocKey.set(docKey, fileName);
         } catch (error) {
           const message =
@@ -2033,26 +2058,77 @@ export async function exportMaterialProfileWorkspace(
   applyDeletedRowsAndColumnsToWorkbook(workbook, exportEditState);
 
   const excelFileName = `${prefix}.xlsx`;
-  const excelPath = path.join(outputDir, excelFileName);
-  await writeFile(excelPath, Buffer.from(await workbook.xlsx.writeBuffer()));
+  const excelBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
 
-  const now = new Date().toISOString();
-  await db
-    .update(excelWorkspaces)
-    .set({
-      status: "catalog_generated",
-      exportFileName: excelFileName,
-      outputDirPath: outputDir,
-      exportedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(excelWorkspaces.id, workspace.id));
+  return {
+    workspace,
+    bundle: {
+      excelFileName,
+      excelBuffer,
+      catalogFiles: Array.from(catalogBuffersByFileName.entries()).map(
+        ([fileName, buffer]) => ({ fileName, buffer }),
+      ),
+      missingCount: missingRows.length,
+      warnings,
+      catalogCount: copiedCatalogByDocKey.size,
+    },
+  };
+}
+
+export async function exportMaterialProfileDownloadBundle(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
+  await markMaterialProfileWorkspaceExported(
+    db,
+    workspaceId,
+    bundle.excelFileName,
+    null,
+  );
+  return {
+    excelFileName: bundle.excelFileName,
+    workbookBase64: bundle.excelBuffer.toString("base64"),
+    catalogFiles: bundle.catalogFiles.map((file) => ({
+      fileName: file.fileName,
+      base64: file.buffer.toString("base64"),
+    })),
+    catalogCount: bundle.catalogCount,
+    missingCount: bundle.missingCount,
+    warnings: bundle.warnings,
+  };
+}
+
+export async function exportMaterialProfileWorkspace(
+  db: AppDb,
+  workspaceId: number,
+  outputDirPathInput: string,
+) {
+  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
+  const outputDir = await assertExportDirWritable(outputDirPathInput);
+  const catalogDir = path.join(outputDir, "Catalog");
+  await mkdir(catalogDir, { recursive: true });
+
+  await writeFile(
+    path.join(outputDir, bundle.excelFileName),
+    bundle.excelBuffer,
+  );
+  for (const file of bundle.catalogFiles) {
+    await writeFile(path.join(catalogDir, file.fileName), file.buffer);
+  }
+
+  await markMaterialProfileWorkspaceExported(
+    db,
+    workspaceId,
+    bundle.excelFileName,
+    outputDir,
+  );
 
   return {
     outputDirPath: outputDir,
-    excelFileName,
-    catalogCount: copiedCatalogByDocKey.size,
-    missingCount: missingRows.length,
-    warnings,
+    excelFileName: bundle.excelFileName,
+    catalogCount: bundle.catalogCount,
+    missingCount: bundle.missingCount,
+    warnings: bundle.warnings,
   };
 }

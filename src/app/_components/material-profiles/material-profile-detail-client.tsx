@@ -18,10 +18,16 @@ import {
 } from "lucide-react";
 
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
+import { stepNavReachableClass } from "~/app/_components/ui/button-classes";
 import { useToast } from "~/app/_components/ui/toast";
 import { MaterialProfileReviewStep } from "~/app/_components/material-profiles/material-profile-review-step";
-import { ExportDestinationModal } from "~/app/_components/material-profiles/export-destination-modal";
-import { setLastMaterialProfileExportDir } from "~/lib/material-profile-export-dir";
+import {
+  getLastMaterialProfileExportDir,
+  pickMaterialProfileBrowserExportDirectory,
+  pickMaterialProfileExportDir,
+  saveMaterialProfileExportBundleInBrowser,
+  setLastMaterialProfileExportDir,
+} from "~/lib/material-profile-export-dir";
 import { api, type RouterOutputs } from "~/trpc/react";
 import {
   FIELD_LABELS,
@@ -337,11 +343,11 @@ function RawExcelFields({
 }) {
   if (fields.length === 0) return null;
   return (
-    <div className="rounded border border-slate-400 bg-white">
+    <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-700 uppercase hover:bg-slate-50"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-700 uppercase hover:bg-slate-100"
       >
         Raw Excel fields
         <span className="text-xs font-semibold tracking-normal text-slate-600 normal-case">
@@ -415,7 +421,7 @@ function MaterialProfileStepHeader({
                   isCurrent
                     ? "bg-blue-700 text-white"
                     : isReachable
-                      ? "text-slate-900 hover:bg-slate-100"
+                      ? stepNavReachableClass
                       : "text-slate-600"
                 }`}
               >
@@ -464,7 +470,7 @@ function WorkbookGrid({
 
   return (
     <div
-      className={`${maxHeight} overflow-auto rounded border border-slate-400 bg-white`}
+      className={`${maxHeight} overflow-auto rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]`}
     >
       <table className="min-w-full border-separate border-spacing-0 text-xs">
         <tbody>
@@ -579,7 +585,7 @@ function UploadStep({
               className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${
                 item.done
                   ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : "border-slate-400 bg-white text-slate-700"
+                  : "border-slate-500 bg-white text-slate-900 shadow-sm"
               }`}
             >
               <span
@@ -685,7 +691,7 @@ function WorkbookMappingStep({
             <select
               value={selectedSheetName}
               onChange={(event) => onSheetChange(event.target.value)}
-              className="h-10 rounded border border-slate-400 bg-white px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm text-slate-900"
             >
               {sheets.map((sheet) => (
                 <option key={sheet.name} value={sheet.name}>
@@ -705,7 +711,7 @@ function WorkbookMappingStep({
               onChange={(event) =>
                 onHeaderRowChange(Math.max(1, Number(event.target.value)))
               }
-              className="h-10 rounded border border-slate-400 bg-white px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm text-slate-900"
             />
           </label>
           <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -730,7 +736,7 @@ function WorkbookMappingStep({
                 onChange={(event) =>
                   onMappingChange(field.key, event.target.value || null)
                 }
-                className="h-9 rounded border border-slate-400 bg-white px-2 text-xs text-slate-900"
+                className="h-9 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-xs text-slate-900"
               >
                 <option value="">Không map</option>
                 {activeSheet.headers.map((header) => (
@@ -1017,7 +1023,7 @@ function ExportPreviewStep({
             </div>
           ) : null}
           <div className="p-4">
-            <div className="max-h-[640px] overflow-auto rounded border border-slate-400 bg-white">
+            <div className="max-h-[640px] overflow-auto rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
               <table className="min-w-full border-separate border-spacing-0 text-xs">
                 <thead>
                   <tr>
@@ -1127,7 +1133,6 @@ export function MaterialProfileDetailClient({
     useState<ExportEditState>(emptyExportEditState);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewAutoRequested, setPreviewAutoRequested] = useState(false);
-  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -1191,7 +1196,6 @@ export function MaterialProfileDetailClient({
     });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
-      setExportModalOpen(false);
       setLastMaterialProfileExportDir(result.outputDirPath);
       await utils.materialProfile.get.invalidate({ workspaceId });
       if (result.missingCount > 0 || result.warnings.length > 0) {
@@ -1204,6 +1208,14 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) => toast.error(error.message),
   });
+  const exportDownloadBundle =
+    api.materialProfile.exportDownloadBundle.useMutation({
+      onError: (error) => toast.error(error.message),
+    });
+  const defaultExportDirQuery = api.materialProfile.getDefaultExportDir.useQuery(
+    undefined,
+    { enabled: step === 4, staleTime: Infinity },
+  );
 
   useEffect(() => {
     if (!detail) return;
@@ -1442,7 +1454,7 @@ export function MaterialProfileDetailClient({
     toast.info("Đã restore trong state. Lưu preview rồi refresh để hiện lại.");
   };
 
-  const exportWithSavedPreview = async (outputDirPath: string) => {
+  const savePreviewForExport = async () => {
     await updateState.mutateAsync({
       workspaceId,
       sheetName: activeSheet?.name,
@@ -1454,7 +1466,67 @@ export function MaterialProfileDetailClient({
       workspaceId,
       exportEditState,
     });
-    exportWorkspace.mutate({ workspaceId, outputDirPath });
+  };
+
+  const handleExportClick = async () => {
+    if (exportWorkspace.isPending || exportDownloadBundle.isPending) {
+      return;
+    }
+
+    const isDesktop = !!window.bidtoolDesktop?.isDesktop;
+    let desktopOutputPath: string | null = null;
+    let browserDirectoryHandle: FileSystemDirectoryHandle | null = null;
+
+    try {
+      if (isDesktop) {
+        desktopOutputPath = await pickMaterialProfileExportDir(
+          getLastMaterialProfileExportDir() ??
+            defaultExportDirQuery.data?.path,
+        );
+        if (!desktopOutputPath) {
+          return;
+        }
+      } else {
+        browserDirectoryHandle = await pickMaterialProfileBrowserExportDirectory();
+      }
+
+      await savePreviewForExport();
+
+      if (isDesktop && desktopOutputPath) {
+        exportWorkspace.mutate({
+          workspaceId,
+          outputDirPath: desktopOutputPath,
+        });
+        return;
+      }
+
+      const bundle = await exportDownloadBundle.mutateAsync({ workspaceId });
+      const saved = await saveMaterialProfileExportBundleInBrowser(
+        bundle,
+        browserDirectoryHandle,
+      );
+      await utils.materialProfile.get.invalidate({ workspaceId });
+
+      const destinationLabel =
+        saved.mode === "directory"
+          ? `thư mục ${saved.label}`
+          : "Downloads (trình duyệt)";
+
+      if (bundle.missingCount > 0 || bundle.warnings.length > 0) {
+        toast.warning(
+          `Đã lưu vào ${destinationLabel}, nhưng có ${bundle.missingCount} cảnh báo catalog.`,
+        );
+      } else {
+        toast.success(`Đã lưu export vào ${destinationLabel}.`);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      toast.error(
+        error instanceof Error ? error.message : "Không export được.",
+      );
+    }
   };
 
   if (query.isLoading || !detail) {
@@ -1539,33 +1611,21 @@ export function MaterialProfileDetailClient({
       ) : null}
 
       {step === 4 ? (
-        <>
-          <ExportPreviewStep
-            preview={preview}
-            exportEditState={exportEditState}
-            isPreviewing={previewExport.isPending}
-            isSaving={updateExportEditState.isPending}
-            isExporting={exportWorkspace.isPending}
-            onRefreshPreview={refreshPreview}
-            onPreviewEdit={updateExportCellEdit}
-            onDeleteSelection={deleteExportSelection}
-            onRestoreDeleted={restoreDeletedExportValue}
-            onSavePreview={() => void saveExportEditState()}
-            onExport={() => setExportModalOpen(true)}
-          />
-          <ExportDestinationModal
-            open={exportModalOpen}
-            isExporting={exportWorkspace.isPending}
-            onCancel={() => {
-              if (!exportWorkspace.isPending) {
-                setExportModalOpen(false);
-              }
-            }}
-            onConfirm={(outputDirPath) =>
-              void exportWithSavedPreview(outputDirPath)
-            }
-          />
-        </>
+        <ExportPreviewStep
+          preview={preview}
+          exportEditState={exportEditState}
+          isPreviewing={previewExport.isPending}
+          isSaving={updateExportEditState.isPending}
+          isExporting={
+            exportWorkspace.isPending || exportDownloadBundle.isPending
+          }
+          onRefreshPreview={refreshPreview}
+          onPreviewEdit={updateExportCellEdit}
+          onDeleteSelection={deleteExportSelection}
+          onRestoreDeleted={restoreDeletedExportValue}
+          onSavePreview={() => void saveExportEditState()}
+          onExport={() => void handleExportClick()}
+        />
       ) : null}
     </div>
   );

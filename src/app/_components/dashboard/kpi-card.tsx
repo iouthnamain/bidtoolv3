@@ -14,7 +14,7 @@ export function KpiCard({ label, value, hint, trend, accent }: KpiCardProps) {
       className={`relative overflow-hidden rounded border p-2 ${
         accent
           ? "border-blue-300 bg-blue-50"
-          : "border-slate-400 bg-white"
+          : "border-slate-500 bg-white shadow-sm"
       }`}
     >
       <div

@@ -64,7 +64,7 @@ export function HelpSectionArticle({ section }: { section: Section }) {
 
         {section.image ? (
           <figure className="border-t border-slate-400 bg-slate-50 p-3 xl:border-t-0 xl:border-l">
-            <div className="overflow-hidden rounded border border-slate-400 bg-white shadow-sm">
+            <div className="overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] shadow-sm">
               <Image
                 src={section.image.src}
                 alt={section.image.alt}

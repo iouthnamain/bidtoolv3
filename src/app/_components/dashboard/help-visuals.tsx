@@ -19,7 +19,7 @@ function InlineText({ text }: { text: string }) {
         part.startsWith("`") && part.endsWith("`") ? (
           <code
             key={`${part}-${index}`}
-            className="rounded border border-slate-400 bg-white px-1.5 py-0.5 text-[0.92em] font-semibold text-slate-800"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-0.5 text-[0.92em] font-semibold text-slate-800"
           >
             {part.slice(1, -1)}
           </code>
@@ -71,7 +71,7 @@ function LocalStackVisual() {
         {localStackLayers.map((layer) => (
           <div
             key={layer.step}
-            className="rounded border border-slate-400 bg-white p-3"
+            className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3"
           >
             <span className="inline-flex rounded-full bg-slate-900 px-2 py-1 text-xs font-bold tracking-wide text-white">
               {layer.step}
@@ -170,7 +170,7 @@ function LocalCommandsVisual() {
           key={item.command}
           className="rounded border border-slate-400 bg-slate-50 p-3"
         >
-          <code className="rounded border border-slate-400 bg-white px-2 py-1 text-xs font-bold text-slate-900">
+          <code className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-bold text-slate-900">
             {item.command}
           </code>
           <p className="mt-2 text-xs font-bold text-slate-700 uppercase">

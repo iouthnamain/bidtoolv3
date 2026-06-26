@@ -48,6 +48,23 @@
   --shadow-overlay: 0 4px 16px rgba(15, 23, 42, 0.12);
 }
 
+dialog {
+  max-width: calc(100vw - 2rem);
+  max-height: min(90dvh, 100%);
+  margin: auto;
+  border: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+dialog:not([open]) {
+  display: none;
+}
+
 html {
   color-scheme: light;
   font-size: 18px;

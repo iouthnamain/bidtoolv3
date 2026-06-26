@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { Badge, Button } from "~/app/_components/ui";
+import { useToast } from "~/app/_components/ui/toast";
 import { formatDateTime } from "~/lib/datetime";
 import { normalizeWorkflowFilterConfig } from "~/lib/workflow-config";
 import { api, type RouterOutputs } from "~/trpc/react";
@@ -37,19 +38,27 @@ export function WorkflowDetailOverviewClient({
     { initialData: initialWorkflow },
   );
   const utils = api.useUtils();
+  const toast = useToast();
   const workflow = workflowQuery.data;
 
   const toggleWorkflow = api.workflow.setActive.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
+      toast.success(
+        variables.isActive ? "Đã kích hoạt workflow." : "Đã tạm dừng workflow.",
+      );
       await Promise.all([
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.list.invalidate(),
       ]);
     },
+    onError: () => {
+      toast.error("Không thể thay đổi trạng thái workflow.");
+    },
   });
 
   const runNow = api.workflow.runNow.useMutation({
     onSuccess: async () => {
+      toast.success("Đã chạy workflow.");
       await Promise.all([
         utils.workflow.getById.invalidate({ id: workflowId }),
         utils.workflow.getRuns.invalidate({ workflowId }),
@@ -57,6 +66,9 @@ export function WorkflowDetailOverviewClient({
         utils.notification.unreadCount.invalidate(),
         utils.notification.list.invalidate(),
       ]);
+    },
+    onError: () => {
+      toast.error("Không thể chạy workflow.");
     },
   });
 
@@ -134,7 +146,7 @@ export function WorkflowDetailOverviewClient({
             {workflow.triggerSummary.map((item) => (
               <span
                 key={item}
-                className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs text-slate-600"
+                className="rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-0.5 text-xs text-slate-600"
               >
                 {item}
               </span>

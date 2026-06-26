@@ -145,9 +145,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-label="Thông báo"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-end gap-2 p-4"
+        className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-4 pt-[calc(1rem+env(safe-area-inset-top))]"
       >
-        <div className="pointer-events-auto flex flex-col gap-2">
+        <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2">
           {toasts.map((t) => (
             <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
           ))}

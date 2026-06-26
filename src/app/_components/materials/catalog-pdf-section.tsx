@@ -64,7 +64,7 @@ function formatFileSize(size: number | null) {
 }
 
 const inputClass =
-  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 export function MaterialCatalogPdfSection({
   materialId,
@@ -272,7 +272,7 @@ export function MaterialCatalogPdfSection({
                     <li key={document.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-400 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
+                        className="flex w-full items-center justify-between gap-2 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 hover:bg-blue-50"
                         onClick={() =>
                           attachDocument.mutate({
                             documentId: document.id,
@@ -368,7 +368,7 @@ export function MaterialCatalogPdfSection({
           </form>
         </div>
 
-        <article className="rounded border border-slate-400 bg-white p-4">
+        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4">
           <h4 className="text-sm font-semibold text-slate-900">
             Tài liệu đã gắn
           </h4>
@@ -425,7 +425,7 @@ export function MaterialCatalogPdfSection({
                             href={document.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-400 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            className="inline-flex min-h-8 items-center gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                             Mở URL

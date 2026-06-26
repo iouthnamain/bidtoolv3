@@ -132,10 +132,10 @@ function countMaterialSources(
 }
 
 const inputClass =
-  "min-h-10 rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "min-h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 const textareaClass =
-  "rounded border border-slate-400 bg-white px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
+  "rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 transition-colors placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none";
 
 function Field({
   label,
@@ -247,7 +247,7 @@ function SummaryTile({
   tone?: "neutral" | "blue" | "emerald" | "amber";
 }) {
   const toneClass = {
-    neutral: "border-slate-400 bg-white text-slate-700",
+    neutral: "border-slate-500 bg-white text-slate-900 shadow-sm",
     blue: "border-blue-200 bg-blue-50/80 text-blue-700",
     emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-700",
     amber: "border-amber-200 bg-amber-50/80 text-amber-700",
@@ -261,7 +261,7 @@ function SummaryTile({
   }[tone];
 
   return (
-    <div className="relative overflow-hidden rounded border border-slate-400 bg-white px-3.5 py-3.5 shadow-[var(--shadow-flat)] transition-shadow ">
+    <div className="relative overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3.5 py-3.5 transition-shadow ">
       {/* Top accent line */}
       <div
         className={`absolute inset-x-0 top-0 h-[3px] ${
@@ -312,7 +312,7 @@ function DetailRow({
     value === null || value === undefined || value === "" ? "-" : value;
 
   return (
-    <div className="flex items-start gap-2.5 rounded border border-slate-400 bg-white px-3.5 py-2.5 shadow-[var(--shadow-flat)]">
+    <div className="flex items-start gap-2.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3.5 py-2.5">
       <span className="mt-0.5 text-slate-600" aria-hidden>
         {icon}
       </span>
@@ -355,7 +355,7 @@ function PriceSourceCard({
   const canRefresh = source.mode === "linked" && !!source.url;
 
   return (
-    <li className="rounded border border-slate-400 bg-white px-4 py-3">
+    <li className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-1">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -533,6 +533,7 @@ export function MaterialDetailClient({
     onError: (error) => {
       setSuccessMessage(null);
       setActionError(error.message || "Không thể lưu vật tư.");
+      toast.error(error.message || "Không thể lưu vật tư.");
     },
   });
 
@@ -545,7 +546,9 @@ export function MaterialDetailClient({
       toast.success("Đã cập nhật khóa trường scrape.");
     },
     onError: (error) => {
-      setActionError(error.message || "Không thể cập nhật khóa trường.");
+      const message = error.message || "Không thể cập nhật khóa trường.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -570,6 +573,7 @@ export function MaterialDetailClient({
 
   const deleteMaterial = api.material.deleteMaterial.useMutation({
     onSuccess: async () => {
+      toast.success("Đã xóa vật tư.");
       await Promise.all([
         utils.material.searchMaterials.invalidate(),
         utils.material.getMaterialSummary.invalidate(),
@@ -579,7 +583,9 @@ export function MaterialDetailClient({
     },
     onError: (error) => {
       setDeleteMaterialTarget(null);
-      setActionError(error.message || "Không thể xóa vật tư.");
+      const message = error.message || "Không thể xóa vật tư.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -594,7 +600,9 @@ export function MaterialDetailClient({
       router.push(`/materials/${material.id}`);
     },
     onError: (error) => {
-      setActionError(error.message || "Không thể nhân bản vật tư.");
+      const message = error.message || "Không thể nhân bản vật tư.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -615,25 +623,33 @@ export function MaterialDetailClient({
   const addPriceSource = api.material.addPriceSource.useMutation({
     onSuccess: async ({ material }) => {
       setActionError(null);
-      setSuccessMessage("Đã thêm link sản phẩm / nguồn giá.");
+      const message = "Đã thêm link sản phẩm / nguồn giá.";
+      setSuccessMessage(message);
+      toast.success(message);
       setPriceSourceForm(emptyPriceSourceForm);
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setSuccessMessage(null);
-      setActionError(error.message || "Không thể thêm nguồn giá.");
+      const message = error.message || "Không thể thêm nguồn giá.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
   const updatePriceSource = api.material.updatePriceSource.useMutation({
     onSuccess: async ({ material }) => {
       setActionError(null);
-      setSuccessMessage("Đã cập nhật link sản phẩm / nguồn giá.");
+      const message = "Đã cập nhật link sản phẩm / nguồn giá.";
+      setSuccessMessage(message);
+      toast.success(message);
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setSuccessMessage(null);
-      setActionError(error.message || "Không thể cập nhật nguồn giá.");
+      const message = error.message || "Không thể cập nhật nguồn giá.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -641,37 +657,49 @@ export function MaterialDetailClient({
     onSuccess: async (material) => {
       setActionError(null);
       setDeleteSourceTarget(null);
-      setSuccessMessage("Đã xóa link sản phẩm / nguồn giá.");
+      const message = "Đã xóa link sản phẩm / nguồn giá.";
+      setSuccessMessage(message);
+      toast.success(message);
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setDeleteSourceTarget(null);
       setSuccessMessage(null);
-      setActionError(error.message || "Không thể xóa nguồn giá.");
+      const message = error.message || "Không thể xóa nguồn giá.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
   const refreshPriceSource = api.material.refreshPriceSource.useMutation({
     onSuccess: async ({ material }) => {
       setActionError(null);
-      setSuccessMessage("Đã cập nhật giá từ link sản phẩm.");
+      const message = "Đã cập nhật giá từ link sản phẩm.";
+      setSuccessMessage(message);
+      toast.success(message);
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setSuccessMessage(null);
-      setActionError(error.message || "Không thể cập nhật giá từ link.");
+      const message = error.message || "Không thể cập nhật giá từ link.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
   const applyPriceSourcePrice = api.material.applyPriceSourcePrice.useMutation({
     onSuccess: async (material) => {
       setActionError(null);
-      setSuccessMessage("Đã áp dụng giá vào đơn giá.");
+      const message = "Đã áp dụng giá vào đơn giá.";
+      setSuccessMessage(message);
+      toast.success(message);
       await refreshMaterialQueries(material);
     },
     onError: (error) => {
       setSuccessMessage(null);
-      setActionError(error.message || "Không thể áp dụng giá.");
+      const message = error.message || "Không thể áp dụng giá.";
+      setActionError(message);
+      toast.error(message);
     },
   });
 
@@ -1012,7 +1040,7 @@ export function MaterialDetailClient({
                   href={material.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded border border-slate-400 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   <ExternalLink className="h-4 w-4" aria-hidden />
                   Mở nguồn
@@ -1114,7 +1142,7 @@ export function MaterialDetailClient({
           <div className="mt-4 grid gap-2 xl:grid-cols-[1.1fr_0.9fr]">
             <article className="rounded border border-slate-400 bg-slate-50 px-4 py-3">
               <div className="flex items-start gap-1">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-400 bg-white text-slate-700">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700">
                   <FileText className="h-4 w-4" aria-hidden />
                 </span>
                 <div className="min-w-0">
@@ -1128,7 +1156,7 @@ export function MaterialDetailClient({
               </div>
             </article>
 
-            <article className="rounded border border-slate-400 bg-white px-4 py-3">
+            <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
               <div className="flex flex-wrap items-start justify-between gap-1">
                 <div>
                   <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
@@ -1201,7 +1229,7 @@ export function MaterialDetailClient({
           id="material-prices-content"
           className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[0.85fr_1.15fr]"
         >
-        <article className="rounded border border-slate-400 bg-white p-2">
+        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
           <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Thêm nguồn giá</h4>
             <p className="mt-1 text-xs text-slate-700">
@@ -1346,7 +1374,7 @@ export function MaterialDetailClient({
           </form>
         </article>
 
-        <article className="rounded border border-slate-400 bg-white p-2">
+        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
           <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">
               Nguồn giá đã lưu
@@ -1438,7 +1466,7 @@ export function MaterialDetailClient({
           id="material-edit-content"
           className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[1.25fr_0.75fr]"
         >
-        <article className="rounded border border-slate-400 bg-white p-2">
+        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
           <div className="border-b border-slate-400 pb-3">
             <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
             <p className="mt-1 text-xs text-slate-700">
@@ -1635,7 +1663,7 @@ export function MaterialDetailClient({
         </article>
 
         <aside className="space-y-4">
-          <article className="rounded border border-slate-400 bg-white p-2">
+          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
             <h3 className="text-sm font-bold text-slate-950">
               Thiết lập vật tư
             </h3>
@@ -1668,7 +1696,7 @@ export function MaterialDetailClient({
             </dl>
           </article>
 
-          <article className="rounded border border-slate-400 bg-white p-2">
+          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-950">Ảnh sản phẩm</h3>
               <button
@@ -1693,7 +1721,7 @@ export function MaterialDetailClient({
             </div>
           </article>
 
-          <article className="rounded border border-slate-400 bg-white p-2">
+          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
             <h3 className="text-sm font-bold text-slate-950">Siêu dữ liệu</h3>
             <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
