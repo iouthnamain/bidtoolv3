@@ -1,4 +1,4 @@
-import { Bot, Building2, Download, ShieldCheck, Users, Workflow } from "lucide-react";
+import { Bot, Building2, Download, Users } from "lucide-react";
 
 import { createPageMetadata } from "~/app/_lib/seo";
 import {
@@ -100,18 +100,6 @@ export default async function AdminPage() {
               label: "Cập nhật",
               description: "Kiểm tra và áp dụng bản mới.",
               icon: Download,
-            },
-            {
-              href: "/workflows",
-              label: "Workflow",
-              description: "Kiểm tra automation lỗi.",
-              icon: Workflow,
-            },
-            {
-              href: "/help/vai-tro",
-              label: "Vai trò",
-              description: "Xem lại ranh giới quyền.",
-              icon: ShieldCheck,
             },
           ]}
         />

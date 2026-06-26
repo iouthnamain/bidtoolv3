@@ -61,7 +61,18 @@ export function scoreAiCandidateCompletion(
 
   const fieldScore = filled * 0.07 + confidenceSum * 0.1;
   const pdfBonus = (candidate.catalogPdfUrls?.length ?? 0) > 0 ? 0.05 : 0;
-  return Math.max(0, Math.min(1, score + fieldScore + pdfBonus - conflictPenalty));
+  const specText = fields.specText?.trim() ?? "";
+  const specLineCount = specText.split("\n").filter((line) => line.trim()).length;
+  let specBonus = 0;
+  if (specLineCount >= 5 || specText.length >= 120) {
+    specBonus = 0.1;
+  } else if (specLineCount >= 2 || specText.length >= 40) {
+    specBonus = 0.05;
+  }
+  return Math.max(
+    0,
+    Math.min(1, score + fieldScore + pdfBonus + specBonus - conflictPenalty),
+  );
 }
 
 export function catalogCandidateScore(score: number | undefined): number {

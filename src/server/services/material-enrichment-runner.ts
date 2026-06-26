@@ -34,6 +34,7 @@ import { extractProductFromSources } from "~/server/services/material-enrichment
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-material-enrichment-runner");
 import {
+  enrichSearchResultsWithFetchedContent,
   extractPdfUrlsFromResults,
   fetchKnownSourceCandidates,
   rankSearchResults,
@@ -488,11 +489,16 @@ async function _processEnrichmentItem(
     const pdfUrls = extractPdfUrlsFromResults(ranked);
     const candidates = await saveWebCandidates(item, ranked, pdfUrls);
 
+    const fetchedRanked = await enrichSearchResultsWithFetchedContent(ranked, {
+      fetchCount: options.maxSearchResults ?? DEFAULT_MAX_SEARCH_RESULTS,
+      signal,
+    });
+
     const provider =
       loadProvider?.() ?? resolveAiProvider("enrichment", options.model);
     const extracted = await extractProductFromSources(
       input,
-      ranked,
+      fetchedRanked,
       await provider,
       signal,
     );

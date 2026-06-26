@@ -61,12 +61,6 @@ export const savedItemsSectionNavItems: PageSectionNavItem[] = [
     description: "Quay về tìm kiếm để lưu bộ lọc thông minh mới.",
     icon: "search",
   },
-  {
-    href: "/workflows",
-    label: "Tự động hóa",
-    description: "Biến bộ lọc thông minh thành workflow cảnh báo.",
-    icon: "workflow",
-  },
 ];
 
 export const workflowSectionNavItems: PageSectionNavItem[] = [
@@ -180,13 +174,6 @@ export const researchEnrichSectionNavItems: PageSectionNavItem[] = [
     match: "exact",
   },
   {
-    href: "/enrich",
-    label: "Đối chiếu & điền",
-    description: "Ghép catalog có sẵn và điền các ô trống trong Excel.",
-    icon: "sheet",
-    tone: "emerald",
-  },
-  {
     href: "/materials",
     label: "Danh mục vật tư",
     description: "Catalog dùng làm nguồn tham chiếu khi nghiên cứu.",
@@ -296,12 +283,6 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
     label: "Hộp thông báo",
     description: "Lọc chưa đọc, chọn nhiều và dọn cảnh báo.",
     icon: "bell",
-  },
-  {
-    href: "/workflows",
-    label: "Workflow nguồn",
-    description: "Kiểm tra workflow tạo ra cảnh báo.",
-    icon: "workflow",
   },
   {
     href: "/saved-items/watchlist",

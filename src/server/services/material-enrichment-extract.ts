@@ -47,16 +47,27 @@ export type ExtractedProductFields = Partial<
   catalogPdfUrls?: string[];
 };
 
-const EXTRACTION_SYSTEM_PROMPT = `You extract structured product data from web search snippets for construction materials.
+const EXTRACTION_SYSTEM_PROMPT = `You extract structured product data from web page content for construction / MEP materials (Vietnamese market).
 Rules:
 - Return JSON only. No markdown fences or commentary.
-- Use only facts explicitly present in the provided snippets.
+- Use only facts explicitly present in the provided sources.
 - Never invent values. If uncertain, set value to null and confidence to 0.
-- Each non-null field must include at least one evidence item with field, value, sourceUrl, snippet copied from the snippets.
-- confidence is 0..1 reflecting how directly the snippet supports the value.
+- Goal: fill as many fields as the evidence supports — extract every field you can find for THIS product.
+- Match the product to the row context (name, code, manufacturer). Ignore specs for a different SKU/variant.
+- Each non-null field must include at least one evidence item with field, value, sourceUrl, snippet copied from the sources.
+- confidence is 0..1 reflecting how directly the source supports the value.
 - For "price": extract the unit selling price as a plain number string with NO currency symbol or thousands separators (e.g. "1250000", not "1.250.000₫"). Prefer the listed/selling price for a single unit. If only a price range or unclear price appears, set value to null.
-- For "code": extract the manufacturer part number / model / SKU code for the product (e.g. "CV-2x2.5", "NF125-SGV"). Set value to null if no clear product code appears in the snippets.
-- catalogPdfUrls may only include PDF URLs present in the snippets.
+- For "code": extract the manufacturer part number / model / SKU code for the product (e.g. "CV-2x2.5", "NF125-SGV", "PVC-D90"). Set value to null if no clear product code appears.
+- For "specText": compile ALL technical specifications into a detailed multi-line block (Thông số kỹ thuật).
+  * One attribute per line as "Label: value" (keep Vietnamese labels when the source is Vietnamese).
+  * Include every measurable attribute found: dimensions (DxRxD, Ø, W×H×L), diameter, thickness, weight, voltage, current, pressure, material, color/finish, standard (TCVN/IEC/ISO), packaging, origin, warranty, application, etc.
+  * Merge rows from spec tables and definition lists — do NOT collapse into one short phrase.
+  * When the source has a spec table with 5+ rows, specText should have at least 5 lines.
+  * Preserve units and numeric values exactly as written in the source.
+- For "category": use the product type / ngành hàng (e.g. "Ống PVC", "Cáp điện", "Van cửa").
+- For "manufacturer" and "originCountry": prefer official brand / country from spec tables or product header.
+- For "unit": use the selling unit (m, cái, kg, bộ, cuộn, tấm, …) when listed.
+- catalogPdfUrls may only include PDF URLs present in the sources.
 
 JSON shape:
 {
@@ -91,17 +102,21 @@ function buildExtractionUserPrompt(
       ? `currentPrice: ${input.defaultUnitPrice} ${input.currency}`
       : null,
     "",
-    "Search snippets:",
+    "Source content (search hits and/or fetched page text):",
   ]
     .filter(Boolean)
     .join("\n");
 
   const snippets = candidates
     .slice(0, 12)
-    .map(
-      (candidate, index) =>
-        `[${index + 1}] title: ${candidate.title}\nurl: ${candidate.url}\ndomain: ${candidate.domain}\nsnippet: ${candidate.snippet}`,
-    )
+    .map((candidate, index) => {
+      const content = candidate.snippet.trim();
+      const truncated =
+        content.length > 10_000
+          ? `${content.slice(0, 10_000)}\n…[truncated]`
+          : content;
+      return `[${index + 1}] title: ${candidate.title}\nurl: ${candidate.url}\ndomain: ${candidate.domain}\ncontent:\n${truncated}`;
+    })
     .join("\n\n");
 
   return `${header}\n${snippets}`;

@@ -308,7 +308,7 @@ async function getAttentionQueue(): Promise<DashboardQueueItem[]> {
       id: `workflow-${run.id}`,
       title: run.name,
       meta: run.message || `Workflow lỗi lúc ${run.startedAt}`,
-      href: `/workflows/${run.workflowId}`,
+      href: "/notifications",
       tone: "critical",
     })),
     ...tenantlessRows.map((row): DashboardQueueItem => ({

@@ -39,6 +39,33 @@ describe("scoreAiCandidateCompletion", () => {
     ).toBeGreaterThan(scoreAiCandidateCompletion(sparse, {}));
   });
 
+  it("boosts candidates with detailed multi-line specText", () => {
+    const shortSpec: AiSearchStoredResult = {
+      fields: { specText: "PVC" },
+      sourceUrls: [],
+      evidence: [],
+      fieldConfidences: { specText: 0.8 },
+    };
+    const detailedSpec: AiSearchStoredResult = {
+      fields: {
+        specText: [
+          "Đường kính: 90 mm",
+          "Chiều dài: 6 m",
+          "Vật liệu: PVC",
+          "Tiêu chuẩn: TCVN 8491",
+          "Màu: Xám",
+        ].join("\n"),
+      },
+      sourceUrls: [],
+      evidence: [],
+      fieldConfidences: { specText: 0.85 },
+    };
+
+    expect(scoreAiCandidateCompletion(detailedSpec, {})).toBeGreaterThan(
+      scoreAiCandidateCompletion(shortSpec, {}),
+    );
+  });
+
   it("penalizes conflicts unless confidence is high enough to overwrite", () => {
     const lowConfidence: AiSearchStoredResult = {
       fields: { manufacturer: "Cadivi" },

@@ -116,6 +116,22 @@ const INTERNAL_ROLES = ["admin", "manager", "staff"] as const;
 const OPERATIONS_ROLES = ["admin", "staff"] as const;
 const GOVERNANCE_ROLES = ["admin", "manager"] as const;
 
+/** Routes hidden from navigation and blocked by RoleRouteGuard. */
+export const HIDDEN_ROUTE_PREFIXES = [
+  "/documents",
+  "/enrich",
+  "/jobs",
+  "/workflows",
+  "/help",
+  "/chat",
+] as const;
+
+export function isHiddenRoute(pathname: string): boolean {
+  return HIDDEN_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
   {
     id: "home",
@@ -161,12 +177,6 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         ],
       },
       {
-        href: "/documents",
-        label: "Tài liệu",
-        icon: "documents",
-        roles: OPERATIONS_ROLES,
-      },
-      {
         href: "/materials",
         label: "Sản phẩm / vật tư",
         icon: "materials",
@@ -197,26 +207,6 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         roles: OPERATIONS_ROLES,
       },
       {
-        href: "/enrich",
-        label: "Đối chiếu Excel",
-        icon: "enrich",
-        roles: OPERATIONS_ROLES,
-        subItems: [
-          { href: "/enrich", label: "Đối chiếu & điền" },
-          {
-            href: "/enrich/jobs",
-            label: "Job nghiên cứu",
-            permission: "excelResearch:run",
-          },
-        ],
-      },
-      {
-        href: "/jobs",
-        label: "Danh sách job",
-        icon: "jobs",
-        roles: OPERATIONS_ROLES,
-      },
-      {
         href: "/catalog-pdfs",
         label: "Thư viện catalog PDF",
         icon: "documents",
@@ -238,17 +228,6 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         subItems: [
           { href: "/saved-items/smart-views", label: "Bộ lọc thông minh" },
           { href: "/saved-items/watchlist", label: "Danh sách theo dõi" },
-        ],
-      },
-      {
-        href: "/workflows",
-        label: "Quy trình",
-        icon: "workflow",
-        roles: OPERATIONS_ROLES,
-        subItems: [
-          { href: "/workflows", label: "Danh sách" },
-          { href: "/workflows/health", label: "Trạng thái" },
-          { href: "/workflows/alerts", label: "Thông báo" },
         ],
       },
     ],
@@ -324,39 +303,6 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         label: "Thông báo",
         icon: "notification",
         roles: INTERNAL_ROLES,
-      },
-    ],
-  },
-  {
-    id: "support",
-    title: "Hỗ trợ",
-    roles: INTERNAL_ROLES,
-    items: [
-      {
-        href: "/help",
-        label: "Trợ giúp",
-        icon: "help",
-        roles: INTERNAL_ROLES,
-        subItems: [
-          { href: "/help", label: "Tổng quan" },
-          { href: "/help/vai-tro", label: "Vai trò & quyền" },
-          { href: "/help/bat-dau", label: "Bắt đầu" },
-          { href: "/help/cap-nhat-hang-ngay", label: "Vận hành" },
-          { href: "/help/tim-kiem", label: "Tìm kiếm" },
-          { href: "/help/smart-view", label: "Bộ lọc thông minh" },
-          { href: "/help/quy-trinh", label: "Quy trình" },
-          { href: "/help/thong-bao", label: "Thông báo" },
-          { href: "/help/import-mapping", label: "Nhập & ánh xạ" },
-          { href: "/help/vat-tu", label: "Vật tư" },
-          { href: "/help/khac-phuc-loi", label: "Khắc phục lỗi" },
-        ],
-      },
-      {
-        href: "/chat",
-        label: "Thử nghiệm chat",
-        icon: "chat",
-        roles: OPERATIONS_ROLES,
-        permission: "ai:run",
       },
     ],
   },
@@ -472,6 +418,7 @@ export function canAccessRoute(
     canPure(role, permission),
 ): boolean {
   if (!role) return true;
+  if (isHiddenRoute(pathname)) return false;
   if (role === "customer") return pathname.startsWith("/portal");
 
   const rule = ROUTE_RULES.find((candidate) =>

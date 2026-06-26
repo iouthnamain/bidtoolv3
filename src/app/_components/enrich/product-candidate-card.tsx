@@ -104,9 +104,19 @@ export function ProductCandidateCard({
             {candidate.manufacturer ?? "NSX —"}
             {candidate.originCountry ? ` · ${candidate.originCountry}` : ""}
           </p>
-          <p className="mt-0.5 text-xs font-semibold text-slate-700 tabular-nums">
-            {candidate.unit ? `${candidate.unit} · ` : ""}
-            {formatMoney(candidate.defaultUnitPrice, candidate.currency, "Chưa có giá")}
+          <p className="mt-0.5 text-xs tabular-nums">
+            {candidate.unit ? (
+              <span className="font-semibold text-slate-700">{candidate.unit} · </span>
+            ) : null}
+            <span
+              className={
+                candidate.defaultUnitPrice != null
+                  ? "font-bold text-amber-800"
+                  : "font-medium text-slate-500 italic"
+              }
+            >
+              {formatMoney(candidate.defaultUnitPrice, candidate.currency, "Chưa có giá")}
+            </span>
           </p>
         </div>
       </div>

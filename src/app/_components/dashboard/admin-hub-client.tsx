@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Download,
   Laptop,
-  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -45,12 +44,6 @@ const adminCards = [
     title: "Ứng dụng desktop",
     description: "Cấu hình client Electron kết nối server.",
     icon: Laptop,
-  },
-  {
-    href: "/help/vai-tro",
-    title: "Vai trò & quyền",
-    description: "Ma trận những gì admin, manager, staff, customer có thể làm.",
-    icon: ShieldCheck,
   },
 ];
 

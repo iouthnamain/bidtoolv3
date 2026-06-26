@@ -17,6 +17,7 @@ import { parseEnrichmentPrice } from "~/server/services/material-enrichment-comm
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-enrich-web-row");
 import {
+  enrichSearchResultsWithFetchedContent,
   rankSearchResults,
   searchWebForProduct,
   type WebSearchResult,
@@ -138,9 +139,14 @@ async function extractFieldsFromRankedResults(
     };
   }
 
+  const fetchedCandidates = await enrichSearchResultsWithFetchedContent(
+    ranked,
+    { fetchCount: 6, signal },
+  );
+
   const extracted = await extractProductFromSources(
     enrichmentInputFromRow(input),
-    ranked,
+    fetchedCandidates,
     provider,
     signal,
   );
@@ -157,6 +163,10 @@ async function _enrichRowFromWeb(
     manufacturer: input.manufacturer,
     code: input.code,
     specText: input.specText,
+    unit: input.unit,
+    category: input.category,
+    originCountry: input.originCountry,
+    maxQueries: 6,
   }).map((query) => query.query);
 
   if (queries.length === 0 || !input.name.trim()) {

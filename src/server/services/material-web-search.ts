@@ -7,6 +7,7 @@ import {
 } from "~/server/services/app-settings";
 import { createAsyncLimiter } from "~/server/services/concurrency";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import { extractEnrichmentPageText } from "~/server/services/page-text-extract";
 const log = createLogger("material-web-search");
 
 export type WebSearchResult = {
@@ -388,13 +389,13 @@ async function _fetchUrlAsSearchResult(
     const titlePattern = /<title[^>]*>([\s\S]*?)<\/title>/i;
     const titleMatch = titlePattern.exec(body);
     const title = stripHtmlTags(titleMatch?.[1] ?? "") || trimmed;
-    const snippet = stripHtmlTags(body).slice(0, 600);
+    const snippet = extractEnrichmentPageText(body);
 
     return {
       title,
       url: response.url || trimmed,
       domain: extractDomain(response.url || trimmed),
-      snippet,
+      snippet: snippet || stripHtmlTags(body).slice(0, 600),
       query,
       rankScore: 0.4,
     };
@@ -671,6 +672,42 @@ function _extractPdfUrlsFromResults(results: WebSearchResult[]) {
   return urls;
 }
 
+async function _enrichSearchResultsWithFetchedContent(
+  results: WebSearchResult[],
+  options?: { fetchCount?: number; signal?: AbortSignal },
+): Promise<WebSearchResult[]> {
+  const fetchCount = options?.fetchCount ?? 6;
+  const toFetch = results.slice(0, fetchCount);
+  const rest = results.slice(fetchCount);
+
+  const enriched = await Promise.all(
+    toFetch.map(async (result) => {
+      const fetched = await fetchUrlAsSearchResult(
+        result.url,
+        result.query,
+        options?.signal,
+      );
+      if (!fetched?.snippet.trim()) {
+        return result;
+      }
+      return {
+        ...result,
+        title: fetched.title.trim() || result.title,
+        snippet: fetched.snippet.trim() || result.snippet,
+        domain: fetched.domain || result.domain,
+        rankScore: Math.max(result.rankScore, fetched.rankScore),
+      };
+    }),
+  );
+
+  return [...enriched, ...rest];
+}
+
+export const enrichSearchResultsWithFetchedContent = traceFn(
+  log,
+  "enrichSearchResultsWithFetchedContent",
+  _enrichSearchResultsWithFetchedContent,
+);
 export const fetchUrlAsSearchResult = traceFn(
   log,
   "fetchUrlAsSearchResult",
