@@ -2224,6 +2224,9 @@ export const materialRouter = createTRPCRouter({
         manufacturer: input.manufacturer,
         code: input.code,
         specText: input.specText,
+        unit: input.unit,
+        category: input.category,
+        originCountry: input.originCountry,
       }).map((query) => query.query);
 
       if (queries.length === 0) {

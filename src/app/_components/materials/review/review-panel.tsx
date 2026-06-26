@@ -16,6 +16,7 @@ import {
   applyWebSearchToDecision,
   isExportableDecision,
   webFieldsAfterGapFill,
+  type AiSearchStoredResult,
   type WebLinkResult,
 } from "~/lib/materials/enrich-gap-fill";
 import {
@@ -92,6 +93,7 @@ export function ReviewPanel({
   const isProfileSplit = searchMode === "profileSplit";
   const webSearch = api.material.enrichWebSearchRow.useMutation();
   const webLinksSearch = api.material.enrichWebSearchRowLinks.useMutation();
+  const profileSearch = api.material.enrichProfileSearchRow.useMutation();
   const aiSearchSingle = api.material.enrichAiSearchRow.useMutation();
   const selectedRowIndexRef = useRef(selectedRowIndex);
   selectedRowIndexRef.current = selectedRowIndex;
@@ -318,22 +320,43 @@ export function ReviewPanel({
     const nextPending = {
       ...decision,
       webLinksStatus: "pending" as const,
+      aiSearchStatus: "pending" as const,
       webLinkResults: [],
+      aiSearchCandidates: [],
+      aiSearchResult: undefined,
     };
     updateDecision(rowIndex, nextPending);
     persistDecision(rowIndex, nextPending);
 
     try {
-      const response = await webLinksSearch.mutateAsync(webRowInput(row));
-      const links: WebLinkResult[] = response.results.map((hit) => ({
-        title: hit.title,
-        url: hit.url,
-        domain: hit.domain,
-        snippet: hit.snippet,
-        query: hit.query,
-        rankScore: hit.rankScore,
-      }));
-      const status = links.length > 0 ? ("done" as const) : ("error" as const);
+      const response = isProfileSplit
+        ? await profileSearch.mutateAsync(webRowInput(row))
+        : await (async () => {
+            const linkResponse = await webLinksSearch.mutateAsync(webRowInput(row));
+            return {
+              webLinkResults: linkResponse.results.map((hit) => ({
+                title: hit.title,
+                url: hit.url,
+                domain: hit.domain,
+                snippet: hit.snippet,
+                query: hit.query,
+                rankScore: hit.rankScore,
+              })),
+              aiSearchCandidates: [] as AiSearchStoredResult[],
+              warnings: linkResponse.warnings,
+            };
+          })();
+
+      const links: WebLinkResult[] = response.webLinkResults;
+      const candidates: AiSearchStoredResult[] = response.aiSearchCandidates;
+      const webStatus = links.length > 0 ? ("done" as const) : ("error" as const);
+      const aiStatus =
+        candidates.length > 0
+          ? ("done" as const)
+          : isProfileSplit && links.length > 0
+            ? ("error" as const)
+            : undefined;
+
       applyDecisions((prev) => {
         const current = prev.get(rowIndex);
         if (!current) return prev;
@@ -341,14 +364,31 @@ export function ReviewPanel({
         next.set(rowIndex, {
           ...current,
           webLinkResults: links,
-          webLinksStatus: status,
+          webLinksStatus: webStatus,
+          ...(isProfileSplit
+            ? {
+                aiSearchCandidates: candidates,
+                aiSearchResult: candidates[0],
+                aiSearchStatus: aiStatus,
+              }
+            : {}),
         });
         persistDecision(rowIndex, next.get(rowIndex)!);
         return next;
       });
+
       if (rowIndex === selectedRowIndexRef.current) {
         if (links.length === 0) {
-          toast.warning("Không tìm thấy liên kết web.");
+          const warning =
+            response.warnings.find((item) => item.trim().length > 0) ??
+            "Không tìm thấy liên kết web.";
+          toast.warning(warning);
+        } else if (isProfileSplit) {
+          toast.success(
+            candidates.length > 0
+              ? `Tìm thấy ${links.length} liên kết và ${candidates.length} ứng viên AI.`
+              : `Tìm thấy ${links.length} liên kết web (AI chưa trích xuất được).`,
+          );
         } else {
           toast.success(`Tìm thấy ${links.length} liên kết web.`);
         }
@@ -358,7 +398,11 @@ export function ReviewPanel({
         const current = prev.get(rowIndex);
         if (!current) return prev;
         const next = new Map(prev);
-        next.set(rowIndex, { ...current, webLinksStatus: "error" });
+        next.set(rowIndex, {
+          ...current,
+          webLinksStatus: "error",
+          ...(isProfileSplit ? { aiSearchStatus: "error" as const } : {}),
+        });
         persistDecision(rowIndex, next.get(rowIndex)!);
         return next;
       });
@@ -389,28 +433,57 @@ export function ReviewPanel({
 
     try {
       let links = decision.webLinkResults ?? [];
+      let candidates = decision.aiSearchCandidates ?? [];
+
       if (links.length === 0) {
-        const response = await webLinksSearch.mutateAsync(webRowInput(row));
-        links = response.results.map((hit) => ({
-          title: hit.title,
-          url: hit.url,
-          domain: hit.domain,
-          snippet: hit.snippet,
-          query: hit.query,
-          rankScore: hit.rankScore,
-        }));
-        applyDecisions((prev) => {
-          const current = prev.get(rowIndex);
-          if (!current) return prev;
-          const next = new Map(prev);
-          next.set(rowIndex, {
-            ...current,
-            webLinkResults: links,
-            webLinksStatus: links.length > 0 ? "done" : "error",
+        if (isProfileSplit) {
+          const response = await profileSearch.mutateAsync(webRowInput(row));
+          links = response.webLinkResults;
+          candidates = response.aiSearchCandidates;
+          applyDecisions((prev) => {
+            const current = prev.get(rowIndex);
+            if (!current) return prev;
+            const next = new Map(prev);
+            next.set(rowIndex, {
+              ...current,
+              webLinkResults: links,
+              webLinksStatus: links.length > 0 ? "done" : "error",
+              aiSearchCandidates: candidates,
+              aiSearchResult: candidates[0],
+              aiSearchStatus: candidates.length > 0 ? "done" : "error",
+            });
+            persistDecision(rowIndex, next.get(rowIndex)!);
+            return next;
           });
-          persistDecision(rowIndex, next.get(rowIndex)!);
-          return next;
-        });
+          if (candidates.length > 0) {
+            if (rowIndex === selectedRowIndexRef.current) {
+              toast.success(`Tìm thấy ${candidates.length} ứng viên AI.`);
+            }
+            return;
+          }
+        } else {
+          const response = await webLinksSearch.mutateAsync(webRowInput(row));
+          links = response.results.map((hit) => ({
+            title: hit.title,
+            url: hit.url,
+            domain: hit.domain,
+            snippet: hit.snippet,
+            query: hit.query,
+            rankScore: hit.rankScore,
+          }));
+          applyDecisions((prev) => {
+            const current = prev.get(rowIndex);
+            if (!current) return prev;
+            const next = new Map(prev);
+            next.set(rowIndex, {
+              ...current,
+              webLinkResults: links,
+              webLinksStatus: links.length > 0 ? "done" : "error",
+            });
+            persistDecision(rowIndex, next.get(rowIndex)!);
+            return next;
+          });
+        }
       }
 
       const topLinks = links.slice(0, 6);
