@@ -83,7 +83,7 @@ export function MaterialProfileReviewStep({
   }, [items]);
 
   const [decisions, setDecisions] = useState<Map<number, RowDecision>>(
-    () => seedDecisionsFromItems(reviewItems),
+    () => seedDecisionsFromItems(reviewItems, { emptyUntilReview: true }),
   );
   const [statusFilter, setStatusFilter] = useState<ReviewRowStatus | "all">(
     "all",
@@ -119,7 +119,9 @@ export function MaterialProfileReviewStep({
     });
 
   useEffect(() => {
-    setDecisions(seedDecisionsFromItems(reviewItems));
+    setDecisions(
+      seedDecisionsFromItems(reviewItems, { emptyUntilReview: true }),
+    );
     setSelectedRowIndex(reviewRows[0]?.originalRowIndex ?? null);
   }, [itemsKey]);
 
@@ -203,7 +205,9 @@ export function MaterialProfileReviewStep({
       .map((item) => {
         const decision =
           decisionsRef.current.get(item.originalRowIndex) ??
-          seedDecisionsFromItems([toReviewItem(item)]).get(
+          seedDecisionsFromItems([toReviewItem(item)], {
+            emptyUntilReview: true,
+          }).get(
             item.originalRowIndex,
           );
         if (!decision) return null;

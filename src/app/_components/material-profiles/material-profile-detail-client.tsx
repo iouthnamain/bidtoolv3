@@ -594,6 +594,8 @@ function WorkbookMappingStep({
   onEdit,
   onSave,
   onRunMatch,
+  onContinueToReview,
+  canContinueToReview,
 }: {
   sheets: Sheet[];
   activeSheet: Sheet;
@@ -609,6 +611,8 @@ function WorkbookMappingStep({
   onEdit: (rowIndex: number, colIndex: number, value: string) => void;
   onSave: () => void;
   onRunMatch: () => void;
+  onContinueToReview: () => void;
+  canContinueToReview: boolean;
 }) {
   const hasNameColumn = Boolean(mapping.materialName);
   const optionalMapped = mappingFields.filter(
@@ -645,6 +649,13 @@ function WorkbookMappingStep({
               leftIcon={<Search className="h-4 w-4" />}
             >
               Lưu & chạy match
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!canContinueToReview}
+              onClick={onContinueToReview}
+            >
+              Tiếp tục duyệt vật tư
             </Button>
           </div>
         </div>
@@ -685,7 +696,8 @@ function WorkbookMappingStep({
           <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <p className="font-bold text-slate-900">Điều kiện qua bước</p>
             <p className="mt-1">
-              Cần map cột Tên vật tư rồi chạy match để mở bước duyệt vật tư.
+              Cần map cột Tên vật tư, chạy match, rồi bấm «Tiếp tục duyệt vật tư» để
+              sang bước 3.
             </p>
           </div>
         </div>
@@ -1142,8 +1154,9 @@ export function MaterialProfileDetailClient({
       await utils.materialProfile.get.invalidate({ workspaceId });
       setPreview(null);
       setPreviewAutoRequested(false);
-      toast.success("Đã match vật tư từ catalog.");
-      reach(3);
+      toast.success(
+        "Đã match vật tư từ catalog. Bấm «Tiếp tục duyệt vật tư» để sang bước 3.",
+      );
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1554,6 +1567,8 @@ export function MaterialProfileDetailClient({
           }
           onSave={() => void saveState()}
           onRunMatch={() => void runMatch()}
+          onContinueToReview={() => reach(3)}
+          canContinueToReview={(detail?.items.length ?? 0) > 0}
         />
       ) : null}
 

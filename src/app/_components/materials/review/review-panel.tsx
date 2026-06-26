@@ -701,14 +701,16 @@ export function ReviewPanel({
               </Button>
             </>
           ) : null}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={summary.auto === 0}
-            onClick={confirmAllAuto}
-          >
-            Xác nhận tất cả ≥ 85%
-          </Button>
+          {!isProfileSplit ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={summary.auto === 0}
+              onClick={confirmAllAuto}
+            >
+              Xác nhận tất cả ≥ 85%
+            </Button>
+          ) : null}
           <Button
             variant="warning"
             size="sm"

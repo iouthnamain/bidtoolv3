@@ -344,10 +344,20 @@ function fillPlanFromSnapshot(item: WorkspaceItemLike) {
   return snapshot?.fillPlan ?? [];
 }
 
-export function seedDecisionFromItem(item: WorkspaceItemLike): RowDecision {
+export function seedDecisionFromItem(
+  item: WorkspaceItemLike,
+  options?: { emptyUntilReview?: boolean },
+): RowDecision {
   const stored = deserializeRowDecision(item.reviewDecisionJson);
   if (stored && !isEmptySerializedRowDecision(item.reviewDecisionJson)) {
     return stored;
+  }
+
+  if (options?.emptyUntilReview) {
+    return {
+      materialId: null,
+      acceptedFields: new Set<FillableField>(),
+    };
   }
 
   const status = snapshotStatus(item);
@@ -427,10 +437,11 @@ export function deriveReviewRowStatus(
 
 export function seedDecisionsFromItems(
   items: WorkspaceItemLike[],
+  options?: { emptyUntilReview?: boolean },
 ): Map<number, RowDecision> {
   const map = new Map<number, RowDecision>();
   for (const item of items) {
-    map.set(item.originalRowIndex, seedDecisionFromItem(item));
+    map.set(item.originalRowIndex, seedDecisionFromItem(item, options));
   }
   return map;
 }

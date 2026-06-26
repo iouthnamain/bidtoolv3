@@ -234,4 +234,21 @@ describe("review-decision", () => {
       deriveReviewRowStatus(undefined, "unmatched", null),
     ).toBe("unmatched");
   });
+
+  it("seeds empty decisions for profile review until user chooses", () => {
+    const decision = seedDecisionFromItem(
+      {
+        originalRowIndex: 1,
+        materialId: 42,
+        enrichedSnapshotJson: {
+          status: "auto",
+          fillPlan: [{ field: "unit", action: "filled" }],
+        },
+        reviewDecisionJson: null,
+      },
+      { emptyUntilReview: true },
+    );
+    expect(decision.materialId).toBeNull();
+    expect(decision.acceptedFields.size).toBe(0);
+  });
 });
