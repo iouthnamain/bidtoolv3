@@ -131,7 +131,7 @@ function formatCompareFieldValue(
   if (field === "defaultUnitPrice") {
     const parsed = parsePriceInput(trimmed);
     if (parsed != null) {
-      return formatMoney(parsed, currency?.trim() || "VND");
+      return formatMoney(parsed, currency?.trim() ?? "VND");
     }
   }
   return trimmed;

@@ -45,7 +45,7 @@ function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
   const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(/,/g, "");
   const parsed = parseOptionalNumber(normalized);
   if (parsed == null) return undefined;
-  return formatMoney(parsed, fields.currency?.trim() || "VND");
+  return formatMoney(parsed, fields.currency?.trim() ?? "VND");
 }
 
 function profileSearchFields(decision: RowDecision | undefined) {
@@ -77,11 +77,9 @@ export function MatchChooser({
   onWebSearch,
   onWebLinksSearch,
   onAiSearch,
-  onProfileSearch,
   isWebSearchPending,
   isWebLinksPending,
   isAiSearchPending,
-  isProfileSearchPending,
 }: {
   row: ReviewRow;
   decision: RowDecision | undefined;
@@ -90,11 +88,9 @@ export function MatchChooser({
   onWebSearch?: () => void;
   onWebLinksSearch?: () => void;
   onAiSearch?: () => void;
-  onProfileSearch?: () => void;
   isWebSearchPending?: boolean;
   isWebLinksPending?: boolean;
   isAiSearchPending?: boolean;
-  isProfileSearchPending?: boolean;
 }) {
   const toast = useToast();
   const utils = api.useUtils();
@@ -165,7 +161,6 @@ export function MatchChooser({
       : webProposedFields;
 
   const profileSearchRunning =
-    isProfileSearchPending ??
     [isWebLinksPending, isAiSearchPending].some((v) => v === true);
 
   const searchSourceCandidates = useMemo((): SearchSourceCandidate[] => {
@@ -280,7 +275,6 @@ export function MatchChooser({
     decision?.aiSearchStatus,
     decision?.webLinkResults,
     decision?.webLinksStatus,
-    isProfileSearchPending,
     isProfileSplit,
     profileSearchRunning,
     row.name,
@@ -699,27 +693,41 @@ export function MatchChooser({
       : accepted.size > 0) &&
     !isWebSearchPending &&
     !isWebLinksPending &&
-    !isAiSearchPending &&
-    !isProfileSearchPending;
+    !isAiSearchPending;
   const isSavingMaterial = upsertMaterial.isPending;
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {isProfileSplit ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onProfileSearch}
-            disabled={[isProfileSearchPending, rowNameMissing].some(Boolean)}
-          >
-            {isProfileSearchPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Sparkles className="h-4 w-4" aria-hidden />
-            )}
-            Tìm lại
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onWebLinksSearch}
+              disabled={[isWebLinksPending, rowNameMissing].some(Boolean)}
+            >
+              {isWebLinksPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Globe className="h-4 w-4" aria-hidden />
+              )}
+              Tìm web
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onAiSearch}
+              disabled={[isAiSearchPending, rowNameMissing].some(Boolean)}
+            >
+              {isAiSearchPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden />
+              )}
+              Tìm AI
+            </Button>
+          </>
         ) : (
           <Button
             variant="secondary"
