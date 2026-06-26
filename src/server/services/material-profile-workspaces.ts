@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
@@ -155,15 +155,38 @@ export function buildMaterialProfileOutputPrefix(
   return `${safePathSegment(noticeNumber, "material-profile")}_${timestampLabel(date)}`;
 }
 
-async function materialProfileRoot() {
-  const configured = (await resolveMaterialProfileExportDir())?.trim();
-  return configured && configured.length > 0
-    ? path.resolve(configured)
-    : path.join(process.cwd(), "data", "material-profiles");
+function isServerlessEnvironment() {
+  return (
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
+  );
 }
 
-function workbookJsonFromSheets(sheets: ParsedWorkbookSheet[]) {
+export function resolveMaterialProfileStorageRoot(
+  configured: string | null | undefined,
+  options: { serverless?: boolean } = {},
+) {
+  const trimmed = configured?.trim();
+  if (trimmed && trimmed.length > 0) {
+    return path.resolve(trimmed);
+  }
+  if (options.serverless ?? isServerlessEnvironment()) {
+    return path.join(tmpdir(), "bidtool", "material-profiles");
+  }
+  return path.join(process.cwd(), "data", "material-profiles");
+}
+
+async function materialProfileRoot() {
+  const configured = await resolveMaterialProfileExportDir();
+  return resolveMaterialProfileStorageRoot(configured);
+}
+
+function workbookJsonFromSheets(
+  sheets: ParsedWorkbookSheet[],
+  sourceWorkbookBase64?: string,
+) {
   return {
+    ...(sourceWorkbookBase64 ? { sourceWorkbookBase64 } : {}),
     sheets: sheets.map((sheet) => ({
       name: sheet.name,
       detectedHeaderRowIndex: sheet.detectedHeaderRowIndex,
@@ -633,14 +656,46 @@ async function requireWorkspace(db: AppDb, workspaceId: number) {
   return workspace;
 }
 
-async function readWorkspaceWorkbook(workspace: Workspace) {
-  if (!workspace.sourceWorkbookPath) {
-    throw new MaterialProfileWorkspaceError(
-      "BAD_REQUEST",
-      "Chưa upload file Excel cho work này.",
-    );
+async function sourceWorkbookPathReadable(filePath: string) {
+  try {
+    await access(filePath, constants.R_OK);
+    return true;
+  } catch {
+    return false;
   }
-  return readFile(workspace.sourceWorkbookPath);
+}
+
+export async function resolveWorkspaceWorkbookBuffer(workspace: {
+  sourceWorkbookPath?: string | null;
+  workbookJson?: Record<string, unknown> | null;
+}) {
+  if (
+    workspace.sourceWorkbookPath &&
+    (await sourceWorkbookPathReadable(workspace.sourceWorkbookPath))
+  ) {
+    return readFile(workspace.sourceWorkbookPath);
+  }
+
+  const record =
+    workspace.workbookJson && typeof workspace.workbookJson === "object"
+      ? workspace.workbookJson
+      : null;
+  const base64 =
+    record && typeof record.sourceWorkbookBase64 === "string"
+      ? record.sourceWorkbookBase64
+      : null;
+  if (base64) {
+    return decodeBase64(base64);
+  }
+
+  throw new MaterialProfileWorkspaceError(
+    "BAD_REQUEST",
+    "Chưa upload file Excel cho work này.",
+  );
+}
+
+async function readWorkspaceWorkbook(workspace: Workspace) {
+  return resolveWorkspaceWorkbookBuffer(workspace);
 }
 
 function selectParsedSheet(
@@ -764,21 +819,27 @@ export async function uploadMaterialProfileWorkbook(
     );
   }
 
-  const root = await materialProfileRoot();
-  const noticeSegment = safePathSegment(
-    workspace.noticeNumber ?? workspace.name,
-    `workspace-${workspace.id}`,
-  );
-  const sourceDir = path.join(
-    root,
-    noticeSegment,
-    String(workspace.id),
-    "source",
-  );
-  await mkdir(sourceDir, { recursive: true });
+  const sourceWorkbookBase64 = bufferToBase64(buffer);
   const safeFileName = sanitizeWorkbookFileName(input.fileName);
-  const sourceWorkbookPath = path.join(sourceDir, safeFileName);
-  await writeFile(sourceWorkbookPath, buffer);
+  let sourceWorkbookPath: string | null = null;
+  try {
+    const root = await materialProfileRoot();
+    const noticeSegment = safePathSegment(
+      workspace.noticeNumber ?? workspace.name,
+      `workspace-${workspace.id}`,
+    );
+    const sourceDir = path.join(
+      root,
+      noticeSegment,
+      String(workspace.id),
+      "source",
+    );
+    await mkdir(sourceDir, { recursive: true });
+    sourceWorkbookPath = path.join(sourceDir, safeFileName);
+    await writeFile(sourceWorkbookPath, buffer);
+  } catch {
+    // Best-effort disk cache; serverless filesystems may be read-only.
+  }
 
   const now = new Date().toISOString();
   const [updated] = await db
@@ -790,7 +851,10 @@ export async function uploadMaterialProfileWorkbook(
       sourceSheetName: selectedSheet.name,
       rowCount: selectedSheet.rows.length,
       columnMappingJson: selectedSheet.suggestedMapping,
-      workbookJson: workbookJsonFromSheets(parsed.sheets),
+      workbookJson: workbookJsonFromSheets(
+        parsed.sheets,
+        sourceWorkbookBase64,
+      ),
       editStateJson: {},
       exportEditStateJson: {},
       updatedAt: now,
@@ -825,7 +889,17 @@ export async function updateMaterialProfileWorkspaceState(
   const headerRowIndex =
     input.headerRowIndex ?? selected?.activeHeaderRowIndex ?? undefined;
 
+  const existingWorkbookJson =
+    workspace.workbookJson && typeof workspace.workbookJson === "object"
+      ? workspace.workbookJson
+      : {};
+  const preservedBase64 =
+    typeof existingWorkbookJson.sourceWorkbookBase64 === "string"
+      ? existingWorkbookJson.sourceWorkbookBase64
+      : undefined;
+
   const nextWorkbookJson = {
+    ...(preservedBase64 ? { sourceWorkbookBase64: preservedBase64 } : {}),
     sheets: workbook.sheets.map((sheet) =>
       sheet.name === selected?.name && headerRowIndex
         ? { ...sheet, activeHeaderRowIndex: headerRowIndex }

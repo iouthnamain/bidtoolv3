@@ -12,6 +12,8 @@ import {
   MaterialProfileWorkspaceError,
   parseMaterialProfileExportEditState,
   resolveDefaultDownloadsDir,
+  resolveMaterialProfileStorageRoot,
+  resolveWorkspaceWorkbookBuffer,
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
   shouldBulkApplyMaterialProfileCandidate,
@@ -164,5 +166,69 @@ describe("material profile workspace helpers", () => {
     await expect(assertExportDirWritable("/etc")).rejects.toBeInstanceOf(
       MaterialProfileWorkspaceError,
     );
+  });
+});
+
+describe("material profile storage root", () => {
+  it("prefers configured export dir over serverless default", () => {
+    expect(
+      resolveMaterialProfileStorageRoot("/custom/material-profiles", {
+        serverless: true,
+      }),
+    ).toBe(path.resolve("/custom/material-profiles"));
+  });
+
+  it("uses tmpdir on serverless when unconfigured", () => {
+    expect(
+      resolveMaterialProfileStorageRoot(null, { serverless: true }),
+    ).toBe(path.join(os.tmpdir(), "bidtool", "material-profiles"));
+  });
+
+  it("uses cwd/data for local dev when unconfigured", () => {
+    expect(
+      resolveMaterialProfileStorageRoot(null, { serverless: false }),
+    ).toBe(path.join(process.cwd(), "data", "material-profiles"));
+  });
+});
+
+describe("resolveWorkspaceWorkbookBuffer", () => {
+  it("reads from disk when sourceWorkbookPath exists", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bidtool-workbook-"));
+    const filePath = path.join(tempRoot, "workbook.xlsx");
+    const content = Buffer.from("excel-bytes");
+    await writeFile(filePath, content);
+
+    await expect(
+      resolveWorkspaceWorkbookBuffer({
+        sourceWorkbookPath: filePath,
+        workbookJson: { sourceWorkbookBase64: Buffer.from("fallback").toString("base64") },
+      }),
+    ).resolves.toEqual(content);
+
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("falls back to sourceWorkbookBase64 when disk path is missing", async () => {
+    const content = Buffer.from("excel-from-db");
+    const base64 = content.toString("base64");
+
+    await expect(
+      resolveWorkspaceWorkbookBuffer({
+        sourceWorkbookPath: "/tmp/does-not-exist/workbook.xlsx",
+        workbookJson: { sourceWorkbookBase64: base64 },
+      }),
+    ).resolves.toEqual(content);
+  });
+
+  it("throws BAD_REQUEST when neither disk nor DB blob is available", async () => {
+    await expect(
+      resolveWorkspaceWorkbookBuffer({
+        sourceWorkbookPath: null,
+        workbookJson: { sheets: [] },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Chưa upload file Excel cho work này.",
+    });
   });
 });
