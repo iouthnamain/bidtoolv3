@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, Building2, ShieldCheck, Users } from "lucide-react";
+import { Bot, Building2, Users } from "lucide-react";
 
 import { Badge } from "~/app/_components/ui";
 import { ROLE_CAPABILITIES, ROLE_LABELS } from "~/lib/role-surfaces";
@@ -25,12 +25,6 @@ const governanceLinks = [
     label: "AI Providers",
     description: "Cấu hình API key và provider đang dùng.",
     icon: Bot,
-  },
-  {
-    href: "/help/vai-tro",
-    label: "Vai trò & quyền",
-    description: "Xem lại ranh giới admin, manager, staff và customer.",
-    icon: ShieldCheck,
   },
 ];
 

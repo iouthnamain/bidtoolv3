@@ -1,9 +1,7 @@
 import {
   Boxes,
-  FileSpreadsheet,
   Search,
   Sparkles,
-  Workflow,
 } from "lucide-react";
 
 import { createPageMetadata } from "~/app/_lib/seo";
@@ -109,22 +107,10 @@ export default async function StaffPage() {
               icon: Search,
             },
             {
-              href: "/enrich",
-              label: "Đối chiếu Excel",
-              description: "Ghép catalog và điền file.",
-              icon: FileSpreadsheet,
-            },
-            {
               href: "/materials/enrich",
               label: "Làm giàu vật tư",
               description: "Tìm web, PDF và thông số.",
               icon: Sparkles,
-            },
-            {
-              href: "/workflows",
-              label: "Quy trình",
-              description: "Chạy, tạm dừng và kiểm tra automation.",
-              icon: Workflow,
             },
           ]}
         />

@@ -1,4 +1,4 @@
-import { Bot, Building2, ShieldCheck, Users } from "lucide-react";
+import { Bot, Building2, Users } from "lucide-react";
 
 import { createPageMetadata } from "~/app/_lib/seo";
 import {
@@ -87,12 +87,6 @@ export default async function ManagerPage() {
               label: "AI Providers",
               description: "Cấu hình khóa và provider AI.",
               icon: Bot,
-            },
-            {
-              href: "/help/vai-tro",
-              label: "Vai trò & quyền",
-              description: "Ranh giới manager/staff/customer.",
-              icon: ShieldCheck,
             },
           ]}
         />
