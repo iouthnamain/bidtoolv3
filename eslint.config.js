@@ -13,6 +13,7 @@ export default tseslint.config(
       ".next-electron",
       "dist-electron",
       "next-env.d.ts",
+      "**/*.test.ts",
     ],
   },
   ...compat.extends("next/core-web-vitals"),

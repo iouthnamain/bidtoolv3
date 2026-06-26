@@ -52,11 +52,9 @@ export async function ensurePlaywrightChromiumDownloaded(): Promise<string> {
     return executablePath;
   }
 
-  if (!chromiumInstallPromise) {
-    chromiumInstallPromise = runPlaywrightChromiumInstall().finally(() => {
-      chromiumInstallPromise = null;
-    });
-  }
+  chromiumInstallPromise ??= runPlaywrightChromiumInstall().finally(() => {
+    chromiumInstallPromise = null;
+  });
 
   await chromiumInstallPromise;
 

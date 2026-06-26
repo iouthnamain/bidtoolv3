@@ -122,17 +122,21 @@ export function MatchChooser({
 
     const items: SearchSourceCandidate[] = [];
 
-    const showWeb =
-      isWebLinksPending ||
-      decision?.webLinksStatus != null ||
-      (decision?.webLinkResults?.length ?? 0) > 0;
+    const showWeb = [
+      isWebLinksPending,
+      decision?.webLinksStatus != null,
+      (decision?.webLinkResults?.length ?? 0) > 0,
+    ].some(Boolean);
     if (showWeb) {
       const links = decision?.webLinkResults ?? [];
       const top = links[0];
+      const webTitle = top?.title?.trim();
       items.push({
         id: "web",
         source: "web",
-        title: top?.title?.trim() || row.name.trim() || "Kết quả tìm web",
+        title:
+          (webTitle && webTitle.length > 0 ? webTitle : row.name.trim()) ||
+          "Kết quả tìm web",
         subtitle: isWebLinksPending
           ? "Đang tìm liên kết…"
           : links.length > 0
@@ -151,10 +155,11 @@ export function MatchChooser({
       });
     }
 
-    const showAi =
-      isAiSearchPending ||
-      decision?.aiSearchStatus != null ||
-      decision?.aiSearchResult != null;
+    const showAi = [
+      isAiSearchPending,
+      decision?.aiSearchStatus != null,
+      decision?.aiSearchResult != null,
+    ].some(Boolean);
     if (showAi) {
       const ai = decision?.aiSearchResult;
       const fieldCount = ai
@@ -163,18 +168,19 @@ export function MatchChooser({
       const fillCount = ai
         ? Object.keys(webFieldsAfterGapFill(sheetFields, null, ai.fields)).length
         : 0;
-      const previewField =
-        ai?.fields.manufacturer?.trim() ||
-        ai?.fields.code?.trim() ||
-        ai?.fields.specText?.trim() ||
-        "";
+      const previewField = [
+        ai?.fields.manufacturer,
+        ai?.fields.code,
+        ai?.fields.specText,
+      ]
+        .map((value) => value?.trim())
+        .find((value) => (value?.length ?? 0) > 0);
       items.push({
         id: "ai",
         source: "ai",
         title:
-          previewField ||
-          row.name.trim() ||
-          (isAiSearchPending ? "Đang tìm AI…" : "Kết quả AI"),
+          previewField ??
+          (row.name.trim() || (isAiSearchPending ? "Đang tìm AI…" : "Kết quả AI")),
         subtitle: isAiSearchPending
           ? "Đang trích xuất trường…"
           : fieldCount > 0
@@ -467,7 +473,7 @@ export function MatchChooser({
             toast.error("Mã vật tư đã tồn tại.");
             return;
           }
-          toast.error(error.message || "Không lưu được vật tư.");
+          toast.error(error.message ?? "Không lưu được vật tư.");
         },
       },
     );
@@ -509,6 +515,7 @@ export function MatchChooser({
           (value) => (value ?? "").trim().length > 0,
         )));
 
+  const rowNameMissing = row.name.trim().length === 0;
   const canSaveToMaterials =
     accepted.size > 0 &&
     !isWebSearchPending &&
@@ -525,7 +532,7 @@ export function MatchChooser({
               variant="secondary"
               size="sm"
               onClick={onWebLinksSearch}
-              disabled={isWebLinksPending || !row.name.trim()}
+              disabled={[isWebLinksPending, rowNameMissing].some(Boolean)}
             >
               {isWebLinksPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -538,7 +545,7 @@ export function MatchChooser({
               variant="secondary"
               size="sm"
               onClick={onAiSearch}
-              disabled={isAiSearchPending || !row.name.trim()}
+              disabled={[isAiSearchPending, rowNameMissing].some(Boolean)}
             >
               {isAiSearchPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -553,7 +560,7 @@ export function MatchChooser({
             variant="secondary"
             size="sm"
             onClick={onWebSearch}
-            disabled={isWebSearchPending || !row.name.trim()}
+            disabled={[isWebSearchPending, rowNameMissing].some(Boolean)}
           >
             {isWebSearchPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

@@ -2,6 +2,17 @@ import JSZip from "jszip";
 
 const STORAGE_KEY = "bidtool.materialProfile.lastExportDir";
 
+type DirectoryPickerWindow = Window & {
+  showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+};
+
+function directoryPickerWindow(): DirectoryPickerWindow | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window as DirectoryPickerWindow;
+}
+
 export type MaterialProfileExportDownloadBundle = {
   outputFolderName: string;
   excelFileName: string;
@@ -36,7 +47,7 @@ export function setLastMaterialProfileExportDir(dirPath: string) {
 }
 
 export function isMaterialProfileBrowserFolderPickerSupported() {
-  return typeof window.showDirectoryPicker === "function";
+  return typeof directoryPickerWindow()?.showDirectoryPicker === "function";
 }
 
 export async function pickMaterialProfileExportDir(defaultPath?: string | null) {
@@ -46,11 +57,11 @@ export async function pickMaterialProfileExportDir(defaultPath?: string | null) 
   }
 
   const initialPath =
-    defaultPath?.trim() ||
-    getLastMaterialProfileExportDir() ||
+    defaultPath?.trim() ??
+    getLastMaterialProfileExportDir() ??
     undefined;
   const result = await bridge.pickExportFolder(initialPath);
-  return result.path?.trim() || null;
+  return result.path?.trim() ?? null;
 }
 
 function base64ToUint8Array(base64: string) {
@@ -135,10 +146,11 @@ async function downloadBundleAsZip(bundle: MaterialProfileExportDownloadBundle) 
 }
 
 export async function pickMaterialProfileBrowserExportDirectory() {
-  if (!isMaterialProfileBrowserFolderPickerSupported()) {
+  const picker = directoryPickerWindow()?.showDirectoryPicker;
+  if (!picker) {
     return null;
   }
-  return window.showDirectoryPicker();
+  return picker.call(directoryPickerWindow());
 }
 
 export async function saveMaterialProfileExportBundleInBrowser(

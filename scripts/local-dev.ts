@@ -4,8 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { verifyManagedChromiumLaunch } from "../src/server/services/playwright-chromium-launch.ts";
-import { applyPlaywrightPlatformEnv, ensurePlaywrightPlatformEnvInProcess } from "../src/server/services/playwright-platform-env.ts";
+import { verifyManagedChromiumLaunch } from "../src/server/services/playwright-chromium-launch";
+import { applyPlaywrightPlatformEnv, ensurePlaywrightPlatformEnvInProcess } from "../src/server/services/playwright-platform-env";
 
 type WorkflowCommand = "install" | "run" | "update";
 

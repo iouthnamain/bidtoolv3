@@ -19,7 +19,7 @@ export const metadata = createPageMetadata({
 const roleOrder: Role[] = ["admin", "manager", "staff", "customer"];
 
 const toneMap = {
-  sky: "border-blue-200 bg-blue-50 text-blue-900",
+  blue: "border-blue-200 bg-blue-50 text-blue-900",
   emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
   amber: "border-amber-200 bg-amber-50 text-amber-900",
   violet: "border-violet-200 bg-violet-50 text-violet-900",

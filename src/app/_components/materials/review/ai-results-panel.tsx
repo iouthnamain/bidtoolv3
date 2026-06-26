@@ -74,7 +74,7 @@ export function AiResultsPanel({
               {fieldEntries.map((field) => (
                 <tr key={field} className="border-t border-slate-100">
                   <td className="py-1 pr-2 font-semibold text-slate-700">
-                    {FIELD_LABELS[field as FillableField]}
+                    {FIELD_LABELS[field]}
                   </td>
                   <td className="py-1 text-slate-900">
                     {result.fields[field]}

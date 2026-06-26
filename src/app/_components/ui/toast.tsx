@@ -47,13 +47,13 @@ const variantStyles: Record<ToastVariant, string> = {
 
 const variantIcons: Record<ToastVariant, ReactNode> = {
   success: (
-    <CircleCheck className="h-4 w-4 text-emerald-500" aria-hidden="true" />
+    <CircleCheck className="h-5 w-5 text-emerald-500" aria-hidden="true" />
   ),
-  error: <CircleAlert className="h-4 w-4 text-rose-500" aria-hidden="true" />,
+  error: <CircleAlert className="h-5 w-5 text-rose-500" aria-hidden="true" />,
   warning: (
-    <TriangleAlert className="h-4 w-4 text-amber-500" aria-hidden="true" />
+    <TriangleAlert className="h-5 w-5 text-amber-500" aria-hidden="true" />
   ),
-  info: <Info className="h-4 w-4 text-blue-500" aria-hidden="true" />,
+  info: <Info className="h-5 w-5 text-blue-500" aria-hidden="true" />,
 };
 
 let nextId = 0;
@@ -90,7 +90,7 @@ function ToastItem({
     <div
       role={isUrgent ? "alert" : "status"}
       aria-live={isUrgent ? "assertive" : "polite"}
-      className={`flex items-start gap-2 rounded border px-2 py-1.5 text-base font-medium shadow-[var(--shadow-flat)] ${
+      className={`flex min-w-[20rem] max-w-lg items-start gap-2.5 rounded border-2 px-3 py-2.5 text-lg font-semibold shadow-[var(--shadow-raised)] ${
         variantStyles[toast.variant]
       } ${exiting ? "opacity-0" : "opacity-100"}`}
     >
@@ -98,11 +98,11 @@ function ToastItem({
       <span className="flex-1 leading-snug">{toast.message}</span>
       <button
         type="button"
-        className="-my-2 -mr-2 ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+        className="-my-1 -mr-1 ml-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
         onClick={handleDismiss}
         aria-label="Đóng thông báo"
       >
-        <X className="h-4 w-4" aria-hidden="true" />
+        <X className="h-5 w-5" aria-hidden="true" />
       </button>
     </div>
   );
@@ -145,9 +145,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         aria-label="Thông báo"
-        className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-4 pt-[calc(1rem+env(safe-area-inset-top))]"
+        className="pointer-events-none fixed top-0 right-0 z-50 flex flex-col items-end gap-2 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pr-[calc(0.75rem+env(safe-area-inset-right))]"
       >
-        <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2">
+        <div className="pointer-events-auto flex flex-col items-end gap-2">
           {toasts.map((t) => (
             <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
           ))}
