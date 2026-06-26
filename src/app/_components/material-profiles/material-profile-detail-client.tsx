@@ -76,9 +76,9 @@ type Candidate = {
 const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
   [
     { id: 1, label: "Tải lên Excel" },
-    { id: 2, label: "Map & chỉnh sheet" },
+    { id: 2, label: "Ánh xạ & chỉnh sheet" },
     { id: 3, label: "Duyệt vật tư" },
-    { id: 4, label: "Preview & export" },
+    { id: 4, label: "Xem trước & xuất" },
   ];
 
 const mappingFields = [
@@ -91,7 +91,7 @@ const mappingFields = [
   { key: "originHint", label: "Xuất xứ" },
   { key: "unitPrice", label: "Đơn giá" },
   { key: "sourceUrl", label: "Nguồn" },
-  { key: "catalogPdfUrls", label: "Catalog URLs" },
+  { key: "catalogPdfUrls", label: "URL catalog" },
 ] as const;
 
 const statusLabel: Record<WorkspaceItem["matchStatus"], string> = {
@@ -154,7 +154,7 @@ const materialProfileCompareFields: Array<{
 const searchTabs: Array<{ id: SearchTab; label: string }> = [
   { id: "material", label: "Vật tư hiện có" },
   { id: "web", label: "Tìm kiếm web" },
-  { id: "ai", label: "AI search" },
+  { id: "ai", label: "Tìm kiếm AI" },
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -543,7 +543,7 @@ function UploadStep({
   return (
     <section className="grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="panel p-4">
-        <p className="section-title">Upload Excel</p>
+        <p className="section-title">Tải file Excel</p>
         <h2 className="mt-1 text-lg font-bold text-slate-950">
           Chọn workbook làm việc
         </h2>
@@ -551,13 +551,13 @@ function UploadStep({
           File gốc được lưu lại để các bước sau có thể map vật tư, preview kết
           quả và export giữ layout.
         </p>
-        <label className="mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-white px-4 py-2 text-center text-blue-900 transition-colors hover:bg-blue-100">
+        <label className="mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed border-blue-300 bg-blue-50 px-4 py-2 text-center text-blue-900 transition-colors hover:bg-blue-100">
           {isUploading ? (
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
           ) : (
             <Upload className="h-6 w-6" aria-hidden />
           )}
-          <span className="text-sm font-bold">Upload file Excel</span>
+          <span className="text-sm font-bold">Tải file Excel</span>
           <span className="max-w-full truncate text-xs font-medium text-slate-600">
             {workspace.sourceFileName ?? ".xlsx"}
           </span>
@@ -644,7 +644,7 @@ function WorkbookMappingStep({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="border-b border-slate-400 bg-gradient-to-r from-white via-blue-50 to-emerald-50 px-4 py-4 sm:px-5">
+      <div className="border-b border-slate-400 bg-white px-4 py-4">
         <p className="section-title">Map & chỉnh workbook</p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
           <div>
@@ -845,12 +845,12 @@ function ExportPreviewStep({
       <div className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <p className="section-title">Preview kết quả</p>
+            <p className="section-title">Xem trước kết quả</p>
             <h2 className="mt-1 text-lg font-bold text-slate-950">
               Kiểm tra workbook trước export
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Preview toàn bộ workbook. Sheet vật tư có thêm các cột BT, các
+              Xem trước toàn bộ workbook. Sheet vật tư có thêm các cột BT, các
               sheet khác vẫn có thể chỉnh giá trị trước khi xuất.
             </p>
           </div>
@@ -931,7 +931,7 @@ function ExportPreviewStep({
 
       {!preview || !activeSheet ? (
         <EmptyState
-          title="Chưa có preview"
+          title="Chưa có bản xem trước"
           description="Bấm Refresh preview để tạo workbook kết quả trước khi export."
           cta={
             <Button onClick={onRefreshPreview} isLoading={isPreviewing}>

@@ -35,7 +35,7 @@ export function RolePreviewBanner() {
     <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-950">
       <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge tone={activeRole ? "warning" : "neutral"}>Dev preview</Badge>
+          <Badge tone={activeRole ? "warning" : "neutral"}>Xem trước dev</Badge>
           <span className="font-semibold">
             {activeRole
               ? `Đang xem với vai trò: ${ROLE_LABELS[activeRole]}`

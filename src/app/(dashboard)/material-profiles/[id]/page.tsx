@@ -18,7 +18,7 @@ export async function generateMetadata({
   return createPageMetadata({
     title: `Hồ sơ vật tư #${id}`,
     description:
-      "Upload, chỉnh sửa, map vật tư và export Excel/Catalog cho hồ sơ vật tư.",
+      "Tải lên, chỉnh sửa, ánh xạ vật tư và xuất Excel/Catalog cho hồ sơ vật tư.",
     path: `/material-profiles/${id}`,
     noIndex: true,
   });
@@ -36,7 +36,7 @@ export default async function MaterialProfileDetailPage({
   return (
     <DashboardShell
       title="Hồ sơ vật tư"
-      description="Upload Excel, chỉnh cell, map vật tư, duyệt catalog và export output local."
+      description="Tải file Excel, chỉnh ô, ánh xạ vật tư, duyệt catalog và xuất file ra máy local."
     >
       <MaterialProfileDetailClient workspaceId={id} />
     </DashboardShell>

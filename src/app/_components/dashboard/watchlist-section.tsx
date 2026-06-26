@@ -189,7 +189,7 @@ function WatchlistDetailsPanel({
           <div className="flex flex-wrap items-center gap-1.5">
             <WatchlistTypeBadge type={item.type} />
             <span className="rounded-full border border-slate-400 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
-              Watchlist #{item.id}
+              Danh sách theo dõi #{item.id}
             </span>
           </div>
           <h3 className="mt-2 text-base leading-snug font-bold [overflow-wrap:anywhere] text-slate-950">
@@ -253,7 +253,7 @@ function WatchlistDetailsPanel({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
-                Preview chi tiết nguồn
+                Xem trước chi tiết nguồn
               </p>
               <p className="mt-1 text-xs text-slate-700">
                 Tải trực tiếp từ BidWinner theo ref key đã lưu.
@@ -299,13 +299,13 @@ function WatchlistDetailsPanel({
                   <p className="text-lg font-bold text-slate-950">
                     {details.products.length}
                   </p>
-                  <p className="text-xs text-slate-700">Products</p>
+                  <p className="text-xs text-slate-700">Sản phẩm</p>
                 </div>
                 <div className="border-r border-slate-400 px-2 py-2">
                   <p className="text-lg font-bold text-slate-950">
                     {details.links.length}
                   </p>
-                  <p className="text-xs text-slate-700">Links</p>
+                  <p className="text-xs text-slate-700">Liên kết</p>
                 </div>
                 <div className="px-2 py-2">
                   <p className="text-lg font-bold text-slate-950">
@@ -426,7 +426,7 @@ export function WatchlistSection() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title={`Xóa "${deleteTarget?.label ?? ""}" khỏi Watchlist?`}
-        description="Mục này sẽ biến mất khỏi danh sách theo dõi, nhưng dữ liệu nguồn và Smart Views không bị thay đổi."
+        description="Mục này sẽ biến mất khỏi danh sách theo dõi, nhưng dữ liệu nguồn và bộ lọc thông minh không bị thay đổi."
         confirmLabel="Xóa"
         variant="danger"
         isLoading={deletingId === deleteTarget?.id}
@@ -438,10 +438,10 @@ export function WatchlistSection() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <div className="border-b border-slate-400 bg-gradient-to-r from-slate-50 via-white to-blue-50 px-2 py-4">
+      <div className="border-b border-slate-400 bg-slate-50 px-2 py-4">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <h2 className="text-base font-bold text-slate-950">Watchlist</h2>
+            <h2 className="text-base font-bold text-slate-950">Danh sách theo dõi</h2>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-700">
               Theo dõi những mục cần quay lại sau. Chọn một dòng để xem preview
               chi tiết ngay trên trang này.

@@ -2423,7 +2423,7 @@ export function MaterialsListClient() {
                   href="/catalog-pdfs"
                   className="font-semibold text-violet-700 hover:text-violet-900"
                 >
-                  Catalog PDFs
+                  Thư viện catalog PDF
                 </Link>
                 .
               </p>

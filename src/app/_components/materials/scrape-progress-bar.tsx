@@ -11,9 +11,9 @@ export function ScrapeProgressBar({
   label: string;
   percent: number | null;
   active: boolean;
-  tone: "sky" | "emerald";
+  tone: "blue" | "emerald";
 }) {
-  const colorClass = tone === "sky" ? "bg-blue-600" : "bg-emerald-600";
+  const colorClass = tone === "blue" ? "bg-blue-600" : "bg-emerald-600";
   const animated = percent == null && active;
 
   return (

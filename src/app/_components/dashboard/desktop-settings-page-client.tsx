@@ -280,7 +280,7 @@ export function DesktopSettingsSection() {
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-600">Server</dt>
+                <dt className="text-slate-600">Máy chủ</dt>
                 <dd className="mt-1 font-semibold break-all">
                   {config.serverUrl ?? "Chưa cấu hình server remote"}
                 </dd>

@@ -6,7 +6,7 @@ import { CatalogPdfLibraryClient } from "~/app/_components/materials/catalog-pdf
 export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
-  title: "Thêm Catalog PDF",
+  title: "Thêm tài liệu catalog PDF",
   description: "Tạo tài liệu catalog từ URL PDF hoặc upload tệp.",
   path: "/catalog-pdfs/new",
 });

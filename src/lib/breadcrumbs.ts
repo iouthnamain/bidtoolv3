@@ -51,7 +51,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials/scrape/jobs/:jobId": "Chi tiết job",
   "/materials/:id": "Chi tiết vật tư",
   "/materials/:id/prices": "Nguồn giá",
-  "/materials/:id/documents": "Catalog PDFs",
+  "/materials/:id/documents": "Thư viện catalog PDF",
   "/materials/:id/edit": "Chỉnh sửa",
 
   // Material profiles
@@ -64,7 +64,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/enrich/jobs/:jobId": "Chi tiết job",
 
   // Catalog PDFs
-  "/catalog-pdfs": "Catalog PDFs",
+  "/catalog-pdfs": "Thư viện catalog PDF",
   "/catalog-pdfs/new": "Thêm tài liệu",
   "/catalog-pdfs/:id": "Chi tiết tài liệu",
 

@@ -68,7 +68,7 @@ export default function OpengraphImage() {
               marginTop: 4,
             }}
           >
-            Procurement OS
+            Hệ điều hành đấu thầu
           </div>
         </div>
       </div>
@@ -93,7 +93,7 @@ export default function OpengraphImage() {
           color: "#cffafe",
         }}
       >
-        BidWinner • Smart View • Workflow • Excel Sourcing
+        BidWinner • Bộ lọc thông minh • Quy trình • Nguồn Excel
       </div>
     </div>,
     { ...size },

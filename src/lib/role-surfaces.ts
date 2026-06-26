@@ -46,7 +46,7 @@ export type RoleSurfaceNavSection = {
 
 export type RoleCapability = {
   label: string;
-  tone: "sky" | "emerald" | "amber" | "violet" | "rose" | "slate";
+  tone: "blue" | "emerald" | "amber" | "violet" | "rose" | "slate";
   landingPath: string;
   summary: string;
   see: readonly string[];
@@ -64,7 +64,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
   admin: {
     label: ROLE_LABELS.admin,
-    tone: "sky",
+    tone: "blue",
     landingPath: "/admin",
     summary: "Toàn quyền vận hành và quản trị hệ thống.",
     see: ["Toàn bộ dashboard nội bộ", "Vận hành", "Quản trị", "Hoạt động"],
@@ -218,7 +218,7 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
       },
       {
         href: "/catalog-pdfs",
-        label: "Catalog PDFs",
+        label: "Thư viện catalog PDF",
         icon: "documents",
         roles: OPERATIONS_ROLES,
         subItems: [

@@ -213,7 +213,7 @@ function MaterialImagePreview({ material }: { material: Material }) {
         Ảnh sản phẩm
       </span>
       {showPlaceholder ? (
-        <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-slate-400 bg-gradient-to-b from-slate-50 to-white text-center sm:h-48">
+        <div className="flex h-40 w-full items-center justify-center rounded border border-dashed border-slate-400 bg-slate-50 text-center">
           <div className="flex flex-col items-center gap-2 px-3 text-slate-600">
             <Package className="h-8 w-8" aria-hidden />
             <span className="text-xs font-medium">Chưa có ảnh</span>
@@ -244,18 +244,18 @@ function SummaryTile({
   value: ReactNode;
   helper?: ReactNode;
   icon: ReactNode;
-  tone?: "neutral" | "sky" | "emerald" | "amber";
+  tone?: "neutral" | "blue" | "emerald" | "amber";
 }) {
   const toneClass = {
     neutral: "border-slate-400 bg-white text-slate-700",
-    sky: "border-blue-200 bg-blue-50/80 text-blue-700",
+    blue: "border-blue-200 bg-blue-50/80 text-blue-700",
     emerald: "border-emerald-200 bg-emerald-50/80 text-emerald-700",
     amber: "border-amber-200 bg-amber-50/80 text-amber-700",
   }[tone];
 
   const valueToneClass = {
     neutral: "text-slate-950",
-    sky: "text-blue-950",
+    blue: "text-blue-950",
     emerald: "text-emerald-800",
     amber: "text-amber-800",
   }[tone];
@@ -267,7 +267,7 @@ function SummaryTile({
         className={`absolute inset-x-0 top-0 h-[3px] ${
           tone === "emerald"
             ? "bg-emerald-500"
-            : tone === "sky"
+            : tone === "blue"
               ? "bg-blue-500"
               : tone === "amber"
                 ? "bg-amber-400"
@@ -1082,7 +1082,7 @@ export function MaterialDetailClient({
                 material.category?.trim() ? material.category : "Chưa phân nhóm"
               }
               icon={<Ruler className="h-4 w-4" />}
-              tone="sky"
+              tone="blue"
             />
             <SummaryTile
               label="Nhà sản xuất"
@@ -1107,7 +1107,7 @@ export function MaterialDetailClient({
                   : `${sourceCount.toLocaleString("vi-VN")} nguồn đã lưu`
               }
               icon={<LinkIcon className="h-4 w-4" />}
-              tone={sourceCount === 0 ? "amber" : "sky"}
+              tone={sourceCount === 0 ? "amber" : "blue"}
             />
           </dl>
 
@@ -1694,7 +1694,7 @@ export function MaterialDetailClient({
           </article>
 
           <article className="rounded border border-slate-400 bg-white p-2">
-            <h3 className="text-sm font-bold text-slate-950">Metadata</h3>
+            <h3 className="text-sm font-bold text-slate-950">Siêu dữ liệu</h3>
             <dl className="mt-3 space-y-2">
               {metadataRows.map(([label, value]) => (
                 <DetailRow

@@ -708,7 +708,7 @@ function previewStatusForJob(
     return {
       label: "Hết hạn",
       tone: "warning",
-      detail: "Preview không còn khả dụng",
+      detail: "Bản xem trước không còn khả dụng",
     };
   }
 
@@ -723,7 +723,7 @@ function previewStatusForJob(
   if (job.status === "running") {
     if (job.productCount > 0) {
       return {
-        label: focused ? "Đang xem preview" : "Preview tạm thời",
+        label: focused ? "Đang xem trước" : "Xem trước tạm thời",
         tone: "info",
         detail: `${job.productCount.toLocaleString("vi-VN")} SP — cập nhật liên tục`,
       };
@@ -754,7 +754,7 @@ function previewStatusForJob(
 
   if (job.status === "failed") {
     return {
-      label: "Preview lỗi",
+      label: "Lỗi xem trước",
       tone: "critical",
       detail: job.error ?? job.message ?? "Job scrape thất bại",
     };
@@ -882,7 +882,7 @@ const scrapeJobEnrichmentFilterOptions: Array<{
 
 const scrapeJobColumnOptions: Array<{ id: string; label: string }> = [
   { id: "config", label: "Cấu hình" },
-  { id: "preview", label: "Preview SP" },
+  { id: "preview", label: "Xem trước SP" },
   { id: "pages", label: "Trang" },
   { id: "duration", label: "Thời gian" },
   { id: "expiresAt", label: "Hết hạn" },
@@ -1586,7 +1586,7 @@ function ScrapeJobsList({
       },
       {
         id: "preview",
-        header: "Preview SP",
+        header: "Xem trước SP",
         cell: ({ row }) => {
           const preview = previewStatusForJob(row.original, {
             focused: focusedJobId === row.original.id,
@@ -3499,7 +3499,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       <ConfirmDialog
         open={deleteJobTarget !== null}
         title={`Xóa job scrape ${deleteJobTarget ? hostFromUrl(deleteJobTarget.url) : ""}?`}
-        description="Job sẽ bị gỡ khỏi danh sách. Preview sản phẩm không còn khả dụng."
+        description="Job sẽ bị gỡ khỏi danh sách. Bản xem trước sản phẩm không còn khả dụng."
         confirmLabel="Xóa job"
         variant="danger"
         isLoading={deleteShopScrapeJob.isPending}
@@ -3554,7 +3554,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       {!isJobPage ? (
       <>
       <section className="panel overflow-hidden">
-        <div className="border-b border-slate-400 px-4 py-3 sm:px-5">
+        <div className="border-b border-slate-400 px-4 py-3">
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-violet-700" aria-hidden />
             <h2 className="text-sm font-bold text-slate-950">Cấu hình job scrape</h2>
@@ -3931,7 +3931,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 label="Tiến độ tạo job scrape theo trang"
                 percent={null}
                 active
-                tone="sky"
+                tone="blue"
               />
             </div>
             <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
@@ -4026,7 +4026,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 label="Tiến độ đọc trang của job scrape"
                 percent={pagePercent}
                 active={isActive}
-                tone="sky"
+                tone="blue"
               />
             </div>
             <div className="rounded border border-slate-400 bg-slate-50 p-3">
@@ -4422,7 +4422,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 label="Tiến độ nhập catalog"
                 percent={importPercent}
                 active={isImportActive}
-                tone="sky"
+                tone="blue"
               />
 
               {activeImportJob ? (

@@ -73,7 +73,7 @@ export type PageSectionNavIcon =
   | "wrench";
 
 export type PageSectionNavTone =
-  | "sky"
+  | "blue"
   | "emerald"
   | "amber"
   | "violet"
@@ -108,7 +108,7 @@ const toneStyles: Record<
     description: string;
   }
 > = {
-  sky: {
+  blue: {
     linkActive: "border-blue-400 bg-blue-100 text-blue-950 shadow-sm",
     linkInactive:
       "border-blue-200 bg-blue-50/80 text-blue-950 hover:border-blue-300 hover:bg-blue-50",

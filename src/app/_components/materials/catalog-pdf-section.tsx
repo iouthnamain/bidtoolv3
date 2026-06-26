@@ -213,7 +213,7 @@ export function MaterialCatalogPdfSection({
           aria-controls="material-documents-content"
         >
           <FileText className="h-4 w-4 shrink-0 text-violet-700" aria-hidden />
-          <h3 className="text-base font-bold text-slate-950">Catalog PDFs</h3>
+          <h3 className="text-base font-bold text-slate-950">Thư viện catalog PDF</h3>
           <Badge tone={linkedDocuments.length === 0 ? "warning" : "info"}>
             {linkedDocuments.length} tài liệu
           </Badge>

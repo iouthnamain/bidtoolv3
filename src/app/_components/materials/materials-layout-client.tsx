@@ -16,7 +16,7 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
   },
   "/materials/import": {
     title: "Nhập catalog vật tư",
-    description: "Upload Excel hoặc dán CSV để tạo danh mục catalog hàng loạt.",
+    description: "Tải file Excel hoặc dán CSV để tạo danh mục catalog hàng loạt.",
   },
   "/materials/scrape": {
     title: "Quét cửa hàng vật tư",

@@ -24,7 +24,7 @@ export function LogoMark({
 }: LogoMarkProps) {
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded bg-gradient-to-br from-cyan-700 via-blue-800 to-teal-800 text-white shadow-sm ${sizeClasses[size]} ${className ?? ""}`}
+      className={`flex shrink-0 items-center justify-center rounded bg-blue-700 text-white shadow-[var(--shadow-flat)] ${sizeClasses[size]} ${className ?? ""}`}
       style={style}
       aria-hidden
       {...rest}
@@ -82,7 +82,7 @@ export function Logo({
   href = "/dashboard",
   ariaLabel = "BidTool v3 — về trang tổng quan",
   size = "md",
-  tagline = "v3 • Procurement",
+  tagline = "v3 • Đấu thầu",
   className,
 }: LogoProps) {
   return (

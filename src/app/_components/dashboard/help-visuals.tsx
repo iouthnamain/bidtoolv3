@@ -33,7 +33,7 @@ function InlineText({ text }: { text: string }) {
 
 export function FlowMap() {
   return (
-    <div className="rounded border border-cyan-100 bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-3">
+    <div className="rounded border border-cyan-100 bg-blue-50 p-3">
       <div className="grid gap-2 md:grid-cols-5">
         {flowNodes.map((node, index) => (
           <div key={node.step} className="relative">
@@ -99,7 +99,7 @@ function SourceMatrixVisual() {
         <table className="w-full min-w-[34rem] text-left text-sm break-words">
           <thead className="bg-slate-50 text-xs text-slate-700 uppercase">
             <tr>
-              <th className="px-3 py-2 font-bold">Mode</th>
+              <th className="px-3 py-2 font-bold">Chế độ</th>
               <th className="px-3 py-2 font-bold">Từ nguồn public</th>
               <th className="px-3 py-2 font-bold">Tinh lọc trong app</th>
               <th className="px-3 py-2 font-bold">Cách dùng đúng</th>

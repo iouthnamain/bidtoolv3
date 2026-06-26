@@ -647,7 +647,7 @@ export const searchRouter = createTRPCRouter({
         if (!created) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Không lưu được Smart View.",
+            message: "Không lưu được bộ lọc thông minh.",
           });
         }
 
@@ -660,7 +660,7 @@ export const searchRouter = createTRPCRouter({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
-            "Không thể lưu Smart View. Kiểm tra kết nối database và chạy migration.",
+            "Không thể lưu bộ lọc thông minh. Kiểm tra kết nối database và chạy migration.",
           cause: error,
         });
       }
@@ -684,7 +684,7 @@ export const searchRouter = createTRPCRouter({
         if (!row) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Smart View không tồn tại.",
+            message: "bộ lọc thông minh không tồn tại.",
           });
         }
 
@@ -748,7 +748,7 @@ export const searchRouter = createTRPCRouter({
         if (!updated) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Smart View không tồn tại.",
+            message: "bộ lọc thông minh không tồn tại.",
           });
         }
 
@@ -761,7 +761,7 @@ export const searchRouter = createTRPCRouter({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
-            "Không thể cập nhật Smart View. Kiểm tra kết nối database và chạy migration.",
+            "Không thể cập nhật bộ lọc thông minh. Kiểm tra kết nối database và chạy migration.",
           cause: error,
         });
       }
@@ -784,7 +784,7 @@ export const searchRouter = createTRPCRouter({
         if (deleted.length === 0) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Smart View không tồn tại.",
+            message: "bộ lọc thông minh không tồn tại.",
           });
         }
 

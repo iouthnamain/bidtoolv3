@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata = createPageMetadata({
   title: "Nhập catalog vật tư",
   description:
-    "Upload Excel hoặc dán CSV, xem preview sau upload và nhập hàng loạt catalog vật tư.",
+    "Tải file Excel hoặc dán CSV, xem trước sau khi tải lên và nhập hàng loạt catalog vật tư.",
   path: "/materials/import",
   keywords: ["nhập vật tư Excel", "preview Excel", "import catalog vật tư"],
 });

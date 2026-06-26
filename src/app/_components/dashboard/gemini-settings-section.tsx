@@ -81,7 +81,7 @@ export function GeminiSettingsSection() {
                 <KeyRound className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-slate-950">API key</h3>
+                <h3 className="text-sm font-bold text-slate-950">Khóa API</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   Lấy key tại{" "}
                   <a
@@ -160,7 +160,7 @@ export function GeminiSettingsSection() {
               </dd>
             </div>
             <div>
-              <dt className="text-slate-600">Key</dt>
+              <dt className="text-slate-600">Khóa</dt>
               <dd className="mt-1">
                 <Badge tone={config?.gemini?.configured ? "success" : "neutral"}>
                   {config?.gemini?.configured

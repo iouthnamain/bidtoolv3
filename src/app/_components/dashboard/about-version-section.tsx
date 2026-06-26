@@ -413,7 +413,7 @@ export function AboutVersionSection() {
         )}
 
         {showApplyButton && applyAction ? (
-          <div className="rounded border border-blue-200 bg-gradient-to-br from-blue-50 to-white px-4 py-4">
+          <div className="rounded border border-blue-200 bg-blue-50 px-4 py-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold tracking-wide text-blue-700 uppercase">

@@ -49,7 +49,7 @@ export function SettingsRoleOverview() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="info">{ROLE_LABELS.manager}</Badge>
-            {isPreview ? <Badge tone="warning">Preview</Badge> : null}
+            {isPreview ? <Badge tone="warning">Xem trước</Badge> : null}
           </div>
           <h2 className="mt-3 text-base font-bold text-slate-950">
             Không gian governance

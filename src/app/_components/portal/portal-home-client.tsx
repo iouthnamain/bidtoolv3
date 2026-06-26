@@ -378,7 +378,7 @@ export function PortalHomeClient() {
             hint: "job gần đây",
           },
           {
-            label: "Watchlist",
+            label: "Danh sách theo dõi",
             value: watchlistQuery.data?.length ?? 0,
             hint: "mục theo dõi",
           },

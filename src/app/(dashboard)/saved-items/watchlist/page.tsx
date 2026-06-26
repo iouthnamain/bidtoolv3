@@ -2,7 +2,7 @@ import { createPageMetadata } from "~/app/_lib/seo";
 import { WatchlistSection } from "~/app/_components/dashboard/watchlist-section";
 
 export const metadata = createPageMetadata({
-  title: "Watchlist",
+  title: "Danh sách theo dõi",
   description:
     "Theo dõi gói thầu, KHLCNT, dự án và các nguồn cần quay lại sau trong BidTool v3.",
   path: "/saved-items/watchlist",

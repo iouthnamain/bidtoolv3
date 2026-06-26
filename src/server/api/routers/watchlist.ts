@@ -77,7 +77,7 @@ export const watchlistRouter = createTRPCRouter({
       if (deleted.length === 0) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Watchlist item khong ton tai.",
+          message: "Mục danh sách theo dõi không tồn tại.",
         });
       }
 

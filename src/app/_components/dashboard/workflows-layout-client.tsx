@@ -7,7 +7,7 @@ import { workflowSectionNavItems } from "~/app/_components/dashboard/page-nav-pr
 
 const PAGE_META: Record<string, { title: string; description: string }> = {
   "/workflows": {
-    title: "Workflow tự động",
+    title: "Quy trình tự động",
     description: "Tạo mới, lọc, chạy thử và mở từng workflow.",
   },
   "/workflows/health": {
@@ -21,7 +21,7 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
 };
 
 const DEFAULT_META = {
-  title: "Workflow tự động",
+  title: "Quy trình tự động",
   description: "Quản lý trigger, hành động và lịch sử chạy",
 };
 

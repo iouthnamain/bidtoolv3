@@ -168,7 +168,7 @@ export function WorkflowsListClient() {
         {filteredWorkflows.length === 0 ? (
           <EmptyState
             title="Không có workflow phù hợp bộ lọc"
-            description="Hãy đổi bộ lọc phía trên hoặc tạo workflow mới từ trang này hay từ Smart View."
+            description="Hãy đổi bộ lọc phía trên hoặc tạo workflow mới từ trang này hay từ bộ lọc thông minh."
           />
         ) : (
           filteredWorkflows.map((workflow) => (

@@ -36,7 +36,7 @@ export const searchSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/saved-items/smart-views",
-    label: "Smart Views",
+    label: "Bộ lọc thông minh",
     description: "Áp lại bộ lọc đã lưu hoặc tạo workflow.",
     icon: "bookmark",
   },
@@ -45,26 +45,26 @@ export const searchSectionNavItems: PageSectionNavItem[] = [
 export const savedItemsSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/saved-items/smart-views",
-    label: "Smart Views",
+    label: "Bộ lọc thông minh",
     description: "Bộ lọc đã lưu để dùng lại và tự động hóa.",
     icon: "bookmark",
   },
   {
     href: "/saved-items/watchlist",
-    label: "Watchlist",
+    label: "Danh sách theo dõi",
     description: "Các gói, KHLCNT và dự án cần quay lại.",
     icon: "bell",
   },
   {
     href: "/search/packages",
     label: "Tạo bộ lọc",
-    description: "Quay về tìm kiếm để lưu Smart View mới.",
+    description: "Quay về tìm kiếm để lưu bộ lọc thông minh mới.",
     icon: "search",
   },
   {
     href: "/workflows",
     label: "Tự động hóa",
-    description: "Biến Smart View thành workflow cảnh báo.",
+    description: "Biến bộ lọc thông minh thành workflow cảnh báo.",
     icon: "workflow",
   },
 ];
@@ -90,7 +90,7 @@ export const workflowSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/saved-items/smart-views",
-    label: "Nguồn Smart View",
+    label: "Nguồn bộ lọc thông minh",
     description: "Quản lý bộ lọc đầu vào cho workflow.",
     icon: "bookmark",
   },
@@ -129,7 +129,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     label: "Danh mục",
     description: "Tìm, chọn, mở chi tiết và xóa vật tư.",
     icon: "boxes",
-    tone: "sky",
+    tone: "blue",
   },
   {
     href: "/materials/new",
@@ -141,7 +141,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/materials/import",
     label: "Nhập sheet",
-    description: "Upload Excel hoặc dán CSV để tạo catalog hàng loạt.",
+    description: "Tải file Excel hoặc dán CSV để tạo catalog hàng loạt.",
     icon: "sheet",
     tone: "amber",
   },
@@ -162,7 +162,7 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/catalog-pdfs",
-    label: "Catalog PDFs",
+    label: "Thư viện catalog PDF",
     description: "Thư viện tài liệu catalog gắn với vật tư.",
     icon: "file",
     tone: "slate",
@@ -221,7 +221,7 @@ export const enrichSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/catalog-pdfs",
-    label: "Catalog PDFs",
+    label: "Thư viện catalog PDF",
     description: "Thư viện tài liệu catalog gắn với vật tư.",
     icon: "file",
     tone: "violet",
@@ -241,7 +241,7 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
     label: "Tổng quan",
     description: "Mã, giá, nguồn và trạng thái dữ liệu.",
     icon: "eye",
-    tone: "sky",
+    tone: "blue",
   },
   {
     href: "/materials/{id}/prices",
@@ -252,7 +252,7 @@ export const materialDetailSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/materials/{id}/documents",
-    label: "Catalog PDFs",
+    label: "Thư viện catalog PDF",
     description: "Tài liệu catalog gắn với vật tư.",
     icon: "file",
     tone: "violet",
@@ -279,7 +279,7 @@ export const catalogPdfSectionNavItems: PageSectionNavItem[] = [
     label: "Thư viện",
     description: "Tìm, sửa, tải bản cục bộ và gắn vật tư.",
     icon: "file",
-    tone: "sky",
+    tone: "blue",
   },
   {
     href: "/materials",
@@ -305,7 +305,7 @@ export const notificationsSectionNavItems: PageSectionNavItem[] = [
   },
   {
     href: "/saved-items/watchlist",
-    label: "Watchlist",
+    label: "Danh sách theo dõi",
     description: "Đối chiếu các mục đang theo dõi.",
     icon: "bookmark",
   },
@@ -452,7 +452,7 @@ export const helpSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/help/tim-kiem",
     label: "Tìm kiếm",
-    description: "Nguồn BidWinner, Smart View và Watchlist.",
+    description: "Nguồn BidWinner, bộ lọc thông minh và danh sách theo dõi.",
     icon: "search",
   },
   {

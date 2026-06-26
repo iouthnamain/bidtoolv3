@@ -7,7 +7,7 @@ import { SkeletonTable } from "~/app/_components/ui";
 export const dynamic = "force-dynamic";
 
 export const metadata = createPageMetadata({
-  title: "Catalog PDFs",
+  title: "Thư viện catalog PDF",
   description:
     "Thư viện tài liệu catalog PDF: upload, lưu URL nguồn và gắn với vật tư.",
   path: "/catalog-pdfs",

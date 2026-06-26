@@ -144,7 +144,7 @@ export function summarizeWorkflowFilterConfig(
   const chips: string[] = [];
 
   if (config.savedFilterName) {
-    chips.push(`Smart View: ${config.savedFilterName}`);
+    chips.push(`Bộ lọc thông minh: ${config.savedFilterName}`);
   }
 
   const modeSummary = summarizeSearchCriteria(

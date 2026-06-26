@@ -53,7 +53,7 @@ export default function RoleHelpPage() {
       <section className="rounded border border-slate-400 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <p className="section-title">RBAC</p>
+            <p className="section-title">Phân quyền</p>
             <h2 className="mt-1 text-xl font-extrabold tracking-tight text-slate-950">
               Vai trò & quyền trong BidTool
             </h2>

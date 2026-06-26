@@ -21,17 +21,17 @@ const documentLinks = [
   {
     href: "/materials/import",
     label: "Nhập file vật tư",
-    description: "Upload Excel/CSV và kiểm tra preview trước khi nhập catalog.",
+    description: "Tải file Excel/CSV và kiểm tra trước khi nhập catalog.",
   },
   {
     href: "/materials/scrape",
     label: "Quét cửa hàng vật tư",
-    description: "Preview URL shop rồi nhập sản phẩm, giá và link nguồn.",
+    description: "Xem trước URL shop rồi nhập sản phẩm, giá và liên kết nguồn.",
   },
   {
     href: "/saved-items/smart-views",
-    label: "Bộ lọc & Watchlist",
-    description: "Quay lại Smart View hoặc nguồn đã lưu để theo dõi tiếp.",
+    label: "Bộ lọc & theo dõi",
+    description: "Quay lại bộ lọc thông minh hoặc nguồn đã lưu để theo dõi tiếp.",
   },
 ];
 
@@ -42,7 +42,7 @@ export default function DocumentsPage() {
       description="Tài liệu và file liên quan đến nguồn thầu"
     >
       <section className="panel max-w-3xl p-4">
-        <p className="section-title">Documents</p>
+        <p className="section-title">Tài liệu</p>
         <h2 className="mt-1 text-base font-bold text-slate-950">
           Lối tắt tài liệu chính
         </h2>

@@ -257,7 +257,7 @@ export function SearchPageClient({
             className="hidden shrink-0 items-center gap-1.5 rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors duration-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none sm:inline-flex"
           >
             <BookmarkCheck className="h-3.5 w-3.5" aria-hidden />
-            Smart Views
+            Bộ lọc thông minh
           </Link>
         </div>
 
@@ -265,7 +265,7 @@ export function SearchPageClient({
           {SEARCH_MODE_DESCRIPTIONS[mode]}
         </p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded bg-gradient-to-b from-white to-slate-50/50 p-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded bg-white p-2">
           <div className="relative min-w-[12rem] flex-1">
             <Search
               className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
@@ -690,7 +690,7 @@ export function SearchPageClient({
           >
             <span className="inline-flex items-center gap-2">
               <BookmarkCheck className="h-4 w-4 text-blue-700" aria-hidden />
-              Smart View
+              Bộ lọc thông minh
             </span>
             <ChevronDown
               className={`h-4 w-4 text-slate-700  ${
@@ -706,7 +706,7 @@ export function SearchPageClient({
             className="border-t border-slate-400 px-3 py-3"
           >
             <div className="grid gap-1 sm:grid-cols-[1.4fr_1fr]">
-              <FilterField label="Tên Smart View" htmlFor="smart-view-name">
+              <FilterField label="Tên bộ lọc thông minh" htmlFor="smart-view-name">
                 <input
                   id="smart-view-name"
                   className={controlClass}
@@ -747,11 +747,11 @@ export function SearchPageClient({
                 leftIcon={<BookmarkCheck className="h-4 w-4" />}
                 onClick={persistSmartView}
               >
-                {isEditingSmartView ? "Cập nhật Smart View" : "Lưu Smart View"}
+                {isEditingSmartView ? "Cập nhật bộ lọc thông minh" : "Lưu bộ lọc thông minh"}
               </Button>
               {hasPendingSearchFilterChanges ? (
                 <span className="text-xs text-amber-700">
-                  Áp dụng bộ lọc trước khi lưu Smart View.
+                  Áp dụng bộ lọc trước khi lưu bộ lọc thông minh.
                 </span>
               ) : null}
             </div>
@@ -764,14 +764,14 @@ export function SearchPageClient({
               <div>
                 <p className="text-sm font-semibold text-blue-900">
                   {savedFilterQuery.isPending
-                    ? "Đang tải Smart View để chỉnh sửa"
+                    ? "Đang tải bộ lọc thông minh để chỉnh sửa"
                     : savedFilterQuery.error
-                      ? "Không mở được Smart View"
-                      : "Đang chỉnh sửa Smart View"}
+                      ? "Không mở được bộ lọc thông minh"
+                      : "Đang chỉnh sửa bộ lọc thông minh"}
                 </p>
                 <p className="mt-1 text-xs text-blue-800">
                   {savedFilterQuery.error?.message ??
-                    "Cập nhật Smart View sẽ không sửa workflow đã tạo trước đó."}
+                    "Cập nhật bộ lọc thông minh sẽ không sửa workflow đã tạo trước đó."}
                 </p>
               </div>
               <Button
@@ -789,7 +789,7 @@ export function SearchPageClient({
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             <span className="inline-flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4" aria-hidden />
-              Có thay đổi bộ lọc chưa áp dụng. Kết quả và Smart View vẫn đang
+              Có thay đổi bộ lọc chưa áp dụng. Kết quả và bộ lọc thông minh vẫn đang
               dùng bộ lọc hiện tại.
             </span>
             <Button

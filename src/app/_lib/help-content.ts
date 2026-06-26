@@ -95,14 +95,14 @@ export const taskFlow: TaskFlow[] = [
   },
   {
     title: "2. Tìm và lưu nguồn thầu",
-    body: "Dùng Tìm kiếm để lọc BidWinner public, lưu Smart View hoặc đưa gói vào Watchlist.",
+    body: "Dùng Tìm kiếm để lọc BidWinner public, lưu bộ lọc thông minh hoặc đưa gói vào danh sách theo dõi.",
     href: "/search/packages",
     cta: "Tìm kiếm",
     signal: "Dùng khi cần tìm cơ hội, KHLCNT hoặc dự án mới.",
   },
   {
     title: "3. Tự động hóa cảnh báo",
-    body: "Biến Smart View ổn định thành workflow, sau đó xử lý kết quả trong Trung tâm thông báo.",
+    body: "Biến bộ lọc thông minh ổn định thành workflow, sau đó xử lý kết quả trong Trung tâm thông báo.",
     href: "/workflows",
     cta: "Workflows",
     signal: "Dùng khi bộ lọc đã ổn và cần nhắc tự động.",
@@ -125,7 +125,7 @@ export const helpMetrics: HelpMetric[] = [
   {
     value: "4",
     label: "khối vận hành",
-    body: "Tìm kiếm, Smart View, workflow cảnh báo và notification queue.",
+    body: "Tìm kiếm, bộ lọc thông minh, workflow cảnh báo và notification queue.",
   },
   {
     value: "4",
@@ -148,12 +148,12 @@ export const flowNodes: FlowNode[] = [
   {
     step: "02",
     label: "Lưu tiêu chí",
-    body: "Lưu Smart View hoặc đưa dòng cụ thể vào Watchlist.",
+    body: "Lưu bộ lọc thông minh hoặc đưa dòng cụ thể vào danh sách theo dõi.",
   },
   {
     step: "03",
     label: "Tự động hóa",
-    body: "Tạo workflow từ Smart View, chạy thủ công hoặc để theo lịch.",
+    body: "Tạo workflow từ bộ lọc thông minh, chạy thủ công hoặc để theo lịch.",
   },
   {
     step: "04",
@@ -163,7 +163,7 @@ export const flowNodes: FlowNode[] = [
   {
     step: "05",
     label: "Chuẩn hóa vật tư",
-    body: "Preview Excel/CSV, map dữ liệu và đưa vật tư sạch vào catalog.",
+    body: "Xem trước Excel/CSV, ánh xạ dữ liệu và đưa vật tư sạch vào catalog.",
   },
 ];
 
@@ -181,7 +181,7 @@ export const localStackLayers: FlowNode[] = [
   {
     step: "DB",
     label: "PostgreSQL",
-    body: "Lưu tender, Smart View, Watchlist, workflow và catalog vật tư.",
+    body: "Lưu tender, bộ lọc thông minh, danh sách theo dõi, workflow và catalog vật tư.",
   },
   {
     step: "WEB",
@@ -195,7 +195,7 @@ export const sourceMatrixRows: SourceMatrixRow[] = [
     mode: "Gói thầu",
     exact: "Từ khóa, tỉnh, lĩnh vực, ngân sách, ngày đăng.",
     local: "Match score và tinh chỉnh trong cửa sổ kết quả đã tải.",
-    watch: "Phù hợp nhất để lưu Smart View và tạo workflow.",
+    watch: "Phù hợp nhất để lưu bộ lọc thông minh và tạo workflow.",
   },
   {
     mode: "Theo địa phương",
@@ -230,7 +230,7 @@ export const importPipeline: FlowNode[] = [
     body: "Upload `.xlsx` hoặc dán CSV từ catalog vật tư có sẵn.",
   },
   {
-    step: "Preview",
+    step: "Xem trước",
     label: "Kiểm tra dữ liệu",
     body: "Xem header, số dòng đọc được, mapping gợi ý và các dòng mẫu.",
   },
@@ -317,7 +317,7 @@ export const troubleshootingCards: TroubleshootingCard[] = [
       "Có dòng thiếu tên hoặc đơn vị?",
     ],
     action:
-      "Mở `/materials/import`, xem preview sau upload và chỉnh file trước khi nhập lại.",
+      "Mở `/materials/import`, xem trước sau khi tải lên và chỉnh file trước khi nhập lại.",
   },
 ];
 
@@ -334,8 +334,8 @@ export const pageDirectory: PageDirectoryItem[] = [
   },
   {
     href: "/saved-items/smart-views",
-    title: "Bộ lọc & Watchlist",
-    body: "Quản lý Smart View đã lưu và các package/KHLCNT/dự án cần theo dõi.",
+    title: "Bộ lọc & danh sách theo dõi",
+    body: "Quản lý bộ lọc thông minh đã lưu và các package/KHLCNT/dự án cần theo dõi.",
   },
   {
     href: "/documents",
@@ -355,7 +355,7 @@ export const pageDirectory: PageDirectoryItem[] = [
   {
     href: "/materials/import",
     title: "Nhập catalog",
-    body: "Upload Excel hoặc dán CSV, xem preview và nhập hàng loạt catalog vật tư.",
+    body: "Tải file Excel hoặc dán CSV, xem trước và nhập hàng loạt catalog vật tư.",
   },
   {
     href: "/enrich",
@@ -374,7 +374,7 @@ export const pageDirectory: PageDirectoryItem[] = [
   },
   {
     href: "/catalog-pdfs",
-    title: "Catalog PDFs",
+    title: "Thư viện catalog PDF",
     body: "Thư viện tài liệu catalog PDF: upload, lưu URL nguồn và gắn với vật tư.",
   },
   {
@@ -437,14 +437,14 @@ export const sections: Section[] = [
       "Chọn tab đúng nhu cầu trước: Gói thầu cho tìm kiếm package chung, Theo địa phương cho chế độ province-first, Ngành nghề & địa phương cho taxonomy classify public, KHLCNT cho kế hoạch lựa chọn nhà thầu, và Dự án cho danh sách dự án đầu tư phát triển.",
       "Soạn bộ lọc theo tab đang mở: từ khóa, tỉnh/thành, ngân sách, ngày và các trường đặc thù như HTLCNT, nhóm dự án hoặc classify ngành nghề.",
       "Xem banner nguồn ngay trên kết quả để biết trường nào chạy chính xác trên BidWinner public, trường nào chỉ đang refine trong app, và tab nào bị giới hạn vì BidWinner không public endpoint JSON tương ứng.",
-      "Khi đã ưng bộ lọc, bấm Áp dụng bộ lọc rồi lưu Smart View nếu muốn dùng lại hoặc tạo workflow cảnh báo sau này.",
+      "Khi đã ưng bộ lọc, bấm Áp dụng bộ lọc rồi lưu bộ lọc thông minh nếu muốn dùng lại hoặc tạo workflow cảnh báo sau này.",
       "Chọn các dòng phù hợp rồi bấm Lưu để persist vào database; package, KHLCNT và dự án đều có detail page riêng trong app.",
     ],
     notes: [
       "Theo địa phương chỉ chọn chính xác một tỉnh/thành tại một thời điểm để bám cách BidWinner public đang hoạt động.",
       "Ngành nghề & địa phương dùng taxonomy public `classifies`, nhưng kết quả tab này vẫn là local refinement trên cửa sổ package public hiện tại vì BidWinner không public endpoint kết quả tương ứng.",
       "KHLCNT và Dự án luôn lấy tổng số/phân trang từ trang public gốc, nhưng các refine như từ khóa, tỉnh, ngân sách, ngày và field đặc thù vẫn chạy trong app.",
-      "Smart View và workflow giờ lưu kèm `mode`, nên khi mở lại sẽ quay đúng tab tương ứng trên `/search/packages` và các route con.",
+      "bộ lọc thông minh và workflow giờ lưu kèm `mode`, nên khi mở lại sẽ quay đúng tab tương ứng trên `/search/packages` và các route con.",
       "Nếu BidWinner chậm hoặc lỗi, thử giảm bộ lọc hoặc chuyển trang sau vài giây.",
     ],
     links: [{ href: "/search/packages", label: "Mở Tìm kiếm" }],
@@ -459,25 +459,25 @@ export const sections: Section[] = [
   {
     id: "smart-view",
     eyebrow: "Theo dõi",
-    title: "Smart Views & Watchlist",
+    title: "Bộ lọc thông minh & theo dõi",
     intro:
-      "Smart View lưu lại mode + criteria của trang Tìm kiếm để dùng lại hoặc làm đầu vào cho workflow. Watchlist lưu các package, KHLCNT hoặc dự án cụ thể cần theo dõi.",
+      "bộ lọc thông minh lưu lại mode + criteria của trang Tìm kiếm để dùng lại hoặc làm đầu vào cho workflow. danh sách theo dõi lưu các package, KHLCNT hoặc dự án cụ thể cần theo dõi.",
     steps: [
-      "Từ trang Tìm kiếm, đặt tên Smart View và chọn tần suất thông báo.",
-      "Mở `/saved-items/smart-views` hoặc `/saved-items/watchlist` để xem lại Smart View hoặc Watchlist đã lưu.",
-      "Dùng link từ Smart View để áp lại bộ lọc lên trang Tìm kiếm.",
-      "Tạo workflow từ Smart View nếu muốn tự động nhận cảnh báo gói mới.",
+      "Từ trang Tìm kiếm, đặt tên bộ lọc thông minh và chọn tần suất thông báo.",
+      "Mở `/saved-items/smart-views` hoặc `/saved-items/watchlist` để xem lại bộ lọc thông minh hoặc danh sách theo dõi đã lưu.",
+      "Dùng link từ bộ lọc thông minh để áp lại bộ lọc lên trang Tìm kiếm.",
+      "Tạo workflow từ bộ lọc thông minh nếu muốn tự động nhận cảnh báo gói mới.",
     ],
     notes: [
-      "Smart View lưu tiêu chí, không lưu toàn bộ kết quả realtime tại thời điểm tạo.",
-      "Watchlist phù hợp với gói đã xác định và cần quay lại sau.",
+      "bộ lọc thông minh lưu tiêu chí, không lưu toàn bộ kết quả realtime tại thời điểm tạo.",
+      "danh sách theo dõi phù hợp với gói đã xác định và cần quay lại sau.",
     ],
-    links: [{ href: "/saved-items/smart-views", label: "Mở Smart Views" }],
+    links: [{ href: "/saved-items/smart-views", label: "Mở bộ lọc thông minhs" }],
     image: {
       src: "/help/saved-items.png",
-      alt: "Trang Bộ lọc và Watchlist hiển thị Smart Views đã lưu",
+      alt: "Trang Bộ lọc và danh sách theo dõi hiển thị bộ lọc thông minhs đã lưu",
       caption:
-        "Smart Views giữ criteria để áp lại tìm kiếm hoặc làm đầu vào workflow.",
+        "bộ lọc thông minhs giữ criteria để áp lại tìm kiếm hoặc làm đầu vào workflow.",
     },
   },
   {
@@ -485,9 +485,9 @@ export const sections: Section[] = [
     eyebrow: "Tự động hóa",
     title: "Workflows và thông báo",
     intro:
-      "Workflow chạy theo lịch hoặc chạy thủ công để tìm gói thầu mới khớp Smart View và tạo cảnh báo trong trung tâm thông báo.",
+      "Workflow chạy theo lịch hoặc chạy thủ công để tìm gói thầu mới khớp bộ lọc thông minh và tạo cảnh báo trong trung tâm thông báo.",
     steps: [
-      "Tạo workflow từ một Smart View đã lưu.",
+      "Tạo workflow từ một bộ lọc thông minh đã lưu.",
       "Kiểm tra trạng thái active/paused trên danh sách workflow.",
       "Mở chi tiết workflow để xem lịch sử chạy và thông điệp lỗi nếu có.",
       "Vào `/notifications` để xử lý cảnh báo được tạo từ workflow.",
@@ -502,9 +502,9 @@ export const sections: Section[] = [
     ],
     image: {
       src: "/help/workflows.png",
-      alt: "Trang Workflow tự động với danh sách trigger và lịch sử chạy",
+      alt: "Trang quy trình tự động với danh sách kích hoạt và lịch sử chạy",
       caption:
-        "Workflow dùng Smart View làm nguồn lọc và sinh cảnh báo khi có kết quả mới.",
+        "Workflow dùng bộ lọc thông minh làm nguồn lọc và sinh cảnh báo khi có kết quả mới.",
     },
   },
   {
@@ -528,7 +528,7 @@ export const sections: Section[] = [
       src: "/help/notifications.png",
       alt: "Trung tâm thông báo BidTool với bộ lọc trạng thái cảnh báo",
       caption:
-        "Thông báo giúp tách việc cần xử lý khỏi cấu hình Smart View và workflow.",
+        "Thông báo giúp tách việc cần xử lý khỏi cấu hình bộ lọc thông minh và workflow.",
     },
   },
   {
@@ -544,7 +544,7 @@ export const sections: Section[] = [
       "Bấm nhập khi preview hợp lệ; dòng trùng name + unit sẽ được bỏ qua để giữ catalog sạch.",
     ],
     notes: [
-      "Preview giúp kiểm tra dữ liệu trước khi ghi vào catalog.",
+      "Xem trước giúp kiểm tra dữ liệu trước khi ghi vào catalog.",
       "File `.xls` cũ cần chuyển sang `.xlsx` trước khi upload.",
       "Cần điền ngược dữ liệu vào một file Excel có sẵn? Dùng Đối chiếu & điền tại `/enrich`.",
     ],
@@ -594,12 +594,12 @@ export const sections: Section[] = [
     notes: [
       "Xóa vật tư khỏi catalog không ảnh hưởng đến file nguồn đã upload.",
       "Giữ tên, đơn vị và nguồn giá nhất quán để workbook export dễ kiểm tra.",
-      "Catalog PDFs (`/catalog-pdfs`) lưu tài liệu nguồn và gắn vào vật tư để tra cứu sau.",
+      "Thư viện catalog PDF (`/catalog-pdfs`) lưu tài liệu nguồn và gắn vào vật tư để tra cứu sau.",
     ],
     links: [
       { href: "/materials", label: "Mở Vật tư" },
       { href: "/materials/scrape", label: "Quét cửa hàng" },
-      { href: "/catalog-pdfs", label: "Catalog PDFs" },
+      { href: "/catalog-pdfs", label: "Thư viện catalog PDF" },
     ],
     image: {
       src: "/help/materials.png",

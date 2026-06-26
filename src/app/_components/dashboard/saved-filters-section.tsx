@@ -94,11 +94,11 @@ export function SavedFiltersSection() {
     onSuccess: async () => {
       setActionError(null);
       setDeleteTarget(null);
-      toast.success("Đã xóa Smart View.");
+      toast.success("Đã xóa bộ lọc thông minh.");
       await utils.search.listSavedFilters.invalidate();
     },
     onError: (error) => {
-      setActionError(error.message || "Không thể xóa Smart View.");
+      setActionError(error.message || "Không thể xóa bộ lọc thông minh.");
       setDeleteTarget(null);
     },
   });
@@ -106,7 +106,7 @@ export function SavedFiltersSection() {
   const createWorkflow = api.workflow.createFromSavedFilter.useMutation({
     onSuccess: async (workflow) => {
       setActionError(null);
-      toast.success("Đã tạo workflow từ Smart View.");
+      toast.success("Đã tạo workflow từ bộ lọc thông minh.");
       await Promise.all([utils.workflow.list.invalidate()]);
       if (workflow) {
         router.push(`/workflows/${workflow.id}`);
@@ -114,7 +114,7 @@ export function SavedFiltersSection() {
     },
     onError: (error) => {
       setActionError(
-        error.message || "Không thể tạo workflow từ Smart View hiện tại.",
+        error.message || "Không thể tạo workflow từ bộ lọc thông minh hiện tại.",
       );
     },
   });
@@ -130,8 +130,8 @@ export function SavedFiltersSection() {
     <section className="panel p-2">
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Xóa Smart View "${deleteTarget?.name ?? ""}"?`}
-        description="Workflow đã tạo từ Smart View này vẫn được giữ nguyên và không bị thay đổi."
+        title={`Xóa bộ lọc thông minh "${deleteTarget?.name ?? ""}"?`}
+        description="Workflow đã tạo từ bộ lọc thông minh này vẫn được giữ nguyên và không bị thay đổi."
         confirmLabel="Xóa"
         variant="danger"
         isLoading={deleteSavedFilter.isPending}
@@ -142,7 +142,7 @@ export function SavedFiltersSection() {
       />
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 pb-3">
         <div>
-          <h2 className="text-sm font-bold">Smart Views</h2>
+          <h2 className="text-sm font-bold">Bộ lọc thông minh</h2>
           <p className="mt-1 text-xs text-slate-700">
             Quản lý bộ lọc đã lưu, mở lại vào trang tìm kiếm để chỉnh sửa và tạo
             workflow cảnh báo mới.
@@ -152,8 +152,8 @@ export function SavedFiltersSection() {
       </div>
 
       <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-800">
-        Workflow tạo từ Smart View sẽ sao chép điều kiện tại thời điểm tạo.
-        Chỉnh sửa hoặc xóa Smart View không làm thay đổi workflow đã có.
+        Workflow tạo từ bộ lọc thông minh sẽ sao chép điều kiện tại thời điểm tạo.
+        Chỉnh sửa hoặc xóa bộ lọc thông minh không làm thay đổi workflow đã có.
       </div>
 
       {actionError ? (
@@ -163,10 +163,10 @@ export function SavedFiltersSection() {
       ) : null}
 
       {savedFiltersQuery.isPending ? (
-        <LoadingPanel message="Đang tải Smart Views…" />
+        <LoadingPanel message="Đang tải bộ lọc thông minh…" />
       ) : savedFiltersQuery.error ? (
         <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-          <p className="font-semibold">Không tải được Smart Views</p>
+          <p className="font-semibold">Không tải được bộ lọc thông minh</p>
           <p className="mt-1 text-xs leading-relaxed">
             {savedFiltersQuery.error.message}
           </p>
@@ -195,7 +195,7 @@ export function SavedFiltersSection() {
       ) : savedFilters.length === 0 ? (
         <EmptyState
           className="mt-3"
-          title="Chưa có Smart View nào"
+          title="Chưa có bộ lọc thông minh nào"
           description="Tạo bộ lọc trong trang Tìm kiếm để lưu lại điều kiện thường dùng và dùng lại sau này."
           cta={
             <Link

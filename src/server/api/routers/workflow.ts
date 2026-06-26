@@ -277,7 +277,7 @@ export const workflowRouter = createTRPCRouter({
       if (!savedFilter) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Smart View không tồn tại.",
+          message: "bộ lọc thông minh không tồn tại.",
         });
       }
 
@@ -294,7 +294,7 @@ export const workflowRouter = createTRPCRouter({
       const requestedName = input.name?.trim();
       const normalizedRequestedName =
         requestedName && requestedName.length > 0 ? requestedName : null;
-      const savedFilterName = normalizedSavedFilter.name || "Smart View";
+      const savedFilterName = normalizedSavedFilter.name || "Bộ lọc thông minh";
 
       const [created] = await ctx.db
         .insert(workflows)
@@ -318,7 +318,7 @@ export const workflowRouter = createTRPCRouter({
       if (!created) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Không tạo được workflow từ Smart View.",
+          message: "Không tạo được workflow từ bộ lọc thông minh.",
         });
       }
 

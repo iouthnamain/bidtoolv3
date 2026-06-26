@@ -30,7 +30,7 @@ export default async function ManagerPage() {
       role="manager"
       eyebrow="Bảng điều khiển điều hành"
       title="Bảng điều hành quản lý"
-      description="Không gian quản lý tập trung vào user, tenant và cấu hình. Các tác vụ nghiệp vụ được cố ý ẩn khỏi dashboard này."
+      description="Không gian quản lý tập trung vào người dùng, tổ chức và cấu hình. Các tác vụ nghiệp vụ được cố ý ẩn khỏi bảng điều khiển này."
     >
       <MetricStrip
         metrics={[
@@ -73,7 +73,7 @@ export default async function ManagerPage() {
             {
               href: "/settings/users",
               label: "Quản lý người dùng",
-              description: "Role, khóa/mở khóa và tenant assignment.",
+              description: "Vai trò, khóa/mở khóa và gán tổ chức.",
               icon: Users,
             },
             {
@@ -101,7 +101,7 @@ export default async function ManagerPage() {
       <RoleBoundaryNotice
         title="Manager không làm nghiệp vụ"
         items={[
-          "Không thấy Operations nav: search, materials, scrape, enrich, workflow.",
+          "Không thấy menu vận hành: tìm kiếm, vật tư, quét shop, làm giàu, quy trình.",
           "Không chạy job hoặc sửa catalog vật tư.",
           "Tập trung vào quyền truy cập, tenant, cấu hình và chuẩn bị customer portal.",
         ]}

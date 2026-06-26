@@ -166,7 +166,7 @@ export function MaterialProfilesClient() {
         </section>
 
         <section className="panel overflow-hidden">
-          <div className="border-b border-slate-400 px-4 py-4 sm:px-5">
+          <div className="border-b border-slate-400 px-4 py-4">
             <p className="section-title">Danh sách trước đó</p>
             <h2 className="mt-1 text-base font-bold text-slate-950">
               Previous work

@@ -6,9 +6,9 @@ export const siteConfig = {
   url: "https://bidtoolv3.vercel.app",
   locale: "vi_VN",
   language: "vi",
-  title: "BidTool v3 - Procurement OS",
+  title: "BidTool v3 - Hệ điều hành đấu thầu",
   description:
-    "BidTool v3 gom tìm kiếm BidWinner, Smart View, workflow cảnh báo và import catalog vật tư vào một trung tâm điều hành đấu thầu.",
+    "BidTool v3 gom tìm kiếm BidWinner, bộ lọc thông minh, quy trình cảnh báo và nhập catalog vật tư vào một trung tâm điều hành đấu thầu.",
   keywords: [
     "BidTool",
     "đấu thầu",

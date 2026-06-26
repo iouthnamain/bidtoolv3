@@ -103,7 +103,7 @@ export function OpenaiCompatibleSettingsSection() {
                 <Link className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-slate-950">Base URL</h3>
+                <h3 className="text-sm font-bold text-slate-950">URL gốc</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   Địa chỉ API endpoint, ví dụ: https://api.together.xyz/v1.
                 </p>
@@ -111,7 +111,7 @@ export function OpenaiCompatibleSettingsSection() {
             </div>
 
             <FilterField
-              label="Base URL"
+              label="URL gốc"
               htmlFor="openai-compatible-base-url"
               helper={
                 config?.openaiCompatible?.canEditBaseUrl
@@ -152,7 +152,7 @@ export function OpenaiCompatibleSettingsSection() {
                 <KeyRound className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-slate-950">API key</h3>
+                <h3 className="text-sm font-bold text-slate-950">Khóa API</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   Key xác thực cho Custom Provider (có thể để trống tùy provider).
                 </p>
@@ -160,7 +160,7 @@ export function OpenaiCompatibleSettingsSection() {
             </div>
 
             <FilterField
-              label="API key"
+              label="Khóa API"
               htmlFor="openai-compatible-api-key"
               helper={
                 config?.openaiCompatible?.canEdit
@@ -216,7 +216,7 @@ export function OpenaiCompatibleSettingsSection() {
           </p>
           <dl className="mt-4 space-y-2 text-sm">
             <div>
-              <dt className="text-slate-600">Base URL</dt>
+              <dt className="text-slate-600">URL gốc</dt>
               <dd className="mt-1 font-mono text-xs font-semibold break-all">
                 {config?.openaiCompatible?.baseUrl ?? "—"}
               </dd>
@@ -234,7 +234,7 @@ export function OpenaiCompatibleSettingsSection() {
               </dd>
             </div>
             <div>
-              <dt className="text-slate-600">Key</dt>
+              <dt className="text-slate-600">Khóa</dt>
               <dd className="mt-1">
                 <Badge tone={config?.openaiCompatible?.configured ? "success" : "neutral"}>
                   {config?.openaiCompatible?.configured
@@ -258,7 +258,7 @@ export function OpenaiCompatibleSettingsSection() {
                   <Badge tone={config?.openaiCompatible?.canEdit ? "success" : "neutral"}>
                     {config?.openaiCompatible?.canEdit ? "Có" : "Không"}
                   </Badge>
-                  <span className="text-xs text-slate-600">Key</span>
+                  <span className="text-xs text-slate-600">Khóa</span>
                 </div>
               </dd>
             </div>

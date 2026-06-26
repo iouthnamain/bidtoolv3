@@ -26,7 +26,7 @@ export default async function AdminPage() {
       role="admin"
       eyebrow="Bảng điều khiển quản trị"
       title="Trung tâm quản trị"
-      description="Một màn hình dày thông tin cho quản trị: user, tenant, trạng thái hệ thống và rủi ro vận hành cần xử lý."
+      description="Một màn hình dày thông tin cho quản trị: người dùng, tổ chức, trạng thái hệ thống và rủi ro vận hành cần xử lý."
     >
       <MetricStrip
         metrics={[
@@ -62,7 +62,7 @@ export default async function AdminPage() {
           },
           {
             label: "Phiên bản",
-            value: version?.current ?? "N/A",
+            value: version?.current ?? "Không có",
             hint: version?.surface ?? "Không đọc được",
             tone: version?.updateAvailable ? "warning" : "neutral",
           },
@@ -120,7 +120,7 @@ export default async function AdminPage() {
       <RoleBoundaryNotice
         title="Admin nhìn thấy cả governance và operations"
         items={[
-          "Dùng Administration cho user, tenant, AI, cập nhật và desktop.",
+          "Dùng mục Quản trị cho người dùng, tổ chức, AI, cập nhật và desktop.",
           "Dùng Operations khi cần can thiệp nghiệp vụ như staff.",
           "Các cảnh báo ở đây là hàng đợi ưu tiên, không thay thế kiểm tra chi tiết từng module.",
         ]}

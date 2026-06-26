@@ -193,7 +193,7 @@ export function MaterialCreateClient() {
               <h2 className="text-xl font-bold text-balance text-slate-950">
                 Thêm sản phẩm / vật tư
               </h2>
-              <Badge tone="info">Manual</Badge>
+              <Badge tone="info">Thủ công</Badge>
             </div>
             <p className="mt-1 text-sm text-slate-600">
               Tạo một bản ghi catalog đầy đủ để dùng lại khi nhập và chuẩn hóa

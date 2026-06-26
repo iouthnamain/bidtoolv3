@@ -155,10 +155,10 @@ function XlsxPreviewPanel({
       id="materials-xlsx-preview"
       className="panel scroll-mt-6 overflow-hidden border-blue-100"
     >
-      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-gradient-to-r from-white via-blue-50 to-emerald-50 px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-white px-4 py-4">
         <div>
           <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
-            Preview trước khi nhập
+            Xem trước trước khi nhập
           </p>
           <p className="mt-1 text-lg font-bold text-slate-950">{sheet.name}</p>
           <p className="mt-0.5 text-sm text-slate-700">
@@ -439,7 +439,7 @@ export function MaterialImportClient() {
                 <FileSpreadsheet className="h-4 w-4" aria-hidden />
               </span>
               <div>
-                <h3 className="text-sm font-bold text-blue-950">Upload Excel</h3>
+                <h3 className="text-sm font-bold text-blue-950">Tải file Excel</h3>
                 <p className="text-xs text-blue-800">
                   Tự dò header `.xlsx`; nhập tên sheet nếu workbook có nhiều
                   trang.
@@ -450,10 +450,10 @@ export function MaterialImportClient() {
 
           <div className="grid gap-2 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
             <label
-              className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 sm:min-h-44 sm:gap-3 sm:py-6 ${
+              className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 ${
                 xlsxFile
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                  : "border-blue-300 bg-gradient-to-br from-blue-50 to-white text-blue-900 hover:bg-blue-100"
+                  : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"
               }`}
             >
               <input

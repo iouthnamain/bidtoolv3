@@ -1114,7 +1114,7 @@ function CatalogPdfDetailPanel({
               className="panel p-2"
               onSubmit={saveMetadata}
             >
-              <h4 className="text-sm font-semibold text-slate-900">Metadata</h4>
+              <h4 className="text-sm font-semibold text-slate-900">Siêu dữ liệu</h4>
               <div className="mt-3 grid gap-2">
                 <label className="grid gap-1 text-xs font-semibold text-slate-600">
                   Tên tài liệu

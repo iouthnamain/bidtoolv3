@@ -7,11 +7,11 @@ import { catalogPdfSectionNavItems } from "~/app/_components/dashboard/page-nav-
 
 const PAGE_META: Record<string, { title: string; description: string }> = {
   "/catalog-pdfs": {
-    title: "Catalog PDFs",
+    title: "Thư viện catalog PDF",
     description: "Quản lý tài liệu catalog của sản phẩm và liên kết nhiều vật tư với một tài liệu",
   },
   "/catalog-pdfs/new": {
-    title: "Thêm Catalog PDF",
+    title: "Thêm tài liệu catalog PDF",
     description: "Tạo tài liệu từ URL PDF hoặc upload tệp.",
   },
 };
@@ -25,7 +25,7 @@ export function CatalogPdfsLayoutClient({
   const isDetail = /^\/catalog-pdfs\/\d+$/.test(pathname);
   const meta = isDetail
     ? {
-        title: "Chi tiết Catalog PDF",
+        title: "Chi tiết tài liệu catalog PDF",
         description: "Sửa metadata, tải bản cục bộ và gắn vật tư.",
       }
     : (PAGE_META[pathname] ?? PAGE_META["/catalog-pdfs"]!);

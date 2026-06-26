@@ -314,7 +314,7 @@ export function BidWinnerSourceDetailsPageClient({
                 <tr>
                   <th className="px-3 py-2">Tên hiển thị</th>
                   <th className="px-3 py-2">Loại</th>
-                  <th className="px-3 py-2">Link</th>
+                  <th className="px-3 py-2">Liên kết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
@@ -410,10 +410,10 @@ export function BidWinnerSourceDetailsPageClient({
             <table className="w-full min-w-[40rem] table-fixed divide-y divide-slate-200 text-sm break-words">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs tracking-wide text-slate-600 uppercase">
                 <tr>
-                  <th className="px-3 py-2">Text</th>
-                  <th className="px-3 py-2">Host</th>
+                  <th className="px-3 py-2">Nội dung</th>
+                  <th className="px-3 py-2">Máy chủ</th>
                   <th className="px-3 py-2">Loại</th>
-                  <th className="px-3 py-2">Link</th>
+                  <th className="px-3 py-2">Liên kết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white text-slate-700">

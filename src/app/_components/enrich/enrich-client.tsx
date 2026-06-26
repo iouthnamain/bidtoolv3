@@ -773,10 +773,10 @@ function UploadStep({
 
       <div className="grid gap-2 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)] lg:items-start">
         <label
-          className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 sm:min-h-44 ${
+          className={`relative flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 focus-within:ring-blue-500 ${
             file
               ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-              : "border-blue-300 bg-gradient-to-br from-blue-50 to-white text-blue-900 hover:bg-blue-100"
+              : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"
           }`}
         >
           <input

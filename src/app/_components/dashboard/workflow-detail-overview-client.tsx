@@ -142,7 +142,7 @@ export function WorkflowDetailOverviewClient({
           </div>
           {filterConfig.savedFilterName ? (
             <p className="mt-3 text-xs text-slate-700">
-              Tạo từ Smart View: {filterConfig.savedFilterName}
+              Tạo từ bộ lọc thông minh: {filterConfig.savedFilterName}
             </p>
           ) : null}
         </div>

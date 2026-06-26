@@ -17,7 +17,7 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     description: "Nhà cung cấp, URL, giá và ghi chú.",
   },
   documents: {
-    title: "Catalog PDFs",
+    title: "Thư viện catalog PDF",
     description: "Tài liệu catalog gắn với vật tư.",
   },
   edit: {

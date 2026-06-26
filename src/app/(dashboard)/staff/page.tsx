@@ -54,7 +54,7 @@ export default async function StaffPage() {
             tone: "info",
           },
           {
-            label: "Catalog PDFs",
+            label: "Thư viện catalog PDF",
             value: operations.totalCatalogDocuments,
             hint: `${operations.catalogLinkedMaterials} vật tư có link catalog`,
             tone: "neutral",
@@ -93,7 +93,7 @@ export default async function StaffPage() {
             {
               href: "/search/packages",
               label: "Tìm gói thầu",
-              description: "Tìm kiếm và lưu Smart View.",
+              description: "Tìm kiếm và lưu bộ lọc thông minh.",
               icon: Search,
             },
             {

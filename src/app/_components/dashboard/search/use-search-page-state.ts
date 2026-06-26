@@ -257,7 +257,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
   const saveFilter = api.search.saveFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
-      setSmartViewSuccess(`Đã lưu Smart View "${savedFilter.name}".`);
+      setSmartViewSuccess(`Đã lưu bộ lọc thông minh "${savedFilter.name}".`);
       setSmartViewName(savedFilter.name);
       setSavedFilterId(savedFilter.id);
       setSmartViewFrequency(savedFilter.notificationFrequency);
@@ -265,14 +265,14 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể lưu Smart View.");
+      setSaveError(error.message ?? "Không thể lưu bộ lọc thông minh.");
     },
   });
 
   const updateSavedFilter = api.search.updateSavedFilter.useMutation({
     onSuccess: async (savedFilter) => {
       setSaveError(null);
-      setSmartViewSuccess(`Đã cập nhật Smart View "${savedFilter.name}".`);
+      setSmartViewSuccess(`Đã cập nhật bộ lọc thông minh "${savedFilter.name}".`);
       setSmartViewName(savedFilter.name);
       setSmartViewFrequency(savedFilter.notificationFrequency);
       hydratedSavedFilterKeyRef.current = `${savedFilter.id}:${savedFilter.updatedAt}`;
@@ -283,7 +283,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     },
     onError: (error) => {
       setSmartViewSuccess(null);
-      setSaveError(error.message ?? "Không thể cập nhật Smart View.");
+      setSaveError(error.message ?? "Không thể cập nhật bộ lọc thông minh.");
     },
   });
 
@@ -377,7 +377,7 @@ export function useSearchPageState({ fixedMode }: { fixedMode?: SearchMode }) {
     const payload = {
       name:
         smartViewName.trim() ||
-        `Smart View ${new Date().toLocaleTimeString("vi-VN")}`,
+        `bộ lọc thông minh ${new Date().toLocaleTimeString("vi-VN")}`,
       mode,
       keyword: appliedCriteria.keyword,
       provinces: appliedCriteria.provinces,
