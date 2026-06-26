@@ -148,13 +148,6 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
     match: "prefix",
   },
   {
-    href: "/materials/enrich",
-    label: "Làm giàu",
-    description: "Tìm web, bổ sung thông số và catalog PDF cho vật tư.",
-    icon: "sparkles",
-    tone: "rose",
-  },
-  {
     href: "/catalog-pdfs",
     label: "Thư viện catalog PDF",
     description: "Thư viện tài liệu catalog gắn với vật tư.",

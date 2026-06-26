@@ -1,7 +1,6 @@
 import {
   Boxes,
   Search,
-  Sparkles,
 } from "lucide-react";
 
 import { createPageMetadata } from "~/app/_lib/seo";
@@ -105,12 +104,6 @@ export default async function StaffPage() {
               label: "Quét cửa hàng",
               description: "Lấy dữ liệu sản phẩm từ shop.",
               icon: Search,
-            },
-            {
-              href: "/materials/enrich",
-              label: "Làm giàu vật tư",
-              description: "Tìm web, PDF và thông số.",
-              icon: Sparkles,
             },
           ]}
         />

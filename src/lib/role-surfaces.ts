@@ -124,6 +124,7 @@ export const HIDDEN_ROUTE_PREFIXES = [
   "/workflows",
   "/help",
   "/chat",
+  "/materials/enrich",
 ] as const;
 
 export function isHiddenRoute(pathname: string): boolean {

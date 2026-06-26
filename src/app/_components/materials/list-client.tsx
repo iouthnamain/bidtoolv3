@@ -41,7 +41,6 @@ import {
   Search,
   SlidersHorizontal,
   SquareCheckBig,
-  Sparkles,
   SquarePen,
   Table2,
   Trash2,
@@ -2248,19 +2247,6 @@ export function MaterialsListClient() {
                 onClick={() => setBulkEditOpen((current) => !current)}
               >
                 Sửa hàng loạt
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!someSelected}
-                leftIcon={<Sparkles className="h-3.5 w-3.5" />}
-                onClick={() =>
-                  router.push(
-                    `/materials/enrich?ids=${selectedIds.join(",")}`,
-                  )
-                }
-              >
-                Làm giàu
               </Button>
               <Button
                 variant="secondary"
