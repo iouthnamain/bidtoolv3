@@ -89,7 +89,7 @@ export function ReviewPanel({
   const isProfileSplit = searchMode === "profileSplit";
   const webSearch = api.material.enrichWebSearchRow.useMutation();
   const webLinksSearch = api.material.enrichWebSearchRowLinks.useMutation();
-  const aiSearch = api.material.enrichWebSearchRow.useMutation();
+  const aiSearchSingle = api.material.enrichAiSearchRow.useMutation();
   const selectedRowIndexRef = useRef(selectedRowIndex);
   selectedRowIndexRef.current = selectedRowIndex;
 
@@ -369,39 +369,113 @@ export function ReviewPanel({
     const nextPending = {
       ...decision,
       aiSearchStatus: "pending" as const,
+      aiSearchCandidates: [],
     };
     updateDecision(rowIndex, nextPending);
     persistDecision(rowIndex, nextPending);
 
     try {
-      const result = await aiSearch.mutateAsync(webRowInput(row));
-      const status =
-        Object.keys(result.fields).length > 0
-          ? ("done" as const)
-          : ("error" as const);
+      let links = decision.webLinkResults ?? [];
+      if (links.length === 0) {
+        const response = await webLinksSearch.mutateAsync(webRowInput(row));
+        links = response.results.map((hit) => ({
+          title: hit.title,
+          url: hit.url,
+          domain: hit.domain,
+          snippet: hit.snippet,
+          query: hit.query,
+          rankScore: hit.rankScore,
+        }));
+        applyDecisions((prev) => {
+          const current = prev.get(rowIndex);
+          if (!current) return prev;
+          const next = new Map(prev);
+          next.set(rowIndex, {
+            ...current,
+            webLinkResults: links,
+            webLinksStatus: links.length > 0 ? "done" : "error",
+          });
+          persistDecision(rowIndex, next.get(rowIndex)!);
+          return next;
+        });
+      }
+
+      const topLinks = links.slice(0, 6);
+      if (topLinks.length === 0) {
+        applyDecisions((prev) => {
+          const current = prev.get(rowIndex);
+          if (!current) return prev;
+          const next = new Map(prev);
+          next.set(rowIndex, { ...current, aiSearchStatus: "error" });
+          persistDecision(rowIndex, next.get(rowIndex)!);
+          return next;
+        });
+        if (rowIndex === selectedRowIndexRef.current) {
+          toast.warning("Không có nguồn web để trích xuất AI.");
+        }
+        return;
+      }
+
+      const rowInput = webRowInput(row);
+      const extracted = await runWithConcurrency(
+        topLinks.map((link) => async () => {
+          try {
+            const result = await aiSearchSingle.mutateAsync({
+              ...rowInput,
+              webResults: [
+                {
+                  title: link.title || link.url,
+                  url: link.url,
+                  domain: link.domain,
+                  snippet: link.snippet,
+                  query: link.query,
+                  rankScore: link.rankScore,
+                },
+              ],
+            });
+            if (Object.keys(result.fields).length === 0) {
+              return null;
+            }
+            return {
+              fields: result.fields,
+              sourceUrls: result.sourceUrls,
+              evidence: result.evidence,
+              title: link.title,
+              url: link.url,
+              snippet: link.snippet,
+              rankScore: link.rankScore,
+            };
+          } catch {
+            return null;
+          }
+        }),
+        3,
+      );
+
+      const candidates = extracted.filter(
+        (item): item is NonNullable<(typeof extracted)[number]> => item != null,
+      );
+      const status = candidates.length > 0 ? ("done" as const) : ("error" as const);
+
       applyDecisions((prev) => {
         const current = prev.get(rowIndex);
         if (!current) return prev;
         const next = new Map(prev);
         next.set(rowIndex, {
           ...current,
-          aiSearchResult: {
-            fields: result.fields,
-            sourceUrls: result.sourceUrls,
-            evidence: result.evidence,
-          },
+          aiSearchCandidates: candidates,
+          aiSearchResult: candidates[0],
           aiSearchStatus: status,
         });
         persistDecision(rowIndex, next.get(rowIndex)!);
         return next;
       });
+
       if (rowIndex === selectedRowIndexRef.current) {
-        if (Object.keys(result.fields).length === 0) {
-          toast.warning("AI không trích xuất được trường nào.");
+        if (candidates.length === 0) {
+          toast.warning("AI không trích xuất được ứng viên nào.");
         } else {
-          toast.success(
-            `AI trích xuất ${Object.keys(result.fields).length} trường.`,
-          );
+          toast.success(`Tìm thấy ${candidates.length} ứng viên AI.`);
         }
       }
     } catch (error) {

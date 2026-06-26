@@ -24,7 +24,13 @@ export type AiSearchStoredResult = {
   fields: Partial<Record<FillableField, string>>;
   sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
+  title?: string;
+  url?: string;
+  snippet?: string;
+  rankScore?: number;
 };
+
+export type AiSearchCandidateStored = AiSearchStoredResult;
 
 export type RowDecisionLike = {
   materialId: number | null;
@@ -37,8 +43,10 @@ export type RowDecisionLike = {
   webLinkResults?: WebLinkResult[];
   webLinksStatus?: WebSearchStatus;
   aiSearchResult?: AiSearchStoredResult;
+  aiSearchCandidates?: AiSearchCandidateStored[];
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
+  selectedSearchCandidateKey?: string;
   skipped?: boolean;
 };
 
@@ -182,8 +190,10 @@ export function applyWebSearchToDecision(
     webLinkResults: current.webLinkResults,
     webLinksStatus: current.webLinksStatus,
     aiSearchResult: current.aiSearchResult,
+    aiSearchCandidates: current.aiSearchCandidates,
     aiSearchStatus: current.aiSearchStatus,
     selectedSource: current.selectedSource ?? "ai",
+    selectedSearchCandidateKey: current.selectedSearchCandidateKey,
     skipped: current.skipped,
   };
 }
@@ -212,8 +222,10 @@ export function applySavedMaterialToDecision(
     webLinkResults: current?.webLinkResults,
     webLinksStatus: current?.webLinksStatus,
     aiSearchResult: current?.aiSearchResult,
+    aiSearchCandidates: current?.aiSearchCandidates,
     aiSearchStatus: current?.aiSearchStatus,
     selectedSource: "catalog",
+    selectedSearchCandidateKey: current?.selectedSearchCandidateKey,
     skipped: false,
   };
 }

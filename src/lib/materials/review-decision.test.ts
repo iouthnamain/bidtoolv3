@@ -69,14 +69,41 @@ describe("review-decision", () => {
       },
       aiSearchStatus: "done",
       selectedSource: "ai",
+      selectedSearchCandidateKey: "ai:0",
+      aiSearchCandidates: [
+        {
+          fields: { manufacturer: "Acme" },
+          sourceUrls: ["https://example.com/p"],
+          evidence: [
+            {
+              field: "manufacturer",
+              value: "Acme",
+              snippet: "By Acme",
+              sourceUrl: "https://example.com/p",
+            },
+          ],
+          title: "Acme product",
+          url: "https://example.com/p",
+          rankScore: 0.88,
+        },
+        {
+          fields: { manufacturer: "Beta" },
+          sourceUrls: ["https://example.com/b"],
+          evidence: [],
+          url: "https://example.com/b",
+          rankScore: 0.55,
+        },
+      ],
     };
 
     const restored = deserializeRowDecision(serializeRowDecision(decision));
     expect(restored?.webLinkResults?.[0]?.url).toBe("https://example.com/p");
     expect(restored?.webLinksStatus).toBe("done");
     expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
+    expect(restored?.aiSearchCandidates?.length).toBe(2);
     expect(restored?.aiSearchStatus).toBe("done");
     expect(restored?.selectedSource).toBe("ai");
+    expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
   });
 
   it("seeds auto row from item materialId and fill plan", () => {

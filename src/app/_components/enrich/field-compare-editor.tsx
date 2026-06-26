@@ -99,8 +99,8 @@ export type FieldCompareEditorProps = {
 
   /** Web/AI search results shown as additional selectable candidate cards. */
   searchSourceCandidates?: SearchSourceCandidate[];
-  selectedSearchSource?: "web" | "ai" | null;
-  onChooseSearchSource?: (source: "web" | "ai") => void;
+  selectedSearchCandidateKey?: string | null;
+  onChooseSearchCandidate?: (key: string) => void;
 };
 
 const EDITABLE_FIELDS = FILLABLE_FIELDS.filter(
@@ -140,8 +140,8 @@ export function FieldCompareEditor({
   compareLayout = "inline",
   afterColumnLabel = "Sau",
   searchSourceCandidates = [],
-  selectedSearchSource = null,
-  onChooseSearchSource,
+  selectedSearchCandidateKey = null,
+  onChooseSearchCandidate,
 }: FieldCompareEditorProps) {
   // The base material fields feeding the plan: a chosen catalog candidate wins,
   // otherwise the surface's proposed/found values.
@@ -176,7 +176,7 @@ export function FieldCompareEditor({
   const hasDecision =
     forceShowDecision ||
     selectedMaterialId != null ||
-    selectedSearchSource != null ||
+    selectedSearchCandidateKey != null ||
     hasProposed ||
     Object.values(editedValues).some((v) => (v ?? "").trim().length > 0);
 
@@ -210,17 +210,24 @@ export function FieldCompareEditor({
       }
       const searchIndex = digit - catalogCardCount - 1;
       const searchCandidate = searchSourceCandidates[searchIndex];
-      if (!searchCandidate || !onChooseSearchSource) return;
+      if (!searchCandidate || !onChooseSearchCandidate) return;
       if (searchCandidate.status === "pending" || searchCandidate.status === "error") {
         return;
       }
       event.preventDefault();
-      onChooseSearchSource(searchCandidate.id);
+      onChooseSearchCandidate(searchCandidate.key);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidates, searchSourceCandidates, enableCandidateGrid, catalogCardCount]);
+
+  const selectedSearchCandidate =
+    selectedSearchCandidateKey != null
+      ? searchSourceCandidates.find(
+          (candidate) => candidate.key === selectedSearchCandidateKey,
+        ) ?? null
+      : null;
 
   return (
     <div className="space-y-4">
@@ -310,7 +317,7 @@ export function FieldCompareEditor({
                   key={candidate.materialId}
                   candidate={candidate}
                   isSelected={
-                    selectedSearchSource == null &&
+                    selectedSearchCandidateKey == null &&
                     candidate.materialId === selectedMaterialId
                   }
                   isRecommended={
@@ -332,10 +339,10 @@ export function FieldCompareEditor({
               ))}
               {searchSourceCandidates.map((candidate, index) => (
                 <SearchSourceCandidateCard
-                  key={candidate.id}
+                  key={candidate.key}
                   candidate={candidate}
-                  isSelected={selectedSearchSource === candidate.id}
-                  onChoose={() => onChooseSearchSource?.(candidate.id)}
+                  isSelected={selectedSearchCandidateKey === candidate.key}
+                  onChoose={() => onChooseSearchCandidate?.(candidate.key)}
                   hotkeyIndex={catalogCardCount + index + 1}
                 />
               ))}
@@ -358,10 +365,9 @@ export function FieldCompareEditor({
                     <th className="w-8 py-2 pr-2" aria-label="Chọn trường" />
                     <th className="w-24 py-2 pr-2 font-semibold">Trường</th>
                     <th className="w-[40%] py-2 pr-2 font-semibold">Trước</th>
-                    <th className="w-[40%] py-2 pr-2 font-semibold">
+                    <th className="w-[40%] py-2 font-semibold">
                       {afterColumnLabel}
                     </th>
-                    <th className="w-16 py-2 font-semibold" />
                   </tr>
                 </thead>
                 <tbody>
@@ -412,49 +418,30 @@ export function FieldCompareEditor({
                             <span className="text-slate-500">—</span>
                           )}
                         </td>
-                        <td className="py-2 align-top text-right">
-                          {cell.action === "kept" && enableOverwrite ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                onToggleOverwrite(field);
-                              }}
-                              className={`rounded border px-1.5 py-0.5 text-xs font-semibold transition-colors ${
-                                overwrite.has(field)
-                                  ? "border-amber-300 bg-amber-100 text-amber-800"
-                                  : "border-slate-500 bg-white text-slate-900 shadow-sm hover:border-slate-600 hover:bg-slate-100"
-                              }`}
-                            >
-                              Ghi đè
-                            </button>
-                          ) : null}
-                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              {selectedSearchSource === "web" &&
-              searchSourceCandidates.find((c) => c.id === "web")?.links?.length ? (
+              {selectedSearchCandidate?.source === "web" &&
+              selectedSearchCandidate.sourceUrl ? (
                 <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
                   <p className="text-xs font-semibold text-slate-700">
-                    Liên kết tham khảo
+                    Liên kết đã chọn
                   </p>
-                  {searchSourceCandidates
-                    .find((c) => c.id === "web")
-                    ?.links?.slice(0, 6)
-                    .map((link) => (
-                      <a
-                        key={link.url}
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block truncate text-xs text-blue-700 hover:underline"
-                      >
-                        {link.title || link.url}
-                      </a>
-                    ))}
+                  <a
+                    href={selectedSearchCandidate.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs text-blue-700 hover:underline"
+                  >
+                    {selectedSearchCandidate.title}
+                  </a>
+                  {selectedSearchCandidate.subtitle ? (
+                    <p className="text-xs text-slate-600">
+                      {selectedSearchCandidate.subtitle}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -527,7 +514,7 @@ export function FieldCompareEditor({
           )}
           {plan.length === 0 ? (
             <p className="mt-2 text-xs text-slate-700">
-              {selectedSearchSource === "web"
+              {selectedSearchCandidate?.source === "web"
                 ? "Kết quả web là liên kết tham khảo — không có trường để điền tự động."
                 : "Không có ô trống nào để điền cho lựa chọn này."}
             </p>

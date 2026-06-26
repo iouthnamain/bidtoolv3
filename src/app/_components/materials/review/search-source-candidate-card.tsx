@@ -2,19 +2,18 @@
 
 import { ExternalLink, Globe, Loader2, Sparkles } from "lucide-react";
 
-import type { WebLinkResult } from "~/lib/materials/enrich-gap-fill";
-import type { ReviewCandidateSource } from "~/app/_components/materials/review/review-types";
-
-export type SearchSourceCandidate = {
-  id: "web" | "ai";
-  source: Extract<ReviewCandidateSource, "web" | "ai">;
-  title: string;
-  subtitle: string;
-  fillCount: number;
-  sourceUrl?: string;
-  links?: WebLinkResult[];
-  status?: "pending" | "done" | "error";
-};
+function confidenceTone(score: number): {
+  ring: string;
+  text: string;
+} {
+  if (score >= 0.85) {
+    return { ring: "bg-emerald-500", text: "text-emerald-700" };
+  }
+  if (score >= 0.5) {
+    return { ring: "bg-amber-500", text: "text-amber-700" };
+  }
+  return { ring: "bg-slate-400", text: "text-slate-600" };
+}
 
 function SourceTag({ source }: { source: "web" | "ai" }) {
   if (source === "web") {
@@ -33,6 +32,19 @@ function SourceTag({ source }: { source: "web" | "ai" }) {
   );
 }
 
+export type SearchSourceCandidate = {
+  key: string;
+  source: "web" | "ai";
+  title: string;
+  subtitle: string;
+  fillCount: number;
+  score: number;
+  chips: string[];
+  sourceUrl?: string;
+  isRecommended?: boolean;
+  status?: "pending" | "done" | "error";
+};
+
 export function SearchSourceCandidateCard({
   candidate,
   isSelected,
@@ -46,6 +58,9 @@ export function SearchSourceCandidateCard({
 }) {
   const isPending = candidate.status === "pending";
   const isError = candidate.status === "error";
+  const pct = Math.round(Math.max(0, Math.min(1, candidate.score)) * 100);
+  const tone = confidenceTone(candidate.score);
+  const hasScore = candidate.score > 0 && !isPending && !isError;
 
   return (
     <div
@@ -64,14 +79,20 @@ export function SearchSourceCandidateCard({
       }}
       aria-pressed={isSelected}
       aria-disabled={isPending || isError}
-      className={`group relative flex w-full flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         isPending || isError
           ? "cursor-default border-dashed border-slate-400 bg-slate-50 opacity-80"
           : isSelected
-            ? "cursor-pointer border-blue-500 bg-blue-50 ring-1 ring-blue-400"
-            : "cursor-pointer border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
+            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
+            : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
       }`}
     >
+      {candidate.isRecommended ? (
+        <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
+          Gợi ý tốt nhất
+        </span>
+      ) : null}
+
       <div className="flex items-start justify-between gap-2">
         <SourceTag source={candidate.source} />
         {hotkeyIndex && hotkeyIndex <= 9 ? (
@@ -93,8 +114,8 @@ export function SearchSourceCandidateCard({
         ) : isError ? (
           <p className="py-1 text-sm text-red-700">
             {candidate.source === "web"
-              ? "Không tìm được liên kết web."
-              : "Tìm AI thất bại."}
+              ? "Không tìm được liên kết."
+              : "Không trích xuất được."}
           </p>
         ) : (
           <>
@@ -108,21 +129,40 @@ export function SearchSourceCandidateCard({
         )}
       </div>
 
+      {hasScore ? (
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full rounded-full ${tone.ring}`}
+              style={{ width: `${Math.max(4, pct)}%` }}
+              role="meter"
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Độ khớp ${pct}%`}
+            />
+          </div>
+          <span className={`text-xs font-bold tabular-nums ${tone.text}`}>
+            {pct}%
+          </span>
+        </div>
+      ) : null}
+
+      {!isPending && !isError && candidate.chips.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {candidate.chips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded border border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {!isPending && !isError ? (
         <>
-          {candidate.links && candidate.links.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {candidate.links.slice(0, 3).map((link) => (
-                <span
-                  key={link.url}
-                  className="rounded border border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600"
-                >
-                  {link.domain || link.title || "Liên kết"}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
           <div className="flex items-center justify-between gap-2 border-t border-slate-400 pt-2">
             <span className="text-xs font-medium text-slate-700">
               {candidate.fillCount > 0

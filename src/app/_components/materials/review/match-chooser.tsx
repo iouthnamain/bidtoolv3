@@ -25,6 +25,12 @@ import {
 } from "~/lib/materials/excel-enrich-fields";
 import type { RowDecision } from "~/lib/materials/review-decision";
 import { parseOptionalNumber } from "~/lib/materials/format";
+import {
+  aiCandidateMatchChips,
+  parseSearchCandidateKey,
+  searchCandidateKey,
+  webLinkMatchChips,
+} from "~/lib/materials/search-candidate-match";
 import { api } from "~/trpc/react";
 
 function profileSearchFields(decision: RowDecision | undefined) {
@@ -32,8 +38,19 @@ function profileSearchFields(decision: RowDecision | undefined) {
     webLinkResults: decision?.webLinkResults,
     webLinksStatus: decision?.webLinksStatus,
     aiSearchResult: decision?.aiSearchResult,
+    aiSearchCandidates: decision?.aiSearchCandidates,
     aiSearchStatus: decision?.aiSearchStatus,
   };
+}
+
+function aiCandidatesFromDecision(decision: RowDecision | undefined) {
+  if (decision?.aiSearchCandidates?.length) {
+    return decision.aiSearchCandidates;
+  }
+  if (decision?.aiSearchResult) {
+    return [decision.aiSearchResult];
+  }
+  return [];
 }
 
 export function MatchChooser({
@@ -76,13 +93,17 @@ export function MatchChooser({
   );
   const upsertMaterial = api.material.upsertMaterial.useMutation();
 
+  const selectedSearchCandidateKey = decision?.selectedSearchCandidateKey ?? null;
   const selectedId =
-    decision?.selectedSource === "catalog" || decision?.selectedSource == null
+    selectedSearchCandidateKey == null &&
+    (decision?.selectedSource === "catalog" || decision?.selectedSource == null)
       ? (decision?.materialId ?? null)
       : null;
-  const selectedSearchSource =
-    decision?.selectedSource === "web" || decision?.selectedSource === "ai"
-      ? decision.selectedSource
+  const parsedSearchKey = parseSearchCandidateKey(selectedSearchCandidateKey);
+  const aiCandidates = aiCandidatesFromDecision(decision);
+  const selectedAiCandidate =
+    parsedSearchKey?.source === "ai"
+      ? aiCandidates[Number(parsedSearchKey.id)] ?? null
       : null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
@@ -113,96 +134,135 @@ export function MatchChooser({
     : null;
 
   const editorProposedFields =
-    selectedSearchSource === "ai" && decision?.aiSearchResult
-      ? decision.aiSearchResult.fields
+    selectedAiCandidate != null
+      ? selectedAiCandidate.fields
       : webProposedFields;
 
   const searchSourceCandidates = useMemo((): SearchSourceCandidate[] => {
     if (!isProfileSplit) return [];
 
     const items: SearchSourceCandidate[] = [];
+    const links = decision?.webLinkResults ?? [];
 
-    const showWeb = [
-      isWebLinksPending,
-      decision?.webLinksStatus != null,
-      (decision?.webLinkResults?.length ?? 0) > 0,
-    ].some(Boolean);
-    if (showWeb) {
-      const links = decision?.webLinkResults ?? [];
-      const top = links[0];
-      const webTitle = top?.title?.trim();
+    if (isWebLinksPending && links.length === 0) {
       items.push({
-        id: "web",
+        key: "web:pending",
         source: "web",
-        title:
-          (webTitle && webTitle.length > 0 ? webTitle : row.name.trim()) ||
-          "Kết quả tìm web",
-        subtitle: isWebLinksPending
-          ? "Đang tìm liên kết…"
-          : links.length > 0
-            ? `${links.length} liên kết${top?.domain ? ` · ${top.domain}` : ""}`
-            : "Không có liên kết",
+        title: row.name.trim() || "Đang tìm web",
+        subtitle: "Đang tìm liên kết…",
         fillCount: 0,
-        links,
-        sourceUrl: top?.url,
-        status: isWebLinksPending
-          ? "pending"
-          : decision?.webLinksStatus === "error"
-            ? "error"
-            : links.length > 0
-              ? "done"
-              : "error",
+        score: 0,
+        chips: [],
+        status: "pending",
       });
+    } else {
+      let topWebScore = -1;
+      links.forEach((link) => {
+        const { score, chips } = webLinkMatchChips(link, row.name);
+        if (score > topWebScore) topWebScore = score;
+        items.push({
+          key: searchCandidateKey("web", link.url),
+          source: "web",
+          title: link.title.trim() || link.url,
+          subtitle: link.snippet,
+          fillCount: 0,
+          score,
+          chips,
+          sourceUrl: link.url,
+          isRecommended: false,
+          status:
+            decision?.webLinksStatus === "error" ? "error" : ("done" as const),
+        });
+      });
+      for (const item of items) {
+        if (item.source === "web" && item.score === topWebScore && topWebScore > 0) {
+          item.isRecommended = true;
+          break;
+        }
+      }
     }
 
-    const showAi = [
-      isAiSearchPending,
-      decision?.aiSearchStatus != null,
-      decision?.aiSearchResult != null,
-    ].some(Boolean);
-    if (showAi) {
-      const ai = decision?.aiSearchResult;
-      const fieldCount = ai
-        ? Object.values(ai.fields).filter((value) => (value ?? "").trim()).length
-        : 0;
-      const fillCount = ai
-        ? Object.keys(webFieldsAfterGapFill(sheetFields, null, ai.fields)).length
-        : 0;
-      const previewField = [
-        ai?.fields.manufacturer,
-        ai?.fields.code,
-        ai?.fields.specText,
-      ]
-        .map((value) => value?.trim())
-        .find((value) => (value?.length ?? 0) > 0);
+    if (isAiSearchPending && aiCandidates.length === 0) {
       items.push({
-        id: "ai",
+        key: "ai:pending",
         source: "ai",
-        title:
-          previewField ??
-          (row.name.trim() || (isAiSearchPending ? "Đang tìm AI…" : "Kết quả AI")),
-        subtitle: isAiSearchPending
-          ? "Đang trích xuất trường…"
-          : fieldCount > 0
-            ? `${fieldCount} trường trích xuất`
-            : "Không trích xuất được trường",
-        fillCount,
-        sourceUrl: ai?.sourceUrls[0],
-        status: isAiSearchPending
-          ? "pending"
-          : decision?.aiSearchStatus === "error"
-            ? "error"
-            : ai && fieldCount > 0
+        title: row.name.trim() || "Đang tìm AI",
+        subtitle: "Đang trích xuất từng nguồn…",
+        fillCount: 0,
+        score: 0,
+        chips: [],
+        status: "pending",
+      });
+    } else {
+      let topAiScore = -1;
+      aiCandidates.forEach((candidate, index) => {
+        const { score, chips } = aiCandidateMatchChips(
+          candidate,
+          sheetFields,
+          row.name,
+          candidate.rankScore,
+        );
+        const fillCount = Object.keys(
+          webFieldsAfterGapFill(sheetFields, null, candidate.fields),
+        ).length;
+        if (score > topAiScore) topAiScore = score;
+        const previewField = [
+          candidate.fields.manufacturer,
+          candidate.fields.code,
+          candidate.title,
+        ]
+          .map((value) => value?.trim())
+          .find((value) => (value?.length ?? 0) > 0);
+        const snippet = candidate.snippet?.trim() ?? "";
+        items.push({
+          key: searchCandidateKey("ai", String(index)),
+          source: "ai",
+          title: previewField ?? row.name.trim() ?? `Kết quả AI ${index + 1}`,
+          subtitle:
+            snippet.length > 0
+              ? snippet
+              : `${Object.values(candidate.fields).filter((value) => (value ?? "").trim()).length} trường trích xuất`,
+          fillCount,
+          score,
+          chips,
+          sourceUrl: candidate.url ?? candidate.sourceUrls[0],
+          isRecommended: false,
+          status:
+            fillCount > 0
               ? "done"
-              : ai
+              : decision?.aiSearchStatus === "error"
                 ? "error"
-                : undefined,
+                : "done",
+        });
+      });
+      for (const item of items) {
+        if (item.source === "ai" && item.score === topAiScore && topAiScore > 0) {
+          item.isRecommended = true;
+          break;
+        }
+      }
+    }
+
+    if (
+      !isWebLinksPending &&
+      decision?.webLinksStatus === "error" &&
+      links.length === 0
+    ) {
+      items.push({
+        key: "web:error",
+        source: "web",
+        title: "Tìm web thất bại",
+        subtitle: "Không có liên kết",
+        fillCount: 0,
+        score: 0,
+        chips: [],
+        status: "error",
       });
     }
 
     return items;
   }, [
-    decision?.aiSearchResult,
+    aiCandidates,
     decision?.aiSearchStatus,
     decision?.webLinkResults,
     decision?.webLinksStatus,
@@ -213,10 +273,16 @@ export function MatchChooser({
     sheetFields,
   ]);
 
+  const selectedSearchCandidate = selectedSearchCandidateKey
+    ? searchSourceCandidates.find(
+        (candidate) => candidate.key === selectedSearchCandidateKey,
+      ) ?? null
+    : null;
+
   const afterColumnLabel =
-    selectedSearchSource === "ai"
+    selectedSearchCandidate?.source === "ai"
       ? "Sau (AI)"
-      : selectedSearchSource === "web"
+      : selectedSearchCandidate?.source === "web"
         ? "Sau (Web)"
         : selectedCandidate
           ? `Sau (${selectedCandidate.name})`
@@ -242,6 +308,7 @@ export function MatchChooser({
     onChange({
       materialId: candidate.materialId,
       selectedSource: "catalog",
+      selectedSearchCandidateKey: undefined,
       acceptedFields: nextAccepted,
       overwriteFields: new Set(),
       editedValues: nextEdited,
@@ -252,16 +319,20 @@ export function MatchChooser({
     });
   };
 
-  const chooseSearchSource = (source: "web" | "ai") => {
-    if (source === "web") {
-      const links = decision?.webLinkResults ?? [];
-      if (links.length === 0) {
+  const chooseSearchCandidate = (key: string) => {
+    const parsed = parseSearchCandidateKey(key);
+    if (!parsed) return;
+
+    if (parsed.source === "web") {
+      const link = decision?.webLinkResults?.find((item) => item.url === parsed.id);
+      if (!link) {
         toast.warning("Chưa có liên kết web để chọn.");
         return;
       }
       onChange({
         materialId: null,
         selectedSource: "web",
+        selectedSearchCandidateKey: key,
         acceptedFields: new Set(),
         overwriteFields: new Set(),
         editedValues: {},
@@ -273,7 +344,8 @@ export function MatchChooser({
       return;
     }
 
-    const aiResult = decision?.aiSearchResult;
+    const index = Number(parsed.id);
+    const aiResult = aiCandidates[index];
     if (!aiResult) {
       toast.warning("Chưa có kết quả AI để chọn.");
       return;
@@ -289,6 +361,7 @@ export function MatchChooser({
     onChange({
       materialId: null,
       selectedSource: "ai",
+      selectedSearchCandidateKey: key,
       acceptedFields: nextAccepted,
       overwriteFields: new Set(),
       editedValues: nextEdited,
@@ -296,6 +369,7 @@ export function MatchChooser({
       webEvidence: aiResult.evidence,
       webSearchStatus,
       ...profileFields,
+      aiSearchResult: aiResult,
     });
   };
 
@@ -305,6 +379,7 @@ export function MatchChooser({
     onChange({
       materialId: null,
       selectedSource: undefined,
+      selectedSearchCandidateKey: undefined,
       acceptedFields: new Set(),
       overwriteFields: new Set(),
       editedValues: {},
@@ -327,6 +402,7 @@ export function MatchChooser({
     onChange({
       materialId: selectedId,
       selectedSource: decision?.selectedSource,
+      selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: next,
       overwriteFields: nextOverwrite,
       editedValues,
@@ -350,6 +426,7 @@ export function MatchChooser({
     onChange({
       materialId: selectedId,
       selectedSource: decision?.selectedSource,
+      selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: nextAccepted,
       overwriteFields: nextOverwrite,
       editedValues,
@@ -367,6 +444,7 @@ export function MatchChooser({
     onChange({
       materialId: selectedId,
       selectedSource: decision?.selectedSource,
+      selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: nextAccepted,
       overwriteFields: overwrite,
       editedValues: nextEdited,
@@ -497,6 +575,7 @@ export function MatchChooser({
     onChange({
       materialId: null,
       selectedSource: undefined,
+      selectedSearchCandidateKey: undefined,
       acceptedFields: new Set(),
       overwriteFields: new Set(),
       editedValues: {},
@@ -507,7 +586,7 @@ export function MatchChooser({
   };
 
   const hasWebOrManualDecision =
-    selectedSearchSource != null ||
+    selectedSearchCandidateKey != null ||
     Object.keys(webProposedFields).length > 0 ||
     (selectedId == null &&
       (accepted.size > 0 ||
@@ -617,8 +696,10 @@ export function MatchChooser({
         compareLayout={isProfileSplit ? "sideBySide" : "inline"}
         afterColumnLabel={afterColumnLabel}
         searchSourceCandidates={searchSourceCandidates}
-        selectedSearchSource={selectedSearchSource}
-        onChooseSearchSource={isProfileSplit ? chooseSearchSource : undefined}
+        selectedSearchCandidateKey={selectedSearchCandidateKey}
+        onChooseSearchCandidate={
+          isProfileSplit ? chooseSearchCandidate : undefined
+        }
       />
 
       {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (

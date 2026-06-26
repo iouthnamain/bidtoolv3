@@ -24,8 +24,10 @@ export type SerializedRowDecision = {
   webLinkResults?: WebLinkResult[];
   webLinksStatus?: WebSearchStatus;
   aiSearchResult?: AiSearchStoredResult;
+  aiSearchCandidates?: AiSearchStoredResult[];
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
+  selectedSearchCandidateKey?: string;
   skipped?: boolean;
 };
 
@@ -138,7 +140,30 @@ function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined 
   ) {
     return undefined;
   }
-  return { fields, sourceUrls, evidence };
+  return {
+    fields,
+    sourceUrls,
+    evidence,
+    title: typeof record.title === "string" ? record.title : undefined,
+    url: typeof record.url === "string" ? record.url : undefined,
+    snippet: typeof record.snippet === "string" ? record.snippet : undefined,
+    rankScore:
+      typeof record.rankScore === "number" && Number.isFinite(record.rankScore)
+        ? record.rankScore
+        : undefined,
+  };
+}
+
+function filterAiSearchCandidates(
+  value: unknown,
+): AiSearchStoredResult[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: AiSearchStoredResult[] = [];
+  for (const item of value) {
+    const parsed = filterAiSearchResult(item);
+    if (parsed) result.push(parsed);
+  }
+  return result.length > 0 ? result : undefined;
 }
 
 function parseSelectedSource(
@@ -182,7 +207,7 @@ export function isEmptySerializedRowDecision(
   if (record.webLinkResults && record.webLinkResults.length > 0) {
     return false;
   }
-  if (record.aiSearchResult) {
+  if (record.aiSearchResult || (record.aiSearchCandidates?.length ?? 0) > 0) {
     return false;
   }
   return true;
@@ -203,8 +228,10 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
     webLinkResults: decision.webLinkResults,
     webLinksStatus: decision.webLinksStatus,
     aiSearchResult: decision.aiSearchResult,
+    aiSearchCandidates: decision.aiSearchCandidates,
     aiSearchStatus: decision.aiSearchStatus,
     selectedSource: decision.selectedSource,
+    selectedSearchCandidateKey: decision.selectedSearchCandidateKey,
     skipped: decision.skipped ? true : undefined,
   };
 }
@@ -220,6 +247,28 @@ export function deserializeRowDecision(
   ) {
     return null;
   }
+  const aiSearchCandidates =
+    filterAiSearchCandidates(record.aiSearchCandidates) ??
+    (filterAiSearchResult(record.aiSearchResult)
+      ? [filterAiSearchResult(record.aiSearchResult)!]
+      : undefined);
+  const aiSearchResult =
+    filterAiSearchResult(record.aiSearchResult) ?? aiSearchCandidates?.[0];
+
+  let selectedSearchCandidateKey =
+    typeof record.selectedSearchCandidateKey === "string" &&
+    record.selectedSearchCandidateKey.length > 0
+      ? record.selectedSearchCandidateKey
+      : undefined;
+  const selectedSource = parseSelectedSource(record.selectedSource);
+  if (!selectedSearchCandidateKey && selectedSource === "web") {
+    const firstUrl = filterWebLinkResults(record.webLinkResults)?.[0]?.url;
+    if (firstUrl) selectedSearchCandidateKey = `web:${firstUrl}`;
+  }
+  if (!selectedSearchCandidateKey && selectedSource === "ai") {
+    selectedSearchCandidateKey = "ai:0";
+  }
+
   return {
     materialId: record.materialId ?? null,
     acceptedFields: new Set(filterFillableFields(record.acceptedFields)),
@@ -230,9 +279,11 @@ export function deserializeRowDecision(
     webSearchStatus: parseWebSearchStatus(record.webSearchStatus),
     webLinkResults: filterWebLinkResults(record.webLinkResults),
     webLinksStatus: parseWebSearchStatus(record.webLinksStatus),
-    aiSearchResult: filterAiSearchResult(record.aiSearchResult),
+    aiSearchResult,
+    aiSearchCandidates,
     aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
-    selectedSource: parseSelectedSource(record.selectedSource),
+    selectedSource,
+    selectedSearchCandidateKey,
     skipped: record.skipped === true,
   };
 }
