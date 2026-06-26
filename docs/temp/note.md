@@ -34,3 +34,51 @@ goi thau ửokspace
 
 two side compare search step 3 
 
+language check 
+
+excel fields exceptions, outlier
+
+step 3: material-profile, shorten fields, compact status, only shown in excel fields, show candidates, price
+
+move save buttons up where near "Gan vat tu" button
+
+keep breadcrumbs bigger, remove page name,
+
+remove color status count
+
+missing stop AI func
+
+toast bigger, posision: top right/ center
+
+bigger, clearer text, button
+
+Chỉnh sửa thủ công / AI draft funcs bugs
+
+less white space, bigger font size
+
+replace Output folder with a popup and choose where to export
+
+Workbook edit warnings recheck
+
+recheck step 4 folder saved, file, folder export, ensure file names export, test on large file, large edit, missing Thanh tien col sum calculate, remove match status, BT-name, BT-DVT, BT-tien te not needed
+
+
+audit on changes, result of staff changes on manage funcs
+
+Search page: remove Gói thầu
+Theo địa phương
+Ngành nghề & địa phương
+KHLCNT
+Dự án
+buttons on top of filter, apply same methology of material page, remove Smart view
+
+Material page: remove Thêm thủ công
+Nhập sheet
+Xuất CSV
+Scrape shop 
+buttons above filter,
+
+remove Gon, col filter, grid view
+remove duplicate material button
+
+manager page: remove banned

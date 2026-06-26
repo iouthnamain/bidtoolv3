@@ -20,6 +20,7 @@ const SERVER_CONFIG_GET_CHANNEL = "bidtool:server-config:get";
 const SERVER_CONFIG_SET_CHANNEL = "bidtool:server-config:set";
 const SERVER_CONFIG_CLEAR_CHANNEL = "bidtool:server-config:clear";
 const SERVER_CONFIG_RELOAD_CHANNEL = "bidtool:server-config:reload";
+const EXPORT_PICK_FOLDER_CHANNEL = "bidtool:export:pick-folder";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let nextServerProcess = null;
@@ -858,6 +859,20 @@ ipcMain.handle(SERVER_CONFIG_SET_CHANNEL, (_event, serverUrl) =>
 );
 ipcMain.handle(SERVER_CONFIG_CLEAR_CHANNEL, () => clearDesktopServerUrl());
 ipcMain.handle(SERVER_CONFIG_RELOAD_CHANNEL, () => reloadWindowsToStartUrl());
+ipcMain.handle(EXPORT_PICK_FOLDER_CHANNEL, async (_event, defaultPath) => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"],
+    defaultPath:
+      typeof defaultPath === "string" && defaultPath.trim().length > 0
+        ? defaultPath.trim()
+        : app.getPath("downloads"),
+    title: "Chọn thư mục export",
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { path: null };
+  }
+  return { path: result.filePaths[0] ?? null };
+});
 
 app.whenReady().then(async () => {
   try {

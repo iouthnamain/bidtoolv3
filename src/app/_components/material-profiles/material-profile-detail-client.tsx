@@ -8,7 +8,6 @@ import {
   Download,
   ExternalLink,
   FileSpreadsheet,
-  FolderOpen,
   Globe,
   Loader2,
   RefreshCw,
@@ -21,6 +20,8 @@ import {
 import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import { MaterialProfileReviewStep } from "~/app/_components/material-profiles/material-profile-review-step";
+import { ExportDestinationModal } from "~/app/_components/material-profiles/export-destination-modal";
+import { setLastMaterialProfileExportDir } from "~/lib/material-profile-export-dir";
 import { api, type RouterOutputs } from "~/trpc/react";
 import {
   FIELD_LABELS,
@@ -751,29 +752,22 @@ function WorkbookMappingStep({
 
 function ExportPreviewStep({
   preview,
-  workspace,
   exportEditState,
-  lastExport,
   isPreviewing,
   isSaving,
   isExporting,
-  isOpening,
   onRefreshPreview,
   onPreviewEdit,
   onDeleteSelection,
   onRestoreDeleted,
   onSavePreview,
   onExport,
-  onOpenFolder,
 }: {
   preview: PreviewResult | null;
-  workspace: WorkspaceDetail["workspace"];
   exportEditState: ExportEditState;
-  lastExport: RouterOutputs["materialProfile"]["export"] | null;
   isPreviewing: boolean;
   isSaving: boolean;
   isExporting: boolean;
-  isOpening: boolean;
   onRefreshPreview: () => void;
   onPreviewEdit: (
     sheetName: string,
@@ -793,7 +787,6 @@ function ExportPreviewStep({
   ) => void;
   onSavePreview: () => void;
   onExport: () => void;
-  onOpenFolder: () => void;
 }) {
   const [activePreviewSheetName, setActivePreviewSheetName] = useState("");
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
@@ -883,7 +876,7 @@ function ExportPreviewStep({
               isLoading={isExporting}
               leftIcon={<Download className="h-4 w-4" />}
             >
-              Export local folder
+              Chọn thư mục & export
             </Button>
           </div>
         </div>
@@ -1109,36 +1102,6 @@ function ExportPreviewStep({
           </div>
         </div>
       )}
-
-      {(lastExport ?? workspace.outputDirPath) ? (
-        <div className="panel border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="flex items-center gap-2 font-bold">
-                <FolderOpen className="h-4 w-4" aria-hidden />
-                Output folder
-              </p>
-              <p className="mt-1 font-mono text-xs break-all">
-                {lastExport?.outputDirPath ?? workspace.outputDirPath}
-              </p>
-              {lastExport ? (
-                <p className="mt-2 text-xs">
-                  Catalog: {lastExport.catalogCount} file, thiếu/cảnh báo:{" "}
-                  {lastExport.missingCount}
-                </p>
-              ) : null}
-            </div>
-            <Button
-              variant="secondary"
-              onClick={onOpenFolder}
-              isLoading={isOpening}
-              leftIcon={<FolderOpen className="h-4 w-4" />}
-            >
-              Open folder
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -1164,9 +1127,7 @@ export function MaterialProfileDetailClient({
     useState<ExportEditState>(emptyExportEditState);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewAutoRequested, setPreviewAutoRequested] = useState(false);
-  const [lastExport, setLastExport] = useState<
-    RouterOutputs["materialProfile"]["export"] | null
-  >(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -1230,18 +1191,17 @@ export function MaterialProfileDetailClient({
     });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
-      setLastExport(result);
+      setExportModalOpen(false);
+      setLastMaterialProfileExportDir(result.outputDirPath);
       await utils.materialProfile.get.invalidate({ workspaceId });
       if (result.missingCount > 0 || result.warnings.length > 0) {
-        toast.warning("Đã export, nhưng có cảnh báo catalog cần xem report.");
+        toast.warning(
+          `Đã export vào ${result.outputDirPath}, nhưng có ${result.missingCount} cảnh báo catalog.`,
+        );
       } else {
-        toast.success("Đã export Excel và Catalog folder.");
+        toast.success(`Đã export vào ${result.outputDirPath}`);
       }
     },
-    onError: (error) => toast.error(error.message),
-  });
-  const openFolder = api.materialProfile.openOutputFolder.useMutation({
-    onSuccess: () => toast.success("Đã yêu cầu mở folder output."),
     onError: (error) => toast.error(error.message),
   });
 
@@ -1482,7 +1442,7 @@ export function MaterialProfileDetailClient({
     toast.info("Đã restore trong state. Lưu preview rồi refresh để hiện lại.");
   };
 
-  const exportWithSavedPreview = async () => {
+  const exportWithSavedPreview = async (outputDirPath: string) => {
     await updateState.mutateAsync({
       workspaceId,
       sheetName: activeSheet?.name,
@@ -1494,7 +1454,7 @@ export function MaterialProfileDetailClient({
       workspaceId,
       exportEditState,
     });
-    exportWorkspace.mutate({ workspaceId });
+    exportWorkspace.mutate({ workspaceId, outputDirPath });
   };
 
   if (query.isLoading || !detail) {
@@ -1579,23 +1539,33 @@ export function MaterialProfileDetailClient({
       ) : null}
 
       {step === 4 ? (
-        <ExportPreviewStep
-          preview={preview}
-          workspace={workspace}
-          exportEditState={exportEditState}
-          lastExport={lastExport}
-          isPreviewing={previewExport.isPending}
-          isSaving={updateExportEditState.isPending}
-          isExporting={exportWorkspace.isPending}
-          isOpening={openFolder.isPending}
-          onRefreshPreview={refreshPreview}
-          onPreviewEdit={updateExportCellEdit}
-          onDeleteSelection={deleteExportSelection}
-          onRestoreDeleted={restoreDeletedExportValue}
-          onSavePreview={() => void saveExportEditState()}
-          onExport={() => void exportWithSavedPreview()}
-          onOpenFolder={() => openFolder.mutate({ workspaceId })}
-        />
+        <>
+          <ExportPreviewStep
+            preview={preview}
+            exportEditState={exportEditState}
+            isPreviewing={previewExport.isPending}
+            isSaving={updateExportEditState.isPending}
+            isExporting={exportWorkspace.isPending}
+            onRefreshPreview={refreshPreview}
+            onPreviewEdit={updateExportCellEdit}
+            onDeleteSelection={deleteExportSelection}
+            onRestoreDeleted={restoreDeletedExportValue}
+            onSavePreview={() => void saveExportEditState()}
+            onExport={() => setExportModalOpen(true)}
+          />
+          <ExportDestinationModal
+            open={exportModalOpen}
+            isExporting={exportWorkspace.isPending}
+            onCancel={() => {
+              if (!exportWorkspace.isPending) {
+                setExportModalOpen(false);
+              }
+            }}
+            onConfirm={(outputDirPath) =>
+              void exportWithSavedPreview(outputDirPath)
+            }
+          />
+        </>
       ) : null}
     </div>
   );

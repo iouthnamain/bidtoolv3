@@ -99,11 +99,7 @@ export function MaterialProfileReviewStep({
 
   const utils = api.useUtils();
   const updateReviewDecision =
-    api.materialProfile.updateItemReviewDecision.useMutation({
-      onSuccess: () => {
-        void utils.materialProfile.get.invalidate({ workspaceId });
-      },
-    });
+    api.materialProfile.updateItemReviewDecision.useMutation();
   const batchUpdateReviewDecisions =
     api.materialProfile.batchUpdateItemReviewDecisions.useMutation({
       onSuccess: () => {
@@ -114,7 +110,7 @@ export function MaterialProfileReviewStep({
   useEffect(() => {
     setDecisions(seedDecisionsFromItems(reviewItems));
     setSelectedRowIndex(reviewRows[0]?.originalRowIndex ?? null);
-  }, [itemsKey, reviewItems, reviewRows]);
+  }, [itemsKey]);
 
   useEffect(
     () => () => {

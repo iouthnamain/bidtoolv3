@@ -43,7 +43,6 @@ function normalizeCandidate(value: unknown): EnrichCandidate | null {
     code: typeof record.code === "string" ? record.code : null,
     unit: stringValue(record.unit),
     category: typeof record.category === "string" ? record.category : null,
-    specText: typeof record.specText === "string" ? record.specText : null,
     manufacturer:
       typeof record.manufacturer === "string" ? record.manufacturer : null,
     originCountry:
@@ -53,7 +52,12 @@ function normalizeCandidate(value: unknown): EnrichCandidate | null {
         ? record.defaultUnitPrice
         : null,
     currency: typeof record.currency === "string" ? record.currency : "VND",
+    imageUrl: typeof record.imageUrl === "string" ? record.imageUrl : null,
     sourceUrl: typeof record.sourceUrl === "string" ? record.sourceUrl : null,
+    specSnippet:
+      typeof record.specSnippet === "string"
+        ? record.specSnippet
+        : stringValue(record.specText),
     score: typeof record.score === "number" ? record.score : 0,
     breakdown: (record.breakdown ?? null) as EnrichCandidate["breakdown"],
   };

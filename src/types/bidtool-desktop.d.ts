@@ -15,6 +15,10 @@ export interface DesktopServerReloadResult {
   serverConfig: DesktopServerConfig;
 }
 
+export interface DesktopPickExportFolderResult {
+  path: string | null;
+}
+
 declare global {
   interface Window {
     bidtoolDesktop?: {
@@ -27,6 +31,9 @@ declare global {
       checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
       downloadUpdate: () => Promise<DesktopUpdateActionResult>;
       installUpdate: () => Promise<DesktopUpdateActionResult>;
+      pickExportFolder: (
+        defaultPath?: string,
+      ) => Promise<DesktopPickExportFolderResult>;
       onUpdateState: (
         listener: (state: DesktopUpdateState) => void,
       ) => () => void;

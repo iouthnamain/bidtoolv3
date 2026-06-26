@@ -1,11 +1,17 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  assertExportDirWritable,
   buildOpenFolderCommand,
   buildMaterialProfileOutputPrefix,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
   isMaterialProfileExportRowDeleted,
+  MaterialProfileWorkspaceError,
   parseMaterialProfileExportEditState,
+  resolveDefaultDownloadsDir,
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
   shouldBulkApplyMaterialProfileCandidate,
@@ -114,5 +120,49 @@ describe("material profile workspace helpers", () => {
     expect(shouldBulkApplyMaterialProfileCandidate(0.849)).toBe(false);
     expect(shouldBulkApplyMaterialProfileCandidate(0.8, 0.8)).toBe(true);
     expect(shouldBulkApplyMaterialProfileCandidate("0.95")).toBe(false);
+  });
+
+  it("resolves the default downloads directory from the user home", () => {
+    const result = resolveDefaultDownloadsDir();
+
+    expect(result).toBe(path.join(os.homedir(), "Downloads"));
+  });
+
+  it("accepts writable export directories and creates missing folders", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bidtool-export-"));
+    const targetDir = path.join(tempRoot, "nested", "export");
+
+    await expect(assertExportDirWritable(targetDir)).resolves.toBe(targetDir);
+
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("rejects empty export paths and file paths", async () => {
+    await expect(assertExportDirWritable("   ")).rejects.toBeInstanceOf(
+      MaterialProfileWorkspaceError,
+    );
+
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bidtool-export-"));
+    const filePath = path.join(tempRoot, "not-a-dir.txt");
+    await writeFile(filePath, "x");
+
+    await expect(assertExportDirWritable(filePath)).rejects.toBeInstanceOf(
+      MaterialProfileWorkspaceError,
+    );
+
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it("rejects forbidden system export paths", async () => {
+    if (process.platform === "win32") {
+      await expect(assertExportDirWritable("C:\\")).rejects.toBeInstanceOf(
+        MaterialProfileWorkspaceError,
+      );
+      return;
+    }
+
+    await expect(assertExportDirWritable("/etc")).rejects.toBeInstanceOf(
+      MaterialProfileWorkspaceError,
+    );
   });
 });

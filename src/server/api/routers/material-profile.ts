@@ -20,6 +20,7 @@ import {
   MaterialProfileWorkspaceError,
   openMaterialProfileOutputFolder,
   previewMaterialProfileExportWorkbook,
+  resolveDefaultDownloadsDir,
   undoLastMaterialProfileBulkApply,
   updateMaterialProfileWorkspace,
   updateMaterialProfileExportEditState,
@@ -324,12 +325,24 @@ export const materialProfileRouter = createTRPCRouter({
     ),
 
   export: requirePermission("material:write")
-    .input(workspaceIdInput)
+    .input(
+      workspaceIdInput.extend({
+        outputDirPath: z.string().trim().min(1),
+      }),
+    )
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
-        exportMaterialProfileWorkspace(ctx.db, input.workspaceId),
+        exportMaterialProfileWorkspace(
+          ctx.db,
+          input.workspaceId,
+          input.outputDirPath,
+        ),
       ),
     ),
+
+  getDefaultExportDir: protectedProcedure.query(() => ({
+    path: resolveDefaultDownloadsDir(),
+  })),
 
   previewExportWorkbook: requirePermission("material:write")
     .input(workspaceIdInput)

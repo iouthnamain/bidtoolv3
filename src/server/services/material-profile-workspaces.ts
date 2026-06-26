@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
 import { spawn } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
@@ -1502,21 +1504,6 @@ function uniqueFileName(fileName: string, used: Set<string>) {
   return candidate;
 }
 
-async function writeRowsWorkbook(
-  filePath: string,
-  sheetName: string,
-  headers: string[],
-  rows: Array<Array<string | number | null>>,
-) {
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet(sheetName);
-  sheet.addRow(headers);
-  for (const row of rows) {
-    sheet.addRow(row);
-  }
-  await writeFile(filePath, Buffer.from(await workbook.xlsx.writeBuffer()));
-}
-
 async function loadMaterialRows(db: AppDb, materialIds: number[]) {
   return materialIds.length > 0
     ? await db
@@ -1791,17 +1778,67 @@ export function buildOpenFolderCommand(outputDirPath: string) {
   return { command: "xdg-open", args: [outputDirPath] };
 }
 
-async function assertOutputDirPathAllowed(outputDirPath: string) {
-  const root = path.resolve(await materialProfileRoot());
-  const output = path.resolve(outputDirPath);
-  if (output !== root && !output.startsWith(root + path.sep)) {
+export function resolveDefaultDownloadsDir() {
+  return path.join(homedir(), "Downloads");
+}
+
+function isForbiddenExportPath(resolved: string) {
+  const root = path.parse(resolved).root;
+  if (resolved === root) {
+    return true;
+  }
+  if (process.platform === "win32") {
+    return false;
+  }
+  const forbiddenPrefixes = [
+    "/etc",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/var",
+    "/sys",
+    "/proc",
+  ];
+  return forbiddenPrefixes.some(
+    (prefix) => resolved === prefix || resolved.startsWith(`${prefix}/`),
+  );
+}
+
+export async function assertExportDirWritable(outputDirPath: string) {
+  const trimmed = outputDirPath.trim();
+  if (!trimmed) {
     throw new MaterialProfileWorkspaceError(
       "BAD_REQUEST",
-      "Đường dẫn output không nằm trong thư mục hồ sơ vật tư.",
+      "Chưa chọn thư mục export.",
     );
   }
-  await access(output);
-  return output;
+
+  const resolved = path.resolve(trimmed);
+  if (isForbiddenExportPath(resolved)) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Không thể export vào thư mục hệ thống.",
+    );
+  }
+
+  try {
+    const info = await stat(resolved);
+    if (!info.isDirectory()) {
+      throw new MaterialProfileWorkspaceError(
+        "BAD_REQUEST",
+        "Đường dẫn export phải là thư mục.",
+      );
+    }
+    await access(resolved, constants.W_OK);
+    return resolved;
+  } catch (error) {
+    if (error instanceof MaterialProfileWorkspaceError) {
+      throw error;
+    }
+    await mkdir(resolved, { recursive: true });
+    await access(resolved, constants.W_OK);
+    return resolved;
+  }
 }
 
 export async function openMaterialProfileOutputFolder(
@@ -1815,9 +1852,8 @@ export async function openMaterialProfileOutputFolder(
       "Chưa có folder output. Hãy export trước.",
     );
   }
-  const outputDirPath = await assertOutputDirPathAllowed(
-    workspace.outputDirPath,
-  );
+  const outputDirPath = path.resolve(workspace.outputDirPath);
+  await access(outputDirPath);
   const { command, args } = buildOpenFolderCommand(outputDirPath);
   const child = spawn(command, args, {
     detached: true,
@@ -1830,6 +1866,7 @@ export async function openMaterialProfileOutputFolder(
 export async function exportMaterialProfileWorkspace(
   db: AppDb,
   workspaceId: number,
+  outputDirPathInput: string,
 ) {
   const workspace = await requireWorkspace(db, workspaceId);
   const items = await db
@@ -1851,21 +1888,15 @@ export async function exportMaterialProfileWorkspace(
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
   const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
 
-  const root = await materialProfileRoot();
   const noticeNumber = workspace.noticeNumber ?? workspace.name;
   const prefix = buildMaterialProfileOutputPrefix(noticeNumber);
-  const noticeSegment = safePathSegment(
-    noticeNumber,
-    `workspace-${workspace.id}`,
-  );
-  const outputDir = path.join(root, noticeSegment, "export", prefix);
+  const outputDir = await assertExportDirWritable(outputDirPathInput);
   const catalogDir = path.join(outputDir, "Catalog");
   await mkdir(catalogDir, { recursive: true });
 
   const copiedCatalogByDocKey = new Map<string, string>();
   const usedCatalogNames = new Set<string>();
   const catalogFilesByMaterial = new Map<number, string[]>();
-  const manifestRows: Array<Array<string | number | null>> = [];
   const missingRows: Array<Array<string | number | null>> = [];
   const warnings: string[] = [];
 
@@ -1945,13 +1976,6 @@ export async function exportMaterialProfileWorkspace(
         }
       }
       fileNames.push(fileName);
-      manifestRows.push([
-        item.originalRowIndex,
-        material.name,
-        material.code ?? "",
-        fileName,
-        doc.sourceUrl ?? "",
-      ]);
     }
     catalogFilesByMaterial.set(materialId, fileNames);
   }
@@ -2012,19 +2036,6 @@ export async function exportMaterialProfileWorkspace(
   const excelPath = path.join(outputDir, excelFileName);
   await writeFile(excelPath, Buffer.from(await workbook.xlsx.writeBuffer()));
 
-  await writeRowsWorkbook(
-    path.join(outputDir, "catalog-manifest.xlsx"),
-    "Catalog manifest",
-    ["Dòng Excel", "Tên vật tư", "Mã VT", "Catalog file", "Nguồn"],
-    manifestRows,
-  );
-  await writeRowsWorkbook(
-    path.join(outputDir, "missing-catalogs.xlsx"),
-    "Missing catalogs",
-    ["Dòng Excel", "Tên vật tư", "Lý do", "Nguồn"],
-    missingRows,
-  );
-
   const now = new Date().toISOString();
   await db
     .update(excelWorkspaces)
@@ -2041,8 +2052,6 @@ export async function exportMaterialProfileWorkspace(
     outputDirPath: outputDir,
     excelFileName,
     catalogCount: copiedCatalogByDocKey.size,
-    manifestFileName: "catalog-manifest.xlsx",
-    missingCatalogFileName: "missing-catalogs.xlsx",
     missingCount: missingRows.length,
     warnings,
   };
