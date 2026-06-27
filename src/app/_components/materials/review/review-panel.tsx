@@ -25,6 +25,11 @@ import {
 } from "~/lib/materials/excel-enrich-fields";
 import type { RowDecision } from "~/lib/materials/review-decision";
 import { deriveReviewRowStatus } from "~/lib/materials/review-decision";
+import {
+  countCatalogEligibleRows,
+  countSearchResultEligibleRows,
+  rowHasSearchResults,
+} from "~/lib/materials/profile-review-bulk-apply";
 import { runWithConcurrency } from "~/lib/run-with-concurrency";
 import { api } from "~/trpc/react";
 
@@ -67,6 +72,12 @@ export function ReviewPanel({
   onDecisionPersist,
   onFlushDecisionsForRows,
   searchMode = "default",
+  onProfileBulkApplyCatalog,
+  onProfileBulkApplySearchResults,
+  onProfileUndoBulkApply,
+  profileBulkApplyPending = false,
+  profileUndoPending = false,
+  profileUndoAvailable = false,
 }: {
   rows: ReviewRow[];
   summary: ReviewPanelSummary;
@@ -88,6 +99,12 @@ export function ReviewPanel({
   onDecisionPersist?: (rowIndex: number, decision: RowDecision) => void;
   onFlushDecisionsForRows?: (rowIndices: number[]) => void;
   searchMode?: ReviewSearchMode;
+  onProfileBulkApplyCatalog?: (rowIndices: number[]) => void | Promise<void>;
+  onProfileBulkApplySearchResults?: (rowIndices: number[]) => void;
+  onProfileUndoBulkApply?: () => void | Promise<void>;
+  profileBulkApplyPending?: boolean;
+  profileUndoPending?: boolean;
+  profileUndoAvailable?: boolean;
 }) {
   const toast = useToast();
   const isProfileSplit = searchMode === "profileSplit";
@@ -670,6 +687,18 @@ export function ReviewPanel({
   const bulkTargetCount = resolveTargetRows().filter((row) =>
     row.name.trim(),
   ).length;
+  const selectedRowIndices = Array.from(checkedRows);
+  const selectedCatalogEligibleCount = isProfileSplit
+    ? countCatalogEligibleRows(rows, selectedRowIndices)
+    : 0;
+  const selectedSearchEligibleCount = isProfileSplit
+    ? countSearchResultEligibleRows(rows, decisions, selectedRowIndices)
+    : 0;
+  const selectedHasSearchResults = isProfileSplit
+    ? resolveTargetRows().some((row) =>
+        rowHasSearchResults(decisions.get(row.originalRowIndex)),
+      )
+    : false;
   const isBulkRunning = bulkProgress != null;
 
   if (rows.length === 0) {
@@ -773,18 +802,62 @@ export function ReviewPanel({
                 <Sparkles className="h-4 w-4" aria-hidden />
                 Tìm AI ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={
+                  checkedRows.size === 0 ||
+                  selectedCatalogEligibleCount === 0 ||
+                  isBulkRunning ||
+                  profileBulkApplyPending
+                }
+                isLoading={profileBulkApplyPending}
+                onClick={() =>
+                  void onProfileBulkApplyCatalog?.(selectedRowIndices)
+                }
+              >
+                Áp dụng vật tư ≥ 85% (
+                {selectedCatalogEligibleCount.toLocaleString("vi-VN")})
+              </Button>
+              {selectedHasSearchResults ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    checkedRows.size === 0 ||
+                    selectedSearchEligibleCount === 0 ||
+                    isBulkRunning ||
+                    profileBulkApplyPending
+                  }
+                  onClick={() =>
+                    onProfileBulkApplySearchResults?.(selectedRowIndices)
+                  }
+                >
+                  Áp dụng kết quả tìm kiếm (
+                  {selectedSearchEligibleCount.toLocaleString("vi-VN")})
+                </Button>
+              ) : null}
+              {profileUndoAvailable ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={profileUndoPending || isBulkRunning}
+                  isLoading={profileUndoPending}
+                  onClick={() => void onProfileUndoBulkApply?.()}
+                >
+                  Hoàn tác bulk apply
+                </Button>
+              ) : null}
             </>
           ) : null}
-          {!isProfileSplit ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={summary.auto === 0}
-              onClick={confirmAllAuto}
-            >
-              Xác nhận tất cả ≥ 85%
-            </Button>
-          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={effectiveSummary.auto === 0}
+            onClick={confirmAllAuto}
+          >
+            Xác nhận tất cả ≥ 85%
+          </Button>
           <Button
             variant="warning"
             size="sm"

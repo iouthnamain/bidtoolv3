@@ -12,6 +12,10 @@ import {
   isExportableDecision,
 } from "~/lib/materials/enrich-gap-fill";
 import {
+  catalogDecisionForRow,
+  searchResultDecisionForRow,
+} from "~/lib/materials/profile-review-bulk-apply";
+import {
   deriveReviewRowStatus,
   seedDecisionsFromItems,
   serializeRowDecision,
@@ -52,10 +56,12 @@ function toReviewItem(item: WorkspaceItem): WorkspaceItemForReview & {
 export function MaterialProfileReviewStep({
   items,
   workspaceId,
+  bulkApplyUndoAvailable = false,
   onContinue,
 }: {
   items: WorkspaceItem[];
   workspaceId: number;
+  bulkApplyUndoAvailable?: boolean;
   onContinue: () => void;
 }) {
   const itemsKey = useMemo(
@@ -82,8 +88,8 @@ export function MaterialProfileReviewStep({
     return map;
   }, [items]);
 
-  const [decisions, setDecisions] = useState<Map<number, RowDecision>>(
-    () => seedDecisionsFromItems(reviewItems, { emptyUntilReview: true }),
+  const [decisions, setDecisions] = useState<Map<number, RowDecision>>(() =>
+    seedDecisionsFromItems(reviewItems),
   );
   const [statusFilter, setStatusFilter] = useState<ReviewRowStatus | "all">(
     "all",
@@ -117,11 +123,23 @@ export function MaterialProfileReviewStep({
       onError: (error) =>
         toast.error(error.message || "Không lưu được quyết định hàng loạt."),
     });
+  const bulkApplyMatches = api.materialProfile.bulkApplyMatches.useMutation({
+    onSuccess: () => {
+      void utils.materialProfile.get.invalidate({ workspaceId });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không bulk apply được."),
+  });
+  const undoLastBulkApply = api.materialProfile.undoLastBulkApply.useMutation({
+    onSuccess: () => {
+      void utils.materialProfile.get.invalidate({ workspaceId });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không hoàn tác được bulk apply."),
+  });
 
   useEffect(() => {
-    setDecisions(
-      seedDecisionsFromItems(reviewItems, { emptyUntilReview: true }),
-    );
+    setDecisions(seedDecisionsFromItems(reviewItems));
     setSelectedRowIndex(reviewRows[0]?.originalRowIndex ?? null);
   }, [itemsKey]);
 
@@ -205,9 +223,7 @@ export function MaterialProfileReviewStep({
       .map((item) => {
         const decision =
           decisionsRef.current.get(item.originalRowIndex) ??
-          seedDecisionsFromItems([toReviewItem(item)], {
-            emptyUntilReview: true,
-          }).get(
+          seedDecisionsFromItems([toReviewItem(item)]).get(
             item.originalRowIndex,
           );
         if (!decision) return null;
@@ -224,6 +240,129 @@ export function MaterialProfileReviewStep({
       decisions: payload,
     });
   }, [batchUpdateReviewDecisions, items, workspaceId]);
+
+  const applyDecisions = useCallback(
+    (updater: (prev: Map<number, RowDecision>) => Map<number, RowDecision>) => {
+      setDecisions(updater);
+    },
+    [],
+  );
+
+  const handleBulkApplyCatalog = useCallback(
+    async (rowIndices: number[]) => {
+      const eligible = rowIndices
+        .map((rowIndex) => {
+          const row = reviewRows.find(
+            (item) => item.originalRowIndex === rowIndex,
+          );
+          const itemId = itemIdByRowIndex.get(rowIndex);
+          if (!row || itemId == null) return null;
+          const decision = catalogDecisionForRow(row);
+          if (!decision) return null;
+          return { rowIndex, itemId, decision };
+        })
+        .filter(
+          (entry): entry is NonNullable<typeof entry> => entry != null,
+        );
+
+      if (eligible.length === 0) {
+        toast.warning("Không có dòng đã chọn đạt ngưỡng ≥ 85%.");
+        return;
+      }
+
+      flushDecisionsForRows(rowIndices);
+
+      try {
+        const result = await bulkApplyMatches.mutateAsync({
+          workspaceId,
+          itemIds: eligible.map((entry) => entry.itemId),
+        });
+
+        applyDecisions((prev) => {
+          const next = new Map(prev);
+          for (const entry of eligible) {
+            const existing = prev.get(entry.rowIndex);
+            next.set(entry.rowIndex, {
+              ...entry.decision,
+              webLinkResults: existing?.webLinkResults,
+              webLinksStatus: existing?.webLinksStatus,
+              aiSearchResult: existing?.aiSearchResult,
+              aiSearchCandidates: existing?.aiSearchCandidates,
+              aiSearchStatus: existing?.aiSearchStatus,
+              catalogPdfUrls: existing?.catalogPdfUrls,
+            });
+          }
+          return next;
+        });
+
+        await batchUpdateReviewDecisions.mutateAsync({
+          workspaceId,
+          decisions: eligible.map((entry) => ({
+            itemId: entry.itemId,
+            decision: serializeRowDecision(entry.decision),
+          })),
+        });
+
+        toast.success(
+          `Đã áp dụng ${result.summary.appliedCount.toLocaleString("vi-VN")} dòng (≥ 85%).`,
+        );
+      } catch {
+        // Errors surfaced by mutation onError.
+      }
+    },
+    [
+      applyDecisions,
+      batchUpdateReviewDecisions,
+      bulkApplyMatches,
+      flushDecisionsForRows,
+      itemIdByRowIndex,
+      reviewRows,
+      toast,
+      workspaceId,
+    ],
+  );
+
+  const handleBulkApplySearchResults = useCallback(
+    (rowIndices: number[]) => {
+      let appliedCount = 0;
+      applyDecisions((prev) => {
+        const next = new Map(prev);
+        for (const rowIndex of rowIndices) {
+          const row = reviewRows.find(
+            (item) => item.originalRowIndex === rowIndex,
+          );
+          const current = prev.get(rowIndex);
+          if (!row || !current) continue;
+          const applied = searchResultDecisionForRow(row, current);
+          if (!applied) continue;
+          next.set(rowIndex, applied);
+          persistDecision(rowIndex, applied);
+          appliedCount += 1;
+        }
+        return next;
+      });
+
+      if (appliedCount === 0) {
+        toast.warning("Không có kết quả tìm kiếm để áp dụng trên các dòng đã chọn.");
+        return;
+      }
+      toast.success(
+        `Đã áp dụng kết quả tìm kiếm cho ${appliedCount.toLocaleString("vi-VN")} dòng.`,
+      );
+    },
+    [applyDecisions, persistDecision, reviewRows, toast],
+  );
+
+  const handleUndoBulkApply = useCallback(async () => {
+    try {
+      const result = await undoLastBulkApply.mutateAsync({ workspaceId });
+      toast.success(
+        `Đã hoàn tác bulk apply (${result.restoredCount.toLocaleString("vi-VN")} dòng).`,
+      );
+    } catch {
+      // Errors surfaced by mutation onError.
+    }
+  }, [toast, undoLastBulkApply, workspaceId]);
 
   const handleContinue = async () => {
     setIsFlushing(true);
@@ -280,7 +419,7 @@ export function MaterialProfileReviewStep({
       summary={reviewSummary}
       decisions={decisions}
       updateDecision={updateDecision}
-      applyDecisions={setDecisions}
+      applyDecisions={applyDecisions}
       statusFilter={statusFilter}
       setStatusFilter={setStatusFilter}
       selectedRowIndex={selectedRowIndex}
@@ -291,6 +430,14 @@ export function MaterialProfileReviewStep({
       onDecisionPersist={handleDecisionPersist}
       onFlushDecisionsForRows={flushDecisionsForRows}
       searchMode="profileSplit"
+      onProfileBulkApplyCatalog={handleBulkApplyCatalog}
+      onProfileBulkApplySearchResults={handleBulkApplySearchResults}
+      onProfileUndoBulkApply={handleUndoBulkApply}
+      profileBulkApplyPending={
+        bulkApplyMatches.isPending || batchUpdateReviewDecisions.isPending
+      }
+      profileUndoPending={undoLastBulkApply.isPending}
+      profileUndoAvailable={bulkApplyUndoAvailable}
       emptyTitle="Chưa có kết quả match"
       emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
       headerActions={

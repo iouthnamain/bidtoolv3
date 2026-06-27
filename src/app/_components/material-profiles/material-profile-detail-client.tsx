@@ -245,7 +245,8 @@ function normalizeExportEditState(value: unknown): ExportEditState {
   };
 }
 
-function hasLastBulkApply(config: Record<string, unknown>) {
+function hasLastBulkApply(config: Record<string, unknown> | null | undefined) {
+  if (!config) return false;
   return Boolean(config.materialProfileLastBulkApply);
 }
 
@@ -1584,6 +1585,9 @@ export function MaterialProfileDetailClient({
         <MaterialProfileReviewStep
           items={detail.items}
           workspaceId={workspaceId}
+          bulkApplyUndoAvailable={hasLastBulkApply(
+            workspace.templateConfigJson,
+          )}
           onContinue={() => reach(4)}
         />
       ) : null}

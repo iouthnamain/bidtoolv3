@@ -538,7 +538,7 @@ export function MaterialImportClient() {
                     "ĐVT",
                     "Thông số",
                     "Chi tiết",
-                    "Nhà cung cấp",
+                    "NCC",
                     "Xuất xứ",
                     "Đơn giá",
                   ].map((label) => (
