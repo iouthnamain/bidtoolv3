@@ -24,6 +24,10 @@ next-env.d.ts
 /.electron-build
 /backups
 
+# agent skills (installed globally via `bunx skills add … -g`)
+.agents/
+skills-lock.json
+
 # misc
 .DS_Store
 Thumbs.db
