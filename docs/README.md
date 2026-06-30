@@ -2,6 +2,7 @@
 
 | Document | Description |
 |----------|-------------|
+| [team/README.md](./team/README.md) | **Service team planning** — links to Obsidian vault (charter, roadmap, negotiation) |
 | [workflows.md](./workflows.md) | **Main app workflows** — routes, tRPC procedures, services, and background jobs |
 | [updates/README.md](./updates/README.md) | Release, deployment, and on-prem update system |
 | [architecture-option-b/README.md](./architecture-option-b/README.md) | Target architecture and migration plan |
