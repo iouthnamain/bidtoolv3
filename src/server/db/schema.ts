@@ -848,6 +848,35 @@ export const shopScrapeJobs = pgTable(
   }),
 );
 
+export const shopScrapeJobProducts = pgTable(
+  "shop_scrape_job_products",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => shopScrapeJobs.id, { onDelete: "cascade" }),
+    sourceUrl: text("source_url").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    productJson: jsonb("product_json").$type<unknown>().notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobIdx: index("shop_scrape_job_products_job_id_idx").on(table.jobId),
+    jobOrderIdx: index("shop_scrape_job_products_job_order_idx").on(
+      table.jobId,
+      table.sortOrder,
+    ),
+    jobSourceUnique: uniqueIndex(
+      "shop_scrape_job_products_job_source_unique",
+    ).on(table.jobId, table.sourceUrl),
+  }),
+);
+
 export const shopImportJobs = pgTable(
   "shop_import_jobs",
   {

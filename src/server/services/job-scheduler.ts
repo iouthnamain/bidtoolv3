@@ -8,8 +8,11 @@ import { shopImportJobs, shopScrapeJobs, excelResearchJobs, materialEnrichmentJo
 import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import {
+  loadScrapeJobProducts,
+  replaceScrapeJobProducts,
+} from "~/server/services/shop-scrape-job-products";
+import {
   scrapeShopMaterialsFromUrl,
-  type ScrapedShopProduct,
   type ShopScrapeProgress,
 } from "~/server/services/shop-material-scraper";
 import type { ShopImportJobProgress } from "~/server/services/shop-import-jobs";
@@ -423,6 +426,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
     }
 
     const finishedAt = new Date().toISOString();
+    const products = await replaceScrapeJobProducts(job.id, result.products);
     await db
       .update(shopScrapeJobs)
       .set({
@@ -430,8 +434,8 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
         currentUrls: [],
         pagesVisited: result.pagesVisited,
         failedPages: result.failedPages,
-        products: result.products,
-        productCount: result.products.length,
+        products: [],
+        productCount: products.length,
         queueLength: 0,
         durationMs: result.durationMs,
         stopReason: result.stopReason,
@@ -451,7 +455,7 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
     log.info("job_completed", {
       jobType: "scrape",
       jobId: job.id,
-      productCount: result.products.length,
+      productCount: products.length,
       durationMs: result.durationMs,
       stopReason: result.stopReason,
     });
@@ -744,12 +748,15 @@ async function persistLatestScrapeProgressProducts(
     return;
   }
 
-  const products = sanitizeScrapedProductList(progress.products);
+  const products = await replaceScrapeJobProducts(
+    jobId,
+    sanitizeScrapedProductList(progress.products),
+  );
   const now = new Date().toISOString();
   await db
     .update(shopScrapeJobs)
     .set({
-      products,
+      products: [],
       productCount: products.length,
       updatedAt: now,
     })
@@ -924,8 +931,8 @@ async function loadProductsForImportJob(job: ShopImportJobRow) {
     .where(eq(shopScrapeJobs.id, job.scrapeJobId))
     .limit(1);
 
-  const products = Array.isArray(scrapeJob?.products)
-    ? (scrapeJob.products as ScrapedShopProduct[])
+  const products = scrapeJob
+    ? await loadScrapeJobProducts(scrapeJob.id, scrapeJob.products)
     : [];
   const sourceUrls = job.productSourceUrls;
   if (!sourceUrls) {

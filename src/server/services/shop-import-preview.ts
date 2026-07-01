@@ -10,8 +10,8 @@ import { ShopJobServiceError } from "~/server/services/shop-job-errors";
 import {
   filterProductsBySourceUrls,
 } from "~/server/services/shop-import-jobs";
+import { loadScrapeJobProducts } from "~/server/services/shop-scrape-job-products";
 import { previewShopImportProducts } from "~/server/services/shop-product-importer";
-import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import { createLogger, traceFn } from "~/server/lib/logger";
 
 const log = createLogger("services-shop-import-preview");
@@ -69,7 +69,7 @@ async function _previewShopImportJob(
   }
 
   const products = filterProductsBySourceUrls(
-    asScrapedProducts(scrapeJob.products),
+    await loadScrapeJobProducts(scrapeJob.id, scrapeJob.products),
     input.productSourceUrls,
   );
   if (products.length === 0) {
@@ -80,10 +80,6 @@ async function _previewShopImportJob(
   }
 
   return previewShopImportProducts(db, products);
-}
-
-function asScrapedProducts(value: unknown): ScrapedShopProduct[] {
-  return Array.isArray(value) ? (value as ScrapedShopProduct[]) : [];
 }
 
 export const previewShopImportJob = traceFn(

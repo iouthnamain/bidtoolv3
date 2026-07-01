@@ -11,6 +11,7 @@ import { shopImportJobs, shopScrapeJobs } from "~/server/db/schema";
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortShopImportJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
+import { loadScrapeJobProducts } from "~/server/services/shop-scrape-job-products";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-shop-import-jobs");
@@ -120,7 +121,7 @@ async function _startShopImportJob(
   }
 
   const products = filterProductsBySourceUrls(
-    asScrapedProducts(scrapeJob.products),
+    await loadScrapeJobProducts(scrapeJob.id, scrapeJob.products),
     input.productSourceUrls,
   );
   if (products.length === 0) {
@@ -304,10 +305,6 @@ export function filterProductsBySourceUrls(
 
   const sourceUrlSet = new Set(normalized);
   return products.filter((product) => sourceUrlSet.has(product.sourceUrl));
-}
-
-function asScrapedProducts(value: unknown): ScrapedShopProduct[] {
-  return Array.isArray(value) ? (value as ScrapedShopProduct[]) : [];
 }
 
 function asImportItems(value: unknown): ShopImportJobItem[] {
