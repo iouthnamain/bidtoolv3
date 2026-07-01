@@ -20,9 +20,15 @@ async function _searchWeb(
   query: string,
   limit = 8,
 ): Promise<{ hits: RawSearchHit[]; warning?: string }> {
-  const { results, warnings } = await searchQueryWithFallback(query);
+  const { results, warnings } = await searchQueryWithFallback(
+    query,
+    undefined,
+    {
+      feature: "excel_research",
+    },
+  );
   const hits = results.slice(0, limit).map((item: WebSearchResult) => ({
-    provider: "searxng",
+    provider: item.provider ?? "searxng",
     query,
     title: item.title,
     url: item.url,

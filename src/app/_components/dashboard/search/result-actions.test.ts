@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   primaryLinkForItem,
   primaryLinkOpensExternally,
-} from "./result-actions";
+} from "./result-action-links";
 import type { SearchItem } from "./search-types";
 
 function searchItem(overrides: Partial<SearchItem>): SearchItem {

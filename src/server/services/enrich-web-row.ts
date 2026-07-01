@@ -7,7 +7,11 @@ import {
   type MaterialEnrichmentEvidence,
   type MaterialEnrichmentInput,
 } from "~/lib/materials/material-enrichment-types";
-import { resolveAiProvider } from "~/server/services/app-settings";
+import {
+  resolveAiProvider,
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
+} from "~/server/services/app-settings";
 import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
 import {
   extractProductFromSources,
@@ -158,28 +162,45 @@ async function _enrichRowFromWeb(
   input: EnrichWebRowInput,
   signal?: AbortSignal,
 ): Promise<EnrichWebRowResult> {
-  const queries = buildSearchQueries({
-    name: input.name,
-    manufacturer: input.manufacturer,
-    code: input.code,
-    specText: input.specText,
-    unit: input.unit,
-    category: input.category,
-    originCountry: input.originCountry,
-    maxQueries: 6,
-  }).map((query) => query.query);
+  const [domainPolicy, queryControls] = await Promise.all([
+    resolveSearchDomainPolicy(),
+    resolveSearchQueryControls(),
+  ]);
+  const queries = buildSearchQueries(
+    {
+      name: input.name,
+      manufacturer: input.manufacturer,
+      code: input.code,
+      specText: input.specText,
+      unit: input.unit,
+      category: input.category,
+      originCountry: input.originCountry,
+      maxQueries: 6,
+    },
+    {
+      context: "interactive",
+      domainPolicy,
+      queryControls,
+    },
+  ).map((query) => query.query);
 
   if (queries.length === 0 || !input.name.trim()) {
     return { fields: {}, sourceUrls: [], evidence: [], catalogPdfUrls: [] };
   }
 
-  const searchResponse = await searchWebForProduct(queries, signal);
-  const ranked = rankSearchResults(searchResponse.results, {
-    manufacturer: input.manufacturer ?? null,
-    name: input.name,
-    code: input.code ?? null,
-    sourceUrl: null,
-  }).slice(0, 8);
+  const searchResponse = await searchWebForProduct(queries, signal, {
+    feature: "interactive",
+  });
+  const ranked = rankSearchResults(
+    searchResponse.results,
+    {
+      manufacturer: input.manufacturer ?? null,
+      name: input.name,
+      code: input.code ?? null,
+      sourceUrl: null,
+    },
+    searchResponse.domainPolicy ?? domainPolicy,
+  ).slice(0, 8);
 
   return extractFieldsFromRankedResults(input, ranked, signal);
 }

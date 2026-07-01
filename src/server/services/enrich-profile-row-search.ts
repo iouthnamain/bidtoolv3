@@ -11,7 +11,11 @@ import {
   ENRICHABLE_TO_FILLABLE_FIELD,
 } from "~/lib/materials/material-enrichment-types";
 import { createLogger, traceFn } from "~/server/lib/logger";
-import { resolveAiProvider } from "~/server/services/app-settings";
+import {
+  resolveAiProvider,
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
+} from "~/server/services/app-settings";
 import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
 import {
   enrichmentInputFromRow,
@@ -108,16 +112,27 @@ async function _enrichProfileRowSearch(
     };
   }
 
-  const queries = buildSearchQueries({
-    name: input.name,
-    manufacturer: input.manufacturer,
-    code: input.code,
-    specText: input.specText,
-    unit: input.unit,
-    category: input.category,
-    originCountry: input.originCountry,
-    maxQueries: 6,
-  }).map((query) => query.query);
+  const [domainPolicy, queryControls] = await Promise.all([
+    resolveSearchDomainPolicy(),
+    resolveSearchQueryControls(),
+  ]);
+  const queries = buildSearchQueries(
+    {
+      name: input.name,
+      manufacturer: input.manufacturer,
+      code: input.code,
+      specText: input.specText,
+      unit: input.unit,
+      category: input.category,
+      originCountry: input.originCountry,
+      maxQueries: 6,
+    },
+    {
+      context: "interactive",
+      domainPolicy,
+      queryControls,
+    },
+  ).map((query) => query.query);
 
   if (queries.length === 0) {
     return {
@@ -127,15 +142,21 @@ async function _enrichProfileRowSearch(
     };
   }
 
-  const searchResponse = await searchWebForProduct(queries, signal);
+  const searchResponse = await searchWebForProduct(queries, signal, {
+    feature: "profile_search",
+  });
   warnings.push(...searchResponse.warnings);
 
-  const ranked = rankSearchResults(searchResponse.results, {
-    manufacturer: input.manufacturer ?? null,
-    name: input.name,
-    code: input.code ?? null,
-    sourceUrl: null,
-  }).slice(0, PROFILE_TOP_LINKS);
+  const ranked = rankSearchResults(
+    searchResponse.results,
+    {
+      manufacturer: input.manufacturer ?? null,
+      name: input.name,
+      code: input.code ?? null,
+      sourceUrl: null,
+    },
+    searchResponse.domainPolicy ?? domainPolicy,
+  ).slice(0, PROFILE_TOP_LINKS);
 
   const webLinkResults: WebLinkResult[] = ranked.map((hit) => ({
     title: hit.title,
@@ -161,10 +182,8 @@ async function _enrichProfileRowSearch(
   }
 
   const linksToFetch = ranked.slice(0, PROFILE_FETCH_LINKS);
-  const enrichedLinks = await runPool(
-    linksToFetch,
-    FETCH_CONCURRENCY,
-    (link) => enrichLinkWithFetch(link, signal),
+  const enrichedLinks = await runPool(linksToFetch, FETCH_CONCURRENCY, (link) =>
+    enrichLinkWithFetch(link, signal),
   );
 
   const enrichmentInput = enrichmentInputFromRow(input);
@@ -191,7 +210,9 @@ async function _enrichProfileRowSearch(
           sourceUrls: mapped.sourceUrls,
           evidence: mapped.evidence,
           catalogPdfUrls:
-            mapped.catalogPdfUrls.length > 0 ? mapped.catalogPdfUrls : undefined,
+            mapped.catalogPdfUrls.length > 0
+              ? mapped.catalogPdfUrls
+              : undefined,
           fieldConfidences,
           title: link.title,
           url: link.url,

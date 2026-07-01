@@ -933,6 +933,59 @@ export const appSettings = pgTable("app_settings", {
     .defaultNow(),
 });
 
+export const searchAuditLogs = pgTable(
+  "search_audit_logs",
+  {
+    id: serial("id").primaryKey(),
+    feature: text("feature").notNull(),
+    provider: text("provider").notNull().default("searxng"),
+    query: text("query").notNull(),
+    normalizedQuery: text("normalized_query").notNull(),
+    engines: text("engines").notNull().default(""),
+    language: text("language").notNull().default("vi-VN"),
+    resultCount: integer("result_count").notNull().default(0),
+    selectedResultCount: integer("selected_result_count").notNull().default(0),
+    durationMs: integer("duration_ms").notNull().default(0),
+    status: text("status").notNull(),
+    warningText: text("warning_text").notNull().default(""),
+    errorText: text("error_text").notNull().default(""),
+    topResultsJson: jsonb("top_results_json")
+      .$type<
+        Array<{
+          title: string;
+          url: string;
+          domain: string;
+          rankScore: number;
+          reasons: string[];
+        }>
+      >()
+      .notNull()
+      .default([]),
+    rankingPolicyJson: jsonb("ranking_policy_json")
+      .$type<{
+        boostDomains: string[];
+        penaltyDomains: string[];
+        blockDomains: string[];
+      }>()
+      .notNull()
+      .default({ boostDomains: [], penaltyDomains: [], blockDomains: [] }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    createdAtIdx: index("search_audit_logs_created_at_idx").on(table.createdAt),
+    featureCreatedAtIdx: index("search_audit_logs_feature_created_at_idx").on(
+      table.feature,
+      table.createdAt,
+    ),
+    statusCreatedAtIdx: index("search_audit_logs_status_created_at_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const excelResearchJobStatusEnum = pgEnum("excel_research_job_status", [
   "draft",
   "queued",
@@ -1373,7 +1426,7 @@ export const materialWebCandidates = pgTable(
     materialId: integer("material_id")
       .notNull()
       .references(() => materials.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull().default("duckduckgo"),
+    provider: text("provider").notNull().default("searxng"),
     query: text("query").notNull(),
     title: text("title").notNull(),
     url: text("url").notNull(),

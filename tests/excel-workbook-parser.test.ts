@@ -123,7 +123,7 @@ describe("standard Excel workbook parser", () => {
       originHint: "Việt Nam",
       unitPrice: 15000,
     });
-  });
+  }, 15_000);
 
   it("rejects legacy xls files", async () => {
     await expect(

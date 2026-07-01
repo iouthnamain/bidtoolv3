@@ -81,6 +81,10 @@ import {
 } from "~/server/services/enrich-web-row";
 import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
 import {
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
+} from "~/server/services/app-settings";
+import {
   rankSearchResults,
   searchWebForProduct,
 } from "~/server/services/material-web-search";
@@ -2219,27 +2223,44 @@ export const materialRouter = createTRPCRouter({
   enrichWebSearchRowLinks: protectedProcedure
     .input(enrichWebRowInput)
     .mutation(async ({ input }) => {
-      const queries = buildSearchQueries({
-        name: input.name,
-        manufacturer: input.manufacturer,
-        code: input.code,
-        specText: input.specText,
-        unit: input.unit,
-        category: input.category,
-        originCountry: input.originCountry,
-      }).map((query) => query.query);
+      const [domainPolicy, queryControls] = await Promise.all([
+        resolveSearchDomainPolicy(),
+        resolveSearchQueryControls(),
+      ]);
+      const queries = buildSearchQueries(
+        {
+          name: input.name,
+          manufacturer: input.manufacturer,
+          code: input.code,
+          specText: input.specText,
+          unit: input.unit,
+          category: input.category,
+          originCountry: input.originCountry,
+        },
+        {
+          context: "interactive",
+          domainPolicy,
+          queryControls,
+        },
+      ).map((query) => query.query);
 
       if (queries.length === 0) {
         return { results: [], warnings: [] };
       }
 
-      const response = await searchWebForProduct(queries);
-      const results = rankSearchResults(response.results, {
-        manufacturer: input.manufacturer ?? null,
-        name: input.name,
-        code: input.code ?? null,
-        sourceUrl: null,
-      }).slice(0, 8);
+      const response = await searchWebForProduct(queries, undefined, {
+        feature: "interactive",
+      });
+      const results = rankSearchResults(
+        response.results,
+        {
+          manufacturer: input.manufacturer ?? null,
+          name: input.name,
+          code: input.code ?? null,
+          sourceUrl: null,
+        },
+        response.domainPolicy ?? domainPolicy,
+      ).slice(0, 8);
 
       return { results, warnings: response.warnings };
     }),

@@ -23,6 +23,8 @@ import {
 import {
   resolveAiProvider,
   resolveEnrichmentItemConcurrency,
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
   type ResolvedAiProvider,
 } from "~/server/services/app-settings";
 import { listCatalogDocumentsForMaterial } from "~/server/services/catalog-documents";
@@ -236,7 +238,7 @@ async function saveWebCandidates(
       results.map((result, index) => ({
         enrichmentItemId: item.id,
         materialId: item.materialId,
-        provider: "duckduckgo",
+        provider: result.provider ?? "searxng",
         query: result.query,
         title: result.title,
         url: result.url,
@@ -249,7 +251,11 @@ async function saveWebCandidates(
           Math.min(100, Math.round((result.rankScore + 1) * 40)),
         ),
         matchReasons:
-          result.rankScore > 0 ? [`rank:${result.rankScore.toFixed(2)}`] : [],
+          result.rankReasons && result.rankReasons.length > 0
+            ? result.rankReasons
+            : result.rankScore > 0
+              ? [`rank:${result.rankScore.toFixed(2)}`]
+              : [],
         isSelected: index === 0,
         fetchedAt: now,
       })),
@@ -437,21 +443,38 @@ async function _processEnrichmentItem(
   }
 
   try {
-    const queries = buildSearchQueries({
-      name: input.name,
-      manufacturer: input.manufacturer,
-      code: input.code,
-      specText: input.specText,
-      sku: input.sku,
-      model: input.model,
-      maxQueries: options.maxQueries ?? DEFAULT_MAX_QUERIES,
-    }).map((query) => query.query);
-    const searchResponse = await searchWebForProduct(queries, signal);
-    let ranked = rankSearchResults(searchResponse.results, {
-      manufacturer: input.manufacturer,
-      name: input.name,
-      sourceUrl: input.sourceUrl,
-    }).slice(0, options.maxSearchResults ?? DEFAULT_MAX_SEARCH_RESULTS);
+    const [domainPolicy, queryControls] = await Promise.all([
+      resolveSearchDomainPolicy(),
+      resolveSearchQueryControls(),
+    ]);
+    const queries = buildSearchQueries(
+      {
+        name: input.name,
+        manufacturer: input.manufacturer,
+        code: input.code,
+        specText: input.specText,
+        sku: input.sku,
+        model: input.model,
+        maxQueries: options.maxQueries ?? DEFAULT_MAX_QUERIES,
+      },
+      {
+        context: "material_job",
+        domainPolicy,
+        queryControls,
+      },
+    ).map((query) => query.query);
+    const searchResponse = await searchWebForProduct(queries, signal, {
+      feature: "material_enrichment",
+    });
+    let ranked = rankSearchResults(
+      searchResponse.results,
+      {
+        manufacturer: input.manufacturer,
+        name: input.name,
+        sourceUrl: input.sourceUrl,
+      },
+      searchResponse.domainPolicy ?? domainPolicy,
+    ).slice(0, options.maxSearchResults ?? DEFAULT_MAX_SEARCH_RESULTS);
 
     if (ranked.length === 0) {
       const knownSources = await fetchKnownSourceCandidates(
@@ -459,11 +482,15 @@ async function _processEnrichmentItem(
         signal,
       );
       if (knownSources.length > 0) {
-        ranked = rankSearchResults(knownSources, {
-          manufacturer: input.manufacturer,
-          name: input.name,
-          sourceUrl: input.sourceUrl,
-        });
+        ranked = rankSearchResults(
+          knownSources,
+          {
+            manufacturer: input.manufacturer,
+            name: input.name,
+            sourceUrl: input.sourceUrl,
+          },
+          searchResponse.domainPolicy ?? domainPolicy,
+        );
       }
     }
 

@@ -179,7 +179,8 @@ export const enrichSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/enrich",
     label: "Đối chiếu & điền",
-    description: "Tải Excel thiếu trường, ghép catalog, nghiên cứu web và xuất file đã điền.",
+    description:
+      "Tải Excel thiếu trường, ghép catalog, nghiên cứu web và xuất file đã điền.",
     icon: "sheet",
     tone: "emerald",
     match: "exact",
@@ -305,6 +306,12 @@ export const settingsSectionNavItems: PageSectionNavItem[] = [
     icon: "settings",
   },
   {
+    href: "/settings/search",
+    label: "Tìm kiếm web",
+    description: "SearXNG, domain ưu tiên, kiểm thử và audit.",
+    icon: "search",
+  },
+  {
     href: "/settings/users",
     label: "Người dùng",
     description: "Tài khoản, quyền truy cập và trạng thái.",
@@ -335,6 +342,10 @@ const settingsNavRules: Record<
   { roles?: readonly Role[]; permission?: Permission }
 > = {
   "/settings/ai": {
+    roles: ["admin", "manager"],
+    permission: "settings:manage",
+  },
+  "/settings/search": {
     roles: ["admin", "manager"],
     permission: "settings:manage",
   },

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import ExcelJS from "exceljs";
 
@@ -181,8 +181,8 @@ async function verifyWorkbook(
   }
 
   const headerRow = sheet.getRow(1);
-  const actualHeaders = headers.map((_, index) =>
-    String(headerRow.getCell(index + 1).value ?? ""),
+  const actualHeaders = headers.map(
+    (_, index) => headerRow.getCell(index + 1).text,
   );
 
   if (actualHeaders.join("|") !== headers.join("|")) {
@@ -199,7 +199,9 @@ async function verifyWorkbook(
   }
 }
 
-async function main() {
+export async function generateDemoMaterialSamples(options?: { log?: boolean }) {
+  const shouldLog = options?.log ?? true;
+
   await mkdir(outputDir, { recursive: true });
 
   await writeWorkbook(
@@ -222,26 +224,28 @@ async function main() {
     catalogHeaders,
     demoRows.length,
   );
-  await verifyWorkbook(
-    "boq",
-    boqPath,
-    "Vật tư",
-    boqHeaders,
-    demoRows.length,
-  );
+  await verifyWorkbook("boq", boqPath, "Vật tư", boqHeaders, demoRows.length);
 
-  console.log("Generated paired demo material samples:");
-  console.log(`  ${catalogPath}`);
-  console.log(`  ${boqPath}`);
-  console.log("");
-  console.log("Suggested demo flow:");
-  console.log("  1. /materials/import — upload demo-catalog-6.xlsx");
-  console.log("  2. /material-profiles — create TBMT-DEMO-2026-001");
-  console.log("  3. Upload demo-boq-6.xlsx at step 1");
-  console.log("  4. Map sheet → match → expect 6 high-confidence matches");
+  if (shouldLog) {
+    console.log("Generated paired demo material samples:");
+    console.log(`  ${catalogPath}`);
+    console.log(`  ${boqPath}`);
+    console.log("");
+    console.log("Suggested demo flow:");
+    console.log("  1. /materials/import — upload demo-catalog-6.xlsx");
+    console.log("  2. /material-profiles — create TBMT-DEMO-2026-001");
+    console.log("  3. Upload demo-boq-6.xlsx at step 1");
+    console.log("  4. Map sheet → match → expect 6 high-confidence matches");
+  }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+const entrypointUrl = process.argv[1]
+  ? pathToFileURL(process.argv[1]).href
+  : "";
+
+if (import.meta.url === entrypointUrl) {
+  generateDemoMaterialSamples().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

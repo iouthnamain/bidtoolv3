@@ -53,6 +53,54 @@ export const env = createEnv({
       .default(7),
     SEARXNG_BASE_URL: z.string().url().optional(),
     SEARXNG_API_KEY: z.string().optional(),
+    SEARXNG_ENGINES: z.string().optional(),
+    SEARXNG_LANGUAGE: z.string().optional(),
+    SEARXNG_SAFE_SEARCH: z.coerce.number().int().min(0).max(2).optional(),
+    SEARXNG_TIME_RANGE: z.enum(["day", "week", "month", "year"]).optional(),
+    SEARXNG_REQUEST_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(3000)
+      .max(60000)
+      .optional(),
+    SEARXNG_HTML_FALLBACK: z.enum(["true", "false"]).optional(),
+    SEARCH_BOOST_DOMAINS: z.string().optional(),
+    SEARCH_PENALTY_DOMAINS: z.string().optional(),
+    SEARCH_BLOCK_DOMAINS: z.string().optional(),
+    SEARCH_ENABLE_SITE_VN_VARIANTS: z.enum(["true", "false"]).optional(),
+    SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS: z
+      .enum(["true", "false"])
+      .optional(),
+    SEARCH_MATERIAL_JOB_MAX_QUERIES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .optional(),
+    SEARCH_INTERACTIVE_MAX_QUERIES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .optional(),
+    SEARCH_EXCEL_RESEARCH_MAX_QUERIES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .optional(),
+    SEARCH_RESULT_LIMIT_PER_QUERY: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional(),
+    SEARCH_AUDIT_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(90)
+      .optional(),
     BIDTOOL_EXCEL_RESEARCH_DIR: z.string().optional(),
     BETTER_AUTH_SECRET: z.string().optional(),
     BETTER_AUTH_URL: z.string().url().optional(),
@@ -108,6 +156,25 @@ export const env = createEnv({
     EXCEL_RESEARCH_JOB_TTL_DAYS: process.env.EXCEL_RESEARCH_JOB_TTL_DAYS,
     SEARXNG_BASE_URL: process.env.SEARXNG_BASE_URL,
     SEARXNG_API_KEY: process.env.SEARXNG_API_KEY,
+    SEARXNG_ENGINES: process.env.SEARXNG_ENGINES,
+    SEARXNG_LANGUAGE: process.env.SEARXNG_LANGUAGE,
+    SEARXNG_SAFE_SEARCH: process.env.SEARXNG_SAFE_SEARCH,
+    SEARXNG_TIME_RANGE: process.env.SEARXNG_TIME_RANGE,
+    SEARXNG_REQUEST_TIMEOUT_MS: process.env.SEARXNG_REQUEST_TIMEOUT_MS,
+    SEARXNG_HTML_FALLBACK: process.env.SEARXNG_HTML_FALLBACK,
+    SEARCH_BOOST_DOMAINS: process.env.SEARCH_BOOST_DOMAINS,
+    SEARCH_PENALTY_DOMAINS: process.env.SEARCH_PENALTY_DOMAINS,
+    SEARCH_BLOCK_DOMAINS: process.env.SEARCH_BLOCK_DOMAINS,
+    SEARCH_ENABLE_SITE_VN_VARIANTS: process.env.SEARCH_ENABLE_SITE_VN_VARIANTS,
+    SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS:
+      process.env.SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS,
+    SEARCH_MATERIAL_JOB_MAX_QUERIES:
+      process.env.SEARCH_MATERIAL_JOB_MAX_QUERIES,
+    SEARCH_INTERACTIVE_MAX_QUERIES: process.env.SEARCH_INTERACTIVE_MAX_QUERIES,
+    SEARCH_EXCEL_RESEARCH_MAX_QUERIES:
+      process.env.SEARCH_EXCEL_RESEARCH_MAX_QUERIES,
+    SEARCH_RESULT_LIMIT_PER_QUERY: process.env.SEARCH_RESULT_LIMIT_PER_QUERY,
+    SEARCH_AUDIT_RETENTION_DAYS: process.env.SEARCH_AUDIT_RETENTION_DAYS,
     BIDTOOL_EXCEL_RESEARCH_DIR: process.env.BIDTOOL_EXCEL_RESEARCH_DIR,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
     BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,

@@ -1,4 +1,7 @@
-import type { FillPlanCell, FillableField } from "~/lib/materials/excel-enrich-fields";
+import type {
+  FillPlanCell,
+  FillableField,
+} from "~/lib/materials/excel-enrich-fields";
 import type { db as appDb } from "~/server/db";
 import {
   mapExtractedToFillable,
@@ -13,7 +16,11 @@ import type {
   RowResearchResult,
 } from "~/server/services/excel-research/types";
 import { searchWeb } from "~/server/services/excel-research/web-search";
-import { resolveAiProvider } from "~/server/services/app-settings";
+import {
+  resolveAiProvider,
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
+} from "~/server/services/app-settings";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import type { MaterialEnrichmentInput } from "~/lib/materials/material-enrichment-types";
 import { createLogger, traceFn } from "~/server/lib/logger";
@@ -41,6 +48,7 @@ export type RowResearchOutput = {
     breakdown: unknown;
   }>;
   webEvidence: Array<{
+    provider: string;
     title: string;
     url: string;
     domain: string;
@@ -93,21 +101,37 @@ async function _processSingleRow(
     config.enableWebSearch && catalogScore < config.autoThreshold;
 
   if (shouldSearchWeb) {
-    const queries = buildSearchQueries({
-      name: input.productName,
-      manufacturer: fields.manufacturer,
-      code: fields.code,
-      specText: fields.specText,
-    });
+    const [domainPolicy, queryControls] = await Promise.all([
+      resolveSearchDomainPolicy(),
+      resolveSearchQueryControls(),
+    ]);
+    const queries = buildSearchQueries(
+      {
+        name: input.productName,
+        manufacturer: fields.manufacturer,
+        code: fields.code,
+        specText: fields.specText,
+      },
+      {
+        context: "excel_research",
+        domainPolicy,
+        queryControls,
+      },
+    );
 
     const searchResults = await Promise.all(
       queries.map((q) => searchWeb(q.query, 5)),
     );
 
     for (const { hits } of searchResults) {
-      const ranked = rankSearchHits(hits, input.productName, fields.manufacturer);
+      const ranked = rankSearchHits(
+        hits,
+        input.productName,
+        fields.manufacturer,
+      );
       for (const hit of ranked.slice(0, 3)) {
         webEvidence.push({
+          provider: hit.provider,
           title: hit.title,
           url: hit.url,
           domain: hit.domain,
@@ -152,11 +176,12 @@ async function _processSingleRow(
     });
   }
 
-  const matchedFields: Partial<Record<FillableField, string>> = Object.fromEntries(
-    (match?.fillPlan ?? [])
-      .filter((cell) => cell.action === "filled")
-      .map((cell) => [cell.field, cell.after]),
-  ) as Partial<Record<FillableField, string>>;
+  const matchedFields: Partial<Record<FillableField, string>> =
+    Object.fromEntries(
+      (match?.fillPlan ?? [])
+        .filter((cell) => cell.action === "filled")
+        .map((cell) => [cell.field, cell.after]),
+    ) as Partial<Record<FillableField, string>>;
 
   const webAcceptedFields: FillableField[] = [];
 
@@ -186,7 +211,9 @@ async function _processSingleRow(
         rankedHits,
         provider,
       );
-      const sourceUrls = [...new Set(webEvidence.map((hit) => hit.url).filter(Boolean))];
+      const sourceUrls = [
+        ...new Set(webEvidence.map((hit) => hit.url).filter(Boolean)),
+      ];
       const webMapped = mapExtractedToFillable(extracted, sourceUrls);
 
       for (const [field, value] of Object.entries(webMapped.fields)) {
@@ -228,7 +255,9 @@ async function _processSingleRow(
     }
   }
 
-  const allAcceptedFields = [...new Set([...acceptedFields, ...webAcceptedFields])];
+  const allAcceptedFields = [
+    ...new Set([...acceptedFields, ...webAcceptedFields]),
+  ];
 
   const webOnly = catalogScore < config.reviewThreshold && bestWebRank > 0;
   const confidenceScore = webOnly
@@ -302,4 +331,8 @@ async function _processSingleRow(
   };
 }
 
-export const processSingleRow = traceFn(log, "processSingleRow", _processSingleRow);
+export const processSingleRow = traceFn(
+  log,
+  "processSingleRow",
+  _processSingleRow,
+);

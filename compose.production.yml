@@ -40,6 +40,24 @@ services:
       BIDTOOL_MANIFEST_URL: "${BIDTOOL_MANIFEST_URL:-}"
       BIDTOOL_MANIFEST_PATH: "${BIDTOOL_MANIFEST_PATH:-}"
       BIDTOOL_GITHUB_REPO: "${BIDTOOL_GITHUB_REPO:-iouthnamain/bidtoolv3}"
+      SEARXNG_BASE_URL: "${SEARXNG_BASE_URL:-http://searxng:8080}"
+      SEARXNG_API_KEY: "${SEARXNG_API_KEY:-}"
+      SEARXNG_ENGINES: "${SEARXNG_ENGINES:-google,bing,duckduckgo}"
+      SEARXNG_LANGUAGE: "${SEARXNG_LANGUAGE:-vi-VN}"
+      SEARXNG_SAFE_SEARCH: "${SEARXNG_SAFE_SEARCH:-0}"
+      SEARXNG_TIME_RANGE: "${SEARXNG_TIME_RANGE:-}"
+      SEARXNG_REQUEST_TIMEOUT_MS: "${SEARXNG_REQUEST_TIMEOUT_MS:-12000}"
+      SEARXNG_HTML_FALLBACK: "${SEARXNG_HTML_FALLBACK:-true}"
+      SEARCH_BOOST_DOMAINS: "${SEARCH_BOOST_DOMAINS:-binhminhplastic.com.vn,hoaphat.com.vn,cadivi-vn.com,viglacera.vn,thibidi.com}"
+      SEARCH_PENALTY_DOMAINS: "${SEARCH_PENALTY_DOMAINS:-shopee.vn,lazada.vn,tiki.vn,sendo.vn}"
+      SEARCH_BLOCK_DOMAINS: "${SEARCH_BLOCK_DOMAINS:-}"
+      SEARCH_ENABLE_SITE_VN_VARIANTS: "${SEARCH_ENABLE_SITE_VN_VARIANTS:-true}"
+      SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS: "${SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS:-true}"
+      SEARCH_MATERIAL_JOB_MAX_QUERIES: "${SEARCH_MATERIAL_JOB_MAX_QUERIES:-4}"
+      SEARCH_INTERACTIVE_MAX_QUERIES: "${SEARCH_INTERACTIVE_MAX_QUERIES:-6}"
+      SEARCH_EXCEL_RESEARCH_MAX_QUERIES: "${SEARCH_EXCEL_RESEARCH_MAX_QUERIES:-6}"
+      SEARCH_RESULT_LIMIT_PER_QUERY: "${SEARCH_RESULT_LIMIT_PER_QUERY:-8}"
+      SEARCH_AUDIT_RETENTION_DAYS: "${SEARCH_AUDIT_RETENTION_DAYS:-30}"
     expose:
       - "3000"
     depends_on:
@@ -54,6 +72,33 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 30s
+      retries: 5
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: bidtool-onprem-searxng
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - ./deploy/searxng:/etc/searxng:ro
+    environment:
+      SEARXNG_BASE_URL: "${SEARXNG_PUBLIC_BASE_URL:-http://searxng:8080/}"
+      SEARXNG_SECRET_KEY: "${SEARXNG_SECRET_KEY:-change-me}"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8080/search?q=test&format=json'', timeout=5)"',
+        ]
+      interval: 30s
+      timeout: 10s
       retries: 5
 
   postgres:

@@ -189,7 +189,10 @@ async function persistRowResult(
 
   const evidenceRows: Array<typeof excelResearchRowEvidence.$inferInsert> = [];
 
-  for (const catalog of output.catalogEvidence.slice(0, config.candidateLimit)) {
+  for (const catalog of output.catalogEvidence.slice(
+    0,
+    config.candidateLimit,
+  )) {
     evidenceRows.push({
       jobRowId: row.id,
       evidenceType: "catalog_match",
@@ -211,7 +214,7 @@ async function persistRowResult(
     evidenceRows.push({
       jobRowId: row.id,
       evidenceType: "web_search",
-      provider: "searxng",
+      provider: web.provider,
       query: productName,
       title: web.title,
       url: web.url,
@@ -409,6 +412,18 @@ async function _resetStaleExcelResearchRows() {
     );
 }
 
-export const processJobBatch = traceFn(log, "processJobBatch", _processJobBatch);
-export const processJobBatchDetailed = traceFn(log, "processJobBatchDetailed", _processJobBatchDetailed);
-export const resetStaleExcelResearchRows = traceFn(log, "resetStaleExcelResearchRows", _resetStaleExcelResearchRows);
+export const processJobBatch = traceFn(
+  log,
+  "processJobBatch",
+  _processJobBatch,
+);
+export const processJobBatchDetailed = traceFn(
+  log,
+  "processJobBatchDetailed",
+  _processJobBatchDetailed,
+);
+export const resetStaleExcelResearchRows = traceFn(
+  log,
+  "resetStaleExcelResearchRows",
+  _resetStaleExcelResearchRows,
+);

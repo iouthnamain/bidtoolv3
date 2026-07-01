@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   parseWorkbookBase64,
   rowsFromMapping,
 } from "~/server/services/excel-workbook";
+import { generateDemoMaterialSamples } from "../scripts/generate-demo-material-samples";
 
 const demoDir = path.join(process.cwd(), "docs", "demo");
 
@@ -15,6 +16,10 @@ function readDemoBase64(fileName: string) {
 }
 
 describe("demo material samples", () => {
+  beforeAll(async () => {
+    await generateDemoMaterialSamples({ log: false });
+  }, 15_000);
+
   it("parses demo-catalog-6.xlsx for import mapping", async () => {
     const parsed = await parseWorkbookBase64(
       "demo-catalog-6.xlsx",
