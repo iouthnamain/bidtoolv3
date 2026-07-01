@@ -24,9 +24,19 @@ services:
     ports:
       - "${SEARXNG_HOST_PORT:-8888}:8080"
     volumes:
-      - ./deploy/searxng:/etc/searxng:rw
+      - ./deploy/searxng:/etc/searxng:ro
     environment:
       SEARXNG_BASE_URL: "http://localhost:${SEARXNG_HOST_PORT:-8888}/"
+      SEARXNG_SECRET_KEY: "${SEARXNG_SECRET_KEY:-bidtoolv3-local-dev-change-me}"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8080/search?q=test&format=json'', timeout=5)"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     cap_drop:
       - ALL
     cap_add:

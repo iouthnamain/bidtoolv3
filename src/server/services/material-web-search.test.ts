@@ -55,7 +55,7 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to DuckDuckGo when SearXNG fails", async () => {
+  it("does not call DuckDuckGo when SearXNG fails", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -63,24 +63,20 @@ describe("searchQueryWithFallback", () => {
       if (url.includes("searxng.test")) {
         throw new Error("fetch failed");
       }
-      return new Response(
-        `<a rel="nofollow" class="result__a" href="https://duck.example/item">Product</a><a class="result__snippet">Specs</a>`,
-        { status: 200, headers: { "Content-Type": "text/html" } },
-      );
+      throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { searchQueryWithFallback } = await import("./material-web-search");
     const { results, warnings } = await searchQueryWithFallback("ống PVC");
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.url).toBe("https://duck.example/item");
+    expect(results).toEqual([]);
     expect(warnings.some((warning) => warning.includes("SearXNG"))).toBe(true);
     expect(
       fetchMock.mock.calls.some(([url]) =>
-        requestUrl(url).includes("duckduckgo"),
+        new URL(requestUrl(url)).hostname.includes("duckduckgo"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("falls back to SearXNG HTML when JSON API returns 403", async () => {
@@ -142,26 +138,25 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("parses DuckDuckGo Lite result-link markup", async () => {
-    vi.stubEnv("SEARXNG_BASE_URL", "");
+  it("does not fall back to HTML when disabled", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = requestUrl(input);
-      if (url.includes("lite.duckduckgo.com")) {
-        return new Response(
-          `<a rel="nofollow" href="https://binhminh.vn/pvc" class='result-link'>Ống PVC</a>`,
-          { status: 200, headers: { "Content-Type": "text/html" } },
-        );
+      if (url.includes("format=json")) {
+        return new Response("Forbidden", { status: 403 });
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { searchQueryWithFallback } = await import("./material-web-search");
-    const { results } = await searchQueryWithFallback("ống PVC");
+    const { results, warnings } = await searchQueryWithFallback("ống PVC");
 
-    expect(results).toHaveLength(1);
-    expect(results[0]?.url).toBe("https://binhminh.vn/pvc");
+    expect(results).toEqual([]);
+    expect(warnings.some((warning) => warning.includes("403"))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns empty results without throwing when all providers fail", async () => {
@@ -262,6 +257,71 @@ describe("searchQueryWithFallback", () => {
     );
 
     expect(ranked[0]?.url).toContain("binhminh.vn");
-    expect(ranked[0]?.rankScore ?? 0).toBeGreaterThan(ranked[1]?.rankScore ?? 0);
+    expect(ranked[0]?.rankScore ?? 0).toBeGreaterThan(
+      ranked[1]?.rankScore ?? 0,
+    );
+  });
+
+  it("builds SearXNG URL with configured engines, language, safesearch and time range", async () => {
+    const { buildSearxngUrl } = await import("./material-web-search");
+    const url = buildSearxngUrl(
+      "http://searxng.test/",
+      "Ống nhựa Bình Minh D90",
+      {
+        baseUrl: "http://searxng.test",
+        apiKey: null,
+        engines: ["google", "bing", "duckduckgo"],
+        language: "vi-VN",
+        safeSearch: 0,
+        timeRange: "month",
+        requestTimeoutMs: 12000,
+        htmlFallback: true,
+        resultLimitPerQuery: 8,
+      },
+      "json",
+    );
+
+    expect(url.toString()).toContain("/search?");
+    expect(url.searchParams.get("q")).toBe("Ống nhựa Bình Minh D90");
+    expect(url.searchParams.get("format")).toBe("json");
+    expect(url.searchParams.get("engines")).toBe("google,bing,duckduckgo");
+    expect(url.searchParams.get("language")).toBe("vi-VN");
+    expect(url.searchParams.get("safesearch")).toBe("0");
+    expect(url.searchParams.get("time_range")).toBe("month");
+  });
+
+  it("filters hard-blocked domains before ranking", async () => {
+    const { applyDomainPolicy } = await import("./material-web-search");
+    const filtered = applyDomainPolicy(
+      [
+        {
+          title: "Marketplace",
+          url: "https://shopee.vn/item",
+          domain: "shopee.vn",
+          snippet: "",
+          query: "ống",
+          rankScore: 0,
+        },
+        {
+          title: "Supplier",
+          url: "https://binhminhplastic.com.vn/pvc",
+          domain: "binhminhplastic.com.vn",
+          snippet: "",
+          query: "ống",
+          rankScore: 0,
+        },
+      ],
+      {
+        boostDomains: [],
+        penaltyDomains: [],
+        blockDomains: ["shopee.vn"],
+      },
+    );
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.domain).toBe("binhminhplastic.com.vn");
+    expect(filtered.some((result) => result.domain === "shopee.vn")).toBe(
+      false,
+    );
   });
 });

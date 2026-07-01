@@ -1,0 +1,48 @@
+export const vnMaterialSearchCases = [
+  {
+    name: "Ống nhựa Bình Minh D90",
+    manufacturer: "Bình Minh",
+    code: "D90",
+    expectedGoodDomainHints: ["binhminhplastic.com.vn"],
+    badDomainHints: ["shopee.vn", "lazada.vn"],
+    requiredQueryTerms: ["thông số kỹ thuật", "bảng giá", "site:.vn"],
+  },
+  {
+    name: "Dây cáp điện Cadivi CVV 2x2.5",
+    manufacturer: "Cadivi",
+    code: "CVV 2x2.5",
+    expectedGoodDomainHints: ["cadivi-vn.com"],
+    badDomainHints: ["shopee.vn", "tiki.vn"],
+    requiredQueryTerms: ["thông số kỹ thuật", "catalog", "filetype:pdf"],
+  },
+  {
+    name: "Gạch Viglacera 600x600",
+    manufacturer: "Viglacera",
+    expectedGoodDomainHints: ["viglacera.vn"],
+    badDomainHints: ["shopee.vn", "lazada.vn"],
+    requiredQueryTerms: ["bảng giá", "đại lý", "site:.vn"],
+  },
+  {
+    name: "Thép hộp Hòa Phát 50x50",
+    manufacturer: "Hòa Phát",
+    code: "50x50",
+    expectedGoodDomainHints: ["hoaphat.com.vn"],
+    badDomainHints: ["shopee.vn", "sendo.vn"],
+    requiredQueryTerms: ["thông số kỹ thuật", "báo giá", "site:.vn"],
+  },
+  {
+    name: "Máy cắt bê tông MCB-500",
+    code: "MCB-500",
+    expectedGoodDomainHints: [".vn"],
+    badDomainHints: ["shopee.vn", "lazada.vn"],
+    requiredQueryTerms: ["thông số kỹ thuật", "catalog"],
+  },
+  {
+    name: "Aptomat Schneider EasyPact 3P 100A",
+    manufacturer: "Schneider",
+    code: "EasyPact 3P 100A",
+    expectedGoodDomainHints: ["se.com", ".vn"],
+    badDomainHints: ["shopee.vn", "tiki.vn"],
+    requiredQueryTerms: ["thông số kỹ thuật", "filetype:pdf"],
+  },
+] as const;

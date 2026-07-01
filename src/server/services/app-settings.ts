@@ -4,6 +4,13 @@ import { env } from "~/env";
 import { db } from "~/server/db";
 import { hasDatabaseUrl } from "~/server/runtime";
 import { appSettings } from "~/server/db/schema";
+import {
+  DEFAULT_SEARCH_BOOST_DOMAINS,
+  DEFAULT_SEARCH_PENALTY_DOMAINS,
+  DEFAULT_SEARXNG_ENGINES,
+  normalizeDomainList,
+  normalizeEngineList,
+} from "~/server/services/search-domain-policy";
 
 export const SETTING_KEYS = {
   openrouterApiKey: "openrouter_api_key",
@@ -33,6 +40,23 @@ export const SETTING_KEYS = {
   excelResearchJobTtlDays: "excel_research_job_ttl_days",
   searxngBaseUrl: "searxng_base_url",
   searxngApiKey: "searxng_api_key",
+  searxngEngines: "searxng_engines",
+  searxngLanguage: "searxng_language",
+  searxngSafeSearch: "searxng_safe_search",
+  searxngTimeRange: "searxng_time_range",
+  searxngRequestTimeoutMs: "searxng_request_timeout_ms",
+  searxngHtmlFallback: "searxng_html_fallback",
+  searchBoostDomains: "search_boost_domains",
+  searchPenaltyDomains: "search_penalty_domains",
+  searchBlockDomains: "search_block_domains",
+  searchEnableSiteVnVariants: "search_enable_site_vn_variants",
+  searchEnableNegativeMarketplaceVariants:
+    "search_enable_negative_marketplace_variants",
+  searchMaterialJobMaxQueries: "search_material_job_max_queries",
+  searchInteractiveMaxQueries: "search_interactive_max_queries",
+  searchExcelResearchMaxQueries: "search_excel_research_max_queries",
+  searchResultLimitPerQuery: "search_result_limit_per_query",
+  searchAuditRetentionDays: "search_audit_retention_days",
   enrichmentItemConcurrency: "enrichment_item_concurrency",
   enrichmentWebConcurrency: "enrichment_web_concurrency",
   enrichmentAiConcurrency: "enrichment_ai_concurrency",
@@ -303,7 +327,14 @@ export async function getOpenaiCompatibleConfig() {
 
 export type SettingSource = "env" | "database" | "none";
 
-export type OperationalSettingType = "number" | "url" | "boolean" | "path";
+export type OperationalSettingType =
+  | "number"
+  | "url"
+  | "boolean"
+  | "path"
+  | "string"
+  | "list"
+  | "secret";
 
 export type OperationalSettingKey =
   | "bidwinnerBaseUrl"
@@ -321,6 +352,22 @@ export type OperationalSettingKey =
   | "excelResearchRowConcurrency"
   | "excelResearchJobTtlDays"
   | "searxngBaseUrl"
+  | "searxngEngines"
+  | "searxngLanguage"
+  | "searxngSafeSearch"
+  | "searxngTimeRange"
+  | "searxngRequestTimeoutMs"
+  | "searxngHtmlFallback"
+  | "searchBoostDomains"
+  | "searchPenaltyDomains"
+  | "searchBlockDomains"
+  | "searchEnableSiteVnVariants"
+  | "searchEnableNegativeMarketplaceVariants"
+  | "searchMaterialJobMaxQueries"
+  | "searchInteractiveMaxQueries"
+  | "searchExcelResearchMaxQueries"
+  | "searchResultLimitPerQuery"
+  | "searchAuditRetentionDays"
   | "enrichmentItemConcurrency"
   | "enrichmentWebConcurrency"
   | "enrichmentAiConcurrency"
@@ -342,6 +389,32 @@ type OperationalSettingDefinition = {
   max?: number;
   /** Whether the number must be an integer. */
   integer?: boolean;
+};
+
+export type SearxngSearchConfig = {
+  baseUrl: string | null;
+  apiKey: string | null;
+  engines: string[];
+  language: string;
+  safeSearch: 0 | 1 | 2;
+  timeRange: "" | "day" | "week" | "month" | "year";
+  requestTimeoutMs: number;
+  htmlFallback: boolean;
+  resultLimitPerQuery: number;
+};
+
+export type SearchDomainPolicy = {
+  boostDomains: string[];
+  penaltyDomains: string[];
+  blockDomains: string[];
+};
+
+export type SearchQueryControls = {
+  enableSiteVnVariants: boolean;
+  enableNegativeMarketplaceVariants: boolean;
+  materialJobMaxQueries: number;
+  interactiveMaxQueries: number;
+  excelResearchMaxQueries: number;
 };
 
 export const OPERATIONAL_SETTINGS: Record<
@@ -472,6 +545,123 @@ export const OPERATIONAL_SETTINGS: Record<
     type: "url",
     defaultValue: null,
   },
+  searxngEngines: {
+    settingKey: SETTING_KEYS.searxngEngines,
+    envVar: "SEARXNG_ENGINES",
+    type: "list",
+    defaultValue: DEFAULT_SEARXNG_ENGINES.join(","),
+  },
+  searxngLanguage: {
+    settingKey: SETTING_KEYS.searxngLanguage,
+    envVar: "SEARXNG_LANGUAGE",
+    type: "string",
+    defaultValue: "vi-VN",
+  },
+  searxngSafeSearch: {
+    settingKey: SETTING_KEYS.searxngSafeSearch,
+    envVar: "SEARXNG_SAFE_SEARCH",
+    type: "number",
+    defaultValue: 0,
+    min: 0,
+    max: 2,
+    integer: true,
+  },
+  searxngTimeRange: {
+    settingKey: SETTING_KEYS.searxngTimeRange,
+    envVar: "SEARXNG_TIME_RANGE",
+    type: "string",
+    defaultValue: "",
+  },
+  searxngRequestTimeoutMs: {
+    settingKey: SETTING_KEYS.searxngRequestTimeoutMs,
+    envVar: "SEARXNG_REQUEST_TIMEOUT_MS",
+    type: "number",
+    defaultValue: 12000,
+    min: 3000,
+    max: 60000,
+    integer: true,
+  },
+  searxngHtmlFallback: {
+    settingKey: SETTING_KEYS.searxngHtmlFallback,
+    envVar: "SEARXNG_HTML_FALLBACK",
+    type: "boolean",
+    defaultValue: true,
+  },
+  searchBoostDomains: {
+    settingKey: SETTING_KEYS.searchBoostDomains,
+    envVar: "SEARCH_BOOST_DOMAINS",
+    type: "list",
+    defaultValue: DEFAULT_SEARCH_BOOST_DOMAINS.join(","),
+  },
+  searchPenaltyDomains: {
+    settingKey: SETTING_KEYS.searchPenaltyDomains,
+    envVar: "SEARCH_PENALTY_DOMAINS",
+    type: "list",
+    defaultValue: DEFAULT_SEARCH_PENALTY_DOMAINS.join(","),
+  },
+  searchBlockDomains: {
+    settingKey: SETTING_KEYS.searchBlockDomains,
+    envVar: "SEARCH_BLOCK_DOMAINS",
+    type: "list",
+    defaultValue: "",
+  },
+  searchEnableSiteVnVariants: {
+    settingKey: SETTING_KEYS.searchEnableSiteVnVariants,
+    envVar: "SEARCH_ENABLE_SITE_VN_VARIANTS",
+    type: "boolean",
+    defaultValue: true,
+  },
+  searchEnableNegativeMarketplaceVariants: {
+    settingKey: SETTING_KEYS.searchEnableNegativeMarketplaceVariants,
+    envVar: "SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS",
+    type: "boolean",
+    defaultValue: true,
+  },
+  searchMaterialJobMaxQueries: {
+    settingKey: SETTING_KEYS.searchMaterialJobMaxQueries,
+    envVar: "SEARCH_MATERIAL_JOB_MAX_QUERIES",
+    type: "number",
+    defaultValue: 4,
+    min: 1,
+    max: 10,
+    integer: true,
+  },
+  searchInteractiveMaxQueries: {
+    settingKey: SETTING_KEYS.searchInteractiveMaxQueries,
+    envVar: "SEARCH_INTERACTIVE_MAX_QUERIES",
+    type: "number",
+    defaultValue: 6,
+    min: 1,
+    max: 10,
+    integer: true,
+  },
+  searchExcelResearchMaxQueries: {
+    settingKey: SETTING_KEYS.searchExcelResearchMaxQueries,
+    envVar: "SEARCH_EXCEL_RESEARCH_MAX_QUERIES",
+    type: "number",
+    defaultValue: 6,
+    min: 1,
+    max: 10,
+    integer: true,
+  },
+  searchResultLimitPerQuery: {
+    settingKey: SETTING_KEYS.searchResultLimitPerQuery,
+    envVar: "SEARCH_RESULT_LIMIT_PER_QUERY",
+    type: "number",
+    defaultValue: 8,
+    min: 1,
+    max: 50,
+    integer: true,
+  },
+  searchAuditRetentionDays: {
+    settingKey: SETTING_KEYS.searchAuditRetentionDays,
+    envVar: "SEARCH_AUDIT_RETENTION_DAYS",
+    type: "number",
+    defaultValue: 30,
+    min: 1,
+    max: 90,
+    integer: true,
+  },
   enrichmentItemConcurrency: {
     settingKey: SETTING_KEYS.enrichmentItemConcurrency,
     envVar: "ENRICHMENT_ITEM_CONCURRENCY",
@@ -539,6 +729,16 @@ function rawEnvValue(envVar: string): string | undefined {
 
 export class OperationalSettingError extends Error {}
 
+function allowsEmptyOperationalSetting(key: OperationalSettingKey) {
+  return (
+    key === "searxngBaseUrl" ||
+    key === "searxngTimeRange" ||
+    key === "searchBoostDomains" ||
+    key === "searchPenaltyDomains" ||
+    key === "searchBlockDomains"
+  );
+}
+
 /**
  * Validate + coerce a raw string against a setting definition, mirroring the
  * zod rules in `src/env.js`. Throws `OperationalSettingError` (Vietnamese) on
@@ -552,6 +752,9 @@ export function validateOperationalSettingValue(
   const trimmed = rawValue.trim();
 
   if (!trimmed) {
+    if (allowsEmptyOperationalSetting(key)) {
+      return "";
+    }
     throw new OperationalSettingError("Giá trị không được để trống.");
   }
 
@@ -602,6 +805,44 @@ export function validateOperationalSettingValue(
       }
       return trimmed;
     }
+    case "string": {
+      if (key === "searxngLanguage") {
+        if (!/^[a-z]{2}(?:-[A-Z]{2})?$/.test(trimmed)) {
+          throw new OperationalSettingError(
+            "Ngôn ngữ phải có dạng vi, vi-VN, en hoặc en-US.",
+          );
+        }
+      }
+      if (key === "searxngTimeRange") {
+        if (!["day", "week", "month", "year"].includes(trimmed)) {
+          throw new OperationalSettingError(
+            "Khoảng thời gian phải là day, week, month hoặc year.",
+          );
+        }
+      }
+      return trimmed;
+    }
+    case "list": {
+      if (key === "searxngEngines") {
+        const engines = normalizeEngineList(trimmed);
+        if (engines.length === 0) {
+          throw new OperationalSettingError(
+            "Nhập ít nhất một engine hợp lệ, ví dụ google,bing,duckduckgo.",
+          );
+        }
+        return engines.join(",");
+      }
+
+      const domains = normalizeDomainList(trimmed);
+      if (domains.length === 0) {
+        throw new OperationalSettingError(
+          "Nhập ít nhất một domain hợp lệ hoặc đặt lại mặc định.",
+        );
+      }
+      return domains.join(",");
+    }
+    case "secret":
+      return trimmed;
     case "path":
       return trimmed;
   }
@@ -622,9 +863,13 @@ export async function resolveOperationalSetting(
     return envValue;
   }
 
+  if (process.env.NODE_ENV === "test") {
+    return def.defaultValue === null ? null : String(def.defaultValue);
+  }
+
   const dbValue = await getSetting(def.settingKey);
-  const trimmedDb = dbValue?.trim();
-  if (trimmedDb) {
+  const trimmedDb = dbValue?.trim() ?? null;
+  if (trimmedDb || (dbValue !== null && allowsEmptyOperationalSetting(key))) {
     return trimmedDb;
   }
 
@@ -669,9 +914,30 @@ export async function getOperationalSettingConfig(
 ): Promise<OperationalSettingConfig> {
   const def = OPERATIONAL_SETTINGS[key];
   const envValue = rawEnvValue(def.envVar);
-  const trimmedDbValue = (await getSetting(def.settingKey))?.trim();
-  const dbValue =
-    trimmedDbValue && trimmedDbValue.length > 0 ? trimmedDbValue : null;
+  if (process.env.NODE_ENV === "test") {
+    const defaultValue =
+      def.defaultValue === null ? null : String(def.defaultValue);
+    const value = envValue ?? defaultValue;
+    return {
+      key,
+      envVar: def.envVar,
+      type: def.type,
+      value,
+      defaultValue,
+      source: envValue ? "env" : "none",
+      canEdit: !envValue,
+      min: def.min ?? null,
+      max: def.max ?? null,
+      integer: def.integer ?? false,
+    };
+  }
+
+  const rawDbValue = await getSetting(def.settingKey);
+  const trimmedDbValue = rawDbValue?.trim() ?? null;
+  const hasDbValue =
+    Boolean(trimmedDbValue) ||
+    (rawDbValue !== null && allowsEmptyOperationalSetting(key));
+  const dbValue = hasDbValue ? trimmedDbValue : null;
 
   const value =
     envValue ??
@@ -680,7 +946,7 @@ export async function getOperationalSettingConfig(
 
   const source: SettingSource = envValue
     ? "env"
-    : dbValue
+    : hasDbValue
       ? "database"
       : "none";
 
@@ -831,9 +1097,135 @@ export async function resolveSearxngApiKey(): Promise<string | null> {
   if (envKey) {
     return envKey;
   }
+  if (process.env.NODE_ENV === "test") {
+    return null;
+  }
   const stored = await getSetting("searxng_api_key");
   const trimmed = stored?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+export async function getSearxngApiKeyConfig() {
+  const envKey = env.SEARXNG_API_KEY?.trim();
+  if (process.env.NODE_ENV === "test") {
+    return {
+      configured: Boolean(envKey),
+      source: envKey ? ("env" as const) : ("none" as const),
+      canEdit: !envKey,
+      keySuffix: envKey ? envKey.slice(-4) : null,
+    };
+  }
+  const dbKey = await getSetting(SETTING_KEYS.searxngApiKey);
+  const apiKey = envKey ?? dbKey ?? null;
+  const source = envKey
+    ? ("env" as const)
+    : dbKey
+      ? ("database" as const)
+      : ("none" as const);
+
+  return {
+    configured: Boolean(apiKey),
+    source,
+    canEdit: !envKey,
+    keySuffix: apiKey ? apiKey.slice(-4) : null,
+  };
+}
+
+function parseOperationalList(value: string | null): string[] {
+  if (!value?.trim()) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function clampSafeSearch(value: number): 0 | 1 | 2 {
+  if (value === 1) return 1;
+  if (value === 2) return 2;
+  return 0;
+}
+
+function parseTimeRange(
+  value: string | null,
+): "" | "day" | "week" | "month" | "year" {
+  if (
+    value === "day" ||
+    value === "week" ||
+    value === "month" ||
+    value === "year"
+  ) {
+    return value;
+  }
+  return "";
+}
+
+export async function resolveSearxngSearchConfig(): Promise<SearxngSearchConfig> {
+  const engines = normalizeEngineList(
+    (await resolveOperationalSetting("searxngEngines")) ??
+      DEFAULT_SEARXNG_ENGINES.join(","),
+  );
+
+  return {
+    baseUrl: await resolveSearxngBaseUrl(),
+    apiKey: await resolveSearxngApiKey(),
+    engines: engines.length > 0 ? engines : DEFAULT_SEARXNG_ENGINES,
+    language: (await resolveOperationalSetting("searxngLanguage")) ?? "vi-VN",
+    safeSearch: clampSafeSearch(
+      await resolveOperationalNumber("searxngSafeSearch"),
+    ),
+    timeRange: parseTimeRange(
+      await resolveOperationalSetting("searxngTimeRange"),
+    ),
+    requestTimeoutMs: await resolveOperationalNumber("searxngRequestTimeoutMs"),
+    htmlFallback: await resolveOperationalBoolean("searxngHtmlFallback"),
+    resultLimitPerQuery: await resolveOperationalNumber(
+      "searchResultLimitPerQuery",
+    ),
+  };
+}
+
+export async function resolveSearchDomainPolicy(): Promise<SearchDomainPolicy> {
+  return {
+    boostDomains: normalizeDomainList(
+      parseOperationalList(
+        await resolveOperationalSetting("searchBoostDomains"),
+      ),
+    ),
+    penaltyDomains: normalizeDomainList(
+      parseOperationalList(
+        await resolveOperationalSetting("searchPenaltyDomains"),
+      ),
+    ),
+    blockDomains: normalizeDomainList(
+      parseOperationalList(
+        await resolveOperationalSetting("searchBlockDomains"),
+      ),
+    ),
+  };
+}
+
+export async function resolveSearchQueryControls(): Promise<SearchQueryControls> {
+  return {
+    enableSiteVnVariants: await resolveOperationalBoolean(
+      "searchEnableSiteVnVariants",
+    ),
+    enableNegativeMarketplaceVariants: await resolveOperationalBoolean(
+      "searchEnableNegativeMarketplaceVariants",
+    ),
+    materialJobMaxQueries: await resolveOperationalNumber(
+      "searchMaterialJobMaxQueries",
+    ),
+    interactiveMaxQueries: await resolveOperationalNumber(
+      "searchInteractiveMaxQueries",
+    ),
+    excelResearchMaxQueries: await resolveOperationalNumber(
+      "searchExcelResearchMaxQueries",
+    ),
+  };
+}
+
+export async function resolveSearchAuditRetentionDays(): Promise<number> {
+  return resolveOperationalNumber("searchAuditRetentionDays");
 }
 
 export async function resolveExcelResearchDir(): Promise<string | null> {

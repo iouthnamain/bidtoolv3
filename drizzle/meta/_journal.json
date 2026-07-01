@@ -211,6 +211,13 @@
       "when": 1782700000000,
       "tag": "0029_review_decision_json",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782800000000,
+      "tag": "0030_search_audit_logs",
+      "breakpoints": true
     }
   ]
 }

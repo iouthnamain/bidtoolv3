@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import {
   deriveMatchStatus,
@@ -230,16 +230,18 @@ describe("review-decision", () => {
       ),
     ).toBe("review");
 
-    expect(
-      deriveReviewRowStatus(undefined, "unmatched", null),
-    ).toBe("unmatched");
+    expect(deriveReviewRowStatus(undefined, "unmatched", null)).toBe(
+      "unmatched",
+    );
   });
 
   it("seeds empty decisions for profile review until user chooses", () => {
     const decision = seedDecisionFromItem(
       {
+        id: 1,
         originalRowIndex: 1,
         materialId: 42,
+        matchStatus: "matched",
         enrichedSnapshotJson: {
           status: "auto",
           fillPlan: [{ field: "unit", action: "filled" }],

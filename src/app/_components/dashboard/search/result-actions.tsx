@@ -7,78 +7,15 @@ import { Button } from "~/app/_components/ui";
 import { type api } from "~/trpc/react";
 
 import type { SearchItem } from "./search-types";
+import { detailHrefForItem, isPackageItem } from "./result-action-links";
 
-export function detailHrefForItem(item: SearchItem) {
-  if (item.entityType === "plan") {
-    return `/plan-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-  }
-
-  if (item.entityType === "project") {
-    return `/project-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-  }
-
-  return `/package-details/${encodeURIComponent(item.externalId)}?sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
-}
-
-export function isPackageItem(item: SearchItem) {
-  return item.entityType === "package";
-}
-
-export function primaryLinkForItem(item: SearchItem) {
-  return isPackageItem(item) ? item.sourceUrl : detailHrefForItem(item);
-}
-
-export function primaryLinkOpensExternally(item: SearchItem) {
-  return isPackageItem(item);
-}
-
-export function toSavePayload(item: SearchItem) {
-  if (item.entityType === "plan") {
-    return {
-      entityType: "plan" as const,
-      externalId: item.externalId,
-      title: item.title,
-      owner: item.owner,
-      province: item.province,
-      field: item.field,
-      procurementMethod: item.procurementMethod,
-      budget: item.budget,
-      publishedAt: item.publishedAt,
-      timeline: item.timeline,
-      sourceUrl: item.sourceUrl,
-    };
-  }
-
-  if (item.entityType === "project") {
-    return {
-      entityType: "project" as const,
-      externalId: item.externalId,
-      title: item.title,
-      owner: item.owner,
-      province: item.province,
-      projectGroup: item.projectGroup,
-      budget: item.budget,
-      publishedAt: item.publishedAt,
-      approvedAt: item.approvedAt,
-      relatedPlanCount: item.relatedPlanCount,
-      sourceUrl: item.sourceUrl,
-    };
-  }
-
-  return {
-    entityType: "package" as const,
-    externalId: item.externalId,
-    title: item.title,
-    inviter: item.inviter,
-    province: item.province,
-    category: item.category,
-    budget: item.budget,
-    publishedAt: item.publishedAt,
-    closingAt: item.closingAt,
-    sourceUrl: item.sourceUrl,
-    matchScore: item.matchScore,
-  };
-}
+export {
+  detailHrefForItem,
+  isPackageItem,
+  primaryLinkForItem,
+  primaryLinkOpensExternally,
+  toSavePayload,
+} from "./result-action-links";
 
 export function ResultActions({
   item,
@@ -140,7 +77,7 @@ export function ResultActions({
       {!isPackageItem(item) ? (
         <Link
           href={detailHrefForItem(item)}
-          className="inline-flex items-center gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+          className="inline-flex items-center gap-1 rounded border border-slate-500 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap shadow-[var(--shadow-flat)] transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
         >
           <Eye className="h-3.5 w-3.5" aria-hidden />
           Chi tiết
@@ -150,7 +87,7 @@ export function ResultActions({
         href={item.sourceUrl}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-1.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
+        className="inline-flex items-center gap-1 rounded border border-slate-500 bg-white px-1.5 py-1 text-xs font-semibold whitespace-nowrap shadow-[var(--shadow-flat)] transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:outline-none"
       >
         <ExternalLink className="h-3.5 w-3.5" aria-hidden />
         Nguồn

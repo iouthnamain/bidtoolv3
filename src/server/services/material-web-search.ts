@@ -3,13 +3,28 @@ import "server-only";
 import {
   resolveEnrichmentSearchCacheTtlMs,
   resolveEnrichmentWebConcurrency,
-  resolveSearxngApiKey,
-  resolveSearxngBaseUrl,
+  resolveSearchDomainPolicy,
+  resolveSearxngSearchConfig,
+  type SearchDomainPolicy,
+  type SearxngSearchConfig,
 } from "~/server/services/app-settings";
 import { createAsyncLimiter } from "~/server/services/concurrency";
 import { createLogger, traceFn } from "~/server/lib/logger";
 import { extractEnrichmentPageText } from "~/server/services/page-text-extract";
+import {
+  DEFAULT_SEARCH_BOOST_DOMAINS,
+  DEFAULT_SEARCH_PENALTY_DOMAINS,
+  domainMatchesAny,
+} from "~/server/services/search-domain-policy";
+import {
+  recordSearchAuditLog,
+  type SearchAuditFeature,
+  type SearchAuditStatus,
+} from "~/server/services/search-audit";
+
 const log = createLogger("material-web-search");
+
+export type WebSearchProvider = "searxng" | "known_source";
 
 export type WebSearchResult = {
   title: string;
@@ -18,68 +33,32 @@ export type WebSearchResult = {
   snippet: string;
   query: string;
   rankScore: number;
+  rankReasons?: string[];
+  provider?: WebSearchProvider;
 };
-
-const DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/";
-const DUCKDUCKGO_LITE_URL = "https://lite.duckduckgo.com/lite/";
-const MARKETPLACE_DOMAINS = ["shopee.vn", "lazada.vn", "tiki.vn", "sendo.vn"];
-const SEARCH_TIMEOUT_MS = 12_000;
-const BROWSER_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
-
-type ProviderSearchResponse = {
-  results: WebSearchResult[];
-  warnings: string[];
-};
-
-function buildSearchHeaders(options?: {
-  accept?: string;
-  referer?: string;
-  contentType?: string;
-  authHeaders?: Record<string, string>;
-}): Record<string, string> {
-  const headers: Record<string, string> = {
-    "User-Agent": BROWSER_USER_AGENT,
-    Accept:
-      options?.accept ??
-      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Cache-Control": "no-cache",
-    ...options?.authHeaders,
-  };
-  if (options?.referer) {
-    headers.Referer = options.referer;
-  }
-  if (options?.contentType) {
-    headers["Content-Type"] = options.contentType;
-  }
-  return headers;
-}
-
-async function resolveSearxngAuthHeaders(): Promise<Record<string, string>> {
-  const apiKey = await resolveSearxngApiKey();
-  if (!apiKey) {
-    return {};
-  }
-  return { Authorization: `Bearer ${apiKey}` };
-}
-
-function duckDuckGoBlockedMessage(html: string) {
-  const normalized = html.toLowerCase();
-  if (
-    normalized.includes("anomaly-modal") ||
-    normalized.includes("bots use duckduckgo") ||
-    normalized.includes("please complete the following challenge")
-  ) {
-    return "DuckDuckGo chặn truy vấn từ máy chủ (bot detection).";
-  }
-  return null;
-}
 
 export type WebSearchResponse = {
   results: WebSearchResult[];
   warnings: string[];
+  domainPolicy?: SearchDomainPolicy;
 };
+
+type ProviderSearchResponse = WebSearchResponse & {
+  status: SearchAuditStatus;
+};
+
+type SearchOptions = {
+  feature?: SearchAuditFeature;
+};
+
+const DEFAULT_DOMAIN_POLICY: SearchDomainPolicy = {
+  boostDomains: DEFAULT_SEARCH_BOOST_DOMAINS,
+  penaltyDomains: DEFAULT_SEARCH_PENALTY_DOMAINS,
+  blockDomains: [],
+};
+
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 type CachedSearchResponse = {
   expiresAt: number;
@@ -137,56 +116,58 @@ function extractDomain(url: string) {
   }
 }
 
-function unwrapDuckDuckGoRedirect(url: string) {
-  try {
-    const parsed = new URL(url, "https://duckduckgo.com");
-    const uddg = parsed.searchParams.get("uddg");
-    if (uddg) {
-      return decodeURIComponent(uddg);
-    }
-    return parsed.toString();
-  } catch {
-    return url;
-  }
+function buildSearchHeaders(options?: {
+  accept?: string;
+  referer?: string;
+  authHeaders?: Record<string, string>;
+}): Record<string, string> {
+  return {
+    "User-Agent": BROWSER_USER_AGENT,
+    Accept:
+      options?.accept ??
+      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cache-Control": "no-cache",
+    ...(options?.referer ? { Referer: options.referer } : {}),
+    ...options?.authHeaders,
+  };
 }
 
-function parseDuckDuckGoLiteHtml(
-  html: string,
-  query: string,
-): WebSearchResult[] {
-  const results: WebSearchResult[] = [];
-  const seen = new Set<string>();
-  const linkPatterns = [
-    /<a[^>]*rel=["']nofollow["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*href=["']([^"']+)["'][^>]*rel=["']nofollow["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*class=["'][^"']*result-link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*result-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-  ];
-
-  for (const linkPattern of linkPatterns) {
-    let match: RegExpExecArray | null;
-    while ((match = linkPattern.exec(html)) !== null) {
-      const rawUrl = unwrapDuckDuckGoRedirect(match[1] ?? "");
-      const title = stripHtmlTags(match[2] ?? "");
-      if (!rawUrl || !title || rawUrl.includes("duckduckgo.com")) {
-        continue;
-      }
-      if (seen.has(rawUrl)) {
-        continue;
-      }
-      seen.add(rawUrl);
-      results.push({
-        title,
-        url: rawUrl,
-        domain: extractDomain(rawUrl),
-        snippet: "",
-        query,
-        rankScore: 0,
-      });
-    }
+function searchTimeoutSignal(timeoutMs: number, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!signal) {
+    return timeout;
   }
+  return AbortSignal.any([signal, timeout]);
+}
 
-  return results;
+function searxngAuthHeaders(
+  config: SearxngSearchConfig,
+): Record<string, string> | undefined {
+  if (!config.apiKey) {
+    return undefined;
+  }
+  return { Authorization: `Bearer ${config.apiKey}` };
+}
+
+export function buildSearxngUrl(
+  baseUrl: string,
+  query: string,
+  config: SearxngSearchConfig,
+  format: "json" | "html",
+) {
+  const url = new URL("/search", `${baseUrl.replace(/\/$/, "")}/`);
+  url.searchParams.set("q", query);
+  if (format === "json") {
+    url.searchParams.set("format", "json");
+  }
+  url.searchParams.set("language", config.language);
+  url.searchParams.set("engines", config.engines.join(","));
+  url.searchParams.set("safesearch", String(config.safeSearch));
+  if (config.timeRange) {
+    url.searchParams.set("time_range", config.timeRange);
+  }
+  return url;
 }
 
 function parseSearxngHtml(html: string, query: string): WebSearchResult[] {
@@ -202,9 +183,7 @@ function parseSearxngHtml(html: string, query: string): WebSearchResult[] {
       /href="([^"]+)"[^>]*class="[^"]*\burl_header\b[^"]*"/i.exec(block) ??
       /class="[^"]*\burl_header\b[^"]*"[^>]*href="([^"]+)"/i.exec(block);
     const titleMatch =
-      /<h3[^>]*>[\s\S]*?<a[^>]*href="[^"]+"[^>]*>([\s\S]*?)<\/a>/i.exec(
-        block,
-      );
+      /<h3[^>]*>[\s\S]*?<a[^>]*href="[^"]+"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
     const snippetMatch =
       /<p[^>]*class="[^"]*\bcontent\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i.exec(block);
 
@@ -222,278 +201,207 @@ function parseSearxngHtml(html: string, query: string): WebSearchResult[] {
       snippet,
       query,
       rankScore: 0,
+      rankReasons: [],
+      provider: "searxng",
     });
   }
 
   return results;
 }
 
-function parseDuckDuckGoHtml(html: string, query: string): WebSearchResult[] {
+function mapSearxngJsonResults(
+  items: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number;
+  }>,
+  query: string,
+): WebSearchResult[] {
   const results: WebSearchResult[] = [];
-  const seen = new Set<string>();
-  const blockPattern =
-    /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>|<div[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/div>)/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = blockPattern.exec(html)) !== null) {
-    const rawUrl = unwrapDuckDuckGoRedirect(match[1] ?? "");
-    const title = stripHtmlTags(match[2] ?? "");
-    const snippet = stripHtmlTags(match[3] ?? match[4] ?? "");
-    if (!rawUrl || !title) {
-      continue;
-    }
-    const normalizedUrl = rawUrl.trim();
-    if (seen.has(normalizedUrl)) {
-      continue;
-    }
-    seen.add(normalizedUrl);
+  for (const item of items) {
+    const normalizedUrl = item.url?.trim() ?? "";
+    const title = item.title?.trim() ?? "";
+    if (!normalizedUrl || !title) continue;
     results.push({
       title,
       url: normalizedUrl,
       domain: extractDomain(normalizedUrl),
-      snippet,
+      snippet: item.content?.trim() ?? "",
       query,
-      rankScore: 0,
+      rankScore: typeof item.score === "number" ? item.score : 0,
+      rankReasons: [],
+      provider: "searxng",
     });
   }
-
-  if (results.length > 0) {
-    return results;
-  }
-
-  const fallbackPattern =
-    /<a[^>]*class="[^"]*result__url[^"]*"[^>]*href="([^"]+)"[^>]*>[\s\S]*?<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-  while ((match = fallbackPattern.exec(html)) !== null) {
-    const rawUrl = unwrapDuckDuckGoRedirect(match[2] ?? match[1] ?? "");
-    const title = stripHtmlTags(match[3] ?? "");
-    const snippet = stripHtmlTags(match[4] ?? "");
-    if (!rawUrl || !title || seen.has(rawUrl)) {
-      continue;
-    }
-    seen.add(rawUrl);
-    results.push({
-      title,
-      url: rawUrl,
-      domain: extractDomain(rawUrl),
-      snippet,
-      query,
-      rankScore: 0,
-    });
-  }
-
   return results;
 }
 
-function searchTimeoutSignal(signal?: AbortSignal) {
-  const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-  if (!signal) {
-    return timeout;
-  }
-  return AbortSignal.any([signal, timeout]);
+export function applyDomainPolicy(
+  results: WebSearchResult[],
+  policy: SearchDomainPolicy,
+) {
+  return results.filter(
+    (result) =>
+      !result.domain || !domainMatchesAny(result.domain, policy.blockDomains),
+  );
 }
 
-async function searxngBaseUrls(): Promise<string[]> {
-  const configured = (await resolveSearxngBaseUrl())?.trim();
-  if (configured) {
-    return [configured.replace(/\/$/, "")];
-  }
-  // Fallback: try common local ports
-  return ["http://localhost:8888", "http://127.0.0.1:8888"];
+function topAuditResults(results: WebSearchResult[]) {
+  return results.slice(0, 8).map((result) => ({
+    title: result.title,
+    url: result.url,
+    domain: result.domain,
+    rankScore: result.rankScore,
+    reasons: result.rankReasons ?? [],
+  }));
+}
+
+async function auditSearxngSearch(input: {
+  feature: SearchAuditFeature;
+  query: string;
+  config: SearxngSearchConfig;
+  policy: SearchDomainPolicy;
+  results: WebSearchResult[];
+  durationMs: number;
+  status: SearchAuditStatus;
+  warnings: string[];
+  errorText?: string;
+}) {
+  await recordSearchAuditLog({
+    feature: input.feature,
+    provider: "searxng",
+    query: input.query,
+    engines: input.config.engines,
+    language: input.config.language,
+    resultCount: input.results.length,
+    selectedResultCount: input.results.length,
+    durationMs: input.durationMs,
+    status: input.status,
+    warnings: input.warnings,
+    errorText: input.errorText,
+    topResults: topAuditResults(input.results),
+    rankingPolicy: input.policy,
+  });
 }
 
 async function searchSearxngQuery(
   query: string,
   signal?: AbortSignal,
+  options?: SearchOptions,
 ): Promise<ProviderSearchResponse> {
+  const startedAt = Date.now();
+  const config = await resolveSearxngSearchConfig();
+  const policy = await resolveSearchDomainPolicy();
+  const feature = options?.feature ?? "interactive";
   const warnings: string[] = [];
-  const authHeaders = await resolveSearxngAuthHeaders();
 
-  for (const base of await searxngBaseUrls()) {
-    const referer = `${base.replace(/\/$/, "")}/`;
+  if (!config.baseUrl) {
+    const warning = "SearXNG chưa được cấu hình base URL.";
+    warnings.push(warning);
+    await auditSearxngSearch({
+      feature,
+      query,
+      config,
+      policy,
+      results: [],
+      durationMs: Date.now() - startedAt,
+      status: "skipped",
+      warnings,
+    });
+    return { results: [], warnings, status: "skipped", domainPolicy: policy };
+  }
 
-    try {
-      const jsonUrl = new URL("/search", `${base}/`);
-      jsonUrl.searchParams.set("q", query);
-      jsonUrl.searchParams.set("format", "json");
-      jsonUrl.searchParams.set("language", "vi-VN");
-      jsonUrl.searchParams.set("engines", "google,bing");
+  const base = config.baseUrl.replace(/\/$/, "");
+  const referer = `${base}/`;
+  const authHeaders = searxngAuthHeaders(config);
+  const collected: WebSearchResult[] = [];
 
-      const jsonResponse = await fetch(jsonUrl.toString(), {
-        headers: buildSearchHeaders({
-          accept: "application/json, text/plain, */*",
-          referer,
-          authHeaders,
-        }),
-        signal: searchTimeoutSignal(signal),
-      });
+  try {
+    const jsonUrl = buildSearxngUrl(base, query, config, "json");
+    const jsonResponse = await fetch(jsonUrl.toString(), {
+      headers: buildSearchHeaders({
+        accept: "application/json, text/plain, */*",
+        referer,
+        authHeaders,
+      }),
+      signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
+    });
 
-      if (jsonResponse.ok) {
-        const data = (await jsonResponse.json()) as {
-          results?: Array<{
-            title?: string;
-            url?: string;
-            content?: string;
-          }>;
-        };
+    if (jsonResponse.ok) {
+      const data = (await jsonResponse.json()) as {
+        results?: Array<{
+          title?: string;
+          url?: string;
+          content?: string;
+          score?: number;
+        }>;
+      };
+      collected.push(...mapSearxngJsonResults(data.results ?? [], query));
+    } else {
+      warnings.push(`SearXNG (${base}): JSON HTTP ${jsonResponse.status}.`);
+    }
 
-        const results = mapSearxngJsonResults(data.results ?? [], query);
-        if (results.length > 0) {
-          return { results, warnings };
-        }
-        warnings.push(`SearXNG (${base}): không có kết quả JSON cho "${query}".`);
-      } else if (jsonResponse.status === 403) {
-        warnings.push(
-          `SearXNG (${base}): JSON API bị từ chối (HTTP 403), thử HTML.`,
-        );
-      } else {
-        warnings.push(`SearXNG (${base}): HTTP ${jsonResponse.status}.`);
-      }
-
-      const htmlUrl = new URL("/search", `${base}/`);
-      htmlUrl.searchParams.set("q", query);
-      htmlUrl.searchParams.set("language", "vi-VN");
-      htmlUrl.searchParams.set("engines", "google,bing");
-
+    if (collected.length === 0 && config.htmlFallback) {
+      const htmlUrl = buildSearxngUrl(base, query, config, "html");
       const htmlResponse = await fetch(htmlUrl.toString(), {
         headers: buildSearchHeaders({ referer, authHeaders }),
-        signal: searchTimeoutSignal(signal),
+        signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
       });
 
-      if (!htmlResponse.ok) {
-        warnings.push(
-          `SearXNG (${base}): HTML search HTTP ${htmlResponse.status}.`,
-        );
-        continue;
+      if (htmlResponse.ok) {
+        const html = await htmlResponse.text();
+        collected.push(...parseSearxngHtml(html, query));
+      } else {
+        warnings.push(`SearXNG (${base}): HTML HTTP ${htmlResponse.status}.`);
       }
-
-      const html = await htmlResponse.text();
-      const htmlResults = parseSearxngHtml(html, query);
-      if (htmlResults.length > 0) {
-        return { results: htmlResults, warnings };
-      }
-      warnings.push(`SearXNG (${base}): không có kết quả HTML cho "${query}".`);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
-      warnings.push(`SearXNG (${base}): ${message}`);
     }
-  }
 
-  if (warnings.length > 0) {
-    log.warn("searxng_warnings", { query, warnings });
-  }
-
-  return { results: [], warnings };
-}
-
-function mapSearxngJsonResults(
-  items: Array<{ title?: string; url?: string; content?: string }>,
-  query: string,
-): WebSearchResult[] {
-  return items
-    .map((item) => {
-      const normalizedUrl = item.url?.trim() ?? "";
-      const title = item.title?.trim() ?? "";
-      if (!normalizedUrl || !title) {
-        return null;
-      }
-      return {
-        title,
-        url: normalizedUrl,
-        domain: extractDomain(normalizedUrl),
-        snippet: item.content?.trim() ?? "",
-        query,
-        rankScore: 0,
-      } satisfies WebSearchResult;
-    })
-    .filter((item): item is WebSearchResult => item != null);
-}
-
-async function searchDuckDuckGoEndpoint(
-  endpoint: string,
-  query: string,
-  parser: (html: string, query: string) => WebSearchResult[],
-  signal?: AbortSignal,
-): Promise<ProviderSearchResponse> {
-  const referer = endpoint.includes("lite")
-    ? "https://lite.duckduckgo.com/"
-    : "https://html.duckduckgo.com/";
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: buildSearchHeaders({
-      contentType: "application/x-www-form-urlencoded",
-      referer,
-    }),
-    body: new URLSearchParams({ q: query }).toString(),
-    signal: searchTimeoutSignal(signal),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `DuckDuckGo search failed (${response.status}) for: ${query}`,
+    const filtered = applyDomainPolicy(collected, policy).slice(
+      0,
+      config.resultLimitPerQuery,
     );
-  }
-
-  const html = await response.text();
-  const blockedMessage = duckDuckGoBlockedMessage(html);
-  if (blockedMessage) {
-    return { results: [], warnings: [blockedMessage] };
-  }
-
-  return { results: parser(html, query), warnings: [] };
-}
-
-async function searchDuckDuckGoQuery(
-  query: string,
-  signal?: AbortSignal,
-): Promise<ProviderSearchResponse> {
-  const attempts: Array<{
-    label: string;
-    run: () => Promise<ProviderSearchResponse>;
-  }> = [
-    {
-      label: "DuckDuckGo Lite",
-      run: () =>
-        searchDuckDuckGoEndpoint(
-          DUCKDUCKGO_LITE_URL,
-          query,
-          parseDuckDuckGoLiteHtml,
-          signal,
-        ),
-    },
-    {
-      label: "DuckDuckGo HTML",
-      run: () =>
-        searchDuckDuckGoEndpoint(
-          DUCKDUCKGO_HTML_URL,
-          query,
-          parseDuckDuckGoHtml,
-          signal,
-        ),
-    },
-  ];
-
-  const warnings: string[] = [];
-  for (const attempt of attempts) {
-    try {
-      const { results, warnings: attemptWarnings } = await attempt.run();
-      warnings.push(...attemptWarnings);
-      if (results.length > 0) {
-        return { results, warnings };
-      }
-      warnings.push(`${attempt.label}: không có kết quả cho "${query}".`);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
-      warnings.push(`${attempt.label}: ${message}`);
+    const status: SearchAuditStatus =
+      filtered.length > 0 ? "success" : "no_results";
+    if (filtered.length === 0 && warnings.length === 0) {
+      warnings.push(`SearXNG (${base}): không có kết quả cho "${query}".`);
     }
-  }
 
-  if (warnings.length > 0) {
-    log.warn("duckduckgo_warnings", { query, warnings });
-  }
+    await auditSearxngSearch({
+      feature,
+      query,
+      config,
+      policy,
+      results: filtered,
+      durationMs: Date.now() - startedAt,
+      status,
+      warnings,
+    });
 
-  return { results: [], warnings };
+    return {
+      results: filtered,
+      warnings,
+      status,
+      domainPolicy: policy,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
+    warnings.push(`SearXNG (${base}): ${message}`);
+    log.warn("searxng_warnings", { query, warnings });
+    await auditSearxngSearch({
+      feature,
+      query,
+      config,
+      policy,
+      results: [],
+      durationMs: Date.now() - startedAt,
+      status: "error",
+      warnings,
+      errorText: message,
+    });
+    return { results: [], warnings, status: "error", domainPolicy: policy };
+  }
 }
 
 async function _fetchUrlAsSearchResult(
@@ -506,12 +414,13 @@ async function _fetchUrlAsSearchResult(
     return null;
   }
 
+  const config = await resolveSearxngSearchConfig();
   try {
     const response = await fetch(trimmed, {
       headers: buildSearchHeaders({
         accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
       }),
-      signal: searchTimeoutSignal(signal),
+      signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
       redirect: "follow",
     });
 
@@ -540,6 +449,8 @@ async function _fetchUrlAsSearchResult(
       snippet: snippet || stripHtmlTags(body).slice(0, 600),
       query,
       rankScore: 0.4,
+      rankReasons: ["known_source"],
+      provider: "known_source",
     };
   } catch {
     return null;
@@ -577,40 +488,14 @@ async function _fetchKnownSourceCandidates(
 async function _searchQueryWithFallback(
   query: string,
   signal?: AbortSignal,
+  options?: SearchOptions,
 ): Promise<WebSearchResponse> {
-  const warnings: string[] = [];
-  const providers: Array<{
-    name: string;
-    run: () => Promise<ProviderSearchResponse>;
-  }> = [
-    {
-      name: "SearXNG",
-      run: () => searchSearxngQuery(query, signal),
-    },
-    {
-      name: "DuckDuckGo",
-      run: () => searchDuckDuckGoQuery(query, signal),
-    },
-  ];
-
-  for (const provider of providers) {
-    try {
-      const { results, warnings: providerWarnings } = await provider.run();
-      warnings.push(...providerWarnings);
-      if (results.length > 0) {
-        return { results, warnings };
-      }
-      if (providerWarnings.length === 0) {
-        warnings.push(`${provider.name}: không có kết quả cho "${query}".`);
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
-      warnings.push(`${provider.name}: ${message}`);
-    }
-  }
-
-  return { results: [], warnings };
+  const { results, warnings, domainPolicy } = await searchSearxngQuery(
+    query,
+    signal,
+    options,
+  );
+  return { results, warnings, domainPolicy };
 }
 
 export function summarizeWebSearchFailures(warnings: string[]): string {
@@ -624,6 +509,7 @@ export function summarizeWebSearchFailures(warnings: string[]): string {
 async function _searchWebForProduct(
   queries: string[],
   signal?: AbortSignal,
+  options?: SearchOptions,
 ): Promise<WebSearchResponse> {
   const uniqueQueries = [
     ...new Set(queries.map((query) => query.trim()).filter(Boolean)),
@@ -631,16 +517,24 @@ async function _searchWebForProduct(
   const merged: WebSearchResult[] = [];
   const seenUrls = new Set<string>();
   const warnings: string[] = [];
+  let domainPolicy: SearchDomainPolicy | undefined;
 
   const responses = await Promise.all(
     uniqueQueries.map(async (query) => {
       throwIfAborted(signal);
-      return runWithWebLimit(() => searchQueryWithCache(query, signal));
+      return runWithWebLimit(() =>
+        searchQueryWithCache(query, signal, options),
+      );
     }),
   );
 
-  for (const { results, warnings: queryWarnings } of responses) {
+  for (const {
+    results,
+    warnings: queryWarnings,
+    domainPolicy: policy,
+  } of responses) {
     warnings.push(...queryWarnings);
+    domainPolicy ??= policy;
 
     for (const result of results) {
       if (seenUrls.has(result.url)) {
@@ -655,14 +549,15 @@ async function _searchWebForProduct(
     log.warn("web_search_no_results", { warnings });
   }
 
-  return { results: merged, warnings };
+  return { results: merged, warnings, domainPolicy };
 }
 
 async function searchQueryWithCache(
   query: string,
   signal?: AbortSignal,
+  options?: SearchOptions,
 ): Promise<WebSearchResponse> {
-  const key = normalizeCacheKey(query);
+  const key = `${options?.feature ?? "search"}:${normalizeCacheKey(query)}`;
   const ttlMs = await resolveEnrichmentSearchCacheTtlMs();
   const now = Date.now();
   const cached = searchCache.get(key);
@@ -670,6 +565,13 @@ async function searchQueryWithCache(
     return {
       results: cached.response.results.map((result) => ({ ...result })),
       warnings: [...cached.response.warnings],
+      domainPolicy: cached.response.domainPolicy
+        ? {
+            boostDomains: [...cached.response.domainPolicy.boostDomains],
+            penaltyDomains: [...cached.response.domainPolicy.penaltyDomains],
+            blockDomains: [...cached.response.domainPolicy.blockDomains],
+          }
+        : undefined,
     };
   }
 
@@ -677,19 +579,26 @@ async function searchQueryWithCache(
     return inFlightSearches.get(key)!;
   }
 
-  const promise = searchQueryWithFallback(query, signal);
+  const promise = searchQueryWithFallback(query, signal, options);
   if (!signal) {
     inFlightSearches.set(key, promise);
   }
 
   try {
     const response = await promise;
-    if (ttlMs > 0) {
+    if (ttlMs > 0 && options?.feature !== "test") {
       searchCache.set(key, {
         expiresAt: now + ttlMs,
         response: {
           results: response.results.map((result) => ({ ...result })),
           warnings: [...response.warnings],
+          domainPolicy: response.domainPolicy
+            ? {
+                boostDomains: [...response.domainPolicy.boostDomains],
+                penaltyDomains: [...response.domainPolicy.penaltyDomains],
+                blockDomains: [...response.domainPolicy.blockDomains],
+              }
+            : undefined,
         },
       });
     }
@@ -709,12 +618,8 @@ function hostnameMatchesManufacturer(domain: string, manufacturer: string) {
   return tokens.some((token) => normalizedDomain.includes(token));
 }
 
-function isMarketplaceDomain(domain: string) {
-  const normalized = domain.toLowerCase();
-  return MARKETPLACE_DOMAINS.some(
-    (marketplace) =>
-      normalized === marketplace || normalized.endsWith(`.${marketplace}`),
-  );
+function isPenaltyDomain(domain: string, policy: SearchDomainPolicy) {
+  return domainMatchesAny(domain, policy.penaltyDomains);
 }
 
 const SPEC_KEYWORDS = [
@@ -736,7 +641,9 @@ function codeTokensMatch(code: string, title: string, url: string) {
   if (!normalizedCode || normalizedCode.length < 2) return false;
   const haystack = `${title} ${url}`.toLowerCase();
   if (haystack.includes(normalizedCode)) return true;
-  const parts = normalizedCode.split(/[^a-z0-9]+/i).filter((part) => part.length >= 2);
+  const parts = normalizedCode
+    .split(/[^a-z0-9]+/i)
+    .filter((part) => part.length >= 2);
   if (parts.length === 0) return false;
   const hits = parts.filter((part) => haystack.includes(part)).length;
   return hits / parts.length >= 0.6;
@@ -750,63 +657,74 @@ function _rankSearchResults(
     code?: string | null;
     sourceUrl?: string | null;
   },
+  policy: SearchDomainPolicy = DEFAULT_DOMAIN_POLICY,
 ): WebSearchResult[] {
   const manufacturer = input.manufacturer?.trim() ?? "";
   const name = input.name?.trim().toLowerCase() ?? "";
   const code = input.code?.trim() ?? "";
   const sourceDomain = input.sourceUrl ? extractDomain(input.sourceUrl) : "";
+  const filtered = applyDomainPolicy(results, policy);
 
-  const scored = results.map((result) => {
-    let score = 0;
+  const scored = filtered.map((result) => {
+    let score = result.rankScore || 0;
+    const reasons: string[] = [...(result.rankReasons ?? [])];
     const domain = result.domain.toLowerCase();
     const title = result.title.toLowerCase();
     const snippet = result.snippet.toLowerCase();
     const combined = `${title} ${snippet}`;
 
+    if (domainMatchesAny(domain, policy.boostDomains)) {
+      score += 0.45;
+      reasons.push("boost_domain");
+    }
     if (manufacturer && hostnameMatchesManufacturer(domain, manufacturer)) {
       score += 0.35;
+      reasons.push("manufacturer_domain");
     }
     const isPdf = /\.pdf(?:$|[?#])/i.test(result.url);
     if (isPdf) {
       score += 0.3;
+      reasons.push("pdf");
       if (result.query?.includes("filetype:pdf")) {
         score += 0.1;
+        reasons.push("filetype_pdf_query");
       }
     }
-    if (domain.endsWith(".vn") && !isMarketplaceDomain(domain)) {
+    if (domain.endsWith(".vn") && !isPenaltyDomain(domain, policy)) {
       score += 0.15;
+      reasons.push("vn_domain");
     }
     if (sourceDomain && domain === sourceDomain) {
-      score += 0.2;
+      score += 0.25;
+      reasons.push("source_domain_match");
     }
     if (code && codeTokensMatch(code, title, result.url)) {
-      score += 0.2;
+      score += 0.25;
+      reasons.push("code_match");
     }
     if (textContainsSpecKeyword(combined)) {
       score += 0.1;
+      reasons.push("spec_keyword");
     }
     if (name) {
       const nameTokens = name.split(/\s+/).filter((token) => token.length > 2);
       const hits = nameTokens.filter(
         (token) => title.includes(token) || snippet.includes(token),
       ).length;
-      if (nameTokens.length > 0) {
+      if (nameTokens.length > 0 && hits > 0) {
         score += (hits / nameTokens.length) * 0.25;
+        reasons.push("name_token_match");
       }
     }
-    if (isMarketplaceDomain(domain)) {
-      score -= 0.25;
+    if (isPenaltyDomain(domain, policy)) {
+      score -= 0.35;
+      reasons.push("penalty_domain");
     }
 
-    return { ...result, rankScore: score };
+    return { ...result, rankScore: score, rankReasons: [...new Set(reasons)] };
   });
 
-  const nonMarketplace = scored.filter(
-    (result) => !isMarketplaceDomain(result.domain),
-  );
-  const pool = nonMarketplace.length > 0 ? nonMarketplace : scored;
-
-  return [...pool].sort((left, right) => right.rankScore - left.rankScore);
+  return scored.sort((left, right) => right.rankScore - left.rankScore);
 }
 
 function _extractPdfUrlsFromResults(results: WebSearchResult[]) {
@@ -849,6 +767,12 @@ async function _enrichSearchResultsWithFetchedContent(
         snippet: fetched.snippet.trim() || result.snippet,
         domain: fetched.domain || result.domain,
         rankScore: Math.max(result.rankScore, fetched.rankScore),
+        rankReasons: [
+          ...new Set([
+            ...(result.rankReasons ?? []),
+            ...(fetched.rankReasons ?? []),
+          ]),
+        ],
       };
     }),
   );

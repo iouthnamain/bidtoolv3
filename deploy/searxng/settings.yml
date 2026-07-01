@@ -3,8 +3,8 @@ use_default_settings: true
 server:
   bind_address: "0.0.0.0"
   port: 8080
-  secret_key: "bidtoolv3-local-dev-change-me"
-  limiter: false
+  secret_key: "${SEARXNG_SECRET_KEY:-change-me}"
+  limiter: true
 
 search:
   safe_search: 0
@@ -15,3 +15,7 @@ search:
 
 ui:
   static_use_hash: true
+
+outgoing:
+  request_timeout: 12.0
+  max_request_timeout: 20.0

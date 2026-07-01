@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 async function main() {
   try {
     const res = await db.query.appSettings.findFirst({
-      where: eq(appSettings.key, "gemini_api_key")
+      where: eq(appSettings.key, "gemini_api_key"),
     });
     console.log("Success:", res);
   } catch (e) {
@@ -13,4 +13,4 @@ async function main() {
   }
   process.exit(0);
 }
-main();
+void main();

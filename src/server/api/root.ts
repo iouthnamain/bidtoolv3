@@ -6,6 +6,7 @@ import { materialEnrichmentRouter } from "~/server/api/routers/material-enrichme
 import { materialProfileRouter } from "~/server/api/routers/material-profile";
 import { materialRouter } from "~/server/api/routers/material";
 import { notificationRouter } from "~/server/api/routers/notification";
+import { searchConfigRouter } from "~/server/api/routers/search-config";
 import { searchRouter } from "~/server/api/routers/search";
 import { tenantRouter } from "~/server/api/routers/tenant";
 import { userRouter } from "~/server/api/routers/user";
@@ -28,6 +29,7 @@ export const appRouter = createTRPCRouter({
   materialEnrichment: materialEnrichmentRouter,
   materialProfile: materialProfileRouter,
   notification: notificationRouter,
+  searchConfig: searchConfigRouter,
   search: searchRouter,
   tenant: tenantRouter,
   user: userRouter,

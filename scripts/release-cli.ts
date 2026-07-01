@@ -199,6 +199,14 @@ async function runGit(args: string[]): Promise<string> {
   return stdout;
 }
 
+async function tryRunGit(args: string[]): Promise<string | null> {
+  try {
+    return await runGit(args);
+  } catch {
+    return null;
+  }
+}
+
 async function loadPackageVersion(): Promise<string | null> {
   const packageJson = JSON.parse(
     await readFile(packageJsonPath, "utf8"),
@@ -245,11 +253,20 @@ async function loadGitStatus(): Promise<GitStatus> {
   const dirtyFiles = status
     ? status.split("\n").map((line) => line.slice(3).trim())
     : [];
-  const upstream = (await runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).trim();
+  const upstream = (
+    await tryRunGit([
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{u}",
+    ])
+  )?.trim();
   let ahead = 0;
   let behind = 0;
   if (upstream && !upstream.includes("HEAD")) {
-    const counts = (await runGit(["rev-list", "--left-right", "--count", "HEAD...@{u}"])).trim();
+    const counts = (
+      await runGit(["rev-list", "--left-right", "--count", "HEAD...@{u}"])
+    ).trim();
     const [behindCount, aheadCount] = counts.split(/\s+/).map(Number);
     ahead = aheadCount ?? 0;
     behind = behindCount ?? 0;
@@ -308,7 +325,9 @@ async function confirm(message: string): Promise<boolean> {
     output: process.stdout,
   });
   try {
-    const answer = (await rl.question(`${message} [y/N] `)).trim().toLowerCase();
+    const answer = (await rl.question(`${message} [y/N] `))
+      .trim()
+      .toLowerCase();
     return answer === "y" || answer === "yes";
   } finally {
     rl.close();
@@ -334,7 +353,9 @@ async function printStatus() {
     `  Working tree:      ${gitStatus.clean ? "clean" : `dirty (${gitStatus.dirtyFiles.length} files)`}`,
   );
   if (gitStatus.ahead > 0 || gitStatus.behind > 0) {
-    console.log(`  Upstream delta:      ahead ${gitStatus.ahead}, behind ${gitStatus.behind}`);
+    console.log(
+      `  Upstream delta:      ahead ${gitStatus.ahead}, behind ${gitStatus.behind}`,
+    );
   }
   console.log(`  Latest released:   ${latestReleased ?? "none"}`);
   console.log(`  package.json:      ${packageVersion ?? "unknown"}`);
@@ -363,10 +384,7 @@ function resolveTargetVersion(
   return bumpSemverCore(baseVersion, bump ?? "patch");
 }
 
-async function performRelease(
-  bump: SemverBump | null,
-  options: CliOptions,
-) {
+async function performRelease(bump: SemverBump | null, options: CliOptions) {
   if (options.fetch && !options.dryRun) {
     console.log("[release] Fetching origin...");
     await runGit(["fetch", "origin", "--tags", "--prune"]);
@@ -409,7 +427,9 @@ async function performRelease(
   console.log("");
   console.log(`Next release: ${tag}`);
   console.log(`Base version: ${latestReleased ?? "none"}`);
-  console.log(`Commit:       ${(await runGit(["rev-parse", "--short", "HEAD"])).trim()}`);
+  console.log(
+    `Commit:       ${(await runGit(["rev-parse", "--short", "HEAD"])).trim()}`,
+  );
   console.log("");
 
   if (!options.yes && !options.dryRun) {
@@ -444,8 +464,12 @@ async function performRelease(
 
   await runGit(["push", "origin", tag]);
   console.log(`[release] Pushed tag ${tag}`);
-  console.log("[release] GitHub Actions release workflow should start shortly.");
-  console.log(`[release] On-prem update command: BIDTOOL_IMAGE_TAG=${version} bun run onprem:update`);
+  console.log(
+    "[release] GitHub Actions release workflow should start shortly.",
+  );
+  console.log(
+    `[release] On-prem update command: BIDTOOL_IMAGE_TAG=${version} bun run onprem:update`,
+  );
 }
 
 async function main() {
