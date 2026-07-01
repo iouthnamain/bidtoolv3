@@ -581,13 +581,13 @@ export const searchRouter = createTRPCRouter({
       }
     }),
 
-  saveSelectedResults: publicProcedure
+  saveSelectedResults: requirePermission("watchlist:write")
     .input(saveSearchResultsInputSchema)
     .mutation(async ({ ctx, input }) =>
       saveSearchResultItems(ctx, input.items),
     ),
 
-  saveSelectedPackages: publicProcedure
+  saveSelectedPackages: requirePermission("watchlist:write")
     .input(
       z.object({
         items: z

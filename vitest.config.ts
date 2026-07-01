@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  oxc: {
+    jsx: {
+      runtime: "automatic",
+    },
+  },
   resolve: {
     alias: {
       "~": path.resolve(__dirname, "./src"),
@@ -14,6 +19,8 @@ export default defineConfig({
   test: {
     environment: "node",
     env: {
+      BETTER_AUTH_URL: "http://localhost:3000",
+      BIDTOOL_LOG_LEVEL: "error",
       SKIP_ENV_VALIDATION: "1",
     },
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "tests/**/*.test.ts"],

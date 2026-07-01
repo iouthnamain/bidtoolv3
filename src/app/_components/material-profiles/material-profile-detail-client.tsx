@@ -6,13 +6,10 @@ import {
   ArrowLeft,
   Check,
   Download,
-  ExternalLink,
   FileSpreadsheet,
-  Globe,
   Loader2,
   RefreshCw,
   Search,
-  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -29,43 +26,14 @@ import {
   setLastMaterialProfileExportDir,
 } from "~/lib/material-profile-export-dir";
 import { api, type RouterOutputs } from "~/trpc/react";
-import {
-  FIELD_LABELS,
-  FILLABLE_FIELDS,
-  NON_COLUMN_FIELDS,
-  type FillableField,
-} from "~/lib/materials/excel-enrich-fields";
-import { parseOptionalNumber } from "~/lib/materials/format";
 
 type WorkspaceDetail = RouterOutputs["materialProfile"]["get"];
-type WorkspaceItem = WorkspaceDetail["items"][number];
 type Sheet = WorkspaceDetail["workbook"]["sheets"][number];
 type PreviewResult = RouterOutputs["materialProfile"]["previewExportWorkbook"];
 type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
-type MaterialSearchCandidate =
-  RouterOutputs["material"]["enrichSearchMaterials"]["candidates"][number];
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
-type CompareFieldKey = "name" | FillableField;
-type CompareValues = Partial<Record<CompareFieldKey, string>>;
-
-type Candidate = {
-  materialId: number;
-  name: string;
-  code: string | null;
-  unit: string;
-  category: string | null;
-  manufacturer: string | null;
-  originCountry: string | null;
-  defaultUnitPrice: number | null;
-  currency: string;
-  imageUrl: string | null;
-  sourceUrl: string | null;
-  specSnippet: string;
-  score: number;
-  breakdown: unknown;
-};
 
 const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
   [
@@ -87,13 +55,6 @@ const mappingFields = [
   { key: "sourceUrl", label: "Nguồn" },
   { key: "catalogPdfUrls", label: "URL catalog" },
 ] as const;
-
-const statusLabel: Record<WorkspaceItem["matchStatus"], string> = {
-  unmatched: "Chưa match",
-  candidates_found: "Cần duyệt",
-  matched: "Tự động",
-  manual: "Thủ công",
-};
 
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -127,104 +88,6 @@ function editedCellValue(
   return edits[sheetName]?.[key] ?? rawValue ?? "";
 }
 
-const materialProfileDraftFields = FILLABLE_FIELDS.filter(
-  (field) => !NON_COLUMN_FIELDS.has(field),
-);
-
-const materialProfileCompareFields: Array<{
-  key: CompareFieldKey;
-  label: string;
-}> = [
-  { key: "name", label: "Tên" },
-  { key: "code", label: FIELD_LABELS.code },
-  { key: "unit", label: FIELD_LABELS.unit },
-  { key: "specText", label: FIELD_LABELS.specText },
-  { key: "manufacturer", label: FIELD_LABELS.manufacturer },
-  { key: "originCountry", label: FIELD_LABELS.originCountry },
-  { key: "defaultUnitPrice", label: FIELD_LABELS.defaultUnitPrice },
-  { key: "sourceUrl", label: FIELD_LABELS.sourceUrl },
-];
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringValue(value: unknown, fallback = "") {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return fallback;
-}
-
-function nullableString(value: unknown) {
-  const text = stringValue(value).trim();
-  return text.length > 0 ? text : null;
-}
-
-function nullableNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function normalizeCandidate(value: unknown): Candidate | null {
-  const record = asRecord(value);
-  if (!record || typeof record.materialId !== "number") return null;
-  return {
-    materialId: record.materialId,
-    name: stringValue(record.name),
-    code: nullableString(record.code),
-    unit: stringValue(record.unit),
-    category: nullableString(record.category),
-    manufacturer: nullableString(record.manufacturer),
-    originCountry: nullableString(record.originCountry),
-    defaultUnitPrice: nullableNumber(record.defaultUnitPrice),
-    currency: stringValue(record.currency, "VND"),
-    imageUrl: nullableString(record.imageUrl),
-    sourceUrl: nullableString(record.sourceUrl),
-    specSnippet: stringValue(record.specSnippet),
-    score: nullableNumber(record.score) ?? 0,
-    breakdown: record.breakdown ?? null,
-  };
-}
-
-function candidatesFromItem(item: WorkspaceItem): Candidate[] {
-  const snapshot = item.enrichedSnapshotJson;
-  if (!snapshot || typeof snapshot !== "object") return [];
-  const candidates = (snapshot as { candidates?: unknown }).candidates;
-  if (!Array.isArray(candidates)) return [];
-  return candidates
-    .map((candidate) => normalizeCandidate(candidate))
-    .filter((candidate): candidate is Candidate => candidate != null);
-}
-
-function selectedCandidateForItem(item: WorkspaceItem) {
-  const candidates = candidatesFromItem(item);
-  return (
-    candidates.find((candidate) => candidate.materialId === item.materialId) ??
-    candidates[0] ??
-    null
-  );
-}
-
-function formatPrice(candidate: Candidate | MaterialSearchCandidate | null) {
-  const value = candidate?.defaultUnitPrice ?? null;
-  if (value == null) return "-";
-  const currency = candidate?.currency ?? "VND";
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function statusTone(status: WorkspaceItem["matchStatus"]) {
-  if (status === "matched" || status === "manual") return "success";
-  if (status === "candidates_found") return "warning";
-  return "neutral";
-}
-
 function emptyExportEditState(): ExportEditState {
   return {
     cellEdits: {},
@@ -250,96 +113,10 @@ function hasLastBulkApply(config: Record<string, unknown> | null | undefined) {
   return Boolean(config.materialProfileLastBulkApply);
 }
 
-function sheetFieldsFromItem(
-  item: WorkspaceItem,
-): Partial<Record<FillableField, string>> {
-  const original = asRecord(item.originalDataJson) ?? {};
-  return {
-    code: stringValue(original.code),
-    unit: stringValue(original.unit, item.unit ?? ""),
-    category: stringValue(original.category),
-    specText: stringValue(original.specText, item.specText ?? ""),
-    manufacturer: stringValue(original.manufacturer, item.vendorHint ?? ""),
-    originCountry: stringValue(original.originCountry, item.originHint ?? ""),
-    defaultUnitPrice: stringValue(
-      original.defaultUnitPrice,
-      item.unitPrice == null ? "" : String(item.unitPrice),
-    ),
-    currency: stringValue(original.currency, item.currency ?? "VND"),
-    sourceUrl: stringValue(original.sourceUrl),
-  };
-}
-
-function trimmedOrUndefined(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : undefined;
-}
-
-function firstNonEmpty(...values: Array<string | null | undefined>) {
-  return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
-}
-
-function excelCompareValues(
-  item: WorkspaceItem,
-  sheetFields: Partial<Record<FillableField, string>>,
-): CompareValues {
-  return {
-    name: item.productName,
-    code: sheetFields.code,
-    unit: sheetFields.unit,
-    specText: sheetFields.specText,
-    manufacturer: sheetFields.manufacturer,
-    originCountry: sheetFields.originCountry,
-    defaultUnitPrice: sheetFields.defaultUnitPrice,
-    sourceUrl: sheetFields.sourceUrl,
-  };
-}
-
 function toggleNumber(values: number[], value: number) {
   return values.includes(value)
     ? values.filter((item) => item !== value)
     : [...values, value].sort((a, b) => a - b);
-}
-
-function RawExcelFields({
-  fields,
-  expanded,
-  onToggle,
-}: {
-  fields: Array<[string, unknown]>;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  if (fields.length === 0) return null;
-  return (
-    <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold tracking-[0.12em] text-slate-700 uppercase hover:bg-slate-100"
-      >
-        Raw Excel fields
-        <span className="text-xs font-semibold tracking-normal text-slate-600 normal-case">
-          {expanded ? "Ẩn" : "Hiện"}
-        </span>
-      </button>
-      {expanded ? (
-        <div className="grid max-h-52 gap-2 overflow-auto border-t border-slate-400 p-3 text-xs">
-          {fields.map(([key, value]) => (
-            <div
-              key={key}
-              className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 rounded bg-slate-50 px-2 py-1"
-            >
-              <span className="font-bold text-slate-700">{key}</span>
-              <span className="break-words text-slate-800">
-                {stringValue(value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function MaterialProfileStepHeader({
@@ -671,7 +448,7 @@ function WorkbookMappingStep({
             <select
               value={selectedSheetName}
               onChange={(event) => onSheetChange(event.target.value)}
-              className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 shadow-[var(--shadow-flat)]"
             >
               {sheets.map((sheet) => (
                 <option key={sheet.name} value={sheet.name}>
@@ -691,14 +468,14 @@ function WorkbookMappingStep({
               onChange={(event) =>
                 onHeaderRowChange(Math.max(1, Number(event.target.value)))
               }
-              className="h-10 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm text-slate-900"
+              className="h-10 rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 shadow-[var(--shadow-flat)]"
             />
           </label>
           <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <p className="font-bold text-slate-900">Điều kiện qua bước</p>
             <p className="mt-1">
-              Cần map cột Tên vật tư, chạy match, rồi bấm «Tiếp tục duyệt vật tư» để
-              sang bước 3.
+              Cần map cột Tên vật tư, chạy match, rồi bấm «Tiếp tục duyệt vật
+              tư» để sang bước 3.
             </p>
           </div>
         </div>
@@ -717,7 +494,7 @@ function WorkbookMappingStep({
                 onChange={(event) =>
                   onMappingChange(field.key, event.target.value || null)
                 }
-                className="h-9 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 text-xs text-slate-900"
+                className="h-9 rounded border border-slate-500 bg-white px-2 text-xs text-slate-900 shadow-[var(--shadow-flat)]"
               >
                 <option value="">Không map</option>
                 {activeSheet.headers.map((header) => (
@@ -735,7 +512,6 @@ function WorkbookMappingStep({
     </section>
   );
 }
-
 
 function ExportPreviewStep({
   preview,
@@ -1194,10 +970,11 @@ export function MaterialProfileDetailClient({
     api.materialProfile.exportDownloadBundle.useMutation({
       onError: (error) => toast.error(error.message),
     });
-  const defaultExportDirQuery = api.materialProfile.getDefaultExportDir.useQuery(
-    undefined,
-    { enabled: step === 4, staleTime: Infinity },
-  );
+  const defaultExportDirQuery =
+    api.materialProfile.getDefaultExportDir.useQuery(undefined, {
+      enabled: step === 4,
+      staleTime: Infinity,
+    });
 
   useEffect(() => {
     if (!detail) return;
@@ -1462,14 +1239,14 @@ export function MaterialProfileDetailClient({
     try {
       if (isDesktop) {
         desktopOutputPath = await pickMaterialProfileExportDir(
-          getLastMaterialProfileExportDir() ??
-            defaultExportDirQuery.data?.path,
+          getLastMaterialProfileExportDir() ?? defaultExportDirQuery.data?.path,
         );
         if (!desktopOutputPath) {
           return;
         }
       } else {
-        browserDirectoryHandle = await pickMaterialProfileBrowserExportDirectory();
+        browserDirectoryHandle =
+          await pickMaterialProfileBrowserExportDirectory();
       }
 
       await savePreviewForExport();

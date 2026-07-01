@@ -220,6 +220,8 @@ function MaterialImagePreview({ material }: { material: Material }) {
           </div>
         </div>
       ) : (
+        // External product images come from arbitrary scraped supplier hosts.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={imageUrl}
           alt=""
@@ -261,7 +263,7 @@ function SummaryTile({
   }[tone];
 
   return (
-    <div className="relative overflow-hidden rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3.5 py-3.5 transition-shadow ">
+    <div className="relative overflow-hidden rounded border border-slate-500 bg-white px-3.5 py-3.5 shadow-[var(--shadow-flat)] transition-shadow">
       {/* Top accent line */}
       <div
         className={`absolute inset-x-0 top-0 h-[3px] ${
@@ -285,7 +287,9 @@ function SummaryTile({
           <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
             {label}
           </p>
-          <div className={`stat-value mt-1.5 text-lg leading-snug font-extrabold [overflow-wrap:anywhere] ${valueToneClass}`}>
+          <div
+            className={`stat-value mt-1.5 text-lg leading-snug font-extrabold [overflow-wrap:anywhere] ${valueToneClass}`}
+          >
             {value}
           </div>
           {helper ? (
@@ -312,7 +316,7 @@ function DetailRow({
     value === null || value === undefined || value === "" ? "-" : value;
 
   return (
-    <div className="flex items-start gap-2.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3.5 py-2.5">
+    <div className="flex items-start gap-2.5 rounded border border-slate-500 bg-white px-3.5 py-2.5 shadow-[var(--shadow-flat)]">
       <span className="mt-0.5 text-slate-600" aria-hidden>
         {icon}
       </span>
@@ -355,7 +359,7 @@ function PriceSourceCard({
   const canRefresh = source.mode === "linked" && !!source.url;
 
   return (
-    <li className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
+    <li className="rounded border border-slate-500 bg-white px-4 py-3 shadow-[var(--shadow-flat)]">
       <div className="flex flex-wrap items-start justify-between gap-1">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -826,7 +830,10 @@ export function MaterialDetailClient({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== "s"
+      ) {
         return;
       }
       event.preventDefault();
@@ -988,755 +995,771 @@ export function MaterialDetailClient({
       />
 
       {view === "overview" ? (
-      <section
-        id="material-overview"
-        className="panel scroll-mt-6 overflow-hidden"
-      >
-        <div className="border-b border-slate-400 bg-white px-2 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
-              <MaterialImagePreview material={material} />
-              <div className="min-w-0 flex-1">
-              <Link
-                href="/materials"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 transition-colors hover:text-slate-900"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                Quay lại danh mục
-              </Link>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
-                  Catalog vật tư
-                </p>
-                {material.code ? (
-                  <Badge tone="info">{material.code}</Badge>
-                ) : null}
-                <Badge tone="success">{material.currency}</Badge>
-              </div>
-              <h2 className="mt-2 max-w-4xl text-2xl leading-tight font-bold text-balance [overflow-wrap:anywhere] text-slate-950">
-                {material.name}
-              </h2>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <Badge
-                  tone={
-                    material.defaultUnitPrice == null ? "warning" : "success"
-                  }
-                >
-                  {material.defaultUnitPrice == null ? "Thiếu giá" : "Có giá"}
-                </Badge>
-                <Badge tone={sourceCount === 0 ? "warning" : "info"}>
-                  {sourceCount.toLocaleString("vi-VN")} nguồn
-                </Badge>
-                {material.category ? (
-                  <Badge tone="neutral">{material.category}</Badge>
-                ) : null}
-              </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {material.sourceUrl ? (
-                <a
-                  href={material.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
-                >
-                  <ExternalLink className="h-4 w-4" aria-hidden />
-                  Mở nguồn
-                </a>
-              ) : null}
-              <Button
-                variant="secondary"
-                leftIcon={<Copy className="h-4 w-4" />}
-                isLoading={duplicateMaterial.isPending}
-                onClick={() => duplicateMaterial.mutate({ id })}
-              >
-                Nhân bản
-              </Button>
-              <Button
-                variant="primary"
-                leftIcon={<Save className="h-4 w-4" />}
-                isLoading={updateMaterial.isPending}
-                disabled={!canSave}
-                onClick={() => save()}
-              >
-                Lưu
-              </Button>
-              <Button
-                variant="danger"
-                leftIcon={<Trash2 className="h-4 w-4" />}
-                isLoading={deleteMaterial.isPending}
-                onClick={remove}
-              >
-                Xóa
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {successMessage ? (
-          <div className="mx-5 mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            {successMessage}
-          </div>
-        ) : null}
-        {actionError ? (
-          <div className="mx-5 mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {actionError}
-          </div>
-        ) : null}
-
-        <div className="p-5">
-          <dl className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryTile
-              label="Đơn giá"
-              value={formatMoney(
-                material.defaultUnitPrice,
-                material.currency,
-                "Chưa có",
-              )}
-              helper={
-                primarySourcePrice
-                  ? `Nguồn chính: ${primarySourcePrice}`
-                  : "Đơn giá dùng khi map vật tư"
-              }
-              icon={<BadgeDollarSign className="h-4 w-4" />}
-              tone={material.defaultUnitPrice == null ? "amber" : "emerald"}
-            />
-            <SummaryTile
-              label="Đơn vị"
-              value={material.unit}
-              helper={
-                material.category?.trim() ? material.category : "Chưa phân nhóm"
-              }
-              icon={<Ruler className="h-4 w-4" />}
-              tone="blue"
-            />
-            <SummaryTile
-              label="Nhà sản xuất"
-              value={
-                material.manufacturer?.trim()
-                  ? material.manufacturer
-                  : "Chưa có"
-              }
-              helper={
-                material.originCountry?.trim()
-                  ? material.originCountry
-                  : "Chưa có xuất xứ"
-              }
-              icon={<Factory className="h-4 w-4" />}
-            />
-            <SummaryTile
-              label="Nguồn giá"
-              value={primarySourceLabel ?? "Chưa có nguồn"}
-              helper={
-                latestCheckedSource?.lastCheckedAt
-                  ? `Cập nhật ${formatDateTime(latestCheckedSource.lastCheckedAt)}`
-                  : `${sourceCount.toLocaleString("vi-VN")} nguồn đã lưu`
-              }
-              icon={<LinkIcon className="h-4 w-4" />}
-              tone={sourceCount === 0 ? "amber" : "blue"}
-            />
-          </dl>
-
-          <div className="mt-4 grid gap-2 xl:grid-cols-[1.1fr_0.9fr]">
-            <article className="rounded border border-slate-400 bg-slate-50 px-4 py-3">
-              <div className="flex items-start gap-1">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700">
-                  <FileText className="h-4 w-4" aria-hidden />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
-                    Thông số kỹ thuật
-                  </p>
-                  <p className="mt-1 text-sm leading-6 [overflow-wrap:anywhere] text-slate-800">
-                    {material.specText || "Chưa có thông số kỹ thuật."}
-                  </p>
-                </div>
-              </div>
-            </article>
-
-            <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-1">
-                <div>
-                  <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
-                    Mức sẵn sàng
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">
-                    {completedReadiness}/{readinessItems.length} thông tin quan
-                    trọng
-                  </p>
-                </div>
-                <Badge tone={hasImportantGaps ? "warning" : "success"}>
-                  {hasImportantGaps ? "Cần bổ sung" : "Đủ dùng"}
-                </Badge>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {readinessItems.map((item) => {
-                  const targetSection =
-                    item.label === "Đơn giá" || item.label === "Nguồn"
-                      ? "material-prices"
-                      : "material-edit";
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
-                        item.done
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-400 bg-slate-50 text-slate-700"
-                      }`}
-                      onClick={() => scrollToSection(targetSection)}
+        <section
+          id="material-overview"
+          className="panel scroll-mt-6 overflow-hidden"
+        >
+          <div className="border-b border-slate-400 bg-white px-2 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                <MaterialImagePreview material={material} />
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href="/materials"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 transition-colors hover:text-slate-900"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+                    Quay lại danh mục
+                  </Link>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold tracking-[0.14em] text-slate-700 uppercase">
+                      Catalog vật tư
+                    </p>
+                    {material.code ? (
+                      <Badge tone="info">{material.code}</Badge>
+                    ) : null}
+                    <Badge tone="success">{material.currency}</Badge>
+                  </div>
+                  <h2 className="mt-2 max-w-4xl text-2xl leading-tight font-bold text-balance [overflow-wrap:anywhere] text-slate-950">
+                    {material.name}
+                  </h2>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Badge
+                      tone={
+                        material.defaultUnitPrice == null
+                          ? "warning"
+                          : "success"
+                      }
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                      {item.label}
-                    </button>
-                  );
-                })}
+                      {material.defaultUnitPrice == null
+                        ? "Thiếu giá"
+                        : "Có giá"}
+                    </Badge>
+                    <Badge tone={sourceCount === 0 ? "warning" : "info"}>
+                      {sourceCount.toLocaleString("vi-VN")} nguồn
+                    </Badge>
+                    {material.category ? (
+                      <Badge tone="neutral">{material.category}</Badge>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-            </article>
-          </div>
-        </div>
-      </section>
-      ) : null}
 
-      {view === "prices" ? (
-      <section
-        id="material-prices"
-        className="panel scroll-mt-6 overflow-hidden"
-      >
-        <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-emerald-700" aria-hidden />
-              <h3 className="text-sm font-bold text-slate-950">
-                Link sản phẩm và giá
-              </h3>
-            </div>
-            <p className="mt-1 text-xs text-slate-700">
-              Lưu link tham khảo, giá cố định, hoặc lấy giá mới từ trang sản
-              phẩm rồi áp dụng vào đơn giá.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 pt-0.5">
-            <Badge tone="info" count={priceSources.length}>
-              Nguồn
-            </Badge>
-          </div>
-        </div>
-
-        <div
-          id="material-prices-content"
-          className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[0.85fr_1.15fr]"
-        >
-        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-          <div className="border-b border-slate-400 pb-3">
-            <h4 className="text-sm font-bold text-slate-950">Thêm nguồn giá</h4>
-            <p className="mt-1 text-xs text-slate-700">
-              Điền link sản phẩm hoặc giá cố định để lưu vào catalog.
-            </p>
-          </div>
-
-          <form className="mt-4 grid gap-1" onSubmit={addSource}>
-            <Field label="Tên nguồn">
-              <input
-                name="priceSourceLabel"
-                autoComplete="organization"
-                className={inputClass}
-                placeholder="Nhà cung cấp, sàn TMĐT, báo giá…"
-                value={priceSourceForm.label}
-                onChange={(event) =>
-                  setPriceSourceForm({
-                    ...priceSourceForm,
-                    label: event.target.value,
-                  })
-                }
-              />
-            </Field>
-
-            <div className="grid gap-1 sm:grid-cols-2">
-              <Field label="Kiểu giá">
-                <select
-                  name="priceSourceMode"
-                  className={inputClass}
-                  value={priceSourceForm.mode}
-                  onChange={(event) =>
-                    setPriceSourceForm({
-                      ...priceSourceForm,
-                      mode: event.target.value as MaterialPriceSourceMode,
-                    })
-                  }
-                >
-                  <option value="linked">Theo link sản phẩm</option>
-                  <option value="fixed">Giá cố định</option>
-                </select>
-              </Field>
-              <Field label="Tiền tệ">
-                <input
-                  name="priceSourceCurrency"
-                  autoComplete="off"
-                  className={inputClass}
-                  value={priceSourceForm.currency}
-                  onChange={(event) =>
-                    setPriceSourceForm({
-                      ...priceSourceForm,
-                      currency: event.target.value,
-                    })
-                  }
-                />
-              </Field>
-            </div>
-
-            <Field label="URL sản phẩm">
-              {priceSourceForm.mode === "linked" ? (
-                <input
-                  name="priceSourceUrl"
-                  type="url"
-                  autoComplete="url"
-                  className={inputClass}
-                  placeholder="https://example.com/bao-gia…"
-                  spellCheck={false}
-                  value={priceSourceForm.url}
-                  onChange={(event) =>
-                    setPriceSourceForm({
-                      ...priceSourceForm,
-                      url: event.target.value,
-                    })
-                  }
-                />
-              ) : (
-                <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Không cần URL khi dùng giá cố định.
-                </p>
-              )}
-            </Field>
-
-            {priceSourceForm.mode === "fixed" ? (
-              <Field label="Giá cố định">
-                <input
-                  name="priceSourceFixedPrice"
-                  className={inputClass}
-                  type="number"
-                  min={0}
-                  inputMode="decimal"
-                  placeholder="Nhập giá cố định"
-                  value={priceSourceForm.fixedPrice}
-                  onChange={(event) =>
-                    setPriceSourceForm({
-                      ...priceSourceForm,
-                      fixedPrice: event.target.value,
-                    })
-                  }
-                />
-              </Field>
-            ) : null}
-
-            <Field label="Ghi chú">
-              <textarea
-                name="priceSourceNote"
-                autoComplete="off"
-                className={`${textareaClass} min-h-20`}
-                value={priceSourceForm.note}
-                onChange={(event) =>
-                  setPriceSourceForm({
-                    ...priceSourceForm,
-                    note: event.target.value,
-                  })
-                }
-              />
-            </Field>
-
-            <label className="flex items-center gap-2 rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
-              <input
-                name="priceSourcePrimary"
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-400 text-blue-700"
-                checked={priceSourceForm.isPrimary}
-                onChange={(event) =>
-                  setPriceSourceForm({
-                    ...priceSourceForm,
-                    isPrimary: event.target.checked,
-                  })
-                }
-              />
-              Dùng làm nguồn chính
-            </label>
-
-            <Button
-              type="submit"
-              variant="primary"
-              leftIcon={<Plus className="h-4 w-4" />}
-              disabled={!canAddPriceSource}
-              isLoading={addPriceSource.isPending}
-            >
-              Thêm link / nguồn giá
-            </Button>
-          </form>
-        </article>
-
-        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-          <div className="border-b border-slate-400 pb-3">
-            <h4 className="text-sm font-bold text-slate-950">
-              Nguồn giá đã lưu
-            </h4>
-            <p className="mt-1 text-xs text-slate-700">
-              Giá link được dò từ nội dung trang; giá cố định có thể áp dụng
-              ngay cho vật tư.
-            </p>
-          </div>
-
-          {priceSources.length === 0 ? (
-            <EmptyState
-              className="mt-3"
-              title="Chưa có link sản phẩm hoặc nguồn giá."
-              description="Thêm link nhà cung cấp hoặc giá cố định để cập nhật đơn giá khi cần."
-            />
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {priceSources.map((source) => (
-                <PriceSourceCard
-                  key={source.id}
-                  source={source}
-                  refreshPending={refreshingSourceId === source.id}
-                  applyPending={applyingSourceId === source.id}
-                  deletePending={deletingSourceId === source.id}
-                  updatePending={updatingSourceId === source.id}
-                  onRefresh={() => {
-                    setSuccessMessage(null);
-                    setActionError(null);
-                    refreshPriceSource.mutate({
-                      materialId: id,
-                      sourceId: source.id,
-                      updateDefaultPrice: false,
-                    });
-                  }}
-                  onRefreshAndApply={() => {
-                    setSuccessMessage(null);
-                    setActionError(null);
-                    refreshPriceSource.mutate({
-                      materialId: id,
-                      sourceId: source.id,
-                      updateDefaultPrice: true,
-                    });
-                  }}
-                  onApply={() => {
-                    setSuccessMessage(null);
-                    setActionError(null);
-                    applyPriceSourcePrice.mutate({
-                      materialId: id,
-                      sourceId: source.id,
-                    });
-                  }}
-                  onDelete={() => deleteSource(source)}
-                  onMakePrimary={() => makePrimarySource(source)}
-                />
-              ))}
-            </ul>
-          )}
-        </article>
-        </div>
-      </section>
-      ) : null}
-
-      {view === "documents" ? (
-      <MaterialCatalogPdfSection materialId={id} defaultExpanded />
-      ) : null}
-
-      {view === "edit" ? (
-      <section
-        id="material-edit"
-        className="panel scroll-mt-6 overflow-hidden"
-      >
-        <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Pencil className="h-4 w-4 text-amber-700" aria-hidden />
-              <h3 className="text-sm font-bold text-slate-950">
-                Thông tin vật tư
-              </h3>
-            </div>
-            <p className="mt-1 text-xs text-slate-700">
-              Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật
-              tư.
-            </p>
-          </div>
-        </div>
-
-        <div
-          id="material-edit-content"
-          className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[1.25fr_0.75fr]"
-        >
-        <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-          <div className="border-b border-slate-400 pb-3">
-            <h4 className="text-sm font-bold text-slate-950">Form chỉnh sửa</h4>
-            <p className="mt-1 text-xs text-slate-700">
-              Cập nhật mã, tên, đơn giá, thông số và metadata catalog. Biểu
-              tượng khóa giúp giữ trường khi scrape/import lại.
-            </p>
-          </div>
-
-          <form className="mt-4 grid gap-1 md:grid-cols-2" onSubmit={save}>
-            <LockableField
-              label="Mã vật tư"
-              fieldKey="code"
-              locked={Boolean(fieldLocks.code)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="code"
-                autoComplete="off"
-                spellCheck={false}
-                className={inputClass}
-                value={form.code}
-                onChange={(event) =>
-                  setForm({ ...form, code: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Tên vật tư"
-              fieldKey="name"
-              locked={Boolean(fieldLocks.name)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="name"
-                autoComplete="off"
-                className={inputClass}
-                value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="ĐVT"
-              fieldKey="unit"
-              locked={Boolean(fieldLocks.unit)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="unit"
-                autoComplete="off"
-                className={inputClass}
-                value={form.unit}
-                onChange={(event) =>
-                  setForm({ ...form, unit: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Nhóm"
-              fieldKey="category"
-              locked={Boolean(fieldLocks.category)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="category"
-                autoComplete="off"
-                className={inputClass}
-                value={form.category}
-                onChange={(event) =>
-                  setForm({ ...form, category: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Nhà sản xuất / NCC"
-              fieldKey="manufacturer"
-              locked={Boolean(fieldLocks.manufacturer)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="manufacturer"
-                autoComplete="organization"
-                className={inputClass}
-                value={form.manufacturer}
-                onChange={(event) =>
-                  setForm({ ...form, manufacturer: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Xuất xứ"
-              fieldKey="originCountry"
-              locked={Boolean(fieldLocks.originCountry)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="originCountry"
-                autoComplete="country-name"
-                className={inputClass}
-                value={form.originCountry}
-                onChange={(event) =>
-                  setForm({ ...form, originCountry: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Đơn giá"
-              fieldKey="defaultUnitPrice"
-              locked={Boolean(fieldLocks.defaultUnitPrice)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="defaultUnitPrice"
-                className={inputClass}
-                type="number"
-                min={0}
-                inputMode="decimal"
-                value={form.defaultUnitPrice}
-                onChange={(event) =>
-                  setForm({ ...form, defaultUnitPrice: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="Tiền tệ"
-              fieldKey="currency"
-              locked={Boolean(fieldLocks.currency)}
-              onToggleLock={toggleFieldLock}
-            >
-              <input
-                name="currency"
-                autoComplete="off"
-                spellCheck={false}
-                className={inputClass}
-                value={form.currency}
-                onChange={(event) =>
-                  setForm({ ...form, currency: event.target.value })
-                }
-              />
-            </LockableField>
-            <LockableField
-              label="URL nguồn (legacy)"
-              fieldKey="sourceUrl"
-              locked={Boolean(fieldLocks.sourceUrl)}
-              onToggleLock={toggleFieldLock}
-              className="md:col-span-2"
-            >
-              <input
-                name="sourceUrl"
-                type="url"
-                autoComplete="url"
-                spellCheck={false}
-                className={inputClass}
-                value={form.sourceUrl}
-                onChange={(event) =>
-                  setForm({ ...form, sourceUrl: event.target.value })
-                }
-              />
-              <p className="mt-1 text-xs text-slate-700">
-                Trường cũ, chỉ lưu link tham khảo. Nên dùng mục Nguồn giá để
-                quản lý link, cập nhật và áp dụng giá.
-              </p>
-              {form.sourceUrl.trim() ? (
+              <div className="flex flex-wrap gap-2">
+                {material.sourceUrl ? (
+                  <a
+                    href={material.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded border border-slate-500 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-[var(--shadow-flat)] transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  >
+                    <ExternalLink className="h-4 w-4" aria-hidden />
+                    Mở nguồn
+                  </a>
+                ) : null}
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2"
-                  onClick={convertLegacySourceUrl}
+                  variant="secondary"
+                  leftIcon={<Copy className="h-4 w-4" />}
+                  isLoading={duplicateMaterial.isPending}
+                  onClick={() => duplicateMaterial.mutate({ id })}
                 >
-                  Chuyển sang nguồn giá
+                  Nhân bản
                 </Button>
-              ) : null}
-            </LockableField>
-            <LockableField
-              label="Thông số kỹ thuật"
-              fieldKey="specText"
-              locked={Boolean(fieldLocks.specText)}
-              onToggleLock={toggleFieldLock}
-              className="md:col-span-2"
-            >
-              <textarea
-                name="specText"
-                autoComplete="off"
-                className={`${textareaClass} min-h-28`}
-                value={form.specText}
-                onChange={(event) =>
-                  setForm({ ...form, specText: event.target.value })
-                }
-              />
-            </LockableField>
-          </form>
-        </article>
+                <Button
+                  variant="primary"
+                  leftIcon={<Save className="h-4 w-4" />}
+                  isLoading={updateMaterial.isPending}
+                  disabled={!canSave}
+                  onClick={() => save()}
+                >
+                  Lưu
+                </Button>
+                <Button
+                  variant="danger"
+                  leftIcon={<Trash2 className="h-4 w-4" />}
+                  isLoading={deleteMaterial.isPending}
+                  onClick={remove}
+                >
+                  Xóa
+                </Button>
+              </div>
+            </div>
+          </div>
 
-        <aside className="space-y-4">
-          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-            <h3 className="text-sm font-bold text-slate-950">
-              Thiết lập vật tư
-            </h3>
-            <dl className="mt-3 space-y-2">
-              <DetailRow
-                label="Mã vật tư"
-                value={
-                  material.code?.trim() ? material.code : `#${material.id}`
+          {successMessage ? (
+            <div className="mx-5 mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {successMessage}
+            </div>
+          ) : null}
+          {actionError ? (
+            <div className="mx-5 mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {actionError}
+            </div>
+          ) : null}
+
+          <div className="p-5">
+            <dl className="grid gap-1 md:grid-cols-2 xl:grid-cols-4">
+              <SummaryTile
+                label="Đơn giá"
+                value={formatMoney(
+                  material.defaultUnitPrice,
+                  material.currency,
+                  "Chưa có",
+                )}
+                helper={
+                  primarySourcePrice
+                    ? `Nguồn chính: ${primarySourcePrice}`
+                    : "Đơn giá dùng khi map vật tư"
                 }
-                icon={<Package className="h-4 w-4" />}
+                icon={<BadgeDollarSign className="h-4 w-4" />}
+                tone={material.defaultUnitPrice == null ? "amber" : "emerald"}
               />
-              <DetailRow
-                label="Nhóm"
-                value={
+              <SummaryTile
+                label="Đơn vị"
+                value={material.unit}
+                helper={
                   material.category?.trim()
                     ? material.category
                     : "Chưa phân nhóm"
                 }
-                icon={<Tag className="h-4 w-4" />}
+                icon={<Ruler className="h-4 w-4" />}
+                tone="blue"
               />
-              <DetailRow
-                label="Xuất xứ"
+              <SummaryTile
+                label="Nhà sản xuất"
                 value={
-                  material.originCountry?.trim()
-                    ? material.originCountry
+                  material.manufacturer?.trim()
+                    ? material.manufacturer
                     : "Chưa có"
                 }
-                icon={<Globe2 className="h-4 w-4" />}
+                helper={
+                  material.originCountry?.trim()
+                    ? material.originCountry
+                    : "Chưa có xuất xứ"
+                }
+                icon={<Factory className="h-4 w-4" />}
+              />
+              <SummaryTile
+                label="Nguồn giá"
+                value={primarySourceLabel ?? "Chưa có nguồn"}
+                helper={
+                  latestCheckedSource?.lastCheckedAt
+                    ? `Cập nhật ${formatDateTime(latestCheckedSource.lastCheckedAt)}`
+                    : `${sourceCount.toLocaleString("vi-VN")} nguồn đã lưu`
+                }
+                icon={<LinkIcon className="h-4 w-4" />}
+                tone={sourceCount === 0 ? "amber" : "blue"}
               />
             </dl>
-          </article>
 
-          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-slate-950">Ảnh sản phẩm</h3>
-              <button
-                type="button"
-                className="inline-flex items-center rounded p-0.5 text-slate-600 transition hover:text-amber-600"
-                title={
-                  fieldLocks.imageUrl
-                    ? "Đã khóa — không ghi đè khi scrape lại"
-                    : "Khóa ảnh khi scrape lại"
-                }
-                aria-pressed={Boolean(fieldLocks.imageUrl)}
-                aria-label="Khóa ảnh sản phẩm"
-                onClick={() => toggleFieldLock("imageUrl", !fieldLocks.imageUrl)}
-              >
-                <Lock
-                  className={`h-3.5 w-3.5 ${fieldLocks.imageUrl ? "text-amber-600" : ""}`}
-                />
-              </button>
-            </div>
-            <div className="mt-3">
-              <MaterialImagePreview material={material} />
-            </div>
-          </article>
+            <div className="mt-4 grid gap-2 xl:grid-cols-[1.1fr_0.9fr]">
+              <article className="rounded border border-slate-400 bg-slate-50 px-4 py-3">
+                <div className="flex items-start gap-1">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-500 bg-white text-slate-700 shadow-[var(--shadow-flat)]">
+                    <FileText className="h-4 w-4" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
+                      Thông số kỹ thuật
+                    </p>
+                    <p className="mt-1 text-sm leading-6 [overflow-wrap:anywhere] text-slate-800">
+                      {material.specText || "Chưa có thông số kỹ thuật."}
+                    </p>
+                  </div>
+                </div>
+              </article>
 
-          <article className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-2">
-            <h3 className="text-sm font-bold text-slate-950">Siêu dữ liệu</h3>
-            <dl className="mt-3 space-y-2">
-              {metadataRows.map(([label, value]) => (
-                <DetailRow
-                  key={label}
-                  label={label}
-                  value={value}
-                  icon={<Clock className="h-4 w-4" />}
+              <article className="rounded border border-slate-500 bg-white px-4 py-3 shadow-[var(--shadow-flat)]">
+                <div className="flex flex-wrap items-start justify-between gap-1">
+                  <div>
+                    <p className="text-xs font-semibold tracking-[0.12em] text-slate-700 uppercase">
+                      Mức sẵn sàng
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">
+                      {completedReadiness}/{readinessItems.length} thông tin
+                      quan trọng
+                    </p>
+                  </div>
+                  <Badge tone={hasImportantGaps ? "warning" : "success"}>
+                    {hasImportantGaps ? "Cần bổ sung" : "Đủ dùng"}
+                  </Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {readinessItems.map((item) => {
+                    const targetSection =
+                      item.label === "Đơn giá" || item.label === "Nguồn"
+                        ? "material-prices"
+                        : "material-edit";
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold transition hover:ring-2 hover:ring-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
+                          item.done
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-slate-400 bg-slate-50 text-slate-700"
+                        }`}
+                        onClick={() => scrollToSection(targetSection)}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {view === "prices" ? (
+        <section
+          id="material-prices"
+          className="panel scroll-mt-6 overflow-hidden"
+        >
+          <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <LinkIcon className="h-4 w-4 text-emerald-700" aria-hidden />
+                <h3 className="text-sm font-bold text-slate-950">
+                  Link sản phẩm và giá
+                </h3>
+              </div>
+              <p className="mt-1 text-xs text-slate-700">
+                Lưu link tham khảo, giá cố định, hoặc lấy giá mới từ trang sản
+                phẩm rồi áp dụng vào đơn giá.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 pt-0.5">
+              <Badge tone="info" count={priceSources.length}>
+                Nguồn
+              </Badge>
+            </div>
+          </div>
+
+          <div
+            id="material-prices-content"
+            className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[0.85fr_1.15fr]"
+          >
+            <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+              <div className="border-b border-slate-400 pb-3">
+                <h4 className="text-sm font-bold text-slate-950">
+                  Thêm nguồn giá
+                </h4>
+                <p className="mt-1 text-xs text-slate-700">
+                  Điền link sản phẩm hoặc giá cố định để lưu vào catalog.
+                </p>
+              </div>
+
+              <form className="mt-4 grid gap-1" onSubmit={addSource}>
+                <Field label="Tên nguồn">
+                  <input
+                    name="priceSourceLabel"
+                    autoComplete="organization"
+                    className={inputClass}
+                    placeholder="Nhà cung cấp, sàn TMĐT, báo giá…"
+                    value={priceSourceForm.label}
+                    onChange={(event) =>
+                      setPriceSourceForm({
+                        ...priceSourceForm,
+                        label: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+
+                <div className="grid gap-1 sm:grid-cols-2">
+                  <Field label="Kiểu giá">
+                    <select
+                      name="priceSourceMode"
+                      className={inputClass}
+                      value={priceSourceForm.mode}
+                      onChange={(event) =>
+                        setPriceSourceForm({
+                          ...priceSourceForm,
+                          mode: event.target.value as MaterialPriceSourceMode,
+                        })
+                      }
+                    >
+                      <option value="linked">Theo link sản phẩm</option>
+                      <option value="fixed">Giá cố định</option>
+                    </select>
+                  </Field>
+                  <Field label="Tiền tệ">
+                    <input
+                      name="priceSourceCurrency"
+                      autoComplete="off"
+                      className={inputClass}
+                      value={priceSourceForm.currency}
+                      onChange={(event) =>
+                        setPriceSourceForm({
+                          ...priceSourceForm,
+                          currency: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+
+                <Field label="URL sản phẩm">
+                  {priceSourceForm.mode === "linked" ? (
+                    <input
+                      name="priceSourceUrl"
+                      type="url"
+                      autoComplete="url"
+                      className={inputClass}
+                      placeholder="https://example.com/bao-gia…"
+                      spellCheck={false}
+                      value={priceSourceForm.url}
+                      onChange={(event) =>
+                        setPriceSourceForm({
+                          ...priceSourceForm,
+                          url: event.target.value,
+                        })
+                      }
+                    />
+                  ) : (
+                    <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                      Không cần URL khi dùng giá cố định.
+                    </p>
+                  )}
+                </Field>
+
+                {priceSourceForm.mode === "fixed" ? (
+                  <Field label="Giá cố định">
+                    <input
+                      name="priceSourceFixedPrice"
+                      className={inputClass}
+                      type="number"
+                      min={0}
+                      inputMode="decimal"
+                      placeholder="Nhập giá cố định"
+                      value={priceSourceForm.fixedPrice}
+                      onChange={(event) =>
+                        setPriceSourceForm({
+                          ...priceSourceForm,
+                          fixedPrice: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                ) : null}
+
+                <Field label="Ghi chú">
+                  <textarea
+                    name="priceSourceNote"
+                    autoComplete="off"
+                    className={`${textareaClass} min-h-20`}
+                    value={priceSourceForm.note}
+                    onChange={(event) =>
+                      setPriceSourceForm({
+                        ...priceSourceForm,
+                        note: event.target.value,
+                      })
+                    }
+                  />
+                </Field>
+
+                <label className="flex items-center gap-2 rounded border border-slate-400 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                  <input
+                    name="priceSourcePrimary"
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-400 text-blue-700"
+                    checked={priceSourceForm.isPrimary}
+                    onChange={(event) =>
+                      setPriceSourceForm({
+                        ...priceSourceForm,
+                        isPrimary: event.target.checked,
+                      })
+                    }
+                  />
+                  Dùng làm nguồn chính
+                </label>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  leftIcon={<Plus className="h-4 w-4" />}
+                  disabled={!canAddPriceSource}
+                  isLoading={addPriceSource.isPending}
+                >
+                  Thêm link / nguồn giá
+                </Button>
+              </form>
+            </article>
+
+            <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+              <div className="border-b border-slate-400 pb-3">
+                <h4 className="text-sm font-bold text-slate-950">
+                  Nguồn giá đã lưu
+                </h4>
+                <p className="mt-1 text-xs text-slate-700">
+                  Giá link được dò từ nội dung trang; giá cố định có thể áp dụng
+                  ngay cho vật tư.
+                </p>
+              </div>
+
+              {priceSources.length === 0 ? (
+                <EmptyState
+                  className="mt-3"
+                  title="Chưa có link sản phẩm hoặc nguồn giá."
+                  description="Thêm link nhà cung cấp hoặc giá cố định để cập nhật đơn giá khi cần."
                 />
-              ))}
-            </dl>
-          </article>
-        </aside>
-        </div>
-      </section>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {priceSources.map((source) => (
+                    <PriceSourceCard
+                      key={source.id}
+                      source={source}
+                      refreshPending={refreshingSourceId === source.id}
+                      applyPending={applyingSourceId === source.id}
+                      deletePending={deletingSourceId === source.id}
+                      updatePending={updatingSourceId === source.id}
+                      onRefresh={() => {
+                        setSuccessMessage(null);
+                        setActionError(null);
+                        refreshPriceSource.mutate({
+                          materialId: id,
+                          sourceId: source.id,
+                          updateDefaultPrice: false,
+                        });
+                      }}
+                      onRefreshAndApply={() => {
+                        setSuccessMessage(null);
+                        setActionError(null);
+                        refreshPriceSource.mutate({
+                          materialId: id,
+                          sourceId: source.id,
+                          updateDefaultPrice: true,
+                        });
+                      }}
+                      onApply={() => {
+                        setSuccessMessage(null);
+                        setActionError(null);
+                        applyPriceSourcePrice.mutate({
+                          materialId: id,
+                          sourceId: source.id,
+                        });
+                      }}
+                      onDelete={() => deleteSource(source)}
+                      onMakePrimary={() => makePrimarySource(source)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </article>
+          </div>
+        </section>
+      ) : null}
+
+      {view === "documents" ? (
+        <MaterialCatalogPdfSection materialId={id} defaultExpanded />
+      ) : null}
+
+      {view === "edit" ? (
+        <section
+          id="material-edit"
+          className="panel scroll-mt-6 overflow-hidden"
+        >
+          <div className="flex w-full items-start justify-between gap-2 px-2 py-4 text-left">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-amber-700" aria-hidden />
+                <h3 className="text-sm font-bold text-slate-950">
+                  Thông tin vật tư
+                </h3>
+              </div>
+              <p className="mt-1 text-xs text-slate-700">
+                Chỉnh sửa dữ liệu catalog dùng cho nhập liệu và chuẩn hóa vật
+                tư.
+              </p>
+            </div>
+          </div>
+
+          <div
+            id="material-edit-content"
+            className="grid gap-2 border-t border-slate-400 p-2 xl:grid-cols-[1.25fr_0.75fr]"
+          >
+            <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+              <div className="border-b border-slate-400 pb-3">
+                <h4 className="text-sm font-bold text-slate-950">
+                  Form chỉnh sửa
+                </h4>
+                <p className="mt-1 text-xs text-slate-700">
+                  Cập nhật mã, tên, đơn giá, thông số và metadata catalog. Biểu
+                  tượng khóa giúp giữ trường khi scrape/import lại.
+                </p>
+              </div>
+
+              <form className="mt-4 grid gap-1 md:grid-cols-2" onSubmit={save}>
+                <LockableField
+                  label="Mã vật tư"
+                  fieldKey="code"
+                  locked={Boolean(fieldLocks.code)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="code"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={inputClass}
+                    value={form.code}
+                    onChange={(event) =>
+                      setForm({ ...form, code: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Tên vật tư"
+                  fieldKey="name"
+                  locked={Boolean(fieldLocks.name)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="name"
+                    autoComplete="off"
+                    className={inputClass}
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm({ ...form, name: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="ĐVT"
+                  fieldKey="unit"
+                  locked={Boolean(fieldLocks.unit)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="unit"
+                    autoComplete="off"
+                    className={inputClass}
+                    value={form.unit}
+                    onChange={(event) =>
+                      setForm({ ...form, unit: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Nhóm"
+                  fieldKey="category"
+                  locked={Boolean(fieldLocks.category)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="category"
+                    autoComplete="off"
+                    className={inputClass}
+                    value={form.category}
+                    onChange={(event) =>
+                      setForm({ ...form, category: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Nhà sản xuất / NCC"
+                  fieldKey="manufacturer"
+                  locked={Boolean(fieldLocks.manufacturer)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="manufacturer"
+                    autoComplete="organization"
+                    className={inputClass}
+                    value={form.manufacturer}
+                    onChange={(event) =>
+                      setForm({ ...form, manufacturer: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Xuất xứ"
+                  fieldKey="originCountry"
+                  locked={Boolean(fieldLocks.originCountry)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="originCountry"
+                    autoComplete="country-name"
+                    className={inputClass}
+                    value={form.originCountry}
+                    onChange={(event) =>
+                      setForm({ ...form, originCountry: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Đơn giá"
+                  fieldKey="defaultUnitPrice"
+                  locked={Boolean(fieldLocks.defaultUnitPrice)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="defaultUnitPrice"
+                    className={inputClass}
+                    type="number"
+                    min={0}
+                    inputMode="decimal"
+                    value={form.defaultUnitPrice}
+                    onChange={(event) =>
+                      setForm({ ...form, defaultUnitPrice: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="Tiền tệ"
+                  fieldKey="currency"
+                  locked={Boolean(fieldLocks.currency)}
+                  onToggleLock={toggleFieldLock}
+                >
+                  <input
+                    name="currency"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={inputClass}
+                    value={form.currency}
+                    onChange={(event) =>
+                      setForm({ ...form, currency: event.target.value })
+                    }
+                  />
+                </LockableField>
+                <LockableField
+                  label="URL nguồn (legacy)"
+                  fieldKey="sourceUrl"
+                  locked={Boolean(fieldLocks.sourceUrl)}
+                  onToggleLock={toggleFieldLock}
+                  className="md:col-span-2"
+                >
+                  <input
+                    name="sourceUrl"
+                    type="url"
+                    autoComplete="url"
+                    spellCheck={false}
+                    className={inputClass}
+                    value={form.sourceUrl}
+                    onChange={(event) =>
+                      setForm({ ...form, sourceUrl: event.target.value })
+                    }
+                  />
+                  <p className="mt-1 text-xs text-slate-700">
+                    Trường cũ, chỉ lưu link tham khảo. Nên dùng mục Nguồn giá để
+                    quản lý link, cập nhật và áp dụng giá.
+                  </p>
+                  {form.sourceUrl.trim() ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2"
+                      onClick={convertLegacySourceUrl}
+                    >
+                      Chuyển sang nguồn giá
+                    </Button>
+                  ) : null}
+                </LockableField>
+                <LockableField
+                  label="Thông số kỹ thuật"
+                  fieldKey="specText"
+                  locked={Boolean(fieldLocks.specText)}
+                  onToggleLock={toggleFieldLock}
+                  className="md:col-span-2"
+                >
+                  <textarea
+                    name="specText"
+                    autoComplete="off"
+                    className={`${textareaClass} min-h-28`}
+                    value={form.specText}
+                    onChange={(event) =>
+                      setForm({ ...form, specText: event.target.value })
+                    }
+                  />
+                </LockableField>
+              </form>
+            </article>
+
+            <aside className="space-y-4">
+              <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+                <h3 className="text-sm font-bold text-slate-950">
+                  Thiết lập vật tư
+                </h3>
+                <dl className="mt-3 space-y-2">
+                  <DetailRow
+                    label="Mã vật tư"
+                    value={
+                      material.code?.trim() ? material.code : `#${material.id}`
+                    }
+                    icon={<Package className="h-4 w-4" />}
+                  />
+                  <DetailRow
+                    label="Nhóm"
+                    value={
+                      material.category?.trim()
+                        ? material.category
+                        : "Chưa phân nhóm"
+                    }
+                    icon={<Tag className="h-4 w-4" />}
+                  />
+                  <DetailRow
+                    label="Xuất xứ"
+                    value={
+                      material.originCountry?.trim()
+                        ? material.originCountry
+                        : "Chưa có"
+                    }
+                    icon={<Globe2 className="h-4 w-4" />}
+                  />
+                </dl>
+              </article>
+
+              <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-950">
+                    Ảnh sản phẩm
+                  </h3>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded p-0.5 text-slate-600 transition hover:text-amber-600"
+                    title={
+                      fieldLocks.imageUrl
+                        ? "Đã khóa — không ghi đè khi scrape lại"
+                        : "Khóa ảnh khi scrape lại"
+                    }
+                    aria-pressed={Boolean(fieldLocks.imageUrl)}
+                    aria-label="Khóa ảnh sản phẩm"
+                    onClick={() =>
+                      toggleFieldLock("imageUrl", !fieldLocks.imageUrl)
+                    }
+                  >
+                    <Lock
+                      className={`h-3.5 w-3.5 ${fieldLocks.imageUrl ? "text-amber-600" : ""}`}
+                    />
+                  </button>
+                </div>
+                <div className="mt-3">
+                  <MaterialImagePreview material={material} />
+                </div>
+              </article>
+
+              <article className="rounded border border-slate-500 bg-white p-2 shadow-[var(--shadow-flat)]">
+                <h3 className="text-sm font-bold text-slate-950">
+                  Siêu dữ liệu
+                </h3>
+                <dl className="mt-3 space-y-2">
+                  {metadataRows.map(([label, value]) => (
+                    <DetailRow
+                      key={label}
+                      label={label}
+                      value={value}
+                      icon={<Clock className="h-4 w-4" />}
+                    />
+                  ))}
+                </dl>
+              </article>
+            </aside>
+          </div>
+        </section>
       ) : null}
 
       {view === "edit" && isDirty ? (

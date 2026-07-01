@@ -4,7 +4,10 @@ const log = createLogger("services-excel-workbook");
 
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_IMPORT_COLS = 80;
+export const MAX_WORKBOOK_UPLOAD_BYTES = 20 * 1024 * 1024;
 const HEADER_SCAN_ROWS = 40;
+const MAX_WORKBOOK_UPLOAD_BASE64_CHARS =
+  Math.ceil(MAX_WORKBOOK_UPLOAD_BYTES / 3) * 4 + 4;
 
 export const columnKeys = [
   "code",
@@ -514,11 +517,28 @@ async function _parseWorkbookBase64(
     );
   }
 
-  const base64 = workbookBase64.includes(",")
-    ? workbookBase64.split(",").pop()!
-    : workbookBase64;
+  const base64 = (
+    workbookBase64.includes(",")
+      ? workbookBase64.split(",").pop()!
+      : workbookBase64
+  ).trim();
+  if (base64.length > MAX_WORKBOOK_UPLOAD_BASE64_CHARS) {
+    throw new Error(
+      `Tệp Excel vượt quá giới hạn ${(MAX_WORKBOOK_UPLOAD_BYTES / 1024 / 1024).toLocaleString("vi-VN")} MB.`,
+    );
+  }
+
   const workbook = new ExcelJS.Workbook();
   const workbookBuffer = Buffer.from(base64, "base64");
+  if (workbookBuffer.byteLength === 0) {
+    throw new Error("Không đọc được dữ liệu tệp Excel.");
+  }
+  if (workbookBuffer.byteLength > MAX_WORKBOOK_UPLOAD_BYTES) {
+    throw new Error(
+      `Tệp Excel vượt quá giới hạn ${(MAX_WORKBOOK_UPLOAD_BYTES / 1024 / 1024).toLocaleString("vi-VN")} MB.`,
+    );
+  }
+
   await workbook.xlsx.load(
     workbookBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0],
   );
@@ -649,9 +669,33 @@ function _rowsFromMapping(
 }
 
 export const normalizeToken = traceFn(log, "normalizeToken", _normalizeToken);
-export const parseOptionalNumber = traceFn(log, "parseOptionalNumber", _parseOptionalNumber);
-export const detectHeaderIndex = traceFn(log, "detectHeaderIndex", _detectHeaderIndex);
-export const suggestColumnMapping = traceFn(log, "suggestColumnMapping", _suggestColumnMapping);
-export const rebuildSheetWithHeaderRow = traceFn(log, "rebuildSheetWithHeaderRow", _rebuildSheetWithHeaderRow);
-export const parseWorkbookBase64 = traceFn(log, "parseWorkbookBase64", _parseWorkbookBase64);
-export const rowsFromMapping = traceFn(log, "rowsFromMapping", _rowsFromMapping);
+export const parseOptionalNumber = traceFn(
+  log,
+  "parseOptionalNumber",
+  _parseOptionalNumber,
+);
+export const detectHeaderIndex = traceFn(
+  log,
+  "detectHeaderIndex",
+  _detectHeaderIndex,
+);
+export const suggestColumnMapping = traceFn(
+  log,
+  "suggestColumnMapping",
+  _suggestColumnMapping,
+);
+export const rebuildSheetWithHeaderRow = traceFn(
+  log,
+  "rebuildSheetWithHeaderRow",
+  _rebuildSheetWithHeaderRow,
+);
+export const parseWorkbookBase64 = traceFn(
+  log,
+  "parseWorkbookBase64",
+  _parseWorkbookBase64,
+);
+export const rowsFromMapping = traceFn(
+  log,
+  "rowsFromMapping",
+  _rowsFromMapping,
+);

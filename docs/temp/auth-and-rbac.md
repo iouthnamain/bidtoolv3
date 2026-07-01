@@ -40,12 +40,12 @@ works in an air-gapped on-prem Docker stack), first-class Drizzle adapter, and a
 Four roles, defined in `src/lib/permissions.ts` (`ROLES`). This differs
 intentionally from the original `admin/editor/viewer` sketch.
 
-| Role | Tenant-scoped? | Surface | Capability |
-| --- | --- | --- | --- |
-| `admin` | No (internal) | Dashboard | Everything — all permissions |
-| `manager` | No (internal) | Dashboard | Governance only: `settings:manage`, `users:manage`. No operational work. |
-| `staff` | No (internal) | Dashboard | All operational writes/runs. No governance. |
-| `customer` | **Yes** | Portal (`/portal`) | Read-only, confined to its own tenant. No permissions. |
+| Role       | Tenant-scoped? | Surface            | Capability                                                               |
+| ---------- | -------------- | ------------------ | ------------------------------------------------------------------------ |
+| `admin`    | No (internal)  | Dashboard          | Everything — all permissions                                             |
+| `manager`  | No (internal)  | Dashboard          | Governance only: `settings:manage`, `users:manage`. No operational work. |
+| `staff`    | No (internal)  | Dashboard          | All operational writes/runs. No governance.                              |
+| `customer` | **Yes**        | Portal (`/portal`) | Read-only, confined to its own tenant. No permissions.                   |
 
 `isInternalRole()` returns true for admin/manager/staff (dashboard access);
 customers are routed to the portal.
@@ -53,12 +53,12 @@ customers are routed to the portal.
 > **🇻🇳** Bốn vai trò, định nghĩa trong `src/lib/permissions.ts` (`ROLES`). Cố ý
 > khác với phác thảo ban đầu `admin/editor/viewer`.
 >
-> | Vai trò | Theo tổ chức? | Giao diện | Khả năng |
-> | --- | --- | --- | --- |
-> | `admin` | Không (nội bộ) | Dashboard | Toàn quyền |
-> | `manager` | Không (nội bộ) | Dashboard | Chỉ quản trị: `settings:manage`, `users:manage`. Không làm nghiệp vụ. |
-> | `staff` | Không (nội bộ) | Dashboard | Mọi thao tác nghiệp vụ. Không quản trị. |
-> | `customer` | **Có** | Portal (`/portal`) | Chỉ đọc, giới hạn trong tổ chức của mình. Không có quyền. |
+> | Vai trò    | Theo tổ chức?  | Giao diện          | Khả năng                                                              |
+> | ---------- | -------------- | ------------------ | --------------------------------------------------------------------- |
+> | `admin`    | Không (nội bộ) | Dashboard          | Toàn quyền                                                            |
+> | `manager`  | Không (nội bộ) | Dashboard          | Chỉ quản trị: `settings:manage`, `users:manage`. Không làm nghiệp vụ. |
+> | `staff`    | Không (nội bộ) | Dashboard          | Mọi thao tác nghiệp vụ. Không quản trị.                               |
+> | `customer` | **Có**         | Portal (`/portal`) | Chỉ đọc, giới hạn trong tổ chức của mình. Không có quyền.             |
 >
 > `isInternalRole()` trả về true cho admin/manager/staff (vào được dashboard);
 > khách hàng được điều hướng sang portal.
@@ -139,23 +139,23 @@ Helpers routers/services use: `withTenant(ctx, column)` (read filter),
 
 New env vars in `src/env.js` (and `.env` / `.env.example`):
 
-| Variable | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `AUTH_ENABLED` | no | `false` | Master switch. While `false`, the whole system is a no-op. |
-| `BETTER_AUTH_SECRET` | yes (when auth on) | — | Min 32 chars. `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | recommended | derive from `APP_BASE_URL` | Base URL for auth callbacks |
-| `AUTH_BOOTSTRAP_TOKEN` | no | — | One-time token gating `/setup` (web/on-prem) |
-| `AUTH_DESKTOP_AUTO_ADMIN` | no | `true` | Desktop: auto-create a local admin on first run |
+| Variable                  | Required           | Default                    | Notes                                                      |
+| ------------------------- | ------------------ | -------------------------- | ---------------------------------------------------------- |
+| `AUTH_ENABLED`            | no                 | `false`                    | Master switch. While `false`, the whole system is a no-op. |
+| `BETTER_AUTH_SECRET`      | yes (when auth on) | —                          | Min 32 chars. `openssl rand -base64 32`                    |
+| `BETTER_AUTH_URL`         | recommended        | derive from `APP_BASE_URL` | Base URL for auth callbacks                                |
+| `AUTH_BOOTSTRAP_TOKEN`    | no                 | —                          | One-time token gating `/setup` (web/on-prem)               |
+| `AUTH_DESKTOP_AUTO_ADMIN` | no                 | `true`                     | Desktop: auto-create a local admin on first run            |
 
 > **🇻🇳** Các biến môi trường mới trong `src/env.js` (và `.env` / `.env.example`):
 >
-> | Biến | Bắt buộc | Mặc định | Ghi chú |
-> | --- | --- | --- | --- |
-> | `AUTH_ENABLED` | không | `false` | Công tắc chính. Khi `false`, toàn hệ thống là no-op. |
-> | `BETTER_AUTH_SECRET` | có (khi bật auth) | — | Tối thiểu 32 ký tự. `openssl rand -base64 32` |
-> | `BETTER_AUTH_URL` | nên có | suy ra từ `APP_BASE_URL` | URL gốc cho callback xác thực |
-> | `AUTH_BOOTSTRAP_TOKEN` | không | — | Token một lần để mở `/setup` (web/on-prem) |
-> | `AUTH_DESKTOP_AUTO_ADMIN` | không | `true` | Desktop: tự tạo admin cục bộ ở lần chạy đầu |
+> | Biến                      | Bắt buộc          | Mặc định                 | Ghi chú                                              |
+> | ------------------------- | ----------------- | ------------------------ | ---------------------------------------------------- |
+> | `AUTH_ENABLED`            | không             | `false`                  | Công tắc chính. Khi `false`, toàn hệ thống là no-op. |
+> | `BETTER_AUTH_SECRET`      | có (khi bật auth) | —                        | Tối thiểu 32 ký tự. `openssl rand -base64 32`        |
+> | `BETTER_AUTH_URL`         | nên có            | suy ra từ `APP_BASE_URL` | URL gốc cho callback xác thực                        |
+> | `AUTH_BOOTSTRAP_TOKEN`    | không             | —                        | Token một lần để mở `/setup` (web/on-prem)           |
+> | `AUTH_DESKTOP_AUTO_ADMIN` | không             | `true`                   | Desktop: tự tạo admin cục bộ ở lần chạy đầu          |
 
 ---
 
@@ -196,10 +196,10 @@ their sessions and credentials automatically.
 ## Auth core · Lõi xác thực
 
 - `src/server/auth.ts` — `betterAuth({ database: drizzleAdapter(db, "pg"),
-  emailAndPassword: { enabled: true, requireEmailVerification: false },
-  user: { additionalFields: { tenantId } }, plugins: [admin({ defaultRole:
-  "customer", adminRoles: ["admin"] })], advanced: { useSecureCookies: surface
-  !== "desktop-bundled" } })`. `tenantId` is declared as an additional field with
+emailAndPassword: { enabled: true, requireEmailVerification: false },
+user: { additionalFields: { tenantId } }, plugins: [admin({ defaultRole:
+"customer", adminRoles: ["admin"] })], advanced: { useSecureCookies: surface
+!== "desktop-bundled" } })`. `tenantId` is declared as an additional field with
   `input: false` so it is included in the session payload but cannot be set
   through Better Auth's own APIs (it is managed via the tenant/user tRPC routers
   instead).
@@ -224,12 +224,15 @@ their sessions and credentials automatically.
   pre-auth shape (no DB session lookup). A session-lookup failure degrades to
   anonymous rather than 500-ing.
 - Procedures, layered on the existing rate-limit → timing chain:
+  - `publicProcedure` — no special permission required, but still requires a
+    user when auth is on; passes through when auth is off.
   - `protectedProcedure` — requires a user when auth is on; passes through
-    (null user) when auth is off.
+    (null user) when auth is off. It is currently an alias of `publicProcedure`.
   - `requirePermission(perm)` — checks `can(role, perm)`, throws `FORBIDDEN`
     otherwise. No-op when auth is off.
-- Mutating routers are gated with `requirePermission(...)`; reads stay open and
-  use `withTenant(...)` for customer isolation.
+- Mutating routers are gated with `requirePermission(...)`; permissionless reads
+  still require login when auth is on and use `withTenant(...)` for customer
+  isolation where data is tenant-owned.
 - The rate-limit token bucket is **keyed per user id** (falls back to a shared
   `anon` bucket when there is no user, preserving the old global behavior when
   auth is off).
@@ -240,12 +243,13 @@ their sessions and credentials automatically.
 > vấn phiên trong DB). Lỗi tra cứu phiên sẽ hạ xuống ẩn danh thay vì lỗi 500.
 >
 > Các procedure xếp chồng trên chuỗi rate-limit → timing sẵn có:
-> `protectedProcedure` (yêu cầu user khi auth bật; bỏ qua khi tắt) và
+> `publicProcedure` (không cần quyền riêng nhưng vẫn yêu cầu user khi auth bật),
+> `protectedProcedure` (hiện là alias của `publicProcedure`) và
 > `requirePermission(perm)` (kiểm tra `can(role, perm)`, ném `FORBIDDEN`; no-op
-> khi tắt). Router có ghi được gắn `requirePermission(...)`; thao tác đọc vẫn mở
-> và dùng `withTenant(...)` để cô lập khách hàng. Token bucket rate-limit **khóa
-> theo user id** (lùi về bucket `anon` chung khi không có user, giữ đúng hành vi
-> toàn cục cũ khi tắt auth).
+> khi tắt). Router có ghi được gắn `requirePermission(...)`; thao tác đọc không
+> cần quyền riêng vẫn yêu cầu đăng nhập khi auth bật và dùng `withTenant(...)` để
+> cô lập khách hàng. Token bucket rate-limit **khóa theo user id** (lùi về bucket
+> `anon` chung khi không có user, giữ đúng hành vi toàn cục cũ khi tắt auth).
 
 ---
 
@@ -353,7 +357,7 @@ Guards enforced in the service layer (so they hold regardless of caller):
 - `/settings/tenants` — `TenantManagementSection`: create / rename / delete
   tenants with live user counts; delete disabled while members remain.
 - `usePermissions()` (`src/lib/use-permissions.ts`) — `{ role, can, isInternal,
-  user, isPending }`, backed by the same `permissions.ts` map, for hiding/disabling
+user, isPending }`, backed by the same `permissions.ts` map, for hiding/disabling
   actions. Header shows the current user + sign-out (`UserControl`).
 
 > **🇻🇳** `/login`, `/setup` (khởi tạo admin đầu tiên, mở bằng
@@ -362,7 +366,7 @@ Guards enforced in the service layer (so they hold regardless of caller):
 > khóa/mở khóa, xóa. Điều khiển chỉ-admin được ẩn với manager. `/settings/tenants`
 > — `TenantManagementSection`: tạo / đổi tên / xóa tổ chức kèm số người dùng; nút
 > xóa bị vô hiệu khi còn thành viên. `usePermissions()` trả `{ role, can,
-> isInternal, user, isPending }` dựa trên cùng bản đồ `permissions.ts`, để ẩn/vô
+isInternal, user, isPending }` dựa trên cùng bản đồ `permissions.ts`, để ẩn/vô
 > hiệu thao tác. Header hiển thị người dùng hiện tại + đăng xuất (`UserControl`).
 
 ---

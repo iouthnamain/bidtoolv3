@@ -7,6 +7,9 @@
  *   - Only `role === "customer"` is restricted to their own tenant. A customer
  *     whose `tenantId` is null can see NOTHING (fail closed) — they must never
  *     read or mutate un-tenanted/global owned rows.
+ *   - Anonymous requests while auth is enabled also see NOTHING. tRPC blocks
+ *     these earlier, but route handlers that call the helpers directly must
+ *     still fail closed.
  *
  * These helpers are pure and additive. Routers spread the result of
  * {@link withTenant} into their existing `and(...)` / `.where(...)` clauses, and
@@ -57,7 +60,13 @@ function _tenantScopeValue(ctx: TenantScopeContext): TenantScopeValue {
     return ctx.user.tenantId;
   }
 
-  // Internal roles (admin/manager/staff) and anonymous see everything.
+  // Auth-enabled anonymous callers should have been blocked by the API layer.
+  // Fail closed here too for route handlers that apply tenant scope directly.
+  if (!ctx.user) {
+    return null;
+  }
+
+  // Internal roles (admin/manager/staff) see everything.
   return undefined;
 }
 
@@ -117,8 +126,20 @@ function _stampTenant<T extends Record<string, unknown>>(
   return { ...values, tenantId: ctx.tenantId ?? null };
 }
 
-export const tenantScopeValue = traceFn(log, "tenantScopeValue", _tenantScopeValue);
-export const tenantConditionForValue = traceFn(log, "tenantConditionForValue", _tenantConditionForValue);
+export const tenantScopeValue = traceFn(
+  log,
+  "tenantScopeValue",
+  _tenantScopeValue,
+);
+export const tenantConditionForValue = traceFn(
+  log,
+  "tenantConditionForValue",
+  _tenantConditionForValue,
+);
 export const withTenant = traceFn(log, "withTenant", _withTenant);
-export const creatorTenantId = traceFn(log, "creatorTenantId", _creatorTenantId);
+export const creatorTenantId = traceFn(
+  log,
+  "creatorTenantId",
+  _creatorTenantId,
+);
 export const stampTenant = traceFn(log, "stampTenant", _stampTenant);

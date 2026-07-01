@@ -1,6 +1,6 @@
 {
-  "id": "c8480987-b1f7-4bb4-bfee-10e00383cabe",
-  "prevId": "948d76d9-0617-48fd-bacb-8a7cceebd95d",
+  "id": "948d76d9-0617-48fd-bacb-8a7cceebd95d",
+  "prevId": "2729c754-18c0-4fb6-a79f-4531aec61706",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -736,7 +736,6 @@
             }
           ],
           "isUnique": true,
-          "where": "\"materials\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

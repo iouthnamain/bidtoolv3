@@ -52,7 +52,6 @@ function webRowInput(row: ReviewRow) {
   };
 }
 
-
 export function ReviewPanel({
   rows,
   summary,
@@ -259,9 +258,7 @@ export function ReviewPanel({
         applyDecisions((prev) => {
           const current = prev.get(rowIndex);
           if (!current) return prev;
-          const targetRow = rows.find(
-            (r) => r.originalRowIndex === rowIndex,
-          );
+          const targetRow = rows.find((r) => r.originalRowIndex === rowIndex);
           if (!targetRow) return prev;
 
           if (Object.keys(result.fields).length === 0) {
@@ -275,10 +272,7 @@ export function ReviewPanel({
             return next;
           }
 
-          const catalog = catalogFieldsForRow(
-            targetRow,
-            current.materialId,
-          );
+          const catalog = catalogFieldsForRow(targetRow, current.materialId);
           const next = new Map(prev);
           const merged = applyWebSearchToDecision(
             current,
@@ -320,9 +314,7 @@ export function ReviewPanel({
           return next;
         });
         if (rowIndex === selectedRowIndexRef.current) {
-          toast.error(
-            error.message || "Không tìm được thông tin trên web.",
-          );
+          toast.error(error.message || "Không tìm được thông tin trên web.");
         }
       },
     });
@@ -349,7 +341,9 @@ export function ReviewPanel({
       const response = isProfileSplit
         ? await profileSearch.mutateAsync(webRowInput(row))
         : await (async () => {
-            const linkResponse = await webLinksSearch.mutateAsync(webRowInput(row));
+            const linkResponse = await webLinksSearch.mutateAsync(
+              webRowInput(row),
+            );
             return {
               webLinkResults: linkResponse.results.map((hit) => ({
                 title: hit.title,
@@ -366,7 +360,8 @@ export function ReviewPanel({
 
       const links: WebLinkResult[] = response.webLinkResults;
       const candidates: AiSearchStoredResult[] = response.aiSearchCandidates;
-      const webStatus = links.length > 0 ? ("done" as const) : ("error" as const);
+      const webStatus =
+        links.length > 0 ? ("done" as const) : ("error" as const);
       const aiStatus =
         candidates.length > 0
           ? ("done" as const)
@@ -560,7 +555,8 @@ export function ReviewPanel({
       const candidates = extracted.filter(
         (item): item is NonNullable<(typeof extracted)[number]> => item != null,
       );
-      const status = candidates.length > 0 ? ("done" as const) : ("error" as const);
+      const status =
+        candidates.length > 0 ? ("done" as const) : ("error" as const);
 
       applyDecisions((prev) => {
         const current = prev.get(rowIndex);
@@ -618,8 +614,9 @@ export function ReviewPanel({
 
     try {
       await runWithConcurrency(
-        targets.map((row) => () =>
-          kind === "web" ? runWebLinksForRow(row) : runAiSearchForRow(row),
+        targets.map(
+          (row) => () =>
+            kind === "web" ? runWebLinksForRow(row) : runAiSearchForRow(row),
         ),
         3,
         (completed, total) => setBulkProgress({ kind, completed, total }),
@@ -713,7 +710,7 @@ export function ReviewPanel({
     <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-slate-50 px-4 py-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-900 text-balance">
+          <h3 className="text-sm font-bold text-balance text-slate-900">
             Xét duyệt & chọn sản phẩm
           </h3>
           <p className="mt-1 flex flex-wrap gap-1 text-xs text-slate-700">
@@ -784,7 +781,9 @@ export function ReviewPanel({
                 variant="secondary"
                 size="sm"
                 disabled={
-                  checkedRows.size === 0 || bulkTargetCount === 0 || isBulkRunning
+                  checkedRows.size === 0 ||
+                  bulkTargetCount === 0 ||
+                  isBulkRunning
                 }
                 onClick={() => void runBulkSearch("web")}
               >
@@ -795,7 +794,9 @@ export function ReviewPanel({
                 variant="secondary"
                 size="sm"
                 disabled={
-                  checkedRows.size === 0 || bulkTargetCount === 0 || isBulkRunning
+                  checkedRows.size === 0 ||
+                  bulkTargetCount === 0 ||
+                  isBulkRunning
                 }
                 onClick={() => void runBulkSearch("ai")}
               >
@@ -873,7 +874,7 @@ export function ReviewPanel({
       </div>
 
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-b-0 lg:border-r">
+        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-r lg:border-b-0">
           {isProfileSplit && filtered.length > 0 ? (
             <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700">
               <input
@@ -922,24 +923,30 @@ export function ReviewPanel({
                 <button
                   type="button"
                   onClick={() => setSelectedRowIndex(row.originalRowIndex)}
-                  aria-selected={isSelected}
+                  aria-pressed={isSelected}
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex flex-wrap items-center gap-1">
                     <Badge tone={meta.tone}>{meta.label}</Badge>
-                    {!isProfileSplit && decision?.webSearchStatus === "pending" ? (
+                    {!isProfileSplit &&
+                    decision?.webSearchStatus === "pending" ? (
                       <Badge tone="info">Đang tìm web</Badge>
-                    ) : !isProfileSplit && decision?.webSearchStatus === "error" ? (
+                    ) : !isProfileSplit &&
+                      decision?.webSearchStatus === "error" ? (
                       <Badge tone="critical">Web lỗi</Badge>
                     ) : null}
-                    {isProfileSplit && decision?.webLinksStatus === "pending" ? (
+                    {isProfileSplit &&
+                    decision?.webLinksStatus === "pending" ? (
                       <Badge tone="info">Web…</Badge>
-                    ) : isProfileSplit && decision?.webLinksStatus === "error" ? (
+                    ) : isProfileSplit &&
+                      decision?.webLinksStatus === "error" ? (
                       <Badge tone="critical">Web lỗi</Badge>
                     ) : null}
-                    {isProfileSplit && decision?.aiSearchStatus === "pending" ? (
+                    {isProfileSplit &&
+                    decision?.aiSearchStatus === "pending" ? (
                       <Badge tone="info">AI…</Badge>
-                    ) : isProfileSplit && decision?.aiSearchStatus === "error" ? (
+                    ) : isProfileSplit &&
+                      decision?.aiSearchStatus === "error" ? (
                       <Badge tone="critical">AI lỗi</Badge>
                     ) : null}
                   </div>

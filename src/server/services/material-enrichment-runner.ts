@@ -62,7 +62,6 @@ export type MaterialEnrichmentJobProgress = {
 };
 
 const DEFAULT_MAX_SEARCH_RESULTS = 12;
-const DEFAULT_MAX_QUERIES = 4;
 
 function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
@@ -455,7 +454,7 @@ async function _processEnrichmentItem(
         specText: input.specText,
         sku: input.sku,
         model: input.model,
-        maxQueries: options.maxQueries ?? DEFAULT_MAX_QUERIES,
+        maxQueries: options.maxQueries,
       },
       {
         context: "material_job",

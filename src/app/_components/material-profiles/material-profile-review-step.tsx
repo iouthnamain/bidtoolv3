@@ -127,8 +127,7 @@ export function MaterialProfileReviewStep({
     onSuccess: () => {
       void utils.materialProfile.get.invalidate({ workspaceId });
     },
-    onError: (error) =>
-      toast.error(error.message || "Không bulk apply được."),
+    onError: (error) => toast.error(error.message || "Không bulk apply được."),
   });
   const undoLastBulkApply = api.materialProfile.undoLastBulkApply.useMutation({
     onSuccess: () => {
@@ -141,7 +140,7 @@ export function MaterialProfileReviewStep({
   useEffect(() => {
     setDecisions(seedDecisionsFromItems(reviewItems));
     setSelectedRowIndex(reviewRows[0]?.originalRowIndex ?? null);
-  }, [itemsKey]);
+  }, [itemsKey, reviewItems, reviewRows]);
 
   useEffect(
     () => () => {
@@ -195,16 +194,13 @@ export function MaterialProfileReviewStep({
     [itemIdByRowIndex, updateReviewDecision],
   );
 
-  const updateDecision = useCallback(
-    (rowIndex: number, next: RowDecision) => {
-      setDecisions((prev) => {
-        const map = new Map(prev);
-        map.set(rowIndex, next);
-        return map;
-      });
-    },
-    [],
-  );
+  const updateDecision = useCallback((rowIndex: number, next: RowDecision) => {
+    setDecisions((prev) => {
+      const map = new Map(prev);
+      map.set(rowIndex, next);
+      return map;
+    });
+  }, []);
 
   const handleDecisionPersist = useCallback(
     (rowIndex: number, decision: RowDecision) => {
@@ -261,9 +257,7 @@ export function MaterialProfileReviewStep({
           if (!decision) return null;
           return { rowIndex, itemId, decision };
         })
-        .filter(
-          (entry): entry is NonNullable<typeof entry> => entry != null,
-        );
+        .filter((entry): entry is NonNullable<typeof entry> => entry != null);
 
       if (eligible.length === 0) {
         toast.warning("Không có dòng đã chọn đạt ngưỡng ≥ 85%.");
@@ -343,7 +337,9 @@ export function MaterialProfileReviewStep({
       });
 
       if (appliedCount === 0) {
-        toast.warning("Không có kết quả tìm kiếm để áp dụng trên các dòng đã chọn.");
+        toast.warning(
+          "Không có kết quả tìm kiếm để áp dụng trên các dòng đã chọn.",
+        );
         return;
       }
       toast.success(

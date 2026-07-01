@@ -7,10 +7,7 @@ import {
   publicProcedure,
   requirePermission,
 } from "~/server/api/trpc";
-import {
-  creatorTenantId,
-  tenantScopeValue,
-} from "~/server/api/tenant-scope";
+import { creatorTenantId, tenantScopeValue } from "~/server/api/tenant-scope";
 import {
   approveRow,
   assertJobInScope,
@@ -84,7 +81,7 @@ const rowNumberInput = jobIdInput.extend({
 });
 
 export const excelResearchRouter = createTRPCRouter({
-  previewUpload: publicProcedure
+  previewUpload: requirePermission("excelResearch:run")
     .input(
       z.object({
         fileName: z.string().min(1).default("materials.xlsx"),
@@ -150,17 +147,15 @@ export const excelResearchRouter = createTRPCRouter({
       ),
     ),
 
-  getJob: publicProcedure
-    .input(jobIdInput)
-    .query(({ ctx, input }) =>
-      withExcelResearchErrors(async () => {
-        const job = await getJob(input.jobId, tenantScopeValue(ctx));
-        if (!job) {
-          throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
-        }
-        return job;
-      }),
-    ),
+  getJob: publicProcedure.input(jobIdInput).query(({ ctx, input }) =>
+    withExcelResearchErrors(async () => {
+      const job = await getJob(input.jobId, tenantScopeValue(ctx));
+      if (!job) {
+        throw new ExcelResearchJobError("NOT_FOUND", "Không tìm thấy job.");
+      }
+      return job;
+    }),
+  ),
 
   getJobStatus: publicProcedure
     .input(jobIdInput)
@@ -316,7 +311,7 @@ export const excelResearchRouter = createTRPCRouter({
       ),
     ),
 
-  exportExcel: publicProcedure
+  exportExcel: requirePermission("excelResearch:run")
     .input(jobIdInput)
     .mutation(({ ctx, input }) =>
       withExcelResearchErrors(() =>

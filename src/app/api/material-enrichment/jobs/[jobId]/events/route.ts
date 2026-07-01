@@ -32,6 +32,10 @@ export async function GET(
 ) {
   const { jobId } = await context.params;
   const ctx = await createTRPCContext({ headers: request.headers });
+  if (ctx.authEnabled && !ctx.user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const scope = tenantScopeValue(ctx);
   const job = await getMaterialEnrichmentJob(jobId, scope);
   if (!job) {

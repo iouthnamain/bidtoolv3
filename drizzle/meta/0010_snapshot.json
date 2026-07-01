@@ -1,6 +1,6 @@
 {
-  "id": "c8480987-b1f7-4bb4-bfee-10e00383cabe",
-  "prevId": "948d76d9-0617-48fd-bacb-8a7cceebd95d",
+  "id": "2729c754-18c0-4fb6-a79f-4531aec61706",
+  "prevId": "4168d617-6579-4e52-9f3d-699fd44f9a37",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -108,12 +108,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "material_id": {
-          "name": "material_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "original_row_index": {
           "name": "original_row_index",
           "type": "integer",
@@ -184,64 +178,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
-        },
-        "term": {
-          "name": "term",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'term_1'"
-        },
-        "qty_total": {
-          "name": "qty_total",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "qty_in_stock": {
-          "name": "qty_in_stock",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "depreciation": {
-          "name": "depreciation",
-          "type": "numeric(10, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "reuse_pct": {
-          "name": "reuse_pct",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "inspection_qty_term_1": {
-          "name": "inspection_qty_term_1",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inspection_qty_term_2": {
-          "name": "inspection_qty_term_2",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "unit_price": {
-          "name": "unit_price",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "included_in_export": {
-          "name": "included_in_export",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         },
         "search_keywords": {
           "name": "search_keywords",
@@ -351,19 +287,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "excel_workspace_items_material_id_materials_id_fk": {
-          "name": "excel_workspace_items_material_id_materials_id_fk",
-          "tableFrom": "excel_workspace_items",
-          "tableTo": "materials",
-          "columnsFrom": [
-            "material_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "excel_workspace_items_selected_candidate_id_web_product_candidates_id_fk": {
           "name": "excel_workspace_items_selected_candidate_id_web_product_candidates_id_fk",
           "tableFrom": "excel_workspace_items",
@@ -441,20 +364,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "template_config_json": {
-          "name": "template_config_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{\"organizationLine1\":\"UBND TỈNH ĐỒNG NAI\",\"organizationLine2\":\"TRƯỜNG CAO ĐẲNG KỸ THUẬT - CÔNG NGHỆ ĐỒNG NAI\",\"departmentLine\":\"KHOA / PHÒNG BAN\",\"rightHeaderLine1\":\"CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\",\"rightHeaderLine2\":\"Độc lập - Tự do - Hạnh phúc\",\"schoolYearLabel\":\"Năm học 2026 - 2027\",\"siteLabel\":\"Cơ sở\",\"thvtTitle\":\"BẢNG TỔNG HỢP VẬT TƯ THỰC HÀNH\",\"purchaseRequestTitle\":\"BẢNG ĐỀ NGHỊ MUA VẬT TƯ THỰC HÀNH\",\"inspectionTitle\":\"BIÊN BẢN KIỂM TRA VẬT TƯ THỰC HÀNH CUỐI HỌC KỲ\",\"requestRecipients\":[\"Ban Giám hiệu\",\"Phòng Đào tạo\",\"Phòng TCKT\"],\"basisParagraphs\":[\"Căn cứ vào kế hoạch giảng dạy, định mức vật tư và nhu cầu thực hành.\",\"Căn cứ vào số lượng máy móc, trang thiết bị hiện có tại đơn vị.\",\"Đơn vị kính đề nghị mua các vật tư phục vụ công tác đào tạo theo bảng dưới đây.\"],\"signerLabels\":[\"Người lập\",\"Đơn vị\",\"Phòng vật tư\",\"Hiệu trưởng\"]}'::jsonb"
-        },
-        "selected_sheet_template_ids": {
-          "name": "selected_sheet_template_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[\"thvt\",\"purchase_request\",\"inspection_term_1\",\"inspection_term_2\",\"evidence\"]'::jsonb"
-        },
         "export_file_name": {
           "name": "export_file_name",
           "type": "text",
@@ -512,104 +421,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.investment_projects": {
-      "name": "investment_projects",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "province": {
-          "name": "province",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_group": {
-          "name": "project_group",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "investment_budget": {
-          "name": "investment_budget",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "related_plan_count": {
-          "name": "related_plan_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        }
-      },
-      "indexes": {
-        "investment_projects_external_id_unique": {
-          "name": "investment_projects_external_id_unique",
-          "columns": [
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.materials": {
       "name": "materials",
       "schema": "",
@@ -640,44 +451,6 @@
         },
         "category": {
           "name": "category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "spec_text": {
-          "name": "spec_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "manufacturer": {
-          "name": "manufacturer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "origin_country": {
-          "name": "origin_country",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "default_unit_price": {
-          "name": "default_unit_price",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'VND'"
-        },
-        "source_url": {
-          "name": "source_url",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -736,7 +509,6 @@
             }
           ],
           "isUnique": true,
-          "where": "\"materials\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -984,254 +756,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.plan_details_cache": {
-      "name": "plan_details_cache",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cache_key": {
-          "name": "cache_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_json": {
-          "name": "payload_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "plan_details_cache_cache_key_unique": {
-          "name": "plan_details_cache_cache_key_unique",
-          "columns": [
-            {
-              "expression": "cache_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "plan_details_cache_external_id_idx": {
-          "name": "plan_details_cache_external_id_idx",
-          "columns": [
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "plan_details_cache_source_url_idx": {
-          "name": "plan_details_cache_source_url_idx",
-          "columns": [
-            {
-              "expression": "source_url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "plan_details_cache_updated_at_idx": {
-          "name": "plan_details_cache_updated_at_idx",
-          "columns": [
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.project_details_cache": {
-      "name": "project_details_cache",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cache_key": {
-          "name": "cache_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_json": {
-          "name": "payload_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "project_details_cache_cache_key_unique": {
-          "name": "project_details_cache_cache_key_unique",
-          "columns": [
-            {
-              "expression": "cache_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_details_cache_external_id_idx": {
-          "name": "project_details_cache_external_id_idx",
-          "columns": [
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_details_cache_source_url_idx": {
-          "name": "project_details_cache_source_url_idx",
-          "columns": [
-            {
-              "expression": "source_url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_details_cache_updated_at_idx": {
-          "name": "project_details_cache_updated_at_idx",
-          "columns": [
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.saved_filters": {
       "name": "saved_filters",
       "schema": "",
@@ -1247,21 +771,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "mode": {
-          "name": "mode",
-          "type": "search_mode",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'package_keyword'"
-        },
-        "criteria_json": {
-          "name": "criteria_json",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "keyword": {
           "name": "keyword",
@@ -1324,6 +833,21 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "mode": {
+          "name": "mode",
+          "type": "search_mode",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'package_keyword'"
+        },
+        "criteria_json": {
+          "name": "criteria_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         }
       },
       "indexes": {
@@ -1441,103 +965,6 @@
       "indexes": {
         "tender_packages_external_id_unique": {
           "name": "tender_packages_external_id_unique",
-          "columns": [
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.tender_plans": {
-      "name": "tender_plans",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "province": {
-          "name": "province",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field": {
-          "name": "field",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "procurement_method": {
-          "name": "procurement_method",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "budget": {
-          "name": "budget",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "timeline": {
-          "name": "timeline",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        }
-      },
-      "indexes": {
-        "tender_plans_external_id_unique": {
-          "name": "tender_plans_external_id_unique",
           "columns": [
             {
               "expression": "external_id",
@@ -1721,6 +1148,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "tavily_score": {
+          "name": "tavily_score",
+          "type": "numeric(8, 4)",
+          "primaryKey": false,
+          "notNull": false
         },
         "match_reasons": {
           "name": "match_reasons",
@@ -1995,6 +1428,449 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.tender_plans": {
+      "name": "tender_plans",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "province": {
+          "name": "province",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field": {
+          "name": "field",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "procurement_method": {
+          "name": "procurement_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "budget": {
+          "name": "budget",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timeline": {
+          "name": "timeline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        }
+      },
+      "indexes": {
+        "tender_plans_external_id_unique": {
+          "name": "tender_plans_external_id_unique",
+          "columns": [
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.investment_projects": {
+      "name": "investment_projects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "province": {
+          "name": "province",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_group": {
+          "name": "project_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "investment_budget": {
+          "name": "investment_budget",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "related_plan_count": {
+          "name": "related_plan_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        }
+      },
+      "indexes": {
+        "investment_projects_external_id_unique": {
+          "name": "investment_projects_external_id_unique",
+          "columns": [
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.plan_details_cache": {
+      "name": "plan_details_cache",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cache_key": {
+          "name": "cache_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "plan_details_cache_cache_key_unique": {
+          "name": "plan_details_cache_cache_key_unique",
+          "columns": [
+            {
+              "expression": "cache_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "plan_details_cache_external_id_idx": {
+          "name": "plan_details_cache_external_id_idx",
+          "columns": [
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "plan_details_cache_source_url_idx": {
+          "name": "plan_details_cache_source_url_idx",
+          "columns": [
+            {
+              "expression": "source_url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "plan_details_cache_updated_at_idx": {
+          "name": "plan_details_cache_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_details_cache": {
+      "name": "project_details_cache",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cache_key": {
+          "name": "cache_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "project_details_cache_cache_key_unique": {
+          "name": "project_details_cache_cache_key_unique",
+          "columns": [
+            {
+              "expression": "cache_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "project_details_cache_external_id_idx": {
+          "name": "project_details_cache_external_id_idx",
+          "columns": [
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "project_details_cache_source_url_idx": {
+          "name": "project_details_cache_source_url_idx",
+          "columns": [
+            {
+              "expression": "source_url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "project_details_cache_updated_at_idx": {
+          "name": "project_details_cache_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -2048,17 +1924,6 @@
         "manual"
       ]
     },
-    "public.search_mode": {
-      "name": "search_mode",
-      "schema": "public",
-      "values": [
-        "package_keyword",
-        "package_location",
-        "package_area_location",
-        "plan",
-        "project"
-      ]
-    },
     "public.watchlist_type": {
       "name": "watchlist_type",
       "schema": "public",
@@ -2095,6 +1960,17 @@
         "new_package",
         "new_search_result",
         "schedule"
+      ]
+    },
+    "public.search_mode": {
+      "name": "search_mode",
+      "schema": "public",
+      "values": [
+        "package_keyword",
+        "package_location",
+        "package_area_location",
+        "plan",
+        "project"
       ]
     }
   },

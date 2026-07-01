@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,24 +8,17 @@ import {
   FileSpreadsheet,
   Globe,
   Loader2,
-  RotateCcw,
   Search,
   Upload,
 } from "lucide-react";
 
-import {
-  Badge,
-  Button,
-  ConfirmDialog,
-  EmptyState,
-} from "~/app/_components/ui";
+import { Button, ConfirmDialog } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
   StepHeader,
   type EnrichStep,
 } from "~/app/_components/enrich/step-header";
 import { EnrichResearchStep } from "~/app/_components/enrich/enrich-research-step";
-import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import { ReviewPanel } from "~/app/_components/materials/review/review-panel";
 import type { ReviewRowStatus } from "~/app/_components/materials/review/review-types";
 import {
@@ -49,7 +42,6 @@ import { api, type RouterOutputs } from "~/trpc/react";
 type EnrichPreview = RouterOutputs["material"]["enrichPreviewXlsx"];
 type EnrichPreviewSheet = EnrichPreview["sheets"][number];
 type MatchResponse = RouterOutputs["material"]["enrichMatchRows"];
-type MatchRow = MatchResponse["results"][number];
 type EnrichColumnMapping = Record<string, string | null>;
 type SheetEdits = Record<string, Partial<Record<FillableField, string>>>;
 
@@ -142,9 +134,9 @@ export function MaterialEnrichClient() {
   const [researchExportSummary, setResearchExportSummary] = useState<{
     needsReview: number;
   } | null>(null);
-  const [mappingBySheet, setMappingBySheet] = useState<Record<string, EnrichColumnMapping>>(
-    {},
-  );
+  const [mappingBySheet, setMappingBySheet] = useState<
+    Record<string, EnrichColumnMapping>
+  >({});
   const [sheetEdits, setSheetEdits] = useState<SheetEdits>({});
 
   const previewRequestRef = useRef(0);
@@ -359,11 +351,16 @@ export function MaterialEnrichClient() {
     });
   };
 
-  const updateMapping = (sheet: EnrichPreviewSheet, key: ColumnKey, value: string | null) => {
+  const updateMapping = (
+    sheet: EnrichPreviewSheet,
+    key: ColumnKey,
+    value: string | null,
+  ) => {
     setMappingBySheet((prev) => ({
       ...prev,
       [sheet.name]: {
-        ...(prev[sheet.name] ?? (sheet.suggestedMapping as EnrichColumnMapping)),
+        ...(prev[sheet.name] ??
+          (sheet.suggestedMapping as EnrichColumnMapping)),
         [key]: value,
       },
     }));
@@ -419,8 +416,10 @@ export function MaterialEnrichClient() {
 
   const toggleSheetOverwrite = (rowIndex: number, field: FillableField) => {
     setDecisions((prev) => {
-      const current =
-        prev.get(rowIndex) ?? { materialId: null, acceptedFields: new Set() };
+      const current = prev.get(rowIndex) ?? {
+        materialId: null,
+        acceptedFields: new Set(),
+      };
       const overwriteFields = new Set(current.overwriteFields ?? []);
       if (overwriteFields.has(field)) {
         overwriteFields.delete(field);
@@ -778,7 +777,7 @@ function UploadStep({
           <span className="inline-flex h-8 w-8 items-center justify-center rounded bg-blue-700 text-white">
             <FileSpreadsheet className="h-4 w-4" aria-hidden />
           </span>
-          <h3 className="text-sm font-extrabold text-slate-900 text-balance">
+          <h3 className="text-sm font-extrabold text-balance text-slate-900">
             Tải lên & map cột
           </h3>
         </div>
@@ -972,8 +971,8 @@ function EnrichXlsxPreviewPanel({
   }
 
   const mappedHeaders = new Set(
-    Object.values(sheet.suggestedMapping).filter(
-      (header): header is string => Boolean(header),
+    Object.values(sheet.suggestedMapping).filter((header): header is string =>
+      Boolean(header),
     ),
   );
   const headers = sheet.headers.length > 0 ? sheet.headers : ["(trống)"];
@@ -1028,7 +1027,7 @@ function EnrichXlsxPreviewPanel({
               <tbody className="divide-y divide-slate-100 bg-white">
                 {sheet.previewRows.map((row, index) => (
                   <tr key={row.key}>
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold text-slate-700 tabular-nums whitespace-nowrap">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 font-semibold whitespace-nowrap text-slate-700 tabular-nums">
                       {sheet.activeHeaderRowIndex + index + 1}
                     </td>
                     {headers.map((header) => (
@@ -1056,7 +1055,6 @@ function EnrichXlsxPreviewPanel({
   );
 }
 
-
 function EnrichExportPreviewPanel({
   matchData,
   decisions,
@@ -1074,7 +1072,11 @@ function EnrichExportPreviewPanel({
   sheetEdits: SheetEdits;
   fillsOnly: boolean;
   onFillsOnlyChange: (value: boolean) => void;
-  onSheetEdit: (rowIndex: number, field: FillableField, value: string | null) => void;
+  onSheetEdit: (
+    rowIndex: number,
+    field: FillableField,
+    value: string | null,
+  ) => void;
   onResetRowSheetEdits: (rowIndex: number) => void;
   onToggleSheetOverwrite: (rowIndex: number, field: FillableField) => void;
   onSkipSheetField: (rowIndex: number, field: FillableField) => void;
@@ -1155,119 +1157,142 @@ function EnrichExportPreviewPanel({
                 row.cells.map((cell, cellIndex) => {
                   const rowEdits = sheetEdits[rowEditKey(row.originalRowIndex)];
                   const decision = decisions.get(row.originalRowIndex);
-                  const isForced = decision?.overwriteFields?.has(cell.field) ?? false;
+                  const isForced =
+                    decision?.overwriteFields?.has(cell.field) ?? false;
                   const currentValue = rowEdits?.[cell.field] ?? cell.after;
                   return (
                     <tr key={`${row.originalRowIndex}-${cell.field}`}>
-                    <td className="px-3 py-2 font-semibold text-slate-700 tabular-nums whitespace-nowrap">
-                      {row.originalRowIndex}
-                    </td>
-                    <td className="max-w-40 truncate px-3 py-2 text-slate-700">
-                      {row.productName || "—"}
-                    </td>
-                    <td className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">
-                      {FIELD_LABELS[cell.field]}
-                    </td>
-                    <td className="max-w-32 truncate px-3 py-2 text-slate-700">
-                      {cell.before || "(trống)"}
-                    </td>
-                    <td className="min-w-48 px-3 py-2">
-                      <input
-                        type={cell.field === "defaultUnitPrice" ? "number" : "text"}
-                        inputMode={
-                          cell.field === "defaultUnitPrice" ? "decimal" : undefined
-                        }
-                        value={currentValue}
-                        onChange={(event) =>
-                          onSheetEdit(
-                            row.originalRowIndex,
-                            cell.field,
-                            event.target.value,
-                          )
-                        }
-                        className="w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-medium text-emerald-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        aria-label={`Chỉnh ${FIELD_LABELS[cell.field]} dòng ${row.originalRowIndex}`}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-slate-700 whitespace-nowrap">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{isForced ? "Ghi đè bắt buộc" : (actionLabels[cell.action] ?? cell.action)}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onSheetEdit(row.originalRowIndex, cell.field, null)
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-700 tabular-nums">
+                        {row.originalRowIndex}
+                      </td>
+                      <td className="max-w-40 truncate px-3 py-2 text-slate-700">
+                        {row.productName || "—"}
+                      </td>
+                      <td className="px-3 py-2 font-semibold whitespace-nowrap text-slate-600">
+                        {FIELD_LABELS[cell.field]}
+                      </td>
+                      <td className="max-w-32 truncate px-3 py-2 text-slate-700">
+                        {cell.before || "(trống)"}
+                      </td>
+                      <td className="min-w-48 px-3 py-2">
+                        <input
+                          type={
+                            cell.field === "defaultUnitPrice"
+                              ? "number"
+                              : "text"
                           }
-                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        >
-                          Reset ô
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onSheetEdit(row.originalRowIndex, cell.field, "")
+                          inputMode={
+                            cell.field === "defaultUnitPrice"
+                              ? "decimal"
+                              : undefined
                           }
-                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        >
-                          Xóa giá trị
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onToggleSheetOverwrite(row.originalRowIndex, cell.field)
+                          value={currentValue}
+                          onChange={(event) =>
+                            onSheetEdit(
+                              row.originalRowIndex,
+                              cell.field,
+                              event.target.value,
+                            )
                           }
-                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        >
-                          {isForced ? "Bỏ ghi đè" : "Ghi đè bắt buộc"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onSkipSheetField(row.originalRowIndex, cell.field)
-                          }
-                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        >
-                          Bỏ qua field
-                        </button>
-                        {cellIndex === 0 ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => onResetRowSheetEdits(row.originalRowIndex)}
-                              className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                            >
-                              Reset dòng
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onSkipSheetRow(row.originalRowIndex)}
-                              className="rounded border border-rose-200 px-1.5 py-0.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                            >
-                              Bỏ qua dòng
-                            </button>
-                          </>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            preview.rows.forEach((targetRow) => {
-                              const targetCell = targetRow.cells.find(
-                                (item) => item.field === cell.field,
-                              );
-                              if (!targetCell || targetCell.before.trim()) return;
+                          className="w-full rounded border border-slate-500 bg-white px-2 py-1 text-xs font-medium text-emerald-700 shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          aria-label={`Chỉnh ${FIELD_LABELS[cell.field]} dòng ${row.originalRowIndex}`}
+                        />
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-700">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>
+                            {isForced
+                              ? "Ghi đè bắt buộc"
+                              : (actionLabels[cell.action] ?? cell.action)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
                               onSheetEdit(
-                                targetRow.originalRowIndex,
+                                row.originalRowIndex,
                                 cell.field,
-                                currentValue,
-                              );
-                            })
-                          }
-                          className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                        >
-                          Áp dụng ô trống
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                                null,
+                              )
+                            }
+                            className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          >
+                            Reset ô
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSheetEdit(row.originalRowIndex, cell.field, "")
+                            }
+                            className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          >
+                            Xóa giá trị
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onToggleSheetOverwrite(
+                                row.originalRowIndex,
+                                cell.field,
+                              )
+                            }
+                            className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          >
+                            {isForced ? "Bỏ ghi đè" : "Ghi đè bắt buộc"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSkipSheetField(row.originalRowIndex, cell.field)
+                            }
+                            className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          >
+                            Bỏ qua field
+                          </button>
+                          {cellIndex === 0 ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onResetRowSheetEdits(row.originalRowIndex)
+                                }
+                                className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                              >
+                                Reset dòng
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onSkipSheetRow(row.originalRowIndex)
+                                }
+                                className="rounded border border-rose-200 px-1.5 py-0.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                              >
+                                Bỏ qua dòng
+                              </button>
+                            </>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              preview.rows.forEach((targetRow) => {
+                                const targetCell = targetRow.cells.find(
+                                  (item) => item.field === cell.field,
+                                );
+                                if (!targetCell || targetCell.before.trim())
+                                  return;
+                                onSheetEdit(
+                                  targetRow.originalRowIndex,
+                                  cell.field,
+                                  currentValue,
+                                );
+                              })
+                            }
+                            className="rounded border border-slate-400 px-1.5 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                          >
+                            Áp dụng ô trống
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 }),
               )}
@@ -1324,7 +1349,11 @@ function ExportStep({
   matchData: MatchResponse;
   decisions: Map<number, RowDecision>;
   sheetEdits: SheetEdits;
-  onSheetEdit: (rowIndex: number, field: FillableField, value: string | null) => void;
+  onSheetEdit: (
+    rowIndex: number,
+    field: FillableField,
+    value: string | null,
+  ) => void;
   onResetRowSheetEdits: (rowIndex: number) => void;
   onToggleSheetOverwrite: (rowIndex: number, field: FillableField) => void;
   onSkipSheetField: (rowIndex: number, field: FillableField) => void;
@@ -1370,7 +1399,9 @@ function ExportStep({
   return (
     <section className="panel overflow-hidden">
       <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
-        <h3 className="text-sm font-bold text-slate-900 text-balance">Xuất file</h3>
+        <h3 className="text-sm font-bold text-balance text-slate-900">
+          Xuất file
+        </h3>
         <p className="mt-1 text-xs text-slate-700">
           Xem trước các ô sẽ điền, sau đó tải file đối chiếu catalog hoặc file
           nghiên cứu web nếu đã chạy bước 3.
@@ -1382,7 +1413,7 @@ function ExportStep({
           {stats.map((stat) => (
             <div
               key={stat.label}
-              className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3"
+              className="rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-flat)]"
             >
               <p className="text-xs font-medium text-slate-700">{stat.label}</p>
               <p className="mt-1 text-xl font-bold text-slate-900 tabular-nums">
@@ -1411,22 +1442,22 @@ function ExportStep({
           </span>
           <span>{editedCellCount.toLocaleString("vi-VN")} ô đã sửa tay</span>
           <span>
-            {(pendingUnmatched + pendingReview).toLocaleString("vi-VN")} dòng còn cảnh báo
+            {(pendingUnmatched + pendingReview).toLocaleString("vi-VN")} dòng
+            còn cảnh báo
           </span>
           <span>{fieldsToFill.toLocaleString("vi-VN")} ô được chọn điền</span>
         </div>
 
         {hasResearchJob ? (
           <p className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
-            File nghiên cứu web:{" "}
-            {researchApprovedCount.toLocaleString("vi-VN")} dòng đã duyệt/khớp
-            sẽ được xuất (xem chi tiết ở bước 3).
+            File nghiên cứu web: {researchApprovedCount.toLocaleString("vi-VN")}{" "}
+            dòng đã duyệt/khớp sẽ được xuất (xem chi tiết ở bước 3).
           </p>
         ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {hasResearchJob ? (
-            <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
+            <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-flat)]">
               <Button
                 variant="primary"
                 leftIcon={<Download className="h-4 w-4" />}
@@ -1441,7 +1472,7 @@ function ExportStep({
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-flat)]">
             <Button
               variant={hasResearchJob ? "secondary" : "primary"}
               leftIcon={<Download className="h-4 w-4" />}
@@ -1456,7 +1487,7 @@ function ExportStep({
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3">
+          <div className="flex flex-col gap-1.5 rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-flat)]">
             <Button
               variant="secondary"
               disabled={isExporting || nothingToExport}

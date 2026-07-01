@@ -1,7 +1,7 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
-export const env = createEnv({
+const envSchema = createEnv({
   /**
    * Specify your server-side environment variables schema here. This way you can ensure the app
    * isn't built with invalid env vars.
@@ -46,11 +46,7 @@ export const env = createEnv({
       .positive()
       .default(1),
     EXCEL_RESEARCH_BATCH_SIZE: z.coerce.number().int().positive().default(10),
-    EXCEL_RESEARCH_JOB_TTL_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(7),
+    EXCEL_RESEARCH_JOB_TTL_DAYS: z.coerce.number().int().positive().default(7),
     SEARXNG_BASE_URL: z.string().url().optional(),
     SEARXNG_API_KEY: z.string().optional(),
     SEARXNG_ENGINES: z.string().optional(),
@@ -194,3 +190,16 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+if (envSchema.AUTH_ENABLED === "true") {
+  if (
+    !envSchema.BETTER_AUTH_SECRET ||
+    envSchema.BETTER_AUTH_SECRET.length < 32
+  ) {
+    throw new Error(
+      "BETTER_AUTH_SECRET must be at least 32 characters when AUTH_ENABLED=true.",
+    );
+  }
+}
+
+export const env = envSchema;

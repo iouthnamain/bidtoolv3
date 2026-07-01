@@ -236,20 +236,11 @@ const rateLimitMiddleware = t.middleware(async ({ next, path, ctx }) => {
 });
 
 /**
- * Public procedure. BidTool intentionally has no authentication; this is the only procedure
- * type and is used everywhere.
- */
-export const publicProcedure = t.procedure
-  .use(rateLimitMiddleware)
-  .use(timingMiddleware);
-
-/**
- * Middleware that enforces authentication. Built to layer on top of the same
- * rate-limit → timing chain as publicProcedure.
+ * Middleware that enforces authentication when auth is enabled.
  *
  * - When auth is disabled, there is no user to require, so it passes through
- *   (ctx.user stays null). This keeps protected procedures usable pre-rollout
- *   so the app remains fully functional while AUTH_ENABLED=false.
+ *   (ctx.user stays null). This keeps the app fully functional while
+ *   AUTH_ENABLED=false.
  * - When auth is enabled and there is no user, it throws UNAUTHORIZED.
  * - Otherwise it narrows ctx so downstream resolvers see a non-null user.
  */
@@ -272,16 +263,24 @@ const enforceAuth = t.middleware(async ({ ctx, next }) => {
   });
 });
 
+const baseProcedure = t.procedure
+  .use(rateLimitMiddleware)
+  .use(timingMiddleware);
+
+/**
+ * Public procedure means "no special permission required". It still requires a
+ * valid session when AUTH_ENABLED=true; `/api/trpc` is intentionally excluded
+ * from middleware redirects and must return JSON 401s itself.
+ */
+export const publicProcedure = baseProcedure.use(enforceAuth);
+
 /**
  * Protected procedure. Requires an authenticated user when auth is enabled;
  * passes through (with a null user) when auth is disabled. Use this for any
  * procedure that should be gated behind login but does not need a specific
  * permission.
  */
-export const protectedProcedure = t.procedure
-  .use(rateLimitMiddleware)
-  .use(timingMiddleware)
-  .use(enforceAuth);
+export const protectedProcedure = publicProcedure;
 
 /**
  * Builds a procedure that requires a specific {@link Permission}. Layers on top

@@ -137,6 +137,12 @@ const DOMAIN_FIELDS: FieldDef[] = [
   },
 ];
 
+const CLEARABLE_SETTING_KEYS = new Set<SearchSettingKey>([
+  "searchBoostDomains",
+  "searchPenaltyDomains",
+  "searchBlockDomains",
+]);
+
 const PERFORMANCE_FIELDS: FieldDef[] = [
   {
     key: "enrichmentWebConcurrency",
@@ -297,7 +303,7 @@ export function SearchSettingsSection() {
 
   const saveField = (field: FieldDef) => {
     const value = (drafts[field.key] ?? "").trim();
-    if (!value) {
+    if (!value && !CLEARABLE_SETTING_KEYS.has(field.key)) {
       error("Nhập giá trị trước khi lưu hoặc dùng Đặt lại.");
       return;
     }
