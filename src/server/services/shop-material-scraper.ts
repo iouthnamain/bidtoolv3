@@ -1,9 +1,4 @@
-import { lookup } from "node:dns/promises";
-import { existsSync } from "node:fs";
-import { isIP } from "node:net";
-
-import type { Browser, Page } from "playwright";
-import { launchManagedChromium } from "~/server/services/playwright-chromium-launch";
+import type { Page } from "playwright";
 
 import { extractPriceFromText } from "~/lib/material-price-sources";
 import { mergeCatalogPdfUrls } from "~/lib/materials/catalog-pdf";
@@ -27,8 +22,12 @@ import {
   normalizeManufacturer,
   normalizeOriginCountry,
 } from "~/lib/materials/shop-attribute-normalize";
-import { isServerlessRuntime } from "~/server/runtime";
 import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
+import {
+  closeShopScraperBrowser as _closeShopScraperBrowser,
+  getSharedBrowser,
+} from "~/server/services/shop-material-scraper/browser";
+import { assertSafeScrapeUrl } from "~/server/services/shop-material-scraper/url-safety";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-shop-material-scraper");
 
@@ -130,10 +129,6 @@ type ShopPageSnapshot = {
   specPairs?: SpecPair[];
 };
 
-type BrowserWithProcess = Browser & {
-  process?: () => { kill: (signal?: string) => boolean };
-};
-
 type ProductExtractSource =
   | "json_ld"
   | "woocommerce"
@@ -168,12 +163,9 @@ type ExtractedProductCandidate = {
 const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_PRODUCTS = 100;
 const DEFAULT_CONCURRENT_PAGES = 2;
-const DNS_TIMEOUT_MS = 5_000;
 const PAGE_GOTO_TIMEOUT_MS = 15_000;
 const PAGE_NETWORK_IDLE_TIMEOUT_MS = 2_000;
 const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
-const PUBLIC_HOST_CACHE = new Map<string, Promise<void>>();
-let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
 
 type ShopScrapePageConfig = {
   promoBadgeLabels: readonly string[];
@@ -315,10 +307,7 @@ async function _scrapeShopMaterialsFromUrl({
 
             const pageUrl = queue.shift();
             if (pageUrl) {
-              if (
-                completedPages.has(pageUrl) ||
-                inProgressPages.has(pageUrl)
-              ) {
+              if (completedPages.has(pageUrl) || inProgressPages.has(pageUrl)) {
                 continue;
               }
               inProgressPages.add(pageUrl);
@@ -625,28 +614,6 @@ function throwIfAborted(signal: AbortSignal | undefined) {
   }
 }
 
-async function _closeShopScraperBrowser() {
-  const browserPromise = SHARED_BROWSER_PROMISE;
-  SHARED_BROWSER_PROMISE = null;
-  if (!browserPromise) {
-    return;
-  }
-
-  const browser = await browserPromise.catch(() => null);
-  if (!browser) {
-    return;
-  }
-
-  const browserClosed = await withTimeout(
-    browser.close().then(() => true),
-    BROWSER_CLOSE_TIMEOUT_MS,
-    "Đóng browser quá thời gian.",
-  ).catch(() => false);
-  if (!browserClosed) {
-    (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
-  }
-}
-
 function _extractProductsFromPageSnapshot(
   snapshot: ShopPageSnapshot,
   method: ShopScrapeMethod = "auto",
@@ -754,9 +721,7 @@ function mergeSpecText(
   if (currentText.includes(incomingText)) {
     return currentText;
   }
-  return incomingText.length > currentText.length
-    ? incomingText
-    : currentText;
+  return incomingText.length > currentText.length ? incomingText : currentText;
 }
 
 type DetailEnrichmentInput = {
@@ -879,12 +844,12 @@ function shouldEnrichFromDetailPage(
     /^(?:xx|xuất xứ|xuat xu|origin|made in)\b/i.test(product.originCountry);
   return Boolean(
     !product.manufacturer ||
-      manufacturerLooksLikeResidue ||
-      !product.originCountry ||
-      originLooksLikeResidue ||
-      !product.category ||
-      !product.unit ||
-      !product.specText.trim(),
+    manufacturerLooksLikeResidue ||
+    !product.originCountry ||
+    originLooksLikeResidue ||
+    !product.category ||
+    !product.unit ||
+    !product.specText.trim(),
   );
 }
 
@@ -949,186 +914,6 @@ function _mergeScrapedProductData(
   };
 }
 
-async function getSharedBrowser() {
-  SHARED_BROWSER_PROMISE ??= launchBrowser().catch((error) => {
-    SHARED_BROWSER_PROMISE = null;
-    throw error;
-  });
-
-  return SHARED_BROWSER_PROMISE;
-}
-
-const SERVERLESS_CHROMIUM_PACK_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.x64.tar";
-
-async function launchBrowser(): Promise<Browser> {
-  if (isServerlessRuntime()) {
-    return launchServerlessBrowser();
-  }
-
-  try {
-    return registerBrowser(
-      await launchManagedChromium(findSystemBrowserExecutable()),
-    );
-  } catch (error) {
-    throw browserLaunchError(error);
-  }
-}
-
-async function launchServerlessBrowser(): Promise<Browser> {
-  const [{ chromium: playwrightChromium }, sparticuzChromium] =
-    await Promise.all([
-      import("playwright-core"),
-      import("@sparticuz/chromium-min"),
-    ]);
-  const chromium = sparticuzChromium.default;
-  const chromiumPackUrl =
-    process.env.CHROMIUM_REMOTE_EXEC_PATH?.trim() ??
-    SERVERLESS_CHROMIUM_PACK_URL;
-
-  try {
-    const executablePath = await chromium.executablePath(chromiumPackUrl);
-    return registerBrowser(
-      await playwrightChromium.launch({
-        args: [...chromium.args, "--disable-dev-shm-usage", "--no-sandbox"],
-        executablePath,
-        headless: true,
-      }),
-    );
-  } catch (error) {
-    throw browserLaunchError(error);
-  }
-}
-
-function browserLaunchError(error: unknown) {
-  return new Error(
-    error instanceof Error
-      ? `Không khởi động được browser scrape. Chạy "bun x playwright install chromium --force" từ thư mục repo (hoặc "bun run dev:update"). Trên Ubuntu có thể cần: sudo env "PATH=$PATH" bun x playwright install-deps chromium. ${error.message}`
-      : "Không khởi động được browser scrape.",
-  );
-}
-
-function registerBrowser(browser: Browser) {
-  browser.on("disconnected", () => {
-    SHARED_BROWSER_PROMISE = null;
-  });
-  return browser;
-}
-
-function windowsBrowserCandidates(): string[] {
-  // Common Windows install roots, resolved from env vars so per-user and
-  // non-default installs are covered (Chrome can install under LOCALAPPDATA
-  // without admin rights, and many machines only ship Microsoft Edge).
-  const roots = [
-    process.env.PROGRAMFILES,
-    process.env["PROGRAMFILES(X86)"],
-    process.env.LOCALAPPDATA,
-  ].filter((value): value is string => Boolean(value));
-
-  const relativePaths = [
-    "Google\\Chrome\\Application\\chrome.exe",
-    "Google\\Chrome Beta\\Application\\chrome.exe",
-    "Chromium\\Application\\chrome.exe",
-    "Microsoft\\Edge\\Application\\msedge.exe",
-  ];
-
-  const candidates: string[] = [];
-  for (const root of roots) {
-    for (const relativePath of relativePaths) {
-      candidates.push(`${root}\\${relativePath}`);
-    }
-  }
-
-  // Fallback absolute paths in case the env vars are missing.
-  candidates.push(
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-  );
-
-  return candidates;
-}
-
-function findSystemBrowserExecutable() {
-  const candidates = [
-    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/snap/bin/chromium",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    ...windowsBrowserCandidates(),
-  ].filter((value): value is string => Boolean(value));
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
-async function assertSafeScrapeUrl(input: string, expectedHostname?: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(input);
-  } catch {
-    throw new Error("URL shop không hợp lệ.");
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Chỉ hỗ trợ URL http hoặc https.");
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  if (expectedHostname && hostname !== expectedHostname.toLowerCase()) {
-    throw new Error("Chỉ theo pagination trong cùng domain shop.");
-  }
-
-  const cached = PUBLIC_HOST_CACHE.get(hostname);
-  if (cached) {
-    await cached;
-    return parsed;
-  }
-
-  const promise = assertPublicHostname(hostname);
-  PUBLIC_HOST_CACHE.set(hostname, promise);
-  try {
-    await promise;
-  } catch (error) {
-    PUBLIC_HOST_CACHE.delete(hostname);
-    throw error;
-  }
-  return parsed;
-}
-
-async function assertPublicHostname(hostname: string) {
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
-  ) {
-    throw new Error("Không hỗ trợ scrape URL nội bộ.");
-  }
-
-  const directIpVersion = isIP(hostname);
-  if (directIpVersion !== 0) {
-    if (isPrivateIp(hostname)) {
-      throw new Error("Không hỗ trợ scrape IP nội bộ.");
-    }
-    return;
-  }
-
-  const addresses = await withTimeout(
-    lookup(hostname, { all: true, verbatim: true }),
-    DNS_TIMEOUT_MS,
-    "Không thể xác thực host shop trong thời gian cho phép.",
-  );
-  if (
-    addresses.length === 0 ||
-    addresses.some((item) => isPrivateIp(item.address))
-  ) {
-    throw new Error("Không hỗ trợ scrape host nội bộ.");
-  }
-}
-
 function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -1146,7 +931,6 @@ function withTimeout<T>(
   });
 }
 
-
 function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
   switch (stopReason) {
     case "queue_empty":
@@ -1156,45 +940,6 @@ function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
     case "product_limit":
       return "Dừng vì đã đạt giới hạn sản phẩm đã chọn.";
   }
-}
-
-function isPrivateIp(address: string) {
-  if (address.includes(":")) {
-    const normalized = address.toLowerCase();
-    const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-    if (mappedIpv4?.[1]) {
-      return isPrivateIpv4(mappedIpv4[1]);
-    }
-
-    return (
-      normalized === "::1" ||
-      normalized.startsWith("fc") ||
-      normalized.startsWith("fd") ||
-      normalized.startsWith("fe80:")
-    );
-  }
-
-  return isPrivateIpv4(address);
-}
-
-function isPrivateIpv4(address: string) {
-  const parts = address.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
-    return true;
-  }
-  const [a = 0, b = 0, c = 0] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 192 && b === 0 && c === 0) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
 }
 
 function _collectShopPageSnapshot(
@@ -1363,8 +1108,14 @@ function _collectShopPageSnapshot(
     if (pairs.length >= SPEC_PAIR_CAP) {
       return;
     }
-    const label = rawLabel?.replace(/\s+/g, " ").replace(/[:：]\s*$/, "").trim();
-    const value = rawValue?.replace(/\s+/g, " ").trim().slice(0, SPEC_VALUE_MAX);
+    const label = rawLabel
+      ?.replace(/\s+/g, " ")
+      .replace(/[:：]\s*$/, "")
+      .trim();
+    const value = rawValue
+      ?.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, SPEC_VALUE_MAX);
     if (!label || !value || label.length > 80) {
       return;
     }
@@ -1433,7 +1184,16 @@ function _collectShopPageSnapshot(
           if (pairs.length >= SPEC_PAIR_CAP) break;
           const cells = Array.from(row.querySelectorAll("th, td"));
           if (cells.length < 2) continue;
-          pushSpecPair(pairs, seen, text(cells[0]), cells.slice(1).map((cell) => text(cell)).filter(Boolean).join(" "));
+          pushSpecPair(
+            pairs,
+            seen,
+            text(cells[0]),
+            cells
+              .slice(1)
+              .map((cell) => text(cell))
+              .filter(Boolean)
+              .join(" "),
+          );
         }
         for (const dl of Array.from(container.querySelectorAll("dl"))) {
           if (pairs.length >= SPEC_PAIR_CAP) break;
@@ -1669,9 +1429,9 @@ function _collectShopPageSnapshot(
   const cardSelector = extraCardSelectors
     ? `${defaultCardSelectors}, ${extraCardSelectors}`
     : defaultCardSelectors;
-  const wooNodes = Array.from(
-    document.querySelectorAll(cardSelector),
-  ).filter((node) => !isWidgetProductNode(node));
+  const wooNodes = Array.from(document.querySelectorAll(cardSelector)).filter(
+    (node) => !isWidgetProductNode(node),
+  );
   const cardsByHref = new Map<
     string,
     {
@@ -2641,13 +2401,6 @@ const allLabeledValueNames = Object.values(labeledValueDefinitions)
   .map(escapeRegExp)
   .join("|");
 
-// Flattened list of every known spec label, passed into the in-browser
-// snapshot collector so it can recognize "label: value" list rows. Kept as a
-// plain string[] because it crosses the page.evaluate boundary.
-const ALL_SPEC_LABELS: readonly string[] = Object.values(
-  labeledValueDefinitions,
-).flat();
-
 function extractProductLabels(text: string) {
   return {
     manufacturer: extractLabeledValue(
@@ -2792,8 +2545,7 @@ function extractLabelsFromAdditionalProperty(
   const pairs: Array<{ label: string; value: string }> = [];
   for (const record of records) {
     let label = stringValue(record.name) ?? stringValue(record.propertyID);
-    const propValue =
-      stringValue(record.value) ?? stringValue(record.unitText);
+    const propValue = stringValue(record.value) ?? stringValue(record.unitText);
     if (label) {
       const alias = normalizeAdditionalPropertyLabel(label);
       if (alias) {
@@ -2818,7 +2570,6 @@ function normalizeAdditionalPropertyLabel(label: string) {
   const key = normalizeKey(label);
   return ADDITIONAL_PROPERTY_LABEL_ALIASES[key] ?? null;
 }
-
 
 function extractLabeledValue(
   text: string,
@@ -2888,7 +2639,8 @@ function _enrichProductWithPageText(
     model: product.model ?? pairLabels.model ?? labels.model,
     availability:
       product.availability ?? pairLabels.availability ?? labels.availability,
-    shopCategory: product.shopCategory ?? pairLabels.category ?? labels.category,
+    shopCategory:
+      product.shopCategory ?? pairLabels.category ?? labels.category,
   };
 }
 
@@ -2950,11 +2702,35 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export const scrapeShopMaterialsFromUrl = traceFn(log, "scrapeShopMaterialsFromUrl", _scrapeShopMaterialsFromUrl);
-export const closeShopScraperBrowser = traceFn(log, "closeShopScraperBrowser", _closeShopScraperBrowser);
-export const extractProductsFromPageSnapshot = traceFn(log, "extractProductsFromPageSnapshot", _extractProductsFromPageSnapshot);
-export const extractProductsWithDiagnosticsFromPageSnapshot = traceFn(log, "extractProductsWithDiagnosticsFromPageSnapshot", _extractProductsWithDiagnosticsFromPageSnapshot);
-export const mergeScrapedProductData = traceFn(log, "mergeScrapedProductData", _mergeScrapedProductData);
+export const scrapeShopMaterialsFromUrl = traceFn(
+  log,
+  "scrapeShopMaterialsFromUrl",
+  _scrapeShopMaterialsFromUrl,
+);
+export const closeShopScraperBrowser = traceFn(
+  log,
+  "closeShopScraperBrowser",
+  _closeShopScraperBrowser,
+);
+export const extractProductsFromPageSnapshot = traceFn(
+  log,
+  "extractProductsFromPageSnapshot",
+  _extractProductsFromPageSnapshot,
+);
+export const extractProductsWithDiagnosticsFromPageSnapshot = traceFn(
+  log,
+  "extractProductsWithDiagnosticsFromPageSnapshot",
+  _extractProductsWithDiagnosticsFromPageSnapshot,
+);
+export const mergeScrapedProductData = traceFn(
+  log,
+  "mergeScrapedProductData",
+  _mergeScrapedProductData,
+);
 // Must stay unwrapped: Playwright serializes this function into the browser.
 export const collectShopPageSnapshot = _collectShopPageSnapshot;
-export const enrichProductWithPageText = traceFn(log, "enrichProductWithPageText", _enrichProductWithPageText);
+export const enrichProductWithPageText = traceFn(
+  log,
+  "enrichProductWithPageText",
+  _enrichProductWithPageText,
+);

@@ -21,6 +21,10 @@ import {
   sanitizeScrapedProductName,
 } from "~/lib/materials/shop-promo-badges";
 import {
+  loadScrapeJobProducts,
+  replaceScrapeJobProducts,
+} from "~/server/services/shop-scrape-job-products";
+import {
   type ScrapedShopProduct,
   type ShopDetailEnrichmentMode,
   type ShopScrapeMethod,
@@ -176,7 +180,12 @@ async function _getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
     )
     .limit(1);
 
-  return job ? toScrapeJobSnapshot(job) : null;
+  return job
+    ? toScrapeJobSnapshot(
+        job,
+        await loadScrapeJobProducts(job.id, job.products),
+      )
+    : null;
 }
 
 async function _getShopScrapeJobProgress(
@@ -312,19 +321,19 @@ function normalizeScrapedProductInput(
 }
 
 async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProduct[]) {
-  const sanitizedProducts = sanitizeScrapedProductList(products);
+  const sanitizedProducts = await replaceScrapeJobProducts(jobId, products);
   const now = new Date().toISOString();
   const [updated] = await db
     .update(shopScrapeJobs)
     .set({
-      products: sanitizedProducts,
+      products: [],
       productCount: sanitizedProducts.length,
       updatedAt: now,
     })
     .where(eq(shopScrapeJobs.id, jobId))
     .returning();
 
-  return toScrapeJobSnapshot(requireRow(updated));
+  return toScrapeJobSnapshot(requireRow(updated), sanitizedProducts);
 }
 
 async function _updateShopScrapeJobProduct(
@@ -500,7 +509,7 @@ async function _deleteShopScrapeJob(
     .where(eq(shopScrapeJobs.id, jobId))
     .returning();
 
-  return deleted ? toScrapeJobSnapshot(deleted) : existing;
+  return deleted ? existing : null;
 }
 
 function _normalizeShopScrapeUrl(input: string) {
@@ -538,8 +547,15 @@ function toScrapeJobListItem(row: ShopScrapeJobRow): ShopScrapeJobListItem {
   return snapshot;
 }
 
-function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
-  const products = asScrapedProducts(row.products);
+function toScrapeJobSnapshot(
+  row: ShopScrapeJobRow,
+  productsOverride?: ScrapedShopProduct[],
+): ShopScrapeJobSnapshot {
+  const products = productsOverride ?? asScrapedProducts(row.products);
+  const productCount =
+    productsOverride === undefined
+      ? Math.max(row.productCount, products.length)
+      : products.length;
   const currentUrls = Array.isArray(row.currentUrls) ? row.currentUrls : [];
   const snapshot: ShopScrapeJobSnapshot = {
     id: row.id,
@@ -556,7 +572,7 @@ function toScrapeJobSnapshot(row: ShopScrapeJobRow): ShopScrapeJobSnapshot {
     pagesVisited: Array.isArray(row.pagesVisited) ? row.pagesVisited : [],
     failedPages: Array.isArray(row.failedPages) ? row.failedPages : [],
     products,
-    productCount: products.length,
+    productCount,
     queueLength: row.queueLength,
     durationMs: row.durationMs,
     stopReason: asStopReason(row.stopReason),
