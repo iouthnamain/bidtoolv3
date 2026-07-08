@@ -566,6 +566,12 @@ export function SearchSettingsSection() {
                 <span className="text-sm text-slate-600">
                   engines: {testMutation.data.effectiveConfig.engines.join(",")}
                 </span>
+                {testMutation.data.effectiveConfig.fallbackEngines.length > 0 ? (
+                  <span className="text-sm text-slate-600">
+                    fallback:{" "}
+                    {testMutation.data.effectiveConfig.fallbackEngines.join(",")}
+                  </span>
+                ) : null}
               </div>
               {testMutation.data.warnings.length > 0 ? (
                 <p className="mb-3 text-sm text-amber-800">

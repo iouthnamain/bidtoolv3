@@ -159,6 +159,86 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("reports SearXNG engine failures when no results are returned", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              results: [],
+              unresponsive_engines: [
+                ["duckduckgo", "Suspended: access denied"],
+                ["startpage", "Suspended: CAPTCHA"],
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results, warnings } = await searchQueryWithFallback("cadivi");
+
+    expect(results).toEqual([]);
+    expect(warnings.join(" ")).toContain("engine không phản hồi");
+    expect(warnings.join(" ")).toContain("duckduckgo");
+    expect(warnings.join(" ")).toContain("không có kết quả");
+  });
+
+  it("retries with Bing through SearXNG when configured engines return no results", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_ENGINES", "google,duckduckgo");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(requestUrl(input));
+      const engines = url.searchParams.get("engines");
+      if (engines === "google,duckduckgo") {
+        return new Response(
+          JSON.stringify({
+            results: [],
+            unresponsive_engines: [
+              ["google", "HTTP connection error"],
+              ["duckduckgo", "Suspended: access denied"],
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (engines === "bing") {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Sản phẩm - Công ty Cổ phần Nhựa Bình Minh",
+                url: "https://binhminhplastic.com.vn/san-pham",
+                content: "Ống nhựa PVC Bình Minh",
+                score: 1,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected engines: ${engines}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results, warnings } = await searchQueryWithFallback(
+      "Ống nhựa Bình Minh D90",
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.domain).toBe("binhminhplastic.com.vn");
+    expect(warnings.join(" ")).toContain("đã thử lại bằng Bing");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("returns empty results without throwing when all providers fail", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "");
     vi.stubGlobal(
@@ -199,6 +279,26 @@ describe("searchQueryWithFallback", () => {
     expect(result?.snippet).toContain("Thông số");
   });
 
+  it("does not read PDF responses as text snippets", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("%PDF-1.7\u0000binary", {
+            status: 200,
+            headers: { "Content-Type": "application/pdf" },
+          }),
+      ),
+    );
+
+    const { fetchUrlAsSearchResult } = await import("./material-web-search");
+    const result = await fetchUrlAsSearchResult(
+      "https://example.com/catalog.pdf",
+    );
+
+    expect(result).toBeNull();
+  });
+
   it("caches repeated product searches for a short TTL", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
     vi.stubEnv("ENRICHMENT_SEARCH_CACHE_TTL_MS", "60000");
@@ -226,6 +326,41 @@ describe("searchQueryWithFallback", () => {
     expect(first.results).toHaveLength(1);
     expect(second.results).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates repeated warnings across product query variants", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_ENGINES", "google,duckduckgo");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              results: [],
+              unresponsive_engines: [["duckduckgo", "CAPTCHA"]],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+
+    const { searchWebForProduct } = await import("./material-web-search");
+    const response = await searchWebForProduct(["query one", "query two"], undefined, {
+      feature: "test",
+    });
+
+    const engineWarnings = response.warnings.filter((warning) =>
+      warning.includes("engine không phản hồi"),
+    );
+    const retryWarnings = response.warnings.filter((warning) =>
+      warning.includes("đã thử lại bằng Bing"),
+    );
+
+    expect(engineWarnings).toHaveLength(1);
+    expect(retryWarnings).toHaveLength(1);
   });
 
   it("boosts VN domains, product codes, and PDF URLs when ranking", async () => {
@@ -260,6 +395,37 @@ describe("searchQueryWithFallback", () => {
     expect(ranked[0]?.rankScore ?? 0).toBeGreaterThan(
       ranked[1]?.rankScore ?? 0,
     );
+  });
+
+  it("demotes steel sizing pages for plastic/PVC pipe queries", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Bảng tra kích thước ống thép tiêu chuẩn",
+          url: "https://thepong.vn/bang-tra-kich-thuoc-ong-thep.htm",
+          domain: "thepong.vn",
+          snippet: "Bảng quy đổi kích thước ống thép DN Phi Inch",
+          query: "Ống nhựa Bình Minh D90 thông số kỹ thuật",
+          rankScore: 1,
+        },
+        {
+          title: "Sản phẩm - Công ty Cổ phần Nhựa Bình Minh",
+          url: "https://binhminhplastic.com.vn/san-pham",
+          domain: "binhminhplastic.com.vn",
+          snippet: "Ống và phụ tùng uPVC, HDPE, PPR, Nhựa Bình Minh",
+          query: "binhminhplastic PVC D90",
+          rankScore: 0.4,
+        },
+      ],
+      {
+        manufacturer: "Bình Minh",
+        name: "Ống nhựa Bình Minh D90",
+      },
+    );
+
+    expect(ranked[0]?.domain).toBe("binhminhplastic.com.vn");
+    expect(ranked[1]?.rankReasons ?? []).toContain("plastic_family_mismatch");
   });
 
   it("builds SearXNG URL with configured engines, language, safesearch and time range", async () => {

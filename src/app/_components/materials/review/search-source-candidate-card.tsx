@@ -2,17 +2,20 @@
 
 import { ExternalLink, Globe, Loader2, Sparkles } from "lucide-react";
 
-function confidenceTone(score: number): {
-  ring: string;
-  text: string;
+import {
+  matchBand,
+  matchBandLabel,
+  matchScorePercent,
+  type MatchBand,
+} from "~/lib/materials/match-assessment";
+
+function confidenceTone(band: MatchBand): {
+  badge: string;
 } {
-  if (score >= 0.85) {
-    return { ring: "bg-emerald-500", text: "text-emerald-700" };
+  if (band === "high") {
+    return { badge: "border-emerald-500 bg-emerald-50 text-emerald-700" };
   }
-  if (score >= 0.5) {
-    return { ring: "bg-amber-500", text: "text-amber-700" };
-  }
-  return { ring: "bg-slate-400", text: "text-slate-600" };
+  return { badge: "border-amber-500 bg-amber-50 text-amber-800" };
 }
 
 function SourceTag({ source }: { source: "web" | "ai" }) {
@@ -60,9 +63,11 @@ export function SearchSourceCandidateCard({
 }) {
   const isPending = candidate.status === "pending";
   const isError = candidate.status === "error";
-  const pct = Math.round(Math.max(0, Math.min(1, candidate.score)) * 100);
-  const tone = confidenceTone(candidate.score);
-  const hasScore = candidate.score > 0 && !isPending && !isError;
+  const band = matchBand(candidate.score);
+  const label = matchBandLabel(band);
+  const pct = matchScorePercent(candidate.score);
+  const hasConfidence = band != null && !isPending && !isError;
+  const tone = band ? confidenceTone(band) : null;
 
   return (
     <div
@@ -89,7 +94,7 @@ export function SearchSourceCandidateCard({
             : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
       }`}
     >
-      {candidate.isRecommended ? (
+      {candidate.isRecommended && hasConfidence ? (
         <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
           Gợi ý tốt nhất
         </span>
@@ -97,14 +102,24 @@ export function SearchSourceCandidateCard({
 
       <div className="flex items-start justify-between gap-2">
         <SourceTag source={candidate.source} />
-        {hotkeyIndex && hotkeyIndex <= 9 ? (
-          <span
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-500 bg-white text-xs font-bold text-slate-700 tabular-nums shadow-[var(--shadow-flat)]"
-            aria-hidden
-          >
-            {hotkeyIndex}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {hasConfidence && tone ? (
+            <span
+              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
+              aria-label={`Độ khớp ${label} ${pct}%`}
+            >
+              {label} {pct}%
+            </span>
+          ) : null}
+          {hotkeyIndex && hotkeyIndex <= 9 ? (
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white text-xs font-bold text-slate-700 tabular-nums shadow-[var(--shadow-flat)]"
+              aria-hidden
+            >
+              {hotkeyIndex}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="min-w-0">
@@ -129,33 +144,14 @@ export function SearchSourceCandidateCard({
                 {candidate.priceLabel}
               </p>
             ) : null}
-            <p className="mt-0.5 line-clamp-2 text-xs text-slate-700">
+            <p className="mt-0.5 line-clamp-1 text-xs text-slate-700">
               {candidate.subtitle}
             </p>
           </>
         )}
       </div>
 
-      {hasScore ? (
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={`h-full rounded-full ${tone.ring}`}
-              style={{ width: `${Math.max(4, pct)}%` }}
-              role="meter"
-              aria-valuenow={pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`Độ khớp ${pct}%`}
-            />
-          </div>
-          <span className={`text-xs font-bold tabular-nums ${tone.text}`}>
-            {pct}%
-          </span>
-        </div>
-      ) : null}
-
-      {!isPending && !isError && candidate.chips.length > 0 ? (
+      {hasConfidence && candidate.chips.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {candidate.chips.map((chip) => (
             <span

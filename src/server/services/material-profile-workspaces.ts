@@ -12,6 +12,7 @@ import {
   deserializeRowDecision,
   type SerializedRowDecision,
   serializeRowDecision,
+  type WebSearchStatus,
 } from "~/lib/materials/review-decision";
 import {
   snapshotStatusFromItem,
@@ -39,14 +40,17 @@ import type { db as appDb } from "~/server/db";
 import {
   excelWorkspaceItems,
   excelWorkspaces,
+  materialProfileSearchRuns,
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
   materials,
 } from "~/server/db/schema";
+import type { MaterialProfileSearchRunSnapshot } from "~/server/services/material-profile-search-jobs";
 
 type AppDb = typeof appDb;
 type Workspace = typeof excelWorkspaces.$inferSelect;
 type WorkspaceItem = typeof excelWorkspaceItems.$inferSelect;
+type MaterialProfileSearchRunRow = typeof materialProfileSearchRuns.$inferSelect;
 type MaterialRow = typeof materials.$inferSelect;
 type CatalogDocumentRow = typeof materialCatalogDocuments.$inferSelect;
 
@@ -76,6 +80,117 @@ export type MaterialProfileBulkApplySnapshot = {
     unchangedCount: number;
   };
 };
+
+function searchStatus(value: string): WebSearchStatus {
+  if (
+    value === "idle" ||
+    value === "pending" ||
+    value === "done" ||
+    value === "error"
+  ) {
+    return value;
+  }
+  return "idle";
+}
+
+function materialProfileSearchRunSnapshot(
+  row: MaterialProfileSearchRunRow,
+): MaterialProfileSearchRunSnapshot {
+  const parsed = deserializeRowDecision({
+    materialId: null,
+    acceptedFields: [],
+    webLinkResults: row.webLinkResultsJson,
+    webLinksStatus: row.webLinksStatus,
+    aiSearchCandidates: row.aiSearchCandidatesJson,
+    aiSearchStatus: row.aiSearchStatus,
+    selectedSearchCandidateKey: row.recommendedCandidateKey ?? undefined,
+    selectedSource:
+      row.recommendedCandidateKey?.startsWith("ai:") === true ? "ai" : undefined,
+  });
+
+  return {
+    id: row.id,
+    jobId: row.jobId,
+    workspaceId: row.workspaceId,
+    itemId: row.itemId,
+    originalRowIndex: row.originalRowIndex,
+    sortOrder: row.sortOrder,
+    mode: row.mode === "ai" ? "ai" : "web",
+    status:
+      row.status === "queued" ||
+      row.status === "running" ||
+      row.status === "completed" ||
+      row.status === "partial" ||
+      row.status === "failed" ||
+      row.status === "skipped" ||
+      row.status === "cancelled"
+        ? row.status
+        : "failed",
+    isCurrent: row.isCurrent,
+    sourceWebRunId: row.sourceWebRunId,
+    inputSnapshot:
+      row.inputSnapshotJson && typeof row.inputSnapshotJson === "object"
+        ? row.inputSnapshotJson
+        : {},
+    queries: Array.isArray(row.queriesJson)
+      ? row.queriesJson.filter((item): item is string => typeof item === "string")
+      : [],
+    webLinksStatus: searchStatus(row.webLinksStatus),
+    aiSearchStatus: searchStatus(row.aiSearchStatus),
+    webLinkResults: parsed?.webLinkResults ?? [],
+    aiSearchCandidates: parsed?.aiSearchCandidates ?? [],
+    recommendedCandidateKey: row.recommendedCandidateKey,
+    warnings: Array.isArray(row.warningsJson)
+      ? row.warningsJson.filter((item): item is string => typeof item === "string")
+      : [],
+    errorMessage: row.errorMessage,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function reviewDecisionJsonWithCurrentSearchRun(
+  reviewDecisionJson: unknown,
+  run: MaterialProfileSearchRunSnapshot | null,
+) {
+  if (!run) return reviewDecisionJson;
+  const base =
+    reviewDecisionJson && typeof reviewDecisionJson === "object"
+      ? { ...(reviewDecisionJson as Record<string, unknown>) }
+      : {};
+  const aiSearchResult = run.aiSearchCandidates[0];
+
+  return {
+    ...base,
+    webLinkResults: run.webLinkResults,
+    webLinksStatus: run.webLinksStatus,
+    aiSearchCandidates: run.aiSearchCandidates,
+    aiSearchResult,
+    aiSearchStatus: run.aiSearchStatus,
+    selectedSearchCandidateKey:
+      typeof base.selectedSearchCandidateKey === "string"
+        ? base.selectedSearchCandidateKey
+        : run.recommendedCandidateKey ?? undefined,
+    catalogPdfUrls:
+      base.catalogPdfUrls ?? aiSearchResult?.catalogPdfUrls ?? undefined,
+  };
+}
+
+function serializeMaterialProfileUserDecision(decision: SerializedRowDecision) {
+  const restored = deserializeRowDecision(decision);
+  if (!restored) return decision;
+  const serialized = serializeRowDecision(restored);
+  return {
+    ...serialized,
+    webLinkResults: undefined,
+    webLinksStatus: undefined,
+    aiSearchResult: undefined,
+    aiSearchCandidates: undefined,
+    aiSearchStatus: undefined,
+  };
+}
 
 export const MATERIAL_PROFILE_EXPORT_COLUMNS = [
   { key: "matchStatus", header: "BT - Match status" },
@@ -794,9 +909,34 @@ export async function getMaterialProfileWorkspace(
     .from(excelWorkspaceItems)
     .where(eq(excelWorkspaceItems.workspaceId, workspaceId))
     .orderBy(excelWorkspaceItems.sortOrder);
+  const currentRuns = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(
+      and(
+        eq(materialProfileSearchRuns.workspaceId, workspaceId),
+        eq(materialProfileSearchRuns.isCurrent, true),
+      ),
+    );
+  const currentRunByItemId = new Map(
+    currentRuns.map((run) => [
+      run.itemId,
+      materialProfileSearchRunSnapshot(run),
+    ]),
+  );
   return {
     workspace,
-    items,
+    items: items.map((item) => {
+      const currentSearchRun = currentRunByItemId.get(item.id) ?? null;
+      return {
+        ...item,
+        currentSearchRun,
+        reviewDecisionJson: reviewDecisionJsonWithCurrentSearchRun(
+          item.reviewDecisionJson,
+          currentSearchRun,
+        ),
+      };
+    }),
     workbook: parseWorkbookJson(workspace.workbookJson),
   };
 }
@@ -1112,7 +1252,9 @@ export async function updateMaterialProfileItemReviewDecision(
   const [updated] = await db
     .update(excelWorkspaceItems)
     .set({
-      reviewDecisionJson: serializeRowDecision(decision),
+      reviewDecisionJson: serializeMaterialProfileUserDecision(
+        serializeRowDecision(decision),
+      ),
       materialId: decision.materialId,
       matchStatus,
       updatedAt: now,
@@ -1169,7 +1311,9 @@ export async function batchUpdateMaterialProfileItemReviewDecisions(
     const [updated] = await db
       .update(excelWorkspaceItems)
       .set({
-        reviewDecisionJson: serializeRowDecision(decision),
+        reviewDecisionJson: serializeMaterialProfileUserDecision(
+          serializeRowDecision(decision),
+        ),
         materialId: decision.materialId,
         matchStatus,
         updatedAt: now,

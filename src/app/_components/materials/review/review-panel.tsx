@@ -40,6 +40,41 @@ export type ReviewPanelSummary = {
   unmatched: number;
 };
 
+export type ProfileSearchJobPanelState = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  mode: "web" | "ai";
+  requestedItemIds: number[];
+  total: number;
+  processed: number;
+  found: number;
+  partial: number;
+  failed: number;
+  skipped: number;
+  currentRowIndex: number | null;
+  currentProductName: string | null;
+  message: string | null;
+};
+
+export type ProfileSearchRunPanelState = {
+  id: number;
+  mode: "web" | "ai";
+  status:
+    | "queued"
+    | "running"
+    | "completed"
+    | "partial"
+    | "failed"
+    | "skipped"
+    | "cancelled";
+  isCurrent: boolean;
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+  warnings: string[];
+  errorMessage: string | null;
+  updatedAt: string;
+};
+
 function webRowInput(row: ReviewRow) {
   return {
     name: row.name,
@@ -50,6 +85,36 @@ function webRowInput(row: ReviewRow) {
     category: row.sheetFields.category,
     originCountry: row.sheetFields.originCountry,
   };
+}
+
+function profileRunStatusLabel(status: ProfileSearchRunPanelState["status"]) {
+  switch (status) {
+    case "queued":
+      return "Đang chờ";
+    case "running":
+      return "Đang chạy";
+    case "completed":
+      return "Hoàn tất";
+    case "partial":
+      return "Một phần";
+    case "failed":
+      return "Lỗi";
+    case "skipped":
+      return "Bỏ qua";
+    case "cancelled":
+      return "Đã hủy";
+  }
+}
+
+function formatRunTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export function ReviewPanel({
@@ -77,6 +142,13 @@ export function ReviewPanel({
   profileBulkApplyPending = false,
   profileUndoPending = false,
   profileUndoAvailable = false,
+  activeProfileSearchJob = null,
+  profileSearchJobPending = false,
+  profileSearchRuns = [],
+  profileSearchHistoryLoading = false,
+  onProfileSearchJob,
+  onProfileCancelSearchJob,
+  onProfileUseSearchRun,
 }: {
   rows: ReviewRow[];
   summary: ReviewPanelSummary;
@@ -104,6 +176,16 @@ export function ReviewPanel({
   profileBulkApplyPending?: boolean;
   profileUndoPending?: boolean;
   profileUndoAvailable?: boolean;
+  activeProfileSearchJob?: ProfileSearchJobPanelState | null;
+  profileSearchJobPending?: boolean;
+  profileSearchRuns?: ProfileSearchRunPanelState[];
+  profileSearchHistoryLoading?: boolean;
+  onProfileSearchJob?: (
+    kind: "web" | "ai",
+    rowIndices: number[],
+  ) => void | Promise<void>;
+  onProfileCancelSearchJob?: () => void | Promise<void>;
+  onProfileUseSearchRun?: (runId: number) => void | Promise<void>;
 }) {
   const toast = useToast();
   const isProfileSplit = searchMode === "profileSplit";
@@ -195,6 +277,19 @@ export function ReviewPanel({
   const savedToMaterialsCount = Array.from(decisions.values()).filter(
     (decision) => decision.materialId != null,
   ).length;
+  const isProfileSearchJobActive =
+    activeProfileSearchJob?.status === "queued" ||
+    activeProfileSearchJob?.status === "running";
+  const activeProfileSearchItemIds = useMemo(
+    () => new Set(activeProfileSearchJob?.requestedItemIds ?? []),
+    [activeProfileSearchJob?.requestedItemIds],
+  );
+  const profileSearchJobMode = activeProfileSearchJob?.mode;
+  const profileSearchBusy = profileSearchJobPending || isProfileSearchJobActive;
+  const selectedRowProfileSearchPending =
+    selectedRow != null &&
+    activeProfileSearchItemIds.has(selectedRow.key) &&
+    isProfileSearchJobActive;
 
   const catalogFieldsForRow = (
     row: ReviewRow,
@@ -597,6 +692,44 @@ export function ReviewPanel({
     }
   };
 
+  const startProfileSearchForRows = async (
+    kind: "web" | "ai",
+    targets: ReviewRow[],
+  ) => {
+    if (!onProfileSearchJob) {
+      await runWithConcurrency(
+        targets.map(
+          (row) => () =>
+            kind === "web" ? runWebLinksForRow(row) : runAiSearchForRow(row),
+        ),
+        3,
+      );
+      return;
+    }
+
+    onFlushDecisionsForRows?.(targets.map((row) => row.originalRowIndex));
+    await onProfileSearchJob(
+      kind,
+      targets.map((row) => row.originalRowIndex),
+    );
+  };
+
+  const runWebLinksAction = async (row: ReviewRow) => {
+    if (isProfileSplit && onProfileSearchJob) {
+      await startProfileSearchForRows("web", [row]);
+      return;
+    }
+    await runWebLinksForRow(row);
+  };
+
+  const runAiSearchAction = async (row: ReviewRow) => {
+    if (isProfileSplit && onProfileSearchJob) {
+      await startProfileSearchForRows("ai", [row]);
+      return;
+    }
+    await runAiSearchForRow(row);
+  };
+
   const runBulkSearch = async (kind: "web" | "ai") => {
     if (checkedRows.size === 0) {
       toast.warning("Chọn ít nhất một dòng ở danh sách bên trái.");
@@ -609,7 +742,19 @@ export function ReviewPanel({
       return;
     }
 
-    onFlushDecisionsForRows?.(targets.map((row) => row.originalRowIndex));
+    if (onProfileSearchJob) {
+      try {
+        await startProfileSearchForRows(kind, targets);
+      } catch {
+        toast.error(
+          kind === "web"
+            ? "Không bắt đầu được job tìm web."
+            : "Không bắt đầu được job tìm AI.",
+        );
+      }
+      return;
+    }
+
     setBulkProgress({ kind, completed: 0, total: targets.length });
 
     try {
@@ -696,7 +841,14 @@ export function ReviewPanel({
         rowHasSearchResults(decisions.get(row.originalRowIndex)),
       )
     : false;
-  const isBulkRunning = bulkProgress != null;
+  const isBulkRunning = bulkProgress != null || profileSearchBusy;
+  const profileSearchProgressPct =
+    activeProfileSearchJob && activeProfileSearchJob.total > 0
+      ? Math.round(
+          (activeProfileSearchJob.processed / activeProfileSearchJob.total) *
+            100,
+        )
+      : 0;
 
   if (rows.length === 0) {
     return (
@@ -873,6 +1025,59 @@ export function ReviewPanel({
         </div>
       </div>
 
+      {isProfileSplit && activeProfileSearchJob ? (
+        <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-semibold text-slate-900">
+                {activeProfileSearchJob.mode === "web"
+                  ? "Job tìm web"
+                  : "Job tìm AI"}
+                : {activeProfileSearchJob.processed}/
+                {activeProfileSearchJob.total} dòng
+              </p>
+              <p className="mt-1 text-xs text-slate-700">
+                {activeProfileSearchJob.message ??
+                  (isProfileSearchJobActive
+                    ? "Đang xử lý."
+                    : "Đã kết thúc.")}
+                {activeProfileSearchJob.currentProductName
+                  ? ` · ${activeProfileSearchJob.currentProductName}`
+                  : ""}
+              </p>
+              <p className="mt-1 text-xs text-slate-700">
+                Tìm thấy {activeProfileSearchJob.found} · Một phần{" "}
+                {activeProfileSearchJob.partial} · Lỗi{" "}
+                {activeProfileSearchJob.failed} · Bỏ qua{" "}
+                {activeProfileSearchJob.skipped}
+              </p>
+            </div>
+            {isProfileSearchJobActive && onProfileCancelSearchJob ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void onProfileCancelSearchJob()}
+              >
+                Hủy job
+              </Button>
+            ) : null}
+          </div>
+          <div
+            className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={profileSearchProgressPct}
+            aria-label="Tiến độ tìm kiếm hồ sơ vật tư"
+          >
+            <div
+              className="h-full bg-brand transition-all"
+              style={{ width: `${profileSearchProgressPct}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-r lg:border-b-0">
           {isProfileSplit && filtered.length > 0 ? (
@@ -895,6 +1100,8 @@ export function ReviewPanel({
             );
             const meta = STATUS_META[rowStatus];
             const isSelected = row.originalRowIndex === selectedRowIndex;
+            const isRowSearchActive =
+              isProfileSearchJobActive && activeProfileSearchItemIds.has(row.key);
             const name = row.name.trim()
               ? row.name
               : (row.topCandidate?.name ?? `Dòng ${row.originalRowIndex}`);
@@ -939,11 +1146,19 @@ export function ReviewPanel({
                     decision?.webLinksStatus === "pending" ? (
                       <Badge tone="info">Web…</Badge>
                     ) : isProfileSplit &&
+                      isRowSearchActive &&
+                      profileSearchJobMode === "web" ? (
+                      <Badge tone="info">Web…</Badge>
+                    ) : isProfileSplit &&
                       decision?.webLinksStatus === "error" ? (
                       <Badge tone="critical">Web lỗi</Badge>
                     ) : null}
                     {isProfileSplit &&
                     decision?.aiSearchStatus === "pending" ? (
+                      <Badge tone="info">AI…</Badge>
+                    ) : isProfileSplit &&
+                      isRowSearchActive &&
+                      profileSearchJobMode === "ai" ? (
                       <Badge tone="info">AI…</Badge>
                     ) : isProfileSplit &&
                       decision?.aiSearchStatus === "error" ? (
@@ -987,30 +1202,97 @@ export function ReviewPanel({
 
         <div className="min-w-0 p-4">
           {selectedRow ? (
-            <MatchChooser
-              key={selectedRow.originalRowIndex}
-              row={selectedRow}
-              decision={decisions.get(selectedRow.originalRowIndex)}
-              onChange={(next) =>
-                handleDecisionChange(selectedRow.originalRowIndex, next)
-              }
-              searchMode={searchMode}
-              onWebSearch={() => handleWebSearch(selectedRow)}
-              onWebLinksSearch={() => void runWebLinksForRow(selectedRow)}
-              onAiSearch={() => void runAiSearchForRow(selectedRow)}
-              isWebLinksPending={
-                decisions.get(selectedRow.originalRowIndex)?.webLinksStatus ===
-                "pending"
-              }
-              isAiSearchPending={
-                decisions.get(selectedRow.originalRowIndex)?.aiSearchStatus ===
-                "pending"
-              }
-              isWebSearchPending={
-                decisions.get(selectedRow.originalRowIndex)?.webSearchStatus ===
-                "pending"
-              }
-            />
+            <>
+              <MatchChooser
+                key={selectedRow.originalRowIndex}
+                row={selectedRow}
+                decision={decisions.get(selectedRow.originalRowIndex)}
+                onChange={(next) =>
+                  handleDecisionChange(selectedRow.originalRowIndex, next)
+                }
+                searchMode={searchMode}
+                onWebSearch={() => handleWebSearch(selectedRow)}
+                onWebLinksSearch={() => void runWebLinksAction(selectedRow)}
+                onAiSearch={() => void runAiSearchAction(selectedRow)}
+                isWebLinksPending={
+                  decisions.get(selectedRow.originalRowIndex)?.webLinksStatus ===
+                    "pending" ||
+                  (selectedRowProfileSearchPending &&
+                    profileSearchJobMode === "web")
+                }
+                isAiSearchPending={
+                  decisions.get(selectedRow.originalRowIndex)?.aiSearchStatus ===
+                    "pending" ||
+                  (selectedRowProfileSearchPending &&
+                    profileSearchJobMode === "ai")
+                }
+                isWebSearchPending={
+                  decisions.get(selectedRow.originalRowIndex)?.webSearchStatus ===
+                  "pending"
+                }
+              />
+
+              {isProfileSplit ? (
+                <div className="mt-4 border-t border-slate-200 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Lịch sử tìm kiếm
+                    </h4>
+                    {profileSearchHistoryLoading ? (
+                      <span className="text-xs text-slate-600">Đang tải…</span>
+                    ) : null}
+                  </div>
+                  {profileSearchRuns.length > 0 ? (
+                    <div className="mt-2 divide-y divide-slate-100">
+                      {profileSearchRuns.slice(0, 10).map((run) => {
+                        const canReuse =
+                          !run.isCurrent &&
+                          run.status !== "queued" &&
+                          run.status !== "running" &&
+                          run.status !== "cancelled";
+                        return (
+                          <div
+                            key={run.id}
+                            className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900">
+                                {run.mode === "web" ? "Web" : "AI"} ·{" "}
+                                {profileRunStatusLabel(run.status)}
+                                {run.isCurrent ? " · đang dùng" : ""}
+                              </p>
+                              <p className="mt-0.5 text-slate-600">
+                                {formatRunTime(run.updatedAt)} ·{" "}
+                                {run.webLinkResults.length} link ·{" "}
+                                {run.aiSearchCandidates.length} ứng viên
+                                {run.errorMessage
+                                  ? ` · ${run.errorMessage}`
+                                  : run.warnings[0]
+                                    ? ` · ${run.warnings[0]}`
+                                    : ""}
+                              </p>
+                            </div>
+                            {canReuse && onProfileUseSearchRun ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => void onProfileUseSearchRun(run.id)}
+                              >
+                                Dùng lại
+                              </Button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-600">
+                      Chưa có lịch sử tìm kiếm cho dòng này.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </>
           ) : (
             <EmptyState
               title="Chọn một dòng"

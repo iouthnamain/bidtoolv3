@@ -182,7 +182,7 @@ export function MatchChooser({
       });
     } else {
       links.forEach((link) => {
-        const { score, chips } = webLinkMatchChips(link, row.name);
+        const { score, chips } = webLinkMatchChips(link, row.name, sheetFields);
         items.push({
           key: searchCandidateKey("web", link.url),
           source: "web",

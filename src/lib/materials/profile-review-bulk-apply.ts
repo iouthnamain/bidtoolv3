@@ -87,7 +87,7 @@ export function searchResultDecisionForRow(
         bestIndex = index;
       }
     });
-    if (bestIndex >= 0) {
+    if (bestIndex >= 0 && bestScore >= threshold) {
       const aiResult = aiCandidates[bestIndex]!;
       const gapFields = applyAllProposedFieldsWithCurrency(aiResult.fields);
       return {

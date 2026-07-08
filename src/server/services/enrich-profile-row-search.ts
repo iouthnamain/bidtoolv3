@@ -44,6 +44,18 @@ export type EnrichProfileRowSearchResult = {
   warnings: string[];
 };
 
+export type ProfileWebLinksSearchResult = {
+  webLinkResults: WebLinkResult[];
+  queries: string[];
+  warnings: string[];
+};
+
+export type ProfileAiCandidatesSearchResult = {
+  aiSearchCandidates: AiSearchStoredResult[];
+  recommendedCandidateKey?: string;
+  warnings: string[];
+};
+
 function fieldConfidencesFromExtracted(
   extracted: Awaited<ReturnType<typeof extractProductFromSources>>,
 ): Partial<Record<FillableField, number>> {
@@ -98,16 +110,27 @@ async function enrichLinkWithFetch(
   };
 }
 
-async function _enrichProfileRowSearch(
+function webLinkToSearchResult(link: WebLinkResult): WebSearchResult {
+  return {
+    title: link.title,
+    url: link.url,
+    domain: link.domain,
+    snippet: link.snippet,
+    query: link.query ?? "profile_search",
+    rankScore: link.rankScore ?? 0,
+  };
+}
+
+async function _searchProfileRowWebLinks(
   input: EnrichWebRowInput,
   signal?: AbortSignal,
-): Promise<EnrichProfileRowSearchResult> {
+): Promise<ProfileWebLinksSearchResult> {
   const warnings: string[] = [];
 
   if (!input.name.trim()) {
     return {
       webLinkResults: [],
-      aiSearchCandidates: [],
+      queries: [],
       warnings: ["Tên vật tư trống."],
     };
   }
@@ -137,7 +160,7 @@ async function _enrichProfileRowSearch(
   if (queries.length === 0) {
     return {
       webLinkResults: [],
-      aiSearchCandidates: [],
+      queries: [],
       warnings: ["Không tạo được truy vấn tìm kiếm."],
     };
   }
@@ -168,19 +191,26 @@ async function _enrichProfileRowSearch(
   }));
 
   if (ranked.length === 0) {
-    return { webLinkResults, aiSearchCandidates: [], warnings };
+    return { webLinkResults, queries, warnings };
   }
 
-  let provider;
-  try {
-    provider = await resolveAiProvider("enrichment");
-  } catch (error) {
-    warnings.push(
-      error instanceof Error ? error.message : "Không cấu hình AI enrichment.",
-    );
-    return { webLinkResults, aiSearchCandidates: [], warnings };
+  return { webLinkResults, queries, warnings };
+}
+
+async function _extractProfileRowAiCandidates(
+  input: EnrichWebRowInput,
+  webLinkResults: WebLinkResult[],
+  signal?: AbortSignal,
+): Promise<ProfileAiCandidatesSearchResult> {
+  if (webLinkResults.length === 0) {
+    return {
+      aiSearchCandidates: [],
+      warnings: ["Không có nguồn web để trích xuất AI."],
+    };
   }
 
+  const provider = await resolveAiProvider("enrichment");
+  const ranked = webLinkResults.map(webLinkToSearchResult);
   const linksToFetch = ranked.slice(0, PROFILE_FETCH_LINKS);
   const enrichedLinks = await runPool(linksToFetch, FETCH_CONCURRENCY, (link) =>
     enrichLinkWithFetch(link, signal),
@@ -241,20 +271,67 @@ async function _enrichProfileRowSearch(
 
   aiSearchCandidates.sort(
     (left, right) =>
-      scoreAiCandidateCompletion(right, sheetFields) -
-      scoreAiCandidateCompletion(left, sheetFields),
+      scoreAiCandidateCompletion(right, sheetFields, input.name) -
+      scoreAiCandidateCompletion(left, sheetFields, input.name),
   );
 
   const recommendedCandidateKey =
     aiSearchCandidates.length > 0 ? "ai:0" : undefined;
 
   return {
-    webLinkResults,
     aiSearchCandidates,
     recommendedCandidateKey,
-    warnings,
+    warnings: [],
   };
 }
+
+async function _enrichProfileRowSearch(
+  input: EnrichWebRowInput,
+  signal?: AbortSignal,
+): Promise<EnrichProfileRowSearchResult> {
+  const web = await searchProfileRowWebLinks(input, signal);
+  if (web.webLinkResults.length === 0) {
+    return {
+      webLinkResults: web.webLinkResults,
+      aiSearchCandidates: [],
+      warnings: web.warnings,
+    };
+  }
+
+  try {
+    const ai = await extractProfileRowAiCandidates(
+      input,
+      web.webLinkResults,
+      signal,
+    );
+    return {
+      webLinkResults: web.webLinkResults,
+      aiSearchCandidates: ai.aiSearchCandidates,
+      recommendedCandidateKey: ai.recommendedCandidateKey,
+      warnings: [...web.warnings, ...ai.warnings],
+    };
+  } catch (error) {
+    return {
+      webLinkResults: web.webLinkResults,
+      aiSearchCandidates: [],
+      warnings: [
+        ...web.warnings,
+        error instanceof Error ? error.message : "Không cấu hình AI enrichment.",
+      ],
+    };
+  }
+}
+
+export const searchProfileRowWebLinks = traceFn(
+  log,
+  "searchProfileRowWebLinks",
+  _searchProfileRowWebLinks,
+);
+export const extractProfileRowAiCandidates = traceFn(
+  log,
+  "extractProfileRowAiCandidates",
+  _extractProfileRowAiCandidates,
+);
 
 export const enrichProfileRowSearch = traceFn(
   log,

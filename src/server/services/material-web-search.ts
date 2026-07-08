@@ -49,6 +49,7 @@ type ProviderSearchResponse = WebSearchResponse & {
 
 type SearchOptions = {
   feature?: SearchAuditFeature;
+  overrideEngines?: string[];
 };
 
 const DEFAULT_DOMAIN_POLICY: SearchDomainPolicy = {
@@ -97,6 +98,18 @@ function decodeHtmlEntities(value: string) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ");
+}
+
+function stripAccents(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+function normalizeSearchText(value: string) {
+  return stripAccents(value).toLowerCase();
 }
 
 function stripHtmlTags(value: string) {
@@ -237,6 +250,17 @@ function mapSearxngJsonResults(
   return results;
 }
 
+function formatUnresponsiveEngines(
+  items: Array<[string, string]> | undefined,
+): string | null {
+  if (!items || items.length === 0) return null;
+  const summary = items
+    .slice(0, 4)
+    .map(([engine, reason]) => `${engine}: ${reason}`)
+    .join("; ");
+  return summary ? `engine không phản hồi (${summary})` : null;
+}
+
 export function applyDomainPolicy(
   results: WebSearchResult[],
   policy: SearchDomainPolicy,
@@ -291,7 +315,11 @@ async function searchSearxngQuery(
   options?: SearchOptions,
 ): Promise<ProviderSearchResponse> {
   const startedAt = Date.now();
-  const config = await resolveSearxngSearchConfig();
+  const resolvedConfig = await resolveSearxngSearchConfig();
+  const config =
+    options?.overrideEngines && options.overrideEngines.length > 0
+      ? { ...resolvedConfig, engines: options.overrideEngines }
+      : resolvedConfig;
   const policy = await resolveSearchDomainPolicy();
   const feature = options?.feature ?? "interactive";
   const warnings: string[] = [];
@@ -336,8 +364,15 @@ async function searchSearxngQuery(
           content?: string;
           score?: number;
         }>;
+        unresponsive_engines?: Array<[string, string]>;
       };
       collected.push(...mapSearxngJsonResults(data.results ?? [], query));
+      const engineWarning = formatUnresponsiveEngines(
+        data.unresponsive_engines,
+      );
+      if (collected.length === 0 && engineWarning) {
+        warnings.push(`SearXNG (${base}): ${engineWarning}.`);
+      }
     } else {
       warnings.push(`SearXNG (${base}): JSON HTTP ${jsonResponse.status}.`);
     }
@@ -363,7 +398,7 @@ async function searchSearxngQuery(
     );
     const status: SearchAuditStatus =
       filtered.length > 0 ? "success" : "no_results";
-    if (filtered.length === 0 && warnings.length === 0) {
+    if (filtered.length === 0) {
       warnings.push(`SearXNG (${base}): không có kết quả cho "${query}".`);
     }
 
@@ -429,10 +464,10 @@ async function _fetchUrlAsSearchResult(
     }
 
     const contentType = response.headers.get("content-type") ?? "";
-    if (
-      !contentType.includes("text/html") &&
-      !contentType.includes("application/pdf")
-    ) {
+    if (contentType.includes("application/pdf")) {
+      return null;
+    }
+    if (!contentType.includes("text/html")) {
       return null;
     }
 
@@ -490,12 +525,55 @@ async function _searchQueryWithFallback(
   signal?: AbortSignal,
   options?: SearchOptions,
 ): Promise<WebSearchResponse> {
-  const { results, warnings, domainPolicy } = await searchSearxngQuery(
-    query,
-    signal,
-    options,
+  const primary = await searchSearxngQuery(query, signal, options);
+  if (
+    primary.results.length > 0 ||
+    options?.overrideEngines ||
+    signal?.aborted
+  ) {
+    return {
+      results: primary.results,
+      warnings: primary.warnings,
+      domainPolicy: primary.domainPolicy,
+    };
+  }
+
+  const config = await resolveSearxngSearchConfig();
+  const hasBing = config.engines.some(
+    (engine) => engine.trim().toLowerCase() === "bing",
   );
-  return { results, warnings, domainPolicy };
+  if (!config.baseUrl || hasBing) {
+    return {
+      results: primary.results,
+      warnings: primary.warnings,
+      domainPolicy: primary.domainPolicy,
+    };
+  }
+
+  const rescue = await searchSearxngQuery(query, signal, {
+    ...options,
+    overrideEngines: ["bing"],
+  });
+  const retryWarning =
+    "SearXNG: engine chính không có kết quả; đã thử lại bằng Bing.";
+  const primaryWarnings =
+    rescue.results.length > 0
+      ? primary.warnings.filter(
+          (warning) => !warning.includes("không có kết quả"),
+        )
+      : primary.warnings;
+  const rescueWarnings =
+    rescue.results.length > 0
+      ? rescue.warnings.filter(
+          (warning) => !warning.includes("không có kết quả"),
+        )
+      : rescue.warnings;
+
+  return {
+    results: rescue.results,
+    warnings: [...primaryWarnings, retryWarning, ...rescueWarnings],
+    domainPolicy: rescue.domainPolicy ?? primary.domainPolicy,
+  };
 }
 
 export function summarizeWebSearchFailures(warnings: string[]): string {
@@ -504,6 +582,14 @@ export function summarizeWebSearchFailures(warnings: string[]): string {
   }
   const unique = [...new Set(warnings.map((warning) => warning.trim()))];
   return unique.slice(0, 4).join(" | ");
+}
+
+function uniqueWarnings(warnings: string[]) {
+  return [
+    ...new Set(
+      warnings.map((warning) => warning.trim()).filter((warning) => warning),
+    ),
+  ];
 }
 
 async function _searchWebForProduct(
@@ -545,11 +631,12 @@ async function _searchWebForProduct(
     }
   }
 
-  if (merged.length === 0 && warnings.length > 0) {
-    log.warn("web_search_no_results", { warnings });
+  const dedupedWarnings = uniqueWarnings(warnings);
+  if (merged.length === 0 && dedupedWarnings.length > 0) {
+    log.warn("web_search_no_results", { warnings: dedupedWarnings });
   }
 
-  return { results: merged, warnings, domainPolicy };
+  return { results: merged, warnings: dedupedWarnings, domainPolicy };
 }
 
 async function searchQueryWithCache(
@@ -636,6 +723,41 @@ function textContainsSpecKeyword(text: string) {
   return SPEC_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 
+const MATERIAL_FAMILIES = [
+  {
+    name: "plastic",
+    positive: ["nhua", "plastic", "pvc", "upvc", "hdpe", "ppr"],
+    conflicts: ["thep", "steel", "inox", "sat", "gang"],
+  },
+  {
+    name: "steel",
+    positive: ["thep", "steel", "inox", "sat", "gang"],
+    conflicts: ["nhua", "plastic", "pvc", "upvc", "hdpe", "ppr"],
+  },
+] as const;
+
+function hasAnyTerm(text: string, terms: readonly string[]) {
+  return terms.some((term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text);
+  });
+}
+
+function materialFamilyConflict(inputText: string, resultText: string) {
+  const input = normalizeSearchText(inputText);
+  const result = normalizeSearchText(resultText);
+  for (const family of MATERIAL_FAMILIES) {
+    if (!hasAnyTerm(input, family.positive)) continue;
+    if (
+      hasAnyTerm(result, family.conflicts) &&
+      !hasAnyTerm(result, family.positive)
+    ) {
+      return family.name;
+    }
+  }
+  return null;
+}
+
 function codeTokensMatch(code: string, title: string, url: string) {
   const normalizedCode = code.trim().toLowerCase();
   if (!normalizedCode || normalizedCode.length < 2) return false;
@@ -672,6 +794,7 @@ function _rankSearchResults(
     const title = result.title.toLowerCase();
     const snippet = result.snippet.toLowerCase();
     const combined = `${title} ${snippet}`;
+    const conflict = materialFamilyConflict(name, combined);
 
     if (domainMatchesAny(domain, policy.boostDomains)) {
       score += 0.45;
@@ -715,6 +838,10 @@ function _rankSearchResults(
         score += (hits / nameTokens.length) * 0.25;
         reasons.push("name_token_match");
       }
+    }
+    if (conflict) {
+      score -= 0.5;
+      reasons.push(`${conflict}_family_mismatch`);
     }
     if (isPenaltyDomain(domain, policy)) {
       score -= 0.35;

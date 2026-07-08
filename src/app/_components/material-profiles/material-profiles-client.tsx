@@ -150,7 +150,7 @@ export function MaterialProfilesClient() {
                 value={noticeNumber}
                 onChange={(event) => setNoticeNumber(event.target.value)}
                 placeholder="VD: IB2600190527-00"
-                className="h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                className="h-11 rounded border border-slate-500 bg-white px-3 text-sm font-semibold text-slate-900 shadow-[var(--shadow-flat)] focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
               />
             </label>
             <Button
@@ -176,6 +176,21 @@ export function MaterialProfilesClient() {
           {listQuery.isLoading ? (
             <div className="p-5 text-sm text-slate-600">
               Đang tải danh sách…
+            </div>
+          ) : listQuery.isError ? (
+            <div className="p-5">
+              <EmptyState
+                title="Không tải được danh sách hồ sơ"
+                description={listQuery.error.message}
+                cta={
+                  <Button
+                    variant="secondary"
+                    onClick={() => void listQuery.refetch()}
+                  >
+                    Tải lại
+                  </Button>
+                }
+              />
             </div>
           ) : workspaces.length === 0 ? (
             <div className="p-5">
@@ -219,7 +234,7 @@ export function MaterialProfilesClient() {
                                   cancelEditing();
                                 }
                               }}
-                              className="h-9 w-full min-w-44 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                              className="h-9 w-full min-w-44 rounded border border-slate-500 bg-white px-3 text-sm font-semibold text-slate-900 shadow-[var(--shadow-flat)] focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                               autoFocus
                             />
                           ) : (

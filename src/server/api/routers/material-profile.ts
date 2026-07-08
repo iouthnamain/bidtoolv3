@@ -32,8 +32,28 @@ import {
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
 } from "~/server/services/material-profile-workspaces";
+import {
+  cancelMaterialProfileSearchJob,
+  getMaterialProfileSearchJob,
+  listMaterialProfileSearchJobs,
+  listMaterialProfileSearchRuns,
+  MaterialProfileSearchJobError,
+  setCurrentMaterialProfileSearchRun,
+  startMaterialProfileSearchJob,
+} from "~/server/services/material-profile-search-jobs";
 
 function mapMaterialProfileError(error: unknown): never {
+  if (error instanceof MaterialProfileSearchJobError) {
+    throw new TRPCError({
+      code:
+        error.code === "NOT_FOUND"
+          ? "NOT_FOUND"
+          : error.code === "CONFLICT"
+            ? "CONFLICT"
+            : "BAD_REQUEST",
+      message: error.message,
+    });
+  }
   if (error instanceof MaterialProfileWorkspaceError) {
     throw new TRPCError({
       code:
@@ -60,6 +80,12 @@ const workspaceIdInput = z.object({
   workspaceId: z.number().int().positive(),
 });
 
+const searchJobIdInput = z.object({
+  jobId: z.string().uuid(),
+});
+
+const searchModeInput = z.enum(["web", "ai"]);
+
 const cellEditsSchema = z.record(z.string(), z.record(z.string(), z.string()));
 const sheetNumberMapSchema = z.record(
   z.string(),
@@ -72,22 +98,52 @@ const exportEditStateSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+const webSearchStatusSchema = z.enum(["idle", "pending", "done", "error"]);
+
+const materialEnrichmentEvidenceSchema = z.object({
+  field: z.string(),
+  value: z.string().optional(),
+  snippet: z.string(),
+  sourceUrl: z.string().optional(),
+});
+
+const webLinkResultSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  domain: z.string(),
+  snippet: z.string(),
+  query: z.string().optional(),
+  rankScore: z.number().optional(),
+});
+
+const aiSearchStoredResultSchema = z.object({
+  fields: z.record(z.string()),
+  sourceUrls: z.array(z.string()),
+  evidence: z.array(materialEnrichmentEvidenceSchema),
+  catalogPdfUrls: z.array(z.string()).optional(),
+  fieldConfidences: z.record(z.number()).optional(),
+  title: z.string().optional(),
+  url: z.string().optional(),
+  snippet: z.string().optional(),
+  rankScore: z.number().optional(),
+});
+
 const serializedRowDecisionSchema = z.object({
   materialId: z.number().int().positive().nullable(),
   acceptedFields: z.array(z.string()),
   overwriteFields: z.array(z.string()).optional(),
   editedValues: z.record(z.string()).optional(),
   webProposedFields: z.record(z.string()).optional(),
-  webEvidence: z
-    .array(
-      z.object({
-        field: z.string(),
-        snippet: z.string(),
-        sourceUrl: z.string().optional(),
-      }),
-    )
-    .optional(),
-  webSearchStatus: z.enum(["idle", "pending", "done", "error"]).optional(),
+  webEvidence: z.array(materialEnrichmentEvidenceSchema).optional(),
+  webSearchStatus: webSearchStatusSchema.optional(),
+  webLinkResults: z.array(webLinkResultSchema).optional(),
+  webLinksStatus: webSearchStatusSchema.optional(),
+  aiSearchResult: aiSearchStoredResultSchema.optional(),
+  aiSearchCandidates: z.array(aiSearchStoredResultSchema).optional(),
+  aiSearchStatus: webSearchStatusSchema.optional(),
+  selectedSource: z.enum(["catalog", "web", "ai"]).optional(),
+  selectedSearchCandidateKey: z.string().optional(),
+  catalogPdfUrls: z.array(z.string()).optional(),
   skipped: z.boolean().optional(),
 });
 
@@ -289,6 +345,86 @@ export const materialProfileRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         bulkAiSearchMaterialProfileItems(ctx.db, input),
+      ),
+    ),
+
+  startSearchJob: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        mode: searchModeInput,
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        startMaterialProfileSearchJob({
+          workspaceId: input.workspaceId,
+          itemIds: input.itemIds,
+          mode: input.mode,
+        }),
+      ),
+    ),
+
+  getSearchJob: protectedProcedure
+    .input(searchJobIdInput)
+    .query(({ input }) =>
+      withMaterialProfileErrors(async () => {
+        const job = await getMaterialProfileSearchJob(input.jobId);
+        if (!job) {
+          throw new MaterialProfileSearchJobError(
+            "NOT_FOUND",
+            "Không tìm thấy job tìm kiếm.",
+          );
+        }
+        return job;
+      }),
+    ),
+
+  listSearchJobs: protectedProcedure
+    .input(
+      workspaceIdInput.extend({
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+    )
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        listMaterialProfileSearchJobs({
+          workspaceId: input.workspaceId,
+          limit: input.limit,
+        }),
+      ),
+    ),
+
+  listSearchRuns: protectedProcedure
+    .input(
+      z.object({
+        workspaceId: z.number().int().positive().optional(),
+        jobId: z.string().uuid().optional(),
+        itemId: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
+    )
+    .query(({ input }) =>
+      withMaterialProfileErrors(() => listMaterialProfileSearchRuns(input)),
+    ),
+
+  cancelSearchJob: requirePermission("material:write")
+    .input(searchJobIdInput)
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        cancelMaterialProfileSearchJob(input.jobId),
+      ),
+    ),
+
+  setCurrentSearchRun: requirePermission("material:write")
+    .input(
+      z.object({
+        runId: z.number().int().positive(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        setCurrentMaterialProfileSearchRun(input.runId),
       ),
     ),
 

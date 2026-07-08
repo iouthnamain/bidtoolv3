@@ -74,6 +74,175 @@ function negativeMarketplaceSuffix(policy?: SearchDomainPolicy) {
   return domains.map((domain) => `-site:${domain}`).join(" ");
 }
 
+function stripAccents(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+const MODEL_STOPWORDS = new Set([
+  "bang",
+  "be",
+  "cap",
+  "cat",
+  "day",
+  "dien",
+  "kem",
+  "ma",
+  "may",
+  "nhua",
+  "ong",
+  "thep",
+  "tong",
+]);
+
+const QUERY_INTENT_TERMS = [
+  /\bthông\s*số\s*kỹ\s*thuật\b/gi,
+  /\bthong\s*so\s*ky\s*thuat\b/gi,
+  /\bchi\s*tiết\b/gi,
+  /\bchi\s*tiet\b/gi,
+  /\bcatalog(?:ue)?\b/gi,
+  /\bdatasheet\b/gi,
+  /\bbảng\s*giá\b/gi,
+  /\bbang\s*gia\b/gi,
+  /\bbáo\s*giá\b/gi,
+  /\bbao\s*gia\b/gi,
+  /\bfiletype:\S+\b/gi,
+  /\bsite:\S+\b/gi,
+  /\B-site:\S+\b/gi,
+];
+
+const KNOWN_BRAND_PROBES = [
+  {
+    pattern: /\b(bình\s*minh|binh\s*minh|nhựa\s*bình\s*minh|nhua\s*binh\s*minh)\b/i,
+    domainTerms: ["binhminhplastic"],
+    productTerms: ["PVC"],
+  },
+  {
+    pattern: /\bcadivi\b/i,
+    domainTerms: ["cadivi", "cadivi-vn"],
+    productTerms: ["dây điện", "cáp điện"],
+  },
+  {
+    pattern: /\b(hòa\s*phát|hoa\s*phat)\b/i,
+    domainTerms: ["hoaphat"],
+    productTerms: ["thép"],
+  },
+];
+
+function tokenizeProductName(value: string) {
+  return (
+    value.match(/[A-Za-zÀ-ỹ0-9]+(?:[./xX-][A-Za-zÀ-ỹ0-9]+)*/g) ?? []
+  );
+}
+
+function extractModelSpecPhrase(name: string, identifier: string) {
+  if (identifier.trim()) return identifier.trim();
+
+  const picked = tokenizeProductName(name).filter((token) => {
+    const normalized = stripAccents(token).toLowerCase();
+    if (MODEL_STOPWORDS.has(normalized)) return false;
+    return /\d/.test(token) || /[A-Z]/.test(token);
+  });
+
+  return picked.length > 0 ? picked.join(" ") : "";
+}
+
+function specSpacingVariants(value: string) {
+  const variants = new Set<string>();
+  const push = (candidate: string) => {
+    const normalized = candidate.replace(/\s+/g, " ").trim();
+    if (normalized) variants.add(normalized);
+  };
+
+  push(value);
+  push(
+    value.replace(
+      /(\d+(?:[.,]\d+)?)\s*(mm2|mm²|m2)\b/gi,
+      (_match, size: string, unit: string) => `${size} ${unit}`,
+    ),
+  );
+  push(
+    value.replace(
+      /(\d+(?:[.,]\d+)?)\s*(mm2)\b/gi,
+      (_match, size: string) => `${size}mm²`,
+    ),
+  );
+  push(value.replace(/(\d+)\.(\d+)/g, "$1,$2"));
+
+  return [...variants];
+}
+
+function relaxedSpecNameVariants(name: string) {
+  const variants = new Set<string>();
+  const push = (candidate: string) => {
+    const normalized = candidate.replace(/\s+/g, " ").trim();
+    if (normalized && normalized !== name) variants.add(normalized);
+  };
+
+  push(name.replace(/\b\d+(?:[.,]\d+)?\s*(?:mm2|mm²|m2)\b/gi, ""));
+  push(name.replace(/\b\d+\s*x\s*\d+(?:[.,]\d+)?\b/gi, ""));
+
+  return [...variants];
+}
+
+function cleanProbeQuery(value: string) {
+  let cleaned = value;
+  for (const pattern of QUERY_INTENT_TERMS) {
+    cleaned = cleaned.replace(pattern, " ");
+  }
+  return cleaned.replace(/[“”"]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function removeKnownBrand(value: string, pattern: RegExp) {
+  return value.replace(pattern, " ").replace(/\s+/g, " ").trim();
+}
+
+function pushUnique(values: string[], value: string | null | undefined) {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  if (!trimmed || trimmed.length < 3) return;
+  if (values.some((item) => item.toLowerCase() === trimmed.toLowerCase())) return;
+  values.push(trimmed);
+}
+
+export function buildSearchProbeQueries(query: string, limit = 8): string[] {
+  const original = query.trim();
+  if (!original) return [];
+
+  const probes: string[] = [];
+  const core = cleanProbeQuery(original);
+  const modelSpec = extractModelSpecPhrase(core || original, "");
+  const relaxedNames = relaxedSpecNameVariants(core);
+
+  pushUnique(probes, original);
+  pushUnique(probes, core);
+
+  for (const brand of KNOWN_BRAND_PROBES) {
+    if (!brand.pattern.test(original) && !brand.pattern.test(core)) continue;
+    const withoutBrand = removeKnownBrand(core, brand.pattern);
+    const brandModelSpec = extractModelSpecPhrase(withoutBrand, "") || modelSpec;
+    for (const domainTerm of brand.domainTerms) {
+      if (brandModelSpec) {
+        pushUnique(probes, `${domainTerm} ${brandModelSpec}`);
+        for (const productTerm of brand.productTerms.slice(0, 1)) {
+          pushUnique(probes, `${domainTerm} ${productTerm} ${brandModelSpec}`);
+        }
+      }
+      pushUnique(probes, `${domainTerm} ${withoutBrand}`);
+    }
+  }
+
+  for (const variant of relaxedNames.slice(0, 2)) {
+    pushUnique(probes, variant);
+  }
+  pushUnique(probes, `${core} catalog`);
+  pushUnique(probes, `${core} bảng giá`);
+
+  return probes.slice(0, Math.max(1, limit));
+}
+
 function _buildSearchQueries(
   input: {
     name: string;
@@ -118,6 +287,7 @@ function _buildSearchQueries(
     options?.queryControls?.enableSiteVnVariants ?? true;
   const enableNegativeMarketplaceVariants =
     options?.queryControls?.enableNegativeMarketplaceVariants ?? true;
+  const allowConstrainedVariants = options?.context !== "interactive";
   const queries: SearchQuery[] = [];
 
   const push = (
@@ -136,6 +306,20 @@ function _buildSearchQueries(
     }
     queries.push({ query: trimmed, intent });
   };
+  const modelSpec = extractModelSpecPhrase(name, identifier);
+  const modelSpecVariants = specSpacingVariants(modelSpec);
+  const nameVariants = specSpacingVariants(name);
+  const relaxedNames = relaxedSpecNameVariants(name);
+
+  if (brand && !identifier) {
+    for (const variant of relaxedNames.slice(0, 2)) {
+      push(`${variant} ${brand}`, "general", true);
+      push(`${variant} ${brand} bảng giá`, "bang_gia", true);
+    }
+    for (const variant of modelSpecVariants.slice(0, 2)) {
+      push(`${brand} ${variant}`, "official", true);
+    }
+  }
 
   if (brand && identifier) {
     push(`"${brand}" "${identifier}" datasheet filetype:pdf`, "pdf");
@@ -143,6 +327,9 @@ function _buildSearchQueries(
   }
 
   if (brand) {
+    for (const variant of nameVariants.slice(1, 3)) {
+      push(`${variant} ${brand}`, "general", true);
+    }
     push(`${brand} ${name} thông số kỹ thuật`, "vn_spec");
     push(`${name} ${brand} thông số kỹ thuật filetype:pdf`, "vn_pdf");
     push(`${name} bảng giá ${brand}`, "bang_gia");
@@ -157,7 +344,7 @@ function _buildSearchQueries(
     );
   }
 
-  if (enableSiteVnVariants) {
+  if (enableSiteVnVariants && allowConstrainedVariants) {
     push(
       brand ? `${name} ${brand} site:.vn` : `${name} site:.vn`,
       "site_vn",
@@ -165,7 +352,7 @@ function _buildSearchQueries(
     );
   }
 
-  if (enableNegativeMarketplaceVariants) {
+  if (enableNegativeMarketplaceVariants && allowConstrainedVariants) {
     const suffix = negativeMarketplaceSuffix(options?.domainPolicy);
     push(
       brand

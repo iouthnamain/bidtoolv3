@@ -4,7 +4,14 @@ import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
-import { shopImportJobs, shopScrapeJobs, excelResearchJobs, materialEnrichmentJobs } from "~/server/db/schema";
+import {
+  shopImportJobs,
+  shopScrapeJobs,
+  excelResearchJobs,
+  materialEnrichmentJobs,
+  materialProfileSearchJobs,
+  materialProfileSearchRuns,
+} from "~/server/db/schema";
 import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import {
@@ -33,6 +40,12 @@ import {
   processEnrichmentJob,
   type MaterialEnrichmentJobProgress,
 } from "~/server/services/material-enrichment-runner";
+import {
+  completeMaterialProfileSearchJob,
+  failMaterialProfileSearchJob,
+  processMaterialProfileSearchJob,
+  type MaterialProfileSearchJobProgress,
+} from "~/server/services/material-profile-search-jobs";
 import { createLogger, traceFn } from "~/server/lib/logger";
 
 const log = createLogger("job-scheduler");
@@ -40,6 +53,7 @@ const log = createLogger("job-scheduler");
 type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 type MaterialEnrichmentJobRow = typeof materialEnrichmentJobs.$inferSelect;
+type MaterialProfileSearchJobRow = typeof materialProfileSearchJobs.$inferSelect;
 type TimerHandle = ReturnType<typeof setInterval>;
 
 const SCHEDULER_POLL_MS = 1_000;
@@ -48,6 +62,7 @@ const CLEANUP_POLL_MS = 60 * 60_000;
 const activeScrapeRuns = new Map<string, AbortController>();
 const activeImportRuns = new Map<string, AbortController>();
 const activeEnrichmentRuns = new Map<string, AbortController>();
+const activeMaterialProfileSearchRuns = new Map<string, AbortController>();
 const activeExcelResearchRuns = new Set<string>();
 
 let schedulerStarted = false;
@@ -95,9 +110,13 @@ function _stopJobSchedulerForTests() {
   for (const controller of activeEnrichmentRuns.values()) {
     controller.abort();
   }
+  for (const controller of activeMaterialProfileSearchRuns.values()) {
+    controller.abort();
+  }
   activeScrapeRuns.clear();
   activeImportRuns.clear();
   activeEnrichmentRuns.clear();
+  activeMaterialProfileSearchRuns.clear();
   activeExcelResearchRuns.clear();
   pollTimer = null;
   cleanupTimer = null;
@@ -119,6 +138,10 @@ function _abortShopImportJob(jobId: string) {
 
 function _abortMaterialEnrichmentJob(jobId: string) {
   activeEnrichmentRuns.get(jobId)?.abort();
+}
+
+function _abortMaterialProfileSearchJob(jobId: string) {
+  activeMaterialProfileSearchRuns.get(jobId)?.abort();
 }
 
 async function _runJobSchedulerTickForTests() {
@@ -147,6 +170,7 @@ async function pollScheduler() {
       fillScrapeSlots(),
       fillImportSlots(),
       fillEnrichmentSlots(),
+      fillMaterialProfileSearchSlots(),
       fillExcelResearchSlots(),
     ]);
   } catch (error) {
@@ -189,6 +213,17 @@ async function fillEnrichmentSlots() {
   }
 }
 
+async function fillMaterialProfileSearchSlots() {
+  const limit = 1;
+  while (activeMaterialProfileSearchRuns.size < limit) {
+    const job = await claimNextMaterialProfileSearchJob();
+    if (!job) {
+      return;
+    }
+    void runMaterialProfileSearchJob(job);
+  }
+}
+
 async function fillExcelResearchSlots() {
   const limit = await resolveExcelResearchMaxConcurrentJobs();
   while (activeExcelResearchRuns.size < limit) {
@@ -213,6 +248,44 @@ async function claimNextExcelResearchJob() {
   }
 
   return job.id;
+}
+
+async function claimNextMaterialProfileSearchJob() {
+  return db.transaction(async (tx) => {
+    const [nextJob] = await tx
+      .select()
+      .from(materialProfileSearchJobs)
+      .where(eq(materialProfileSearchJobs.status, "queued"))
+      .orderBy(asc(materialProfileSearchJobs.startedAt))
+      .limit(1)
+      .for("update", { skipLocked: true });
+
+    if (!nextJob) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const [claimed] = await tx
+      .update(materialProfileSearchJobs)
+      .set({
+        status: "running",
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        message: "Đang chạy tìm kiếm hồ sơ vật tư.",
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileSearchJobs.id, nextJob.id),
+          eq(materialProfileSearchJobs.status, "queued"),
+        ),
+      )
+      .returning();
+
+    return claimed ?? null;
+  });
 }
 
 async function runExcelResearchJob(jobId: string) {
@@ -669,6 +742,56 @@ async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
   }
 }
 
+async function runMaterialProfileSearchJob(job: MaterialProfileSearchJobRow) {
+  const controller = new AbortController();
+  activeMaterialProfileSearchRuns.set(job.id, controller);
+  log.info("job_started", {
+    jobType: "material_profile_search",
+    jobId: job.id,
+  });
+  const progressWriter = createMaterialProfileSearchProgressWriter(job.id);
+
+  try {
+    await processMaterialProfileSearchJob(job.id, {
+      signal: controller.signal,
+      onProgress: (progress) => {
+        progressWriter.queue(progress);
+      },
+    });
+
+    await progressWriter.flush();
+    if (
+      controller.signal.aborted ||
+      (await isJobCancelled("material_profile_search", job.id))
+    ) {
+      return;
+    }
+
+    await completeMaterialProfileSearchJob(job.id);
+    log.info("job_completed", {
+      jobType: "material_profile_search",
+      jobId: job.id,
+    });
+  } catch (error) {
+    await progressWriter.flush();
+    if (
+      controller.signal.aborted ||
+      (await isJobCancelled("material_profile_search", job.id))
+    ) {
+      return;
+    }
+
+    log.warn("job_failed", {
+      jobType: "material_profile_search",
+      jobId: job.id,
+      error,
+    });
+    await failMaterialProfileSearchJob(job.id, error);
+  } finally {
+    activeMaterialProfileSearchRuns.delete(job.id);
+  }
+}
+
 function createScrapeProgressWriter(jobId: string) {
   let pendingProgress: ShopScrapeProgress | null = null;
   let latestProgress: ShopScrapeProgress | null = null;
@@ -921,6 +1044,74 @@ function createEnrichmentProgressWriter(jobId: string) {
   };
 }
 
+function createMaterialProfileSearchProgressWriter(jobId: string) {
+  let pendingProgress: MaterialProfileSearchJobProgress | null = null;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastWriteAt = 0;
+  let flushChain: Promise<void> = Promise.resolve();
+
+  const flush = () => {
+    if (!pendingProgress) {
+      return flushChain;
+    }
+
+    const progress = pendingProgress;
+    pendingProgress = null;
+    lastWriteAt = Date.now();
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+
+    flushChain = flushChain
+      .catch(() => undefined)
+      .then(async () => {
+        const now = new Date().toISOString();
+        await db
+          .update(materialProfileSearchJobs)
+          .set({
+            processed: progress.processed,
+            total: progress.total,
+            found: progress.found,
+            partial: progress.partial,
+            failed: progress.failed,
+            skipped: progress.skipped,
+            currentItemId: progress.currentItemId,
+            currentRowIndex: progress.currentRowIndex,
+            currentProductName: progress.currentProductName,
+            message: progress.message ?? null,
+            lastProgressAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(materialProfileSearchJobs.id, jobId),
+              eq(materialProfileSearchJobs.status, "running"),
+            ),
+          );
+      });
+
+    return flushChain;
+  };
+
+  return {
+    queue(progress: MaterialProfileSearchJobProgress) {
+      pendingProgress = progress;
+      if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
+        void flush();
+        return;
+      }
+      if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          void flush();
+        }, PROGRESS_WRITE_MS);
+        flushTimer.unref?.();
+      }
+    },
+    flush,
+  };
+}
+
 async function loadProductsForImportJob(job: ShopImportJobRow) {
   const [scrapeJob] = await db
     .select({
@@ -944,7 +1135,7 @@ async function loadProductsForImportJob(job: ShopImportJobRow) {
 }
 
 async function isJobCancelled(
-  type: "scrape" | "import" | "enrichment",
+  type: "scrape" | "import" | "enrichment" | "material_profile_search",
   jobId: string,
 ) {
   if (type === "scrape") {
@@ -961,6 +1152,15 @@ async function isJobCancelled(
       .select({ status: shopImportJobs.status })
       .from(shopImportJobs)
       .where(eq(shopImportJobs.id, jobId))
+      .limit(1);
+    return job?.status === "cancelled";
+  }
+
+  if (type === "material_profile_search") {
+    const [job] = await db
+      .select({ status: materialProfileSearchJobs.status })
+      .from(materialProfileSearchJobs)
+      .where(eq(materialProfileSearchJobs.id, jobId))
       .limit(1);
     return job?.status === "cancelled";
   }
@@ -1011,6 +1211,28 @@ async function resetStaleRunningJobs() {
         updatedAt: now,
       })
       .where(eq(materialEnrichmentJobs.status, "running")),
+    db
+      .update(materialProfileSearchJobs)
+      .set({
+        status: "queued",
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        error: null,
+        message:
+          "Server vừa khởi động lại; job tìm kiếm hồ sơ vật tư được đưa lại vào hàng chờ.",
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(eq(materialProfileSearchJobs.status, "running")),
+    db
+      .update(materialProfileSearchRuns)
+      .set({
+        status: "queued",
+        errorMessage: null,
+        updatedAt: now,
+      })
+      .where(eq(materialProfileSearchRuns.status, "running")),
   ]);
 }
 
@@ -1038,6 +1260,14 @@ async function cleanupExpiredJobs() {
       and(
         isNotNull(materialEnrichmentJobs.expiresAt),
         lt(materialEnrichmentJobs.expiresAt, now),
+      ),
+    );
+  await db
+    .delete(materialProfileSearchJobs)
+    .where(
+      and(
+        isNotNull(materialProfileSearchJobs.expiresAt),
+        lt(materialProfileSearchJobs.expiresAt, now),
       ),
     );
 }
@@ -1099,4 +1329,5 @@ export const abortShopScrapeJob = traceFn(log, "abortShopScrapeJob", _abortShopS
 export const isShopScrapeJobActivelyRunning = traceFn(log, "isShopScrapeJobActivelyRunning", _isShopScrapeJobActivelyRunning);
 export const abortShopImportJob = traceFn(log, "abortShopImportJob", _abortShopImportJob);
 export const abortMaterialEnrichmentJob = traceFn(log, "abortMaterialEnrichmentJob", _abortMaterialEnrichmentJob);
+export const abortMaterialProfileSearchJob = traceFn(log, "abortMaterialProfileSearchJob", _abortMaterialProfileSearchJob);
 export const runJobSchedulerTickForTests = traceFn(log, "runJobSchedulerTickForTests", _runJobSchedulerTickForTests);

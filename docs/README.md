@@ -1,11 +1,12 @@
 # Documentation
 
-| Document | Description |
-|----------|-------------|
-| [team/README.md](./team/README.md) | **Service team planning** — links to Obsidian vault (charter, roadmap, negotiation) |
-| [workflows.md](./workflows.md) | **Main app workflows** — routes, tRPC procedures, services, and background jobs |
-| [updates/README.md](./updates/README.md) | Release, deployment, and on-prem update system |
-| [architecture-option-b/README.md](./architecture-option-b/README.md) | Target architecture and migration plan |
+| Document                                                             | Description                                                                         |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [team/README.md](./team/README.md)                                   | **Service team planning** — links to Obsidian vault (charter, roadmap, negotiation) |
+| [roadmaps/README.md](./roadmaps/README.md)                           | Lộ trình on-prem 3 năm bằng tiếng Việt cho một phòng ban trong một công ty          |
+| [workflows.md](./workflows.md)                                       | **Main app workflows** — routes, tRPC procedures, services, and background jobs     |
+| [updates/README.md](./updates/README.md)                             | Release, deployment, and on-prem update system                                      |
+| [architecture-option-b/README.md](./architecture-option-b/README.md) | Target architecture and migration plan                                              |
 
 ### Feature deep dives (`temp/`)
 

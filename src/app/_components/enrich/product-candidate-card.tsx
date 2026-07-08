@@ -2,25 +2,24 @@
 
 import { ExternalLink, ImageOff, Sparkles } from "lucide-react";
 
-import { matchReasonChips } from "~/lib/materials/excel-enrich-fields";
 import { formatMoney } from "~/lib/materials/format";
+import {
+  assessCatalogCandidate,
+  matchScorePercent,
+  type MatchBand,
+} from "~/lib/materials/match-assessment";
 import type { RouterOutputs } from "~/trpc/react";
 
 export type EnrichCandidate =
   RouterOutputs["material"]["enrichMatchRows"]["results"][number]["candidates"][number];
 
-function confidenceTone(score: number): {
-  ring: string;
-  text: string;
-  label: string;
+function confidenceTone(band: MatchBand): {
+  badge: string;
 } {
-  if (score >= 0.85) {
-    return { ring: "bg-emerald-500", text: "text-emerald-700", label: "Cao" };
+  if (band === "high") {
+    return { badge: "border-emerald-500 bg-emerald-50 text-emerald-700" };
   }
-  if (score >= 0.5) {
-    return { ring: "bg-amber-500", text: "text-amber-700", label: "Vừa" };
-  }
-  return { ring: "bg-slate-400", text: "text-slate-600", label: "Thấp" };
+  return { badge: "border-amber-500 bg-amber-50 text-amber-800" };
 }
 
 export function ProductCandidateCard({
@@ -40,10 +39,15 @@ export function ProductCandidateCard({
   /** 1-based index for the keyboard hint shown on the card (1–9). */
   hotkeyIndex?: number;
 }) {
-  const pct = Math.round((candidate.score ?? 0) * 100);
-  const tone = confidenceTone(candidate.score ?? 0);
-  const chips = matchReasonChips(candidate.breakdown);
-  const hasScore = candidate.score > 0;
+  const assessment = assessCatalogCandidate({
+    score: candidate.score,
+    breakdown: candidate.breakdown,
+    fillCount,
+  });
+  const pct = matchScorePercent(assessment.score);
+  const tone = assessment.band ? confidenceTone(assessment.band) : null;
+  const chips = assessment.reasons;
+  const hasConfidence = assessment.band != null;
 
   return (
     <div
@@ -63,20 +67,30 @@ export function ProductCandidateCard({
           : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
       }`}
     >
-      {isRecommended ? (
+      {isRecommended && hasConfidence ? (
         <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
           <Sparkles className="h-3 w-3" aria-hidden />
           Gợi ý tốt nhất
         </span>
       ) : null}
-      {hotkeyIndex && hotkeyIndex <= 9 ? (
-        <span
-          className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-xs font-bold text-slate-700 tabular-nums"
-          aria-hidden
-        >
-          {hotkeyIndex}
-        </span>
-      ) : null}
+      <div className="absolute top-2 right-2 flex items-center gap-1">
+        {hasConfidence && tone ? (
+          <span
+            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
+            aria-label={`Độ tin cậy ${assessment.label} ${pct}%`}
+          >
+            {assessment.label} {pct}%
+          </span>
+        ) : null}
+        {hotkeyIndex && hotkeyIndex <= 9 ? (
+          <span
+            className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-xs font-bold text-slate-700 tabular-nums"
+            aria-hidden
+          >
+            {hotkeyIndex}
+          </span>
+        ) : null}
+      </div>
 
       <div className="flex gap-1">
         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-slate-400 bg-slate-100">
@@ -95,7 +109,11 @@ export function ProductCandidateCard({
           )}
         </div>
 
-        <div className="min-w-0 flex-1">
+        <div
+          className={`min-w-0 flex-1 ${
+            hasConfidence || (hotkeyIndex && hotkeyIndex <= 9) ? "pr-24" : ""
+          }`}
+        >
           <p className="line-clamp-2 text-sm font-bold text-slate-900">
             {candidate.name}
           </p>
@@ -121,26 +139,7 @@ export function ProductCandidateCard({
         </div>
       </div>
 
-      {hasScore ? (
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className={`h-full rounded-full ${tone.ring}`}
-              style={{ width: `${Math.max(4, pct)}%` }}
-              role="meter"
-              aria-valuenow={pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`Độ tin cậy ${pct}%`}
-            />
-          </div>
-          <span className={`text-xs font-bold tabular-nums ${tone.text}`}>
-            {pct}%
-          </span>
-        </div>
-      ) : null}
-
-      {chips.length > 0 ? (
+      {hasConfidence && chips.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {chips.map((chip) => (
             <span

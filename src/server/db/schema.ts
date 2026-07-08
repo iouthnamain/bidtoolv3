@@ -1015,6 +1015,131 @@ export const searchAuditLogs = pgTable(
   }),
 );
 
+export const materialProfileSearchJobs = pgTable(
+  "material_profile_search_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    status: shopJobStatusEnum("status").notNull().default("queued"),
+    mode: text("mode").notNull(),
+    requestedItemIds: jsonb("requested_item_ids")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
+    total: integer("total").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    found: integer("found").notNull().default(0),
+    partial: integer("partial").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    skipped: integer("skipped").notNull().default(0),
+    currentItemId: integer("current_item_id").references(
+      () => excelWorkspaceItems.id,
+      { onDelete: "set null" },
+    ),
+    currentRowIndex: integer("current_row_index"),
+    currentProductName: text("current_product_name"),
+    message: text("message"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    workspaceUpdatedAtIdx: index(
+      "material_profile_search_jobs_workspace_updated_at_idx",
+    ).on(table.workspaceId, table.updatedAt),
+    statusStartedAtIdx: index(
+      "material_profile_search_jobs_status_started_at_idx",
+    ).on(table.status, table.startedAt),
+  }),
+);
+
+export const materialProfileSearchRuns = pgTable(
+  "material_profile_search_runs",
+  {
+    id: serial("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => materialProfileSearchJobs.id, { onDelete: "cascade" }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => excelWorkspaceItems.id, { onDelete: "cascade" }),
+    originalRowIndex: integer("original_row_index").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    mode: text("mode").notNull(),
+    status: text("status").notNull().default("queued"),
+    isCurrent: boolean("is_current").notNull().default(false),
+    sourceWebRunId: integer("source_web_run_id").references(
+      (): AnyPgColumn => materialProfileSearchRuns.id,
+      { onDelete: "set null" },
+    ),
+    inputSnapshotJson: jsonb("input_snapshot_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    queriesJson: jsonb("queries_json").$type<string[]>().notNull().default([]),
+    webLinksStatus: text("web_links_status").notNull().default("idle"),
+    aiSearchStatus: text("ai_search_status").notNull().default("idle"),
+    webLinkResultsJson: jsonb("web_link_results_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    aiSearchCandidatesJson: jsonb("ai_search_candidates_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    recommendedCandidateKey: text("recommended_candidate_key"),
+    warningsJson: jsonb("warnings_json").$type<string[]>().notNull().default([]),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobSortOrderIdx: index("material_profile_search_runs_job_sort_order_idx").on(
+      table.jobId,
+      table.sortOrder,
+    ),
+    workspaceItemUpdatedAtIdx: index(
+      "material_profile_search_runs_workspace_item_updated_at_idx",
+    ).on(table.workspaceId, table.itemId, table.updatedAt),
+    workspaceCurrentIdx: index(
+      "material_profile_search_runs_workspace_current_idx",
+    ).on(table.workspaceId, table.isCurrent),
+    currentItemUnique: uniqueIndex(
+      "material_profile_search_runs_current_item_unique",
+    )
+      .on(table.itemId)
+      .where(sql`${table.isCurrent} = true`),
+  }),
+);
+
 export const excelResearchJobStatusEnum = pgEnum("excel_research_job_status", [
   "draft",
   "queued",

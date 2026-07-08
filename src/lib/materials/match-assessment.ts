@@ -1,0 +1,417 @@
+import type {
+  AiSearchStoredResult,
+  WebLinkResult,
+} from "~/lib/materials/enrich-gap-fill";
+import {
+  FILLABLE_FIELDS,
+  type FillableField,
+  type MatchScoreBreakdown,
+} from "~/lib/materials/excel-enrich-fields";
+
+export type MatchBand = "high" | "medium";
+
+export type MatchDimensions = {
+  identity: number;
+  spec: number;
+  sourceTrust: number;
+  fieldCoverage: number;
+  conflictRisk: number;
+};
+
+export type MatchAssessment = {
+  score: number;
+  band: MatchBand | null;
+  label: "Cao" | "Vừa" | null;
+  dimensions: MatchDimensions;
+  reasons: string[];
+  warnings: string[];
+};
+
+const MATCH_THRESHOLDS = {
+  high: 0.85,
+  medium: 0.5,
+} as const;
+
+const EMPTY_DIMENSIONS: MatchDimensions = {
+  identity: 0,
+  spec: 0,
+  sourceTrust: 0,
+  fieldCoverage: 0,
+  conflictRisk: 0,
+};
+
+export function clampMatchScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(1, score));
+}
+
+export function normalizeMatchScore(score: number | undefined): number {
+  if (score == null || !Number.isFinite(score)) return 0;
+  if (score > 1) return Math.min(1, score / 100);
+  return clampMatchScore(score);
+}
+
+export function matchBand(score: number): MatchBand | null {
+  if (score >= MATCH_THRESHOLDS.high) return "high";
+  if (score >= MATCH_THRESHOLDS.medium) return "medium";
+  return null;
+}
+
+export function matchBandLabel(band: MatchBand | null): "Cao" | "Vừa" | null {
+  if (band === "high") return "Cao";
+  if (band === "medium") return "Vừa";
+  return null;
+}
+
+export function matchScorePercent(score: number): number {
+  return Math.round(clampMatchScore(score) * 100);
+}
+
+export function createMatchAssessment(input: {
+  score: number;
+  dimensions?: Partial<MatchDimensions>;
+  reasons?: string[];
+  warnings?: string[];
+}): MatchAssessment {
+  const score = clampMatchScore(input.score);
+  const band = matchBand(score);
+  return {
+    score,
+    band,
+    label: matchBandLabel(band),
+    dimensions: {
+      ...EMPTY_DIMENSIONS,
+      ...(input.dimensions ?? {}),
+    },
+    reasons: compactReasons(input.reasons ?? []),
+    warnings: input.warnings ?? [],
+  };
+}
+
+function compactReasons(reasons: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const reason of reasons) {
+    const trimmed = reason.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+    if (result.length >= 4) break;
+  }
+  return result;
+}
+
+function stripAccents(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+function normalizeText(value: string): string {
+  return stripAccents(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function tokenOverlap(a: string | undefined, b: string | undefined): number {
+  const left = normalizeText(a ?? "");
+  const right = normalizeText(b ?? "");
+  if (!left || !right) return 0;
+  if (left.includes(right) || right.includes(left)) {
+    return Math.min(left.length, right.length) / Math.max(left.length, right.length);
+  }
+  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 1));
+  const rightTokens = right.split(/\s+/).filter((token) => token.length > 1);
+  if (rightTokens.length === 0) return 0;
+  let hits = 0;
+  for (const token of rightTokens) {
+    if (leftTokens.has(token)) hits += 1;
+  }
+  return hits / rightTokens.length;
+}
+
+function normalizeSearchRank(score: number | undefined): number {
+  if (score == null || !Number.isFinite(score)) return 0;
+  if (score > 10) return clampMatchScore(score / 100);
+  return clampMatchScore(score / 2);
+}
+
+function domainFromUrl(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function sourceTrustFromUrl(url: string | undefined, domain = domainFromUrl(url)): number {
+  if (!url && !domain) return 0;
+  const value = `${url ?? ""} ${domain}`.toLowerCase();
+  let score = 0.55;
+  if (/\.pdf(?:$|[?#])/i.test(url ?? "")) score += 0.25;
+  if (domain.endsWith(".vn")) score += 0.1;
+  if (/(manufacturer|catalog|datasheet|spec|product)/i.test(value)) score += 0.1;
+  if (/(shopee|lazada|tiki|facebook|youtube|tiktok)/i.test(value)) score -= 0.25;
+  return clampMatchScore(score);
+}
+
+function specQuality(specText: string | undefined): number {
+  const spec = specText?.trim() ?? "";
+  if (!spec) return 0;
+  const lineCount = spec.split("\n").filter((line) => line.trim()).length;
+  if (lineCount >= 5 || spec.length >= 120) return 1;
+  if (lineCount >= 2 || spec.length >= 40) return 0.65;
+  return 0.35;
+}
+
+function sameNormalizedValue(a: string | undefined, b: string | undefined): boolean {
+  const left = normalizeText(a ?? "");
+  const right = normalizeText(b ?? "");
+  return left.length > 0 && left === right;
+}
+
+function containsNormalizedValue(haystack: string | undefined, needle: string | undefined) {
+  const normalizedHaystack = normalizeText(haystack ?? "");
+  const normalizedNeedle = normalizeText(needle ?? "");
+  return (
+    normalizedHaystack.length > 0 &&
+    normalizedNeedle.length > 0 &&
+    normalizedHaystack.includes(normalizedNeedle)
+  );
+}
+
+function weightedFieldCoverage(
+  fields: Partial<Record<FillableField, string>>,
+  confidences: Partial<Record<FillableField, number>>,
+): {
+  score: number;
+  filledCount: number;
+} {
+  const weights: Partial<Record<FillableField, number>> = {
+    code: 1,
+    unit: 0.8,
+    category: 0.6,
+    specText: 1.2,
+    manufacturer: 1,
+    originCountry: 0.8,
+    defaultUnitPrice: 0.7,
+    sourceUrl: 0.5,
+  };
+
+  let total = 0;
+  let filled = 0;
+  let filledCount = 0;
+  for (const field of FILLABLE_FIELDS) {
+    if (field === "currency") continue;
+    const weight = weights[field] ?? 0;
+    if (weight <= 0) continue;
+    total += weight;
+    const value = fields[field]?.trim() ?? "";
+    if (!value) continue;
+    filled += weight * (confidences[field] ?? 0.5);
+    filledCount += 1;
+  }
+
+  return {
+    score: total > 0 ? clampMatchScore(filled / total) : 0,
+    filledCount,
+  };
+}
+
+function conflictRisk(
+  fields: Partial<Record<FillableField, string>>,
+  sheetFields: Partial<Record<FillableField, string>>,
+  confidences: Partial<Record<FillableField, number>>,
+): number {
+  let risk = 0;
+  for (const field of FILLABLE_FIELDS) {
+    if (field === "currency") continue;
+    const value = fields[field]?.trim();
+    const sheetValue = sheetFields[field]?.trim();
+    if (!value || !sheetValue || sameNormalizedValue(value, sheetValue)) continue;
+    if (
+      field === "specText" &&
+      (containsNormalizedValue(value, sheetValue) ||
+        Math.max(tokenOverlap(sheetValue, value), tokenOverlap(value, sheetValue)) >= 0.6)
+    ) {
+      continue;
+    }
+    risk += (confidences[field] ?? 0.5) >= 0.85 ? 0.07 : 0.18;
+  }
+  return clampMatchScore(risk);
+}
+
+export function assessCatalogCandidate(input: {
+  score: number | undefined;
+  breakdown?: MatchScoreBreakdown | null;
+  fillCount?: number;
+}): MatchAssessment {
+  const score = normalizeMatchScore(input.score);
+  const breakdown = input.breakdown;
+  const reasons: string[] = [];
+  if ((breakdown?.nameSimilarity ?? 0) >= 0.5) reasons.push("Tên");
+  if ((breakdown?.manufacturerMatch ?? 0) >= 0.9) reasons.push("NSX");
+  if ((breakdown?.unitMatch ?? 0) >= 1) reasons.push("ĐVT");
+  if ((breakdown?.specMatch ?? 0) >= 0.7) reasons.push("Thông số");
+  if ((breakdown?.dimensionMatch ?? 0) > 0.5) reasons.push("Kích thước");
+  if ((input.fillCount ?? 0) > 0) reasons.push(`${input.fillCount} trường`);
+
+  return createMatchAssessment({
+    score,
+    dimensions: {
+      identity: breakdown
+        ? clampMatchScore(
+            breakdown.nameSimilarity * 0.5 +
+              breakdown.manufacturerMatch * 0.25 +
+              breakdown.unitMatch * 0.15 +
+              breakdown.originMatch * 0.1,
+          )
+        : score,
+      spec: breakdown
+        ? clampMatchScore(breakdown.specMatch * 0.7 + breakdown.dimensionMatch * 0.3)
+        : 0,
+      sourceTrust: 0.8,
+      fieldCoverage: clampMatchScore((input.fillCount ?? 0) / 6),
+      conflictRisk: 0,
+    },
+    reasons,
+  });
+}
+
+export function assessWebLinkCandidate(input: {
+  link: WebLinkResult;
+  rowName: string;
+  sheetFields?: Partial<Record<FillableField, string>>;
+}): MatchAssessment {
+  const { link, rowName, sheetFields = {} } = input;
+  const text = `${link.title} ${link.snippet} ${link.url}`;
+  const nameOverlap = tokenOverlap(rowName, link.title);
+  const queryOverlap = tokenOverlap(rowName, link.query);
+  const manufacturerOverlap = tokenOverlap(sheetFields.manufacturer, text);
+  const specOverlap = Math.max(
+    tokenOverlap(sheetFields.specText, text),
+    specQuality(link.snippet) * 0.35,
+  );
+  const sourceTrust = sourceTrustFromUrl(link.url, link.domain);
+  const searchRank = normalizeSearchRank(link.rankScore);
+  const identity = clampMatchScore(
+    nameOverlap * 0.55 +
+      queryOverlap * 0.15 +
+      manufacturerOverlap * 0.2 +
+      searchRank * 0.1,
+  );
+  const score = clampMatchScore(
+    identity * 0.45 + specOverlap * 0.15 + sourceTrust * 0.25 + searchRank * 0.15,
+  );
+
+  const reasons: string[] = [];
+  if (nameOverlap >= 0.35) reasons.push("Tên");
+  if (manufacturerOverlap >= 0.45) reasons.push("NSX");
+  if (/\.pdf(?:$|[?#])/i.test(link.url)) reasons.push("PDF");
+  if (link.domain) reasons.push(link.domain);
+
+  return createMatchAssessment({
+    score,
+    dimensions: {
+      identity,
+      spec: specOverlap,
+      sourceTrust,
+      fieldCoverage: 0.2,
+      conflictRisk: 0,
+    },
+    reasons,
+  });
+}
+
+export function assessAiCandidate(input: {
+  candidate: AiSearchStoredResult;
+  sheetFields: Partial<Record<FillableField, string>>;
+  rowName: string;
+}): MatchAssessment {
+  const { candidate, sheetFields, rowName } = input;
+  const fields = candidate.fields;
+  const confidences = candidate.fieldConfidences ?? {};
+  const bestName = Math.max(
+    tokenOverlap(rowName, candidate.title),
+    tokenOverlap(rowName, fields.code),
+    tokenOverlap(rowName, fields.specText),
+  );
+  const manufacturerMatch = tokenOverlap(
+    sheetFields.manufacturer,
+    fields.manufacturer,
+  );
+  const unitMatch =
+    sheetFields.unit?.trim() && fields.unit?.trim()
+      ? sameNormalizedValue(sheetFields.unit, fields.unit)
+        ? 1
+        : 0
+      : 0.5;
+  const originMatch =
+    sheetFields.originCountry?.trim() && fields.originCountry?.trim()
+      ? sameNormalizedValue(sheetFields.originCountry, fields.originCountry)
+        ? 1
+        : tokenOverlap(sheetFields.originCountry, fields.originCountry)
+      : 0.5;
+  const searchRank = normalizeSearchRank(candidate.rankScore);
+  const identity = clampMatchScore(
+    bestName * 0.35 +
+      manufacturerMatch * 0.25 +
+      unitMatch * 0.15 +
+      originMatch * 0.1 +
+      searchRank * 0.15,
+  );
+  const spec = Math.max(
+    specQuality(fields.specText),
+    tokenOverlap(sheetFields.specText, fields.specText),
+  );
+  const sourceTrust = Math.max(
+    ...[
+      ...(candidate.sourceUrls ?? []),
+      candidate.url,
+      ...(candidate.catalogPdfUrls ?? []),
+    ].map((url) => sourceTrustFromUrl(url)),
+    0,
+  );
+  const coverage = weightedFieldCoverage(fields, confidences);
+  const risk = conflictRisk(fields, sheetFields, confidences);
+  const evidenceFreshness = candidate.sourceUrls.length > 0 || candidate.url ? 0.6 : 0.25;
+  const score = clampMatchScore(
+    identity * 0.4 +
+      spec * 0.25 +
+      sourceTrust * 0.15 +
+      coverage.score * 0.15 +
+      evidenceFreshness * 0.05 -
+      risk,
+  );
+
+  const reasons: string[] = [];
+  if (coverage.filledCount > 0) reasons.push(`${coverage.filledCount} trường`);
+  if ((candidate.catalogPdfUrls?.length ?? 0) > 0) {
+    reasons.push(`${candidate.catalogPdfUrls?.length ?? 0} PDF`);
+  }
+  if (manufacturerMatch >= 0.8) reasons.push("NSX");
+  if (unitMatch >= 1) reasons.push("ĐVT");
+  if (spec >= 0.65) reasons.push("Thông số");
+
+  return createMatchAssessment({
+    score,
+    dimensions: {
+      identity,
+      spec,
+      sourceTrust,
+      fieldCoverage: coverage.score,
+      conflictRisk: risk,
+    },
+    reasons,
+    warnings: risk > 0 ? ["Có dữ liệu khác sheet"] : [],
+  });
+}
+
+export function scoreAiCandidateCompletion(
+  candidate: AiSearchStoredResult,
+  sheetFields: Partial<Record<FillableField, string>>,
+  rowName = "",
+): number {
+  return assessAiCandidate({ candidate, sheetFields, rowName }).score;
+}

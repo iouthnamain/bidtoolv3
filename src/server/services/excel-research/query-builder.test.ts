@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSearchQueries } from "./query-builder";
+import { buildSearchProbeQueries, buildSearchQueries } from "./query-builder";
 
 describe("buildSearchQueries", () => {
   it("uses sku/model identifiers and falls back to name queries", () => {
@@ -61,6 +61,46 @@ describe("buildSearchQueries", () => {
     expect(joined).toContain("site:.vn");
     expect(joined).toContain("-site:shopee.vn");
     expect(joined).toContain("-site:lazada.vn");
+  });
+
+  it("uses compact model/spec variants and avoids site operators for interactive search", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Dây điện VCm 0.5mm2",
+        manufacturer: "Cadivi",
+      },
+      {
+        context: "interactive",
+        queryControls: {
+          enableSiteVnVariants: true,
+          enableNegativeMarketplaceVariants: true,
+          materialJobMaxQueries: 4,
+          excelResearchMaxQueries: 8,
+          interactiveMaxQueries: 6,
+        },
+      },
+    );
+
+    const joined = queries.map((query) => query.query).join("\n");
+    expect(joined).toContain("Dây điện VCm Cadivi");
+    expect(joined).toContain("Dây điện VCm Cadivi bảng giá");
+    expect(joined).toContain("Cadivi VCm 0.5mm2");
+    expect(joined).toContain("Cadivi VCm 0.5 mm2");
+    expect(joined).not.toContain("site:.vn");
+    expect(joined).not.toContain("-site:");
+    expect(queries.length).toBeLessThanOrEqual(6);
+  });
+
+  it("builds official-domain probes for material search tests", () => {
+    const queries = buildSearchProbeQueries(
+      "Ống nhựa Bình Minh D90 thông số kỹ thuật",
+      8,
+    );
+
+    expect(queries).toContain("Ống nhựa Bình Minh D90 thông số kỹ thuật");
+    expect(queries).toContain("Ống nhựa Bình Minh D90");
+    expect(queries).toContain("binhminhplastic D90");
+    expect(queries).toContain("binhminhplastic PVC D90");
   });
 
   it("respects max query count by context", () => {

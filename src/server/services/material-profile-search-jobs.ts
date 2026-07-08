@@ -1,0 +1,1067 @@
+import "server-only";
+
+import { randomUUID } from "node:crypto";
+
+import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
+
+import type {
+  AiSearchStoredResult,
+  WebLinkResult,
+} from "~/lib/materials/enrich-gap-fill";
+import {
+  deserializeRowDecision,
+  type WebSearchStatus,
+} from "~/lib/materials/review-decision";
+import { db } from "~/server/db";
+import {
+  excelWorkspaceItems,
+  excelWorkspaces,
+  materialProfileSearchJobs,
+  materialProfileSearchRuns,
+} from "~/server/db/schema";
+import type { EnrichWebRowInput } from "~/server/services/enrich-web-row";
+import { runWithConcurrency } from "~/server/services/concurrency";
+import {
+  extractProfileRowAiCandidates,
+  searchProfileRowWebLinks,
+} from "~/server/services/enrich-profile-row-search";
+import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
+import { createLogger, traceFn } from "~/server/lib/logger";
+
+const log = createLogger("services-material-profile-search-jobs");
+
+export type MaterialProfileSearchMode = "web" | "ai";
+export type MaterialProfileSearchJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type MaterialProfileSearchRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export type MaterialProfileSearchRunSnapshot = {
+  id: number;
+  jobId: string;
+  workspaceId: number;
+  itemId: number;
+  originalRowIndex: number;
+  sortOrder: number;
+  mode: MaterialProfileSearchMode;
+  status: MaterialProfileSearchRunStatus;
+  isCurrent: boolean;
+  sourceWebRunId: number | null;
+  inputSnapshot: Record<string, unknown>;
+  queries: string[];
+  webLinksStatus: WebSearchStatus;
+  aiSearchStatus: WebSearchStatus;
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+  recommendedCandidateKey: string | null;
+  warnings: string[];
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MaterialProfileSearchJobSnapshot = {
+  id: string;
+  workspaceId: number;
+  status: MaterialProfileSearchJobStatus;
+  mode: MaterialProfileSearchMode;
+  requestedItemIds: number[];
+  total: number;
+  processed: number;
+  found: number;
+  partial: number;
+  failed: number;
+  skipped: number;
+  currentItemId: number | null;
+  currentRowIndex: number | null;
+  currentProductName: string | null;
+  message: string | null;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  lastProgressAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MaterialProfileSearchJobProgress = Pick<
+  MaterialProfileSearchJobSnapshot,
+  | "processed"
+  | "total"
+  | "found"
+  | "partial"
+  | "failed"
+  | "skipped"
+  | "currentItemId"
+  | "currentRowIndex"
+  | "currentProductName"
+  | "message"
+>;
+
+export class MaterialProfileSearchJobError extends Error {
+  constructor(
+    public readonly code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND",
+    message: string,
+  ) {
+    super(message);
+    this.name = "MaterialProfileSearchJobError";
+  }
+}
+
+type JobRow = typeof materialProfileSearchJobs.$inferSelect;
+type RunRow = typeof materialProfileSearchRuns.$inferSelect;
+type WorkspaceItemRow = typeof excelWorkspaceItems.$inferSelect;
+
+const MAX_JOB_ITEMS = 500;
+const ROW_CONCURRENCY = 3;
+const MAX_STORED_TEXT_LENGTH = 4_000;
+const ACTIVE_JOB_STATUSES: MaterialProfileSearchJobStatus[] = [
+  "queued",
+  "running",
+];
+const DONE_RUN_STATUSES = new Set<MaterialProfileSearchRunStatus>([
+  "completed",
+  "partial",
+  "failed",
+  "skipped",
+  "cancelled",
+]);
+
+function isMode(value: string): value is MaterialProfileSearchMode {
+  return value === "web" || value === "ai";
+}
+
+function toMode(value: string): MaterialProfileSearchMode {
+  return isMode(value) ? value : "web";
+}
+
+function isJobStatus(value: string): value is MaterialProfileSearchJobStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function toJobStatus(value: string): MaterialProfileSearchJobStatus {
+  return isJobStatus(value) ? value : "failed";
+}
+
+function isRunStatus(value: string): value is MaterialProfileSearchRunStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "partial" ||
+    value === "failed" ||
+    value === "skipped" ||
+    value === "cancelled"
+  );
+}
+
+function toRunStatus(value: string): MaterialProfileSearchRunStatus {
+  return isRunStatus(value) ? value : "failed";
+}
+
+function toSearchStatus(value: string): WebSearchStatus {
+  if (
+    value === "idle" ||
+    value === "pending" ||
+    value === "done" ||
+    value === "error"
+  ) {
+    return value;
+  }
+  return "idle";
+}
+
+function parseNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is number => typeof item === "number" && Number.isFinite(item),
+  );
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function sanitizeStoredText(value: string, maxLength = MAX_STORED_TEXT_LENGTH) {
+  return value
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .slice(0, maxLength);
+}
+
+function sanitizeStoredJson(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeStoredText(value);
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean" || value == null) return value;
+  if (Array.isArray(value)) return value.map(sanitizeStoredJson);
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        sanitizeStoredJson(entry),
+      ]),
+    );
+  }
+  return null;
+}
+
+function parseRunDecision(row: RunRow) {
+  return deserializeRowDecision({
+    materialId: null,
+    acceptedFields: [],
+    webLinkResults: row.webLinkResultsJson,
+    webLinksStatus: row.webLinksStatus,
+    aiSearchCandidates: row.aiSearchCandidatesJson,
+    aiSearchStatus: row.aiSearchStatus,
+    selectedSearchCandidateKey: row.recommendedCandidateKey ?? undefined,
+    selectedSource:
+      row.recommendedCandidateKey?.startsWith("ai:") === true ? "ai" : undefined,
+  });
+}
+
+function toRunSnapshot(row: RunRow): MaterialProfileSearchRunSnapshot {
+  const decision = parseRunDecision(row);
+  return {
+    id: row.id,
+    jobId: row.jobId,
+    workspaceId: row.workspaceId,
+    itemId: row.itemId,
+    originalRowIndex: row.originalRowIndex,
+    sortOrder: row.sortOrder,
+    mode: toMode(row.mode),
+    status: toRunStatus(row.status),
+    isCurrent: row.isCurrent,
+    sourceWebRunId: row.sourceWebRunId,
+    inputSnapshot: asRecord(row.inputSnapshotJson),
+    queries: parseStringArray(row.queriesJson),
+    webLinksStatus: toSearchStatus(row.webLinksStatus),
+    aiSearchStatus: toSearchStatus(row.aiSearchStatus),
+    webLinkResults: decision?.webLinkResults ?? [],
+    aiSearchCandidates: decision?.aiSearchCandidates ?? [],
+    recommendedCandidateKey: row.recommendedCandidateKey,
+    warnings: parseStringArray(row.warningsJson),
+    errorMessage: row.errorMessage,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function toJobSnapshot(row: JobRow): MaterialProfileSearchJobSnapshot {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    status: toJobStatus(row.status),
+    mode: toMode(row.mode),
+    requestedItemIds: parseNumberArray(row.requestedItemIds),
+    total: row.total,
+    processed: row.processed,
+    found: row.found,
+    partial: row.partial,
+    failed: row.failed,
+    skipped: row.skipped,
+    currentItemId: row.currentItemId,
+    currentRowIndex: row.currentRowIndex,
+    currentProductName: row.currentProductName,
+    message: row.message,
+    error: row.error,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    lastProgressAt: row.lastProgressAt,
+    expiresAt: row.expiresAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function throwIfAborted(signal: AbortSignal | undefined) {
+  if (signal?.aborted) {
+    throw new Error("Job tìm kiếm hồ sơ vật tư đã bị hủy.");
+  }
+}
+
+function textField(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function inputFromWorkspaceItem(item: WorkspaceItemRow): EnrichWebRowInput {
+  const original = asRecord(item.originalDataJson);
+  return {
+    name: item.productName,
+    code: textField(original.code),
+    manufacturer: textField(original.manufacturer) || (item.vendorHint ?? ""),
+    specText: textField(original.specText) || item.specText,
+    unit: textField(original.unit) || item.unit,
+    category: textField(original.category),
+    originCountry: textField(original.originCountry) || (item.originHint ?? ""),
+  };
+}
+
+function inputSnapshot(item: WorkspaceItemRow): Record<string, unknown> {
+  const input = inputFromWorkspaceItem(item);
+  return {
+    ...input,
+    itemId: item.id,
+    workspaceId: item.workspaceId,
+    originalRowIndex: item.originalRowIndex,
+  };
+}
+
+function resultHasPayload(input: {
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+}) {
+  return input.webLinkResults.length > 0 || input.aiSearchCandidates.length > 0;
+}
+
+async function markRunCurrent(runId: number, itemId: number) {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(materialProfileSearchRuns)
+      .set({ isCurrent: false, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(materialProfileSearchRuns.itemId, itemId),
+          ne(materialProfileSearchRuns.id, runId),
+        ),
+      );
+    await tx
+      .update(materialProfileSearchRuns)
+      .set({ isCurrent: true, updatedAt: new Date().toISOString() })
+      .where(eq(materialProfileSearchRuns.id, runId));
+  });
+}
+
+async function loadCurrentRunForItem(itemId: number) {
+  const [row] = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(
+      and(
+        eq(materialProfileSearchRuns.itemId, itemId),
+        eq(materialProfileSearchRuns.isCurrent, true),
+      ),
+    )
+    .orderBy(desc(materialProfileSearchRuns.updatedAt))
+    .limit(1);
+  return row ?? null;
+}
+
+async function getJobRow(jobId: string) {
+  const [job] = await db
+    .select()
+    .from(materialProfileSearchJobs)
+    .where(eq(materialProfileSearchJobs.id, jobId))
+    .limit(1);
+  return job ?? null;
+}
+
+async function refreshJobCounters(jobId: string) {
+  const runs = await db
+    .select({
+      status: materialProfileSearchRuns.status,
+      webLinkResultsJson: materialProfileSearchRuns.webLinkResultsJson,
+      aiSearchCandidatesJson: materialProfileSearchRuns.aiSearchCandidatesJson,
+    })
+    .from(materialProfileSearchRuns)
+    .where(eq(materialProfileSearchRuns.jobId, jobId));
+
+  let processed = 0;
+  let found = 0;
+  let partial = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const run of runs) {
+    const status = toRunStatus(run.status);
+    if (DONE_RUN_STATUSES.has(status)) processed += 1;
+    if (status === "partial") partial += 1;
+    if (status === "failed") failed += 1;
+    if (status === "skipped") skipped += 1;
+    if (
+      resultHasPayload({
+        webLinkResults: parseRunDecision(run as RunRow)?.webLinkResults ?? [],
+        aiSearchCandidates:
+          parseRunDecision(run as RunRow)?.aiSearchCandidates ?? [],
+      })
+    ) {
+      found += 1;
+    }
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      processed,
+      found,
+      partial,
+      failed,
+      skipped,
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, jobId));
+}
+
+async function loadJobProgress(
+  jobId: string,
+): Promise<MaterialProfileSearchJobProgress> {
+  const job = await getJobRow(jobId);
+  return {
+    processed: job?.processed ?? 0,
+    total: job?.total ?? 0,
+    found: job?.found ?? 0,
+    partial: job?.partial ?? 0,
+    failed: job?.failed ?? 0,
+    skipped: job?.skipped ?? 0,
+    currentItemId: job?.currentItemId ?? null,
+    currentRowIndex: job?.currentRowIndex ?? null,
+    currentProductName: job?.currentProductName ?? null,
+    message: job?.message ?? null,
+  };
+}
+
+async function _startMaterialProfileSearchJob(input: {
+  workspaceId: number;
+  itemIds: number[];
+  mode: MaterialProfileSearchMode;
+}) {
+  const itemIds = [...new Set(input.itemIds.map((id) => Math.trunc(id)))].filter(
+    (id) => id > 0,
+  );
+  if (itemIds.length === 0) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      "Chọn ít nhất một dòng để tìm kiếm.",
+    );
+  }
+  if (itemIds.length > MAX_JOB_ITEMS) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      `Tối đa ${MAX_JOB_ITEMS} dòng mỗi job tìm kiếm.`,
+    );
+  }
+
+  const [workspace] = await db
+    .select({ id: excelWorkspaces.id })
+    .from(excelWorkspaces)
+    .where(eq(excelWorkspaces.id, input.workspaceId))
+    .limit(1);
+  if (!workspace) {
+    throw new MaterialProfileSearchJobError(
+      "NOT_FOUND",
+      "Không tìm thấy hồ sơ vật tư.",
+    );
+  }
+
+  const [active] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(materialProfileSearchJobs)
+    .where(inArray(materialProfileSearchJobs.status, ACTIVE_JOB_STATUSES));
+  if ((active?.count ?? 0) > 0) {
+    throw new MaterialProfileSearchJobError(
+      "CONFLICT",
+      "Đang có job tìm kiếm hồ sơ vật tư khác chạy.",
+    );
+  }
+
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+        inArray(excelWorkspaceItems.id, itemIds),
+      ),
+    )
+    .orderBy(asc(excelWorkspaceItems.sortOrder));
+  if (items.length === 0) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      "Không có dòng hợp lệ để tìm kiếm.",
+    );
+  }
+
+  const now = new Date().toISOString();
+  const jobId = randomUUID();
+  const job = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(materialProfileSearchJobs)
+      .values({
+        id: jobId,
+        workspaceId: input.workspaceId,
+        status: "queued",
+        mode: input.mode,
+        requestedItemIds: items.map((item) => item.id),
+        total: items.length,
+        message:
+          input.mode === "web"
+            ? "Đang xếp hàng tìm web."
+            : "Đang xếp hàng tìm AI.",
+        startedAt: now,
+        lastProgressAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    await tx.insert(materialProfileSearchRuns).values(
+      items.map((item, index) => ({
+        jobId,
+        workspaceId: item.workspaceId,
+        itemId: item.id,
+        originalRowIndex: item.originalRowIndex,
+        sortOrder: index,
+        mode: input.mode,
+        status: "queued",
+        inputSnapshotJson: inputSnapshot(item),
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+
+    return created;
+  });
+
+  return toJobSnapshot(job!);
+}
+
+async function _getMaterialProfileSearchJob(jobId: string) {
+  const job = await getJobRow(jobId);
+  return job ? toJobSnapshot(job) : null;
+}
+
+async function _listMaterialProfileSearchJobs(input: {
+  workspaceId: number;
+  limit?: number;
+}) {
+  const rows = await db
+    .select()
+    .from(materialProfileSearchJobs)
+    .where(eq(materialProfileSearchJobs.workspaceId, input.workspaceId))
+    .orderBy(desc(materialProfileSearchJobs.updatedAt))
+    .limit(Math.min(Math.max(input.limit ?? 10, 1), 50));
+  return rows.map(toJobSnapshot);
+}
+
+async function _listMaterialProfileSearchRuns(input: {
+  workspaceId?: number;
+  jobId?: string;
+  itemId?: number;
+  limit?: number;
+}) {
+  const conditions: SQL[] = [];
+  if (input.workspaceId != null) {
+    conditions.push(eq(materialProfileSearchRuns.workspaceId, input.workspaceId));
+  }
+  if (input.jobId) {
+    conditions.push(eq(materialProfileSearchRuns.jobId, input.jobId));
+  }
+  if (input.itemId != null) {
+    conditions.push(eq(materialProfileSearchRuns.itemId, input.itemId));
+  }
+  if (conditions.length === 0) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      "Thiếu điều kiện lọc lịch sử tìm kiếm.",
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(and(...conditions))
+    .orderBy(desc(materialProfileSearchRuns.updatedAt))
+    .limit(Math.min(Math.max(input.limit ?? 10, 1), 100));
+  return rows.map(toRunSnapshot);
+}
+
+async function _cancelMaterialProfileSearchJob(jobId: string) {
+  const job = await getJobRow(jobId);
+  if (!job) {
+    throw new MaterialProfileSearchJobError(
+      "NOT_FOUND",
+      "Không tìm thấy job tìm kiếm.",
+    );
+  }
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(materialProfileSearchJobs)
+      .set({
+        status: "cancelled",
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        message: "Đã hủy job tìm kiếm.",
+        finishedAt: now,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(eq(materialProfileSearchJobs.id, jobId));
+    await tx
+      .update(materialProfileSearchRuns)
+      .set({
+        status: "cancelled",
+        errorMessage: "Đã hủy.",
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileSearchRuns.jobId, jobId),
+          inArray(materialProfileSearchRuns.status, ["queued", "running"]),
+        ),
+      );
+  });
+  abortMaterialProfileSearchJob(jobId);
+  return getMaterialProfileSearchJob(jobId);
+}
+
+async function _setCurrentMaterialProfileSearchRun(runId: number) {
+  const [run] = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(eq(materialProfileSearchRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new MaterialProfileSearchJobError(
+      "NOT_FOUND",
+      "Không tìm thấy lần tìm kiếm.",
+    );
+  }
+  if (run.status === "queued" || run.status === "running" || run.status === "cancelled") {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      "Chỉ có thể dùng lại lần tìm kiếm đã kết thúc.",
+    );
+  }
+
+  await markRunCurrent(run.id, run.itemId);
+  const [updated] = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(eq(materialProfileSearchRuns.id, run.id))
+    .limit(1);
+  return toRunSnapshot(updated ?? run);
+}
+
+async function updateRunWithResult(input: {
+  run: RunRow;
+  status: MaterialProfileSearchRunStatus;
+  webLinksStatus: WebSearchStatus;
+  aiSearchStatus: WebSearchStatus;
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+  queries: string[];
+  recommendedCandidateKey?: string;
+  warnings: string[];
+  errorMessage?: string | null;
+  sourceWebRunId?: number | null;
+}) {
+  const now = new Date().toISOString();
+  const webLinkResults = sanitizeStoredJson(
+    input.webLinkResults,
+  ) as WebLinkResult[];
+  const aiSearchCandidates = sanitizeStoredJson(
+    input.aiSearchCandidates,
+  ) as AiSearchStoredResult[];
+  const queries = input.queries.map((query) => sanitizeStoredText(query, 500));
+  const warnings = input.warnings.map((warning) =>
+    sanitizeStoredText(warning, 1_000),
+  );
+  const errorMessage =
+    input.errorMessage == null
+      ? null
+      : sanitizeStoredText(input.errorMessage, 1_000);
+
+  await db
+    .update(materialProfileSearchRuns)
+    .set({
+      status: input.status,
+      sourceWebRunId: input.sourceWebRunId ?? input.run.sourceWebRunId,
+      queriesJson: queries,
+      webLinksStatus: input.webLinksStatus,
+      aiSearchStatus: input.aiSearchStatus,
+      webLinkResultsJson: webLinkResults as unknown as Record<
+        string,
+        unknown
+      >[],
+      aiSearchCandidatesJson: aiSearchCandidates as unknown as Record<
+        string,
+        unknown
+      >[],
+      recommendedCandidateKey: input.recommendedCandidateKey,
+      warningsJson: warnings,
+      errorMessage,
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchRuns.id, input.run.id));
+
+  if (input.status !== "cancelled" && input.status !== "skipped") {
+    await markRunCurrent(input.run.id, input.run.itemId);
+  }
+}
+
+async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
+  throwIfAborted(signal);
+  const now = new Date().toISOString();
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.id, run.itemId))
+    .limit(1);
+
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      currentItemId: run.itemId,
+      currentRowIndex: run.originalRowIndex,
+      currentProductName: item?.productName ?? null,
+      message:
+        job.mode === "web"
+          ? "Đang tìm liên kết web."
+          : "Đang trích xuất AI từ nguồn web.",
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, job.id));
+
+  await db
+    .update(materialProfileSearchRuns)
+    .set({ status: "running", startedAt: now, updatedAt: now })
+    .where(eq(materialProfileSearchRuns.id, run.id));
+
+  if (!item) {
+    await updateRunWithResult({
+      run,
+      status: "failed",
+      webLinksStatus: "error",
+      aiSearchStatus: "idle",
+      webLinkResults: [],
+      aiSearchCandidates: [],
+      queries: [],
+      warnings: [],
+      errorMessage: "Không tìm thấy dòng.",
+    });
+    return;
+  }
+
+  const input = inputFromWorkspaceItem(item);
+  if (!input.name.trim()) {
+    await updateRunWithResult({
+      run,
+      status: "skipped",
+      webLinksStatus: "idle",
+      aiSearchStatus: "idle",
+      webLinkResults: [],
+      aiSearchCandidates: [],
+      queries: [],
+      warnings: ["Tên vật tư trống."],
+      errorMessage: "Tên vật tư trống.",
+    });
+    return;
+  }
+
+  try {
+    if (job.mode === "web") {
+      const web = await searchProfileRowWebLinks(input, signal);
+      const status: MaterialProfileSearchRunStatus =
+        web.webLinkResults.length > 0 ? "completed" : "failed";
+      await updateRunWithResult({
+        run,
+        status,
+        webLinksStatus: web.webLinkResults.length > 0 ? "done" : "error",
+        aiSearchStatus: "idle",
+        webLinkResults: web.webLinkResults,
+        aiSearchCandidates: [],
+        queries: web.queries,
+        warnings: web.warnings,
+        errorMessage:
+          status === "failed"
+            ? web.warnings.find((warning) => warning.trim()) ??
+              "Không tìm thấy liên kết web."
+            : null,
+      });
+      return;
+    }
+
+    const currentRun = await loadCurrentRunForItem(run.itemId);
+    const currentDecision = currentRun ? parseRunDecision(currentRun) : null;
+    let webLinkResults = currentDecision?.webLinkResults ?? [];
+    let queries = parseStringArray(currentRun?.queriesJson);
+    const warnings: string[] = [];
+    const sourceWebRunId: number | null =
+      webLinkResults.length > 0 ? (currentRun?.id ?? null) : null;
+
+    if (webLinkResults.length === 0) {
+      const web = await searchProfileRowWebLinks(input, signal);
+      webLinkResults = web.webLinkResults;
+      queries = web.queries;
+      warnings.push(...web.warnings);
+    }
+
+    if (webLinkResults.length === 0) {
+      await updateRunWithResult({
+        run,
+        status: "failed",
+        webLinksStatus: "error",
+        aiSearchStatus: "error",
+        webLinkResults,
+        aiSearchCandidates: [],
+        queries,
+        warnings,
+        errorMessage:
+          warnings.find((warning) => warning.trim()) ??
+          "Không có nguồn web để trích xuất AI.",
+        sourceWebRunId,
+      });
+      return;
+    }
+
+    try {
+      const ai = await extractProfileRowAiCandidates(input, webLinkResults, signal);
+      warnings.push(...ai.warnings);
+      const hasCandidates = ai.aiSearchCandidates.length > 0;
+      await updateRunWithResult({
+        run,
+        status: hasCandidates ? "completed" : "partial",
+        webLinksStatus: "done",
+        aiSearchStatus: hasCandidates ? "done" : "error",
+        webLinkResults,
+        aiSearchCandidates: ai.aiSearchCandidates,
+        queries,
+        recommendedCandidateKey: ai.recommendedCandidateKey,
+        warnings,
+        errorMessage: hasCandidates
+          ? null
+          : "AI không trích xuất được ứng viên nào.",
+        sourceWebRunId,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Không cấu hình AI enrichment.";
+      warnings.push(message);
+      await updateRunWithResult({
+        run,
+        status: "partial",
+        webLinksStatus: "done",
+        aiSearchStatus: "error",
+        webLinkResults,
+        aiSearchCandidates: [],
+        queries,
+        warnings,
+        errorMessage: message,
+        sourceWebRunId,
+      });
+    }
+  } catch (error) {
+    if (
+      signal?.aborted === true ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
+      await db
+        .update(materialProfileSearchRuns)
+        .set({
+          status: "cancelled",
+          errorMessage: "Đã hủy.",
+          finishedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(materialProfileSearchRuns.id, run.id));
+      throw error;
+    }
+
+    const message =
+      error instanceof Error ? error.message : "Tìm kiếm hồ sơ vật tư thất bại.";
+    await updateRunWithResult({
+      run,
+      status: "failed",
+      webLinksStatus: "error",
+      aiSearchStatus: job.mode === "ai" ? "error" : "idle",
+      webLinkResults: [],
+      aiSearchCandidates: [],
+      queries: [],
+      warnings: [message],
+      errorMessage: message,
+    });
+  }
+}
+
+async function _processMaterialProfileSearchJob(
+  jobId: string,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (progress: MaterialProfileSearchJobProgress) => void;
+  } = {},
+) {
+  const signal = options.signal;
+  throwIfAborted(signal);
+  const job = await getJobRow(jobId);
+  if (!job) {
+    throw new Error("Không tìm thấy job tìm kiếm hồ sơ vật tư.");
+  }
+
+  const now = new Date().toISOString();
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      status: "running",
+      message:
+        job.mode === "web"
+          ? "Đang tìm web cho hồ sơ vật tư."
+          : "Đang tìm AI cho hồ sơ vật tư.",
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, jobId));
+
+  options.onProgress?.(await loadJobProgress(jobId));
+
+  const pendingRuns = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(
+      and(
+        eq(materialProfileSearchRuns.jobId, jobId),
+        inArray(materialProfileSearchRuns.status, ["queued", "running"]),
+      ),
+    )
+    .orderBy(asc(materialProfileSearchRuns.sortOrder));
+
+  await runWithConcurrency(pendingRuns, ROW_CONCURRENCY, async (run) => {
+    throwIfAborted(signal);
+    const [currentJob] = await db
+      .select({ status: materialProfileSearchJobs.status })
+      .from(materialProfileSearchJobs)
+      .where(eq(materialProfileSearchJobs.id, jobId))
+      .limit(1);
+    if (currentJob?.status === "cancelled") {
+      throw new Error("Job tìm kiếm đã bị hủy.");
+    }
+
+    await processRun(job, run, signal);
+    await refreshJobCounters(jobId);
+    options.onProgress?.(await loadJobProgress(jobId));
+  });
+}
+
+async function _completeMaterialProfileSearchJob(jobId: string) {
+  await refreshJobCounters(jobId);
+  const now = new Date().toISOString();
+  const job = await getJobRow(jobId);
+  if (!job || job.status === "cancelled") {
+    return;
+  }
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      status: "completed",
+      currentItemId: null,
+      currentRowIndex: null,
+      currentProductName: null,
+      message: "Job tìm kiếm hồ sơ vật tư đã hoàn tất.",
+      error: null,
+      finishedAt: now,
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, jobId));
+}
+
+async function _failMaterialProfileSearchJob(jobId: string, error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Job tìm kiếm hồ sơ vật tư thất bại.";
+  const now = new Date().toISOString();
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      status: "failed",
+      currentItemId: null,
+      currentRowIndex: null,
+      currentProductName: null,
+      message,
+      error: message,
+      finishedAt: now,
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, jobId));
+}
+
+export const startMaterialProfileSearchJob = traceFn(
+  log,
+  "startMaterialProfileSearchJob",
+  _startMaterialProfileSearchJob,
+);
+export const getMaterialProfileSearchJob = traceFn(
+  log,
+  "getMaterialProfileSearchJob",
+  _getMaterialProfileSearchJob,
+);
+export const listMaterialProfileSearchJobs = traceFn(
+  log,
+  "listMaterialProfileSearchJobs",
+  _listMaterialProfileSearchJobs,
+);
+export const listMaterialProfileSearchRuns = traceFn(
+  log,
+  "listMaterialProfileSearchRuns",
+  _listMaterialProfileSearchRuns,
+);
+export const cancelMaterialProfileSearchJob = traceFn(
+  log,
+  "cancelMaterialProfileSearchJob",
+  _cancelMaterialProfileSearchJob,
+);
+export const setCurrentMaterialProfileSearchRun = traceFn(
+  log,
+  "setCurrentMaterialProfileSearchRun",
+  _setCurrentMaterialProfileSearchRun,
+);
+export const processMaterialProfileSearchJob = traceFn(
+  log,
+  "processMaterialProfileSearchJob",
+  _processMaterialProfileSearchJob,
+);
+export const completeMaterialProfileSearchJob = traceFn(
+  log,
+  "completeMaterialProfileSearchJob",
+  _completeMaterialProfileSearchJob,
+);
+export const failMaterialProfileSearchJob = traceFn(
+  log,
+  "failMaterialProfileSearchJob",
+  _failMaterialProfileSearchJob,
+);

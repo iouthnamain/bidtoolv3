@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ReviewPanel } from "~/app/_components/materials/review/review-panel";
+import {
+  ReviewPanel,
+  type ProfileSearchJobPanelState,
+  type ProfileSearchRunPanelState,
+} from "~/app/_components/materials/review/review-panel";
 import type { ReviewRowStatus } from "~/app/_components/materials/review/review-types";
 import { Button, EmptyState } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
@@ -29,6 +33,14 @@ import {
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type WorkspaceItem = RouterOutputs["materialProfile"]["get"]["items"][number];
+
+const PROFILE_SEARCH_POLL_MS = 2_000;
+
+function isProfileSearchJobActive(
+  job: Pick<ProfileSearchJobPanelState, "status"> | null | undefined,
+) {
+  return job?.status === "queued" || job?.status === "running";
+}
 
 function toReviewItem(item: WorkspaceItem): WorkspaceItemForReview & {
   materialId: number | null;
@@ -136,6 +148,81 @@ export function MaterialProfileReviewStep({
     onError: (error) =>
       toast.error(error.message || "Không hoàn tác được bulk apply."),
   });
+  const searchJobsQuery = api.materialProfile.listSearchJobs.useQuery(
+    { workspaceId, limit: 5 },
+    {
+      refetchInterval: (query) => {
+        const jobs = query.state.data ?? [];
+        return jobs.some(isProfileSearchJobActive)
+          ? PROFILE_SEARCH_POLL_MS
+          : false;
+      },
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+    },
+  );
+  const activeProfileSearchJob =
+    searchJobsQuery.data?.find(isProfileSearchJobActive) ?? null;
+  const selectedItemId =
+    selectedRowIndex == null ? null : itemIdByRowIndex.get(selectedRowIndex) ?? null;
+  const searchRunsQuery = api.materialProfile.listSearchRuns.useQuery(
+    {
+      workspaceId,
+      itemId: selectedItemId ?? undefined,
+      limit: 10,
+    },
+    {
+      enabled: selectedItemId != null,
+      refetchInterval: () =>
+        activeProfileSearchJob ? PROFILE_SEARCH_POLL_MS : false,
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+    },
+  );
+  const startSearchJob = api.materialProfile.startSearchJob.useMutation({
+    onSuccess: async (job) => {
+      toast.success(
+        job.mode === "web"
+          ? `Đã bắt đầu job tìm web cho ${job.total} dòng.`
+          : `Đã bắt đầu job tìm AI cho ${job.total} dòng.`,
+      );
+      await utils.materialProfile.listSearchJobs.invalidate();
+      await utils.materialProfile.get.invalidate({ workspaceId });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không bắt đầu được job tìm kiếm."),
+  });
+  const cancelSearchJob = api.materialProfile.cancelSearchJob.useMutation({
+    onSuccess: async () => {
+      toast.success("Đã hủy job tìm kiếm.");
+      await utils.materialProfile.listSearchJobs.invalidate();
+      await utils.materialProfile.get.invalidate({ workspaceId });
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không hủy được job tìm kiếm."),
+  });
+  const setCurrentSearchRun = api.materialProfile.setCurrentSearchRun.useMutation(
+    {
+      onSuccess: async () => {
+        await utils.materialProfile.listSearchRuns.invalidate();
+        await utils.materialProfile.get.invalidate({ workspaceId });
+      },
+      onError: (error) =>
+        toast.error(error.message || "Không dùng lại được lần tìm kiếm."),
+    },
+  );
+  const activeProfileSearchJobProgressKey = activeProfileSearchJob
+    ? `${activeProfileSearchJob.id}:${activeProfileSearchJob.processed}:${activeProfileSearchJob.status}`
+    : null;
+
+  useEffect(() => {
+    if (!activeProfileSearchJobProgressKey) return;
+    void utils.materialProfile.get.invalidate({ workspaceId });
+  }, [
+    activeProfileSearchJobProgressKey,
+    utils.materialProfile.get,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     setDecisions(seedDecisionsFromItems(reviewItems));
@@ -207,6 +294,36 @@ export function MaterialProfileReviewStep({
       persistDecision(rowIndex, decision);
     },
     [persistDecision],
+  );
+
+  const handleProfileSearchJob = useCallback(
+    async (kind: "web" | "ai", rowIndices: number[]) => {
+      const itemIds = rowIndices
+        .map((rowIndex) => itemIdByRowIndex.get(rowIndex))
+        .filter((itemId): itemId is number => itemId != null);
+      if (itemIds.length === 0) {
+        toast.warning("Không có dòng hợp lệ để tìm kiếm.");
+        return;
+      }
+      await startSearchJob.mutateAsync({
+        workspaceId,
+        itemIds,
+        mode: kind,
+      });
+    },
+    [itemIdByRowIndex, startSearchJob, toast, workspaceId],
+  );
+
+  const handleCancelProfileSearchJob = useCallback(async () => {
+    if (!activeProfileSearchJob) return;
+    await cancelSearchJob.mutateAsync({ jobId: activeProfileSearchJob.id });
+  }, [activeProfileSearchJob, cancelSearchJob]);
+
+  const handleUseSearchRun = useCallback(
+    async (runId: number) => {
+      await setCurrentSearchRun.mutateAsync({ runId });
+    },
+    [setCurrentSearchRun],
   );
 
   const flushDecisions = useCallback(async () => {
@@ -410,7 +527,7 @@ export function MaterialProfileReviewStep({
   }
 
   return (
-    <ReviewPanel
+      <ReviewPanel
       rows={reviewRows}
       summary={reviewSummary}
       decisions={decisions}
@@ -434,6 +551,19 @@ export function MaterialProfileReviewStep({
       }
       profileUndoPending={undoLastBulkApply.isPending}
       profileUndoAvailable={bulkApplyUndoAvailable}
+      activeProfileSearchJob={
+        activeProfileSearchJob as ProfileSearchJobPanelState | null
+      }
+      profileSearchJobPending={
+        startSearchJob.isPending || cancelSearchJob.isPending
+      }
+      profileSearchRuns={
+        (searchRunsQuery.data ?? []) as ProfileSearchRunPanelState[]
+      }
+      profileSearchHistoryLoading={searchRunsQuery.isLoading}
+      onProfileSearchJob={handleProfileSearchJob}
+      onProfileCancelSearchJob={handleCancelProfileSearchJob}
+      onProfileUseSearchRun={handleUseSearchRun}
       emptyTitle="Chưa có kết quả match"
       emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
       headerActions={

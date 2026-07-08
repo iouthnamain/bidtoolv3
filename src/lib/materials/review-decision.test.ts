@@ -107,6 +107,25 @@ describe("review-decision", () => {
     expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
   });
 
+  it("reads legacy profile AI result when candidate array is missing", () => {
+    const restored = deserializeRowDecision({
+      materialId: null,
+      acceptedFields: [],
+      selectedSource: "ai",
+      aiSearchStatus: "done",
+      aiSearchResult: {
+        fields: { manufacturer: "Acme" },
+        sourceUrls: ["https://example.com/p"],
+        evidence: [],
+        url: "https://example.com/p",
+      },
+    });
+
+    expect(restored?.aiSearchCandidates?.length).toBe(1);
+    expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
+    expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
+  });
+
   it("seeds auto row from item materialId and fill plan", () => {
     const decision = seedDecisionFromItem({
       id: 1,

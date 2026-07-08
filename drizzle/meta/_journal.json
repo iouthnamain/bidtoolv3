@@ -218,6 +218,20 @@
       "when": 1782800000000,
       "tag": "0030_search_audit_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1782900000000,
+      "tag": "0031_shop_scrape_job_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0032_material_profile_search_jobs",
+      "breakpoints": true
     }
   ]
 }

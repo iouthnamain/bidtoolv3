@@ -23,8 +23,9 @@ import {
 } from "~/server/services/search-audit";
 import {
   rankSearchResults,
-  searchQueryWithFallback,
+  searchWebForProduct,
 } from "~/server/services/material-web-search";
+import { buildSearchProbeQueries } from "~/server/services/excel-research/query-builder";
 
 const searchSettingKeys = [
   "searxngBaseUrl",
@@ -160,7 +161,11 @@ export const searchConfigRouter = createTRPCRouter({
         resolveSearxngSearchConfig(),
         resolveSearchDomainPolicy(),
       ]);
-      const response = await searchQueryWithFallback(input.query, undefined, {
+      const probeQueries = buildSearchProbeQueries(
+        input.query,
+        Math.max(input.limit, 8),
+      );
+      const response = await searchWebForProduct(probeQueries, undefined, {
         feature: "test",
       });
       const ranked = rankSearchResults(
@@ -197,7 +202,13 @@ export const searchConfigRouter = createTRPCRouter({
           boostDomainCount: policy.boostDomains.length,
           penaltyDomainCount: policy.penaltyDomains.length,
           blockDomainCount: policy.blockDomains.length,
+          fallbackEngines: response.warnings.some((warning) =>
+            warning.includes("đã thử lại bằng Bing"),
+          )
+            ? ["bing"]
+            : [],
         },
+        queries: probeQueries,
       };
     }),
 

@@ -1099,17 +1099,23 @@ export function MaterialProfileDetailClient({
               sheet.name === sheetName
                 ? {
                     ...sheet,
-                    rows: sheet.rows.map((row, rIndex) =>
-                      sheet.rowNumbers?.[rIndex] === rowNumber
-                        ? Array.from({
-                            length: row.length,
-                          }).map((_, cIndex) =>
-                            sheet.columnNumbers?.[cIndex] === colNumber
-                              ? value
-                              : (row[cIndex] ?? ""),
-                          )
-                        : row,
-                    ),
+                    rows: sheet.rows.map((row, rIndex) => {
+                      const currentRowNumber =
+                        sheet.rowNumbers?.[rIndex] ?? rIndex + 1;
+                      if (currentRowNumber !== rowNumber) {
+                        return row;
+                      }
+                      return Array.from({
+                        length: Math.max(
+                          row.length,
+                          sheet.columnNumbers.length,
+                        ),
+                      }).map((_, cIndex) =>
+                        sheet.columnNumbers[cIndex] === colNumber
+                          ? value
+                          : (row[cIndex] ?? ""),
+                      );
+                    }),
                   }
                 : sheet,
             ),
@@ -1282,6 +1288,30 @@ export function MaterialProfileDetailClient({
       );
     }
   };
+
+  if (query.isError) {
+    return (
+      <section className="panel p-4">
+        <EmptyState
+          title="Không tải được hồ sơ vật tư"
+          description={query.error.message}
+          cta={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="secondary" onClick={() => void query.refetch()}>
+                Tải lại
+              </Button>
+              <Link
+                href="/material-profiles"
+                className="inline-flex min-h-10 items-center rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-700 shadow-[var(--shadow-flat)] transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+              >
+                Quay lại danh sách
+              </Link>
+            </div>
+          }
+        />
+      </section>
+    );
+  }
 
   if (query.isLoading || !detail) {
     return (
