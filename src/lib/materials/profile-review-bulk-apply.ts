@@ -1,7 +1,5 @@
 import type { ReviewRow } from "~/app/_components/materials/review/review-types";
-import {
-  applyAllProposedFieldsWithCurrency,
-} from "~/lib/materials/enrich-gap-fill";
+import { applyAllProposedFieldsWithCurrency } from "~/lib/materials/enrich-gap-fill";
 import {
   candidateToFields,
   type FillableField,
@@ -10,10 +8,12 @@ import type { RowDecision } from "~/lib/materials/review-decision";
 import {
   aiCandidateMatchChips,
   catalogCandidateScore,
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
   searchCandidateKey,
 } from "~/lib/materials/search-candidate-match";
 
 export const PROFILE_AUTO_APPLY_THRESHOLD = 0.85;
+export const PROFILE_SEARCH_APPLY_THRESHOLD = RELIABLE_SEARCH_MATCH_THRESHOLD;
 
 function acceptedFieldsFromFillPlan(row: ReviewRow): Set<FillableField> {
   return new Set<FillableField>(
@@ -60,7 +60,7 @@ function profileSearchFields(decision: RowDecision) {
 export function searchResultDecisionForRow(
   row: ReviewRow,
   decision: RowDecision,
-  threshold = PROFILE_AUTO_APPLY_THRESHOLD,
+  threshold = PROFILE_SEARCH_APPLY_THRESHOLD,
 ): RowDecision | null {
   const profileFields = profileSearchFields(decision);
   const aiCandidates = decision.aiSearchCandidates?.length
@@ -106,10 +106,12 @@ export function searchResultDecisionForRow(
     }
   }
 
-  return catalogDecisionForRow(row, threshold);
+  return catalogDecisionForRow(row, PROFILE_AUTO_APPLY_THRESHOLD);
 }
 
-export function rowHasSearchResults(decision: RowDecision | undefined): boolean {
+export function rowHasSearchResults(
+  decision: RowDecision | undefined,
+): boolean {
   if (!decision) return false;
   return (
     (decision.webLinkResults?.length ?? 0) > 0 ||
@@ -135,7 +137,7 @@ export function countSearchResultEligibleRows(
   rows: ReviewRow[],
   decisions: Map<number, RowDecision>,
   rowIndices: Iterable<number>,
-  threshold = PROFILE_AUTO_APPLY_THRESHOLD,
+  threshold = PROFILE_SEARCH_APPLY_THRESHOLD,
 ): number {
   let count = 0;
   for (const rowIndex of rowIndices) {

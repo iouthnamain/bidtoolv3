@@ -47,7 +47,10 @@ function material(
   } as MaterialRow;
 }
 
-function score(p: ScrapedShopProduct, m: MaterialRow): {
+function score(
+  p: ScrapedShopProduct,
+  m: MaterialRow,
+): {
   breakdown: ScoreBreakdown;
   total: number;
 } {
@@ -57,7 +60,9 @@ function score(p: ScrapedShopProduct, m: MaterialRow): {
 
 describe("manufacturer matching", () => {
   it("matches alias forms and casing", () => {
-    expect(computeManufacturerMatch("schneider electric", "Schneider")).toBe(1.0);
+    expect(computeManufacturerMatch("schneider electric", "Schneider")).toBe(
+      1.0,
+    );
     expect(computeManufacturerMatch("Bình Minh", "BM")).toBe(1.0);
     expect(computeManufacturerMatch("HSG", "Hoa Sen")).toBe(1.0);
     expect(computeManufacturerMatch("Nhựa Tiền Phong", "TP")).toBe(1.0);
@@ -131,5 +136,45 @@ describe("full scoring — priority cases", () => {
       material({ ...base, originCountry: "China" }),
     );
     expect(sameOrigin.total).toBeGreaterThan(diffOrigin.total);
+  });
+
+  it("uses product code and technical spec to reach reliable profile-search range", () => {
+    const { breakdown, total } = score(
+      product({
+        name: "Cáp điện hạ thế",
+        sku: "CVV 2x2.5",
+        unit: "m",
+        specText: "Ruột đồng 2x2.5mm2, cách điện PVC",
+      }),
+      material({
+        name: "Dây cáp CADIVI",
+        code: "CVV-2x2.5",
+        unit: "m",
+        specText: "Cáp CVV ruột đồng tiết diện 2x2.5mm2 vỏ PVC",
+      }),
+    );
+
+    expect(breakdown.codeMatch).toBeGreaterThanOrEqual(0.9);
+    expect(total).toBeGreaterThanOrEqual(0.75);
+  });
+
+  it("caps conflicting product codes below reliable range", () => {
+    const { breakdown, total } = score(
+      product({
+        name: "Cáp điện hạ thế",
+        sku: "CVV 2x2.5",
+        unit: "m",
+        specText: "Ruột đồng 2x2.5mm2, cách điện PVC",
+      }),
+      material({
+        name: "Cáp điện hạ thế CVV",
+        code: "CXV-4x6",
+        unit: "m",
+        specText: "Cáp điện ruột đồng 4x6mm2",
+      }),
+    );
+
+    expect(breakdown.codeMatch).toBe(-1);
+    expect(total).toBeLessThan(0.7);
   });
 });

@@ -25,8 +25,16 @@ next-env.d.ts
 /backups
 
 # agent skills (installed globally via `bunx skills add … -g`)
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/codex-feature-pipeline/
+!.agents/skills/codex-feature-pipeline/SKILL.md
 skills-lock.json
+
+# codex workflow artifacts
+.pipeline/runs/*
+!.pipeline/runs/.gitkeep
 
 # misc
 .DS_Store

@@ -21,16 +21,19 @@ export type MatchDimensions = {
 export type MatchAssessment = {
   score: number;
   band: MatchBand | null;
-  label: "Cao" | "Vừa" | null;
+  label: "Cao 85%+" | "Đạt 75%+" | null;
   dimensions: MatchDimensions;
   reasons: string[];
   warnings: string[];
 };
 
-const MATCH_THRESHOLDS = {
+export const MATCH_THRESHOLDS = {
   high: 0.85,
-  medium: 0.5,
+  reliable: 0.75,
+  medium: 0.75,
 } as const;
+
+export const RELIABLE_SEARCH_MATCH_THRESHOLD = MATCH_THRESHOLDS.reliable;
 
 const EMPTY_DIMENSIONS: MatchDimensions = {
   identity: 0,
@@ -57,9 +60,11 @@ export function matchBand(score: number): MatchBand | null {
   return null;
 }
 
-export function matchBandLabel(band: MatchBand | null): "Cao" | "Vừa" | null {
-  if (band === "high") return "Cao";
-  if (band === "medium") return "Vừa";
+export function matchBandLabel(
+  band: MatchBand | null,
+): "Cao 85%+" | "Đạt 75%+" | null {
+  if (band === "high") return "Cao 85%+";
+  if (band === "medium") return "Đạt 75%+";
   return null;
 }
 
@@ -110,17 +115,31 @@ function stripAccents(value: string): string {
 }
 
 function normalizeText(value: string): string {
-  return stripAccents(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return stripAccents(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-export function tokenOverlap(a: string | undefined, b: string | undefined): number {
+function compactCode(value: string | undefined): string {
+  return normalizeText(value ?? "").replace(/\s+/g, "");
+}
+
+export function tokenOverlap(
+  a: string | undefined,
+  b: string | undefined,
+): number {
   const left = normalizeText(a ?? "");
   const right = normalizeText(b ?? "");
   if (!left || !right) return 0;
   if (left.includes(right) || right.includes(left)) {
-    return Math.min(left.length, right.length) / Math.max(left.length, right.length);
+    return (
+      Math.min(left.length, right.length) / Math.max(left.length, right.length)
+    );
   }
-  const leftTokens = new Set(left.split(/\s+/).filter((token) => token.length > 1));
+  const leftTokens = new Set(
+    left.split(/\s+/).filter((token) => token.length > 1),
+  );
   const rightTokens = right.split(/\s+/).filter((token) => token.length > 1);
   if (rightTokens.length === 0) return 0;
   let hits = 0;
@@ -145,14 +164,19 @@ function domainFromUrl(url: string | undefined): string {
   }
 }
 
-function sourceTrustFromUrl(url: string | undefined, domain = domainFromUrl(url)): number {
+function sourceTrustFromUrl(
+  url: string | undefined,
+  domain = domainFromUrl(url),
+): number {
   if (!url && !domain) return 0;
   const value = `${url ?? ""} ${domain}`.toLowerCase();
   let score = 0.55;
   if (/\.pdf(?:$|[?#])/i.test(url ?? "")) score += 0.25;
   if (domain.endsWith(".vn")) score += 0.1;
-  if (/(manufacturer|catalog|datasheet|spec|product)/i.test(value)) score += 0.1;
-  if (/(shopee|lazada|tiki|facebook|youtube|tiktok)/i.test(value)) score -= 0.25;
+  if (/(manufacturer|catalog|datasheet|spec|product)/i.test(value))
+    score += 0.1;
+  if (/(shopee|lazada|tiki|facebook|youtube|tiktok)/i.test(value))
+    score -= 0.25;
   return clampMatchScore(score);
 }
 
@@ -165,13 +189,19 @@ function specQuality(specText: string | undefined): number {
   return 0.35;
 }
 
-function sameNormalizedValue(a: string | undefined, b: string | undefined): boolean {
+function sameNormalizedValue(
+  a: string | undefined,
+  b: string | undefined,
+): boolean {
   const left = normalizeText(a ?? "");
   const right = normalizeText(b ?? "");
   return left.length > 0 && left === right;
 }
 
-function containsNormalizedValue(haystack: string | undefined, needle: string | undefined) {
+function containsNormalizedValue(
+  haystack: string | undefined,
+  needle: string | undefined,
+) {
   const normalizedHaystack = normalizeText(haystack ?? "");
   const normalizedNeedle = normalizeText(needle ?? "");
   return (
@@ -179,6 +209,31 @@ function containsNormalizedValue(haystack: string | undefined, needle: string | 
     normalizedNeedle.length > 0 &&
     normalizedHaystack.includes(normalizedNeedle)
   );
+}
+
+function codeEvidence(
+  code: string | undefined,
+  text: string | undefined,
+): { score: number; conflict: boolean } {
+  const normalizedCode = normalizeText(code ?? "");
+  const normalizedText = normalizeText(text ?? "");
+  if (!normalizedCode || !normalizedText) return { score: 0, conflict: false };
+
+  const codeCompact = compactCode(normalizedCode);
+  const textCompact = compactCode(normalizedText);
+  if (codeCompact && textCompact.includes(codeCompact)) {
+    return { score: 1, conflict: false };
+  }
+
+  const codeTokens = normalizedCode
+    .split(/\s+/)
+    .filter((token) => token.length >= 2);
+  if (codeTokens.length === 0) return { score: 0, conflict: false };
+  const hits = codeTokens.filter((token) =>
+    new RegExp(`(^|\\s)${token}(\\s|$)`).test(normalizedText),
+  ).length;
+  const score = hits / codeTokens.length;
+  return { score, conflict: score === 0 };
 }
 
 function weightedFieldCoverage(
@@ -229,11 +284,15 @@ function conflictRisk(
     if (field === "currency") continue;
     const value = fields[field]?.trim();
     const sheetValue = sheetFields[field]?.trim();
-    if (!value || !sheetValue || sameNormalizedValue(value, sheetValue)) continue;
+    if (!value || !sheetValue || sameNormalizedValue(value, sheetValue))
+      continue;
     if (
       field === "specText" &&
       (containsNormalizedValue(value, sheetValue) ||
-        Math.max(tokenOverlap(sheetValue, value), tokenOverlap(value, sheetValue)) >= 0.6)
+        Math.max(
+          tokenOverlap(sheetValue, value),
+          tokenOverlap(value, sheetValue),
+        ) >= 0.6)
     ) {
       continue;
     }
@@ -251,6 +310,7 @@ export function assessCatalogCandidate(input: {
   const breakdown = input.breakdown;
   const reasons: string[] = [];
   if ((breakdown?.nameSimilarity ?? 0) >= 0.5) reasons.push("Tên");
+  if ((breakdown?.codeMatch ?? 0) >= 0.9) reasons.push("Mã SP");
   if ((breakdown?.manufacturerMatch ?? 0) >= 0.9) reasons.push("NSX");
   if ((breakdown?.unitMatch ?? 0) >= 1) reasons.push("ĐVT");
   if ((breakdown?.specMatch ?? 0) >= 0.7) reasons.push("Thông số");
@@ -263,13 +323,16 @@ export function assessCatalogCandidate(input: {
       identity: breakdown
         ? clampMatchScore(
             breakdown.nameSimilarity * 0.5 +
-              breakdown.manufacturerMatch * 0.25 +
+              (breakdown.codeMatch ?? 0) * 0.3 +
+              breakdown.manufacturerMatch * 0.2 +
               breakdown.unitMatch * 0.15 +
               breakdown.originMatch * 0.1,
           )
         : score,
       spec: breakdown
-        ? clampMatchScore(breakdown.specMatch * 0.7 + breakdown.dimensionMatch * 0.3)
+        ? clampMatchScore(
+            breakdown.specMatch * 0.7 + breakdown.dimensionMatch * 0.3,
+          )
         : 0,
       sourceTrust: 0.8,
       fieldCoverage: clampMatchScore((input.fillCount ?? 0) / 6),
@@ -285,10 +348,11 @@ export function assessWebLinkCandidate(input: {
   sheetFields?: Partial<Record<FillableField, string>>;
 }): MatchAssessment {
   const { link, rowName, sheetFields = {} } = input;
-  const text = `${link.title} ${link.snippet} ${link.url}`;
+  const text = `${link.title} ${link.snippet} ${link.url} ${link.query ?? ""}`;
   const nameOverlap = tokenOverlap(rowName, link.title);
   const queryOverlap = tokenOverlap(rowName, link.query);
   const manufacturerOverlap = tokenOverlap(sheetFields.manufacturer, text);
+  const code = codeEvidence(sheetFields.code, text);
   const specOverlap = Math.max(
     tokenOverlap(sheetFields.specText, text),
     specQuality(link.snippet) * 0.35,
@@ -296,18 +360,27 @@ export function assessWebLinkCandidate(input: {
   const sourceTrust = sourceTrustFromUrl(link.url, link.domain);
   const searchRank = normalizeSearchRank(link.rankScore);
   const identity = clampMatchScore(
-    nameOverlap * 0.55 +
+    code.score * 0.35 +
+      nameOverlap * 0.35 +
       queryOverlap * 0.15 +
-      manufacturerOverlap * 0.2 +
-      searchRank * 0.1,
+      manufacturerOverlap * 0.1 +
+      searchRank * 0.05,
   );
-  const score = clampMatchScore(
-    identity * 0.45 + specOverlap * 0.15 + sourceTrust * 0.25 + searchRank * 0.15,
+  let score = clampMatchScore(
+    identity * 0.45 +
+      specOverlap * 0.15 +
+      sourceTrust * 0.25 +
+      searchRank * 0.15,
   );
+  if (code.conflict && (sheetFields.code?.trim() ?? "")) {
+    score = Math.min(score, 0.69);
+  }
 
   const reasons: string[] = [];
+  if (code.score >= 0.8) reasons.push("Mã SP");
   if (nameOverlap >= 0.35) reasons.push("Tên");
   if (manufacturerOverlap >= 0.45) reasons.push("NSX");
+  if (specOverlap >= 0.65) reasons.push("Thông số");
   if (/\.pdf(?:$|[?#])/i.test(link.url)) reasons.push("PDF");
   if (link.domain) reasons.push(link.domain);
 
@@ -332,6 +405,15 @@ export function assessAiCandidate(input: {
   const { candidate, sheetFields, rowName } = input;
   const fields = candidate.fields;
   const confidences = candidate.fieldConfidences ?? {};
+  const candidateText = [
+    fields.code,
+    candidate.title,
+    candidate.snippet,
+    candidate.url,
+    ...(candidate.sourceUrls ?? []),
+    ...(candidate.catalogPdfUrls ?? []),
+  ].join(" ");
+  const code = codeEvidence(sheetFields.code, candidateText);
   const bestName = Math.max(
     tokenOverlap(rowName, candidate.title),
     tokenOverlap(rowName, fields.code),
@@ -355,15 +437,17 @@ export function assessAiCandidate(input: {
       : 0.5;
   const searchRank = normalizeSearchRank(candidate.rankScore);
   const identity = clampMatchScore(
-    bestName * 0.35 +
-      manufacturerMatch * 0.25 +
+    code.score * 0.35 +
+      bestName * 0.25 +
+      manufacturerMatch * 0.2 +
       unitMatch * 0.15 +
       originMatch * 0.1 +
-      searchRank * 0.15,
+      searchRank * 0.1,
   );
   const spec = Math.max(
     specQuality(fields.specText),
     tokenOverlap(sheetFields.specText, fields.specText),
+    tokenOverlap(sheetFields.specText, candidateText),
   );
   const sourceTrust = Math.max(
     ...[
@@ -374,9 +458,13 @@ export function assessAiCandidate(input: {
     0,
   );
   const coverage = weightedFieldCoverage(fields, confidences);
-  const risk = conflictRisk(fields, sheetFields, confidences);
-  const evidenceFreshness = candidate.sourceUrls.length > 0 || candidate.url ? 0.6 : 0.25;
-  const score = clampMatchScore(
+  let risk = conflictRisk(fields, sheetFields, confidences);
+  if (code.conflict && (sheetFields.code?.trim() ?? "")) {
+    risk = Math.max(risk, 0.35);
+  }
+  const evidenceFreshness =
+    (candidate.sourceUrls?.length ?? 0) > 0 || candidate.url ? 0.6 : 0.25;
+  let score = clampMatchScore(
     identity * 0.4 +
       spec * 0.25 +
       sourceTrust * 0.15 +
@@ -384,6 +472,9 @@ export function assessAiCandidate(input: {
       evidenceFreshness * 0.05 -
       risk,
   );
+  if (code.conflict && (sheetFields.code?.trim() ?? "")) {
+    score = Math.min(score, 0.69);
+  }
 
   const reasons: string[] = [];
   if (coverage.filledCount > 0) reasons.push(`${coverage.filledCount} trường`);
@@ -391,6 +482,7 @@ export function assessAiCandidate(input: {
     reasons.push(`${candidate.catalogPdfUrls?.length ?? 0} PDF`);
   }
   if (manufacturerMatch >= 0.8) reasons.push("NSX");
+  if (code.score >= 0.8) reasons.push("Mã SP");
   if (unitMatch >= 1) reasons.push("ĐVT");
   if (spec >= 0.65) reasons.push("Thông số");
 

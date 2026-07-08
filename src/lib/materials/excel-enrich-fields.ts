@@ -63,7 +63,10 @@ export const FIELD_LABELS: Record<FillableField, string> = {
   sourceUrl: "Nguồn",
 };
 
-export const PRICE_FIELDS = new Set<FillableField>(["defaultUnitPrice", "currency"]);
+export const PRICE_FIELDS = new Set<FillableField>([
+  "defaultUnitPrice",
+  "currency",
+]);
 
 export function isPriceField(field: FillableField) {
   return PRICE_FIELDS.has(field);
@@ -222,6 +225,7 @@ export function candidateToFields(
 
 export type MatchScoreBreakdown = {
   nameSimilarity: number;
+  codeMatch?: number;
   unitMatch: number;
   manufacturerMatch: number;
   originMatch: number;
@@ -239,6 +243,7 @@ export function matchReasonChips(
   if (breakdown.nameSimilarity > 0) {
     chips.push(`tên ${Math.round(breakdown.nameSimilarity * 100)}%`);
   }
+  if ((breakdown.codeMatch ?? 0) >= 0.9) chips.push("mã SP khớp");
   if (breakdown.unitMatch >= 1) chips.push("cùng ĐVT");
   if (breakdown.manufacturerMatch >= 0.9) chips.push("NSX khớp");
   if (breakdown.originMatch >= 1) chips.push("xuất xứ khớp");

@@ -91,6 +91,67 @@ describe("buildSearchQueries", () => {
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
+  it("keeps profile constrained variants within the six-query cap", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Dây cáp điện Cadivi CVV 2x2.5",
+        manufacturer: "Cadivi",
+        code: "CVV 2x2.5",
+      },
+      {
+        context: "profile_search",
+        queryControls: {
+          enableSiteVnVariants: true,
+          enableNegativeMarketplaceVariants: true,
+          materialJobMaxQueries: 4,
+          excelResearchMaxQueries: 8,
+          interactiveMaxQueries: 6,
+        },
+        domainPolicy: {
+          boostDomains: ["cadivi.vn"],
+          penaltyDomains: ["shopee.vn", "lazada.vn"],
+          blockDomains: [],
+        },
+      },
+    );
+
+    const joined = queries.map((query) => query.query).join("\n");
+    expect(joined).toContain("site:.vn");
+    expect(joined).toContain("-site:shopee.vn");
+    expect(joined).toContain("đại lý nhà phân phối");
+    expect(queries.length).toBeLessThanOrEqual(6);
+  });
+
+  it("keeps profile supplier filters when no explicit code is present", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Dây điện VCm 0.5mm2",
+        manufacturer: "Cadivi",
+      },
+      {
+        context: "profile_search",
+        queryControls: {
+          enableSiteVnVariants: true,
+          enableNegativeMarketplaceVariants: true,
+          materialJobMaxQueries: 4,
+          excelResearchMaxQueries: 8,
+          interactiveMaxQueries: 6,
+        },
+        domainPolicy: {
+          boostDomains: ["cadivi.vn"],
+          penaltyDomains: ["shopee.vn", "lazada.vn"],
+          blockDomains: [],
+        },
+      },
+    );
+
+    const joined = queries.map((query) => query.query).join("\n");
+    expect(joined).toContain("site:.vn");
+    expect(joined).toContain("-site:shopee.vn");
+    expect(joined).toContain("đại lý nhà phân phối");
+    expect(queries.length).toBeLessThanOrEqual(6);
+  });
+
   it("builds official-domain probes for material search tests", () => {
     const queries = buildSearchProbeQueries(
       "Ống nhựa Bình Minh D90 thông số kỹ thuật",

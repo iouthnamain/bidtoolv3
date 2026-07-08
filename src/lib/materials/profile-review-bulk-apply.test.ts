@@ -5,6 +5,7 @@ import {
   countCatalogEligibleRows,
   countSearchResultEligibleRows,
   PROFILE_AUTO_APPLY_THRESHOLD,
+  PROFILE_SEARCH_APPLY_THRESHOLD,
   searchResultDecisionForRow,
 } from "~/lib/materials/profile-review-bulk-apply";
 import type { ReviewRow } from "~/app/_components/materials/review/review-types";
@@ -177,5 +178,47 @@ describe("profile review bulk apply", () => {
     expect(countCatalogEligibleRows(rows, [2, 3])).toBe(1);
     expect(countSearchResultEligibleRows(rows, decisions, [2])).toBe(1);
     expect(countSearchResultEligibleRows(rows, decisions, [2, 3])).toBe(1);
+  });
+
+  it("uses 0.75 for search apply while catalog stays at 0.85", () => {
+    expect(PROFILE_SEARCH_APPLY_THRESHOLD).toBe(0.75);
+    expect(PROFILE_AUTO_APPLY_THRESHOLD).toBe(0.85);
+
+    expect(
+      catalogDecisionForRow(
+        reviewRow({
+          topCandidate: { ...reviewRow().topCandidate!, score: 0.8 },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not apply sub-85% catalog matches through search-result fallback", () => {
+    const row = reviewRow({
+      topCandidate: { ...reviewRow().topCandidate!, score: 0.8 },
+    });
+    const decision: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(),
+      webLinkResults: [
+        {
+          title: "Kết quả tham khảo",
+          url: "https://example.vn/catalog",
+          domain: "example.vn",
+          snippet: "Thông số kỹ thuật chung",
+          query: "Ống thép DN50",
+          rankScore: 0.1,
+        },
+      ],
+      webLinksStatus: "done",
+    };
+    const decisions = new Map<number, RowDecision>([
+      [row.originalRowIndex, decision],
+    ]);
+
+    expect(searchResultDecisionForRow(row, decision)).toBeNull();
+    expect(
+      countSearchResultEligibleRows([row], decisions, [row.originalRowIndex]),
+    ).toBe(0);
   });
 });

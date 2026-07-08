@@ -758,10 +758,24 @@ function materialFamilyConflict(inputText: string, resultText: string) {
   return null;
 }
 
-function codeTokensMatch(code: string, title: string, url: string) {
+function tokenOverlap(left: string, right: string) {
+  const leftTokens = new Set(
+    normalizeSearchText(left)
+      .split(/[^a-z0-9]+/i)
+      .filter((token) => token.length > 1),
+  );
+  const rightTokens = normalizeSearchText(right)
+    .split(/[^a-z0-9]+/i)
+    .filter((token) => token.length > 1);
+  if (leftTokens.size === 0 || rightTokens.length === 0) return 0;
+  const hits = rightTokens.filter((token) => leftTokens.has(token)).length;
+  return hits / rightTokens.length;
+}
+
+function codeTokensMatch(code: string, text: string) {
   const normalizedCode = code.trim().toLowerCase();
   if (!normalizedCode || normalizedCode.length < 2) return false;
-  const haystack = `${title} ${url}`.toLowerCase();
+  const haystack = text.toLowerCase();
   if (haystack.includes(normalizedCode)) return true;
   const parts = normalizedCode
     .split(/[^a-z0-9]+/i)
@@ -777,6 +791,7 @@ function _rankSearchResults(
     manufacturer?: string | null;
     name?: string | null;
     code?: string | null;
+    specText?: string | null;
     sourceUrl?: string | null;
   },
   policy: SearchDomainPolicy = DEFAULT_DOMAIN_POLICY,
@@ -784,6 +799,7 @@ function _rankSearchResults(
   const manufacturer = input.manufacturer?.trim() ?? "";
   const name = input.name?.trim().toLowerCase() ?? "";
   const code = input.code?.trim() ?? "";
+  const specText = input.specText?.trim() ?? "";
   const sourceDomain = input.sourceUrl ? extractDomain(input.sourceUrl) : "";
   const filtered = applyDomainPolicy(results, policy);
 
@@ -793,8 +809,9 @@ function _rankSearchResults(
     const domain = result.domain.toLowerCase();
     const title = result.title.toLowerCase();
     const snippet = result.snippet.toLowerCase();
-    const combined = `${title} ${snippet}`;
-    const conflict = materialFamilyConflict(name, combined);
+    const resultText = `${title} ${snippet} ${result.url}`;
+    const combined = `${resultText} ${result.query}`;
+    const conflict = materialFamilyConflict(name, resultText);
 
     if (domainMatchesAny(domain, policy.boostDomains)) {
       score += 0.45;
@@ -821,9 +838,16 @@ function _rankSearchResults(
       score += 0.25;
       reasons.push("source_domain_match");
     }
-    if (code && codeTokensMatch(code, title, result.url)) {
+    if (code && codeTokensMatch(code, combined)) {
       score += 0.25;
       reasons.push("code_match");
+    }
+    if (specText) {
+      const overlap = tokenOverlap(combined, specText);
+      if (overlap >= 0.4) {
+        score += Math.min(0.3, overlap * 0.3);
+        reasons.push("spec_overlap");
+      }
     }
     if (textContainsSpecKeyword(combined)) {
       score += 0.1;

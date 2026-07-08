@@ -164,7 +164,9 @@ export function MaterialProfileReviewStep({
   const activeProfileSearchJob =
     searchJobsQuery.data?.find(isProfileSearchJobActive) ?? null;
   const selectedItemId =
-    selectedRowIndex == null ? null : itemIdByRowIndex.get(selectedRowIndex) ?? null;
+    selectedRowIndex == null
+      ? null
+      : (itemIdByRowIndex.get(selectedRowIndex) ?? null);
   const searchRunsQuery = api.materialProfile.listSearchRuns.useQuery(
     {
       workspaceId,
@@ -201,16 +203,15 @@ export function MaterialProfileReviewStep({
     onError: (error) =>
       toast.error(error.message || "Không hủy được job tìm kiếm."),
   });
-  const setCurrentSearchRun = api.materialProfile.setCurrentSearchRun.useMutation(
-    {
+  const setCurrentSearchRun =
+    api.materialProfile.setCurrentSearchRun.useMutation({
       onSuccess: async () => {
         await utils.materialProfile.listSearchRuns.invalidate();
         await utils.materialProfile.get.invalidate({ workspaceId });
       },
       onError: (error) =>
         toast.error(error.message || "Không dùng lại được lần tìm kiếm."),
-    },
-  );
+    });
   const activeProfileSearchJobProgressKey = activeProfileSearchJob
     ? `${activeProfileSearchJob.id}:${activeProfileSearchJob.processed}:${activeProfileSearchJob.status}`
     : null;
@@ -455,7 +456,7 @@ export function MaterialProfileReviewStep({
 
       if (appliedCount === 0) {
         toast.warning(
-          "Không có kết quả tìm kiếm để áp dụng trên các dòng đã chọn.",
+          "Không có kết quả đạt ngưỡng tin cậy 75% trên các dòng đã chọn.",
         );
         return;
       }
@@ -527,7 +528,7 @@ export function MaterialProfileReviewStep({
   }
 
   return (
-      <ReviewPanel
+    <ReviewPanel
       rows={reviewRows}
       summary={reviewSummary}
       decisions={decisions}

@@ -1,22 +1,31 @@
-import type { AiSearchStoredResult, WebLinkResult } from "~/lib/materials/enrich-gap-fill";
+import type {
+  AiSearchStoredResult,
+  WebLinkResult,
+} from "~/lib/materials/enrich-gap-fill";
 import type { FillableField } from "~/lib/materials/excel-enrich-fields";
 import {
   assessAiCandidate,
   assessWebLinkCandidate,
   matchBand,
   normalizeMatchScore,
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
   scoreAiCandidateCompletion,
 } from "~/lib/materials/match-assessment";
 
-export { matchBand, normalizeMatchScore, scoreAiCandidateCompletion };
+export {
+  matchBand,
+  normalizeMatchScore,
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
+  scoreAiCandidateCompletion,
+};
 
 export function catalogCandidateScore(score: number | undefined): number {
   return normalizeMatchScore(score);
 }
 
-export function sortCandidatesByScore<T extends { score: number; status?: string }>(
-  items: T[],
-): T[] {
+export function sortCandidatesByScore<
+  T extends { score: number; status?: string },
+>(items: T[]): T[] {
   const isDeferred = (item: T) =>
     item.status === "pending" || item.status === "error";
   const ready = items.filter((item) => !isDeferred(item));
@@ -25,15 +34,15 @@ export function sortCandidatesByScore<T extends { score: number; status?: string
   return [...ready, ...deferred];
 }
 
-export function markTopRecommended<T extends { score: number; isRecommended?: boolean }>(
-  items: T[],
-): T[] {
+export function markTopRecommended<
+  T extends { score: number; isRecommended?: boolean },
+>(items: T[]): T[] {
   if (items.length === 0) return items;
   for (const item of items) {
     item.isRecommended = false;
   }
   const topScore = items[0]!.score;
-  if (matchBand(topScore) != null) {
+  if (topScore >= RELIABLE_SEARCH_MATCH_THRESHOLD) {
     items[0]!.isRecommended = true;
   }
   return items;

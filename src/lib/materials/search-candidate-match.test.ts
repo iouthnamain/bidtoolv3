@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { AiSearchStoredResult } from "~/lib/materials/enrich-gap-fill";
 import {
+  aiCandidateMatchChips,
+  markTopRecommended,
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
   scoreAiCandidateCompletion,
   sortCandidatesByScore,
 } from "~/lib/materials/search-candidate-match";
@@ -85,6 +88,97 @@ describe("scoreAiCandidateCompletion", () => {
     ).toBeGreaterThan(
       scoreAiCandidateCompletion(lowConfidence, { manufacturer: "Bình Minh" }),
     );
+  });
+
+  it("scores AI candidates with matching code and spec as reliable", () => {
+    const candidate: AiSearchStoredResult = {
+      fields: {
+        code: "CVV-2x2.5",
+        unit: "m",
+        specText: "Cáp CVV ruột đồng 2x2.5mm2, cách điện PVC",
+        manufacturer: "CADIVI",
+        sourceUrl: "https://cadivi.vn/cvv-2x2-5.pdf",
+      },
+      sourceUrls: ["https://cadivi.vn/cvv-2x2-5.pdf"],
+      evidence: [],
+      title: "Cáp CVV 2x2.5 CADIVI",
+      url: "https://cadivi.vn/cvv-2x2-5.pdf",
+      snippet: "Thông số kỹ thuật CVV 2x2.5mm2",
+      rankScore: 1.8,
+      fieldConfidences: {
+        code: 0.95,
+        unit: 0.95,
+        specText: 0.95,
+        manufacturer: 0.95,
+        sourceUrl: 0.9,
+      },
+      catalogPdfUrls: ["https://cadivi.vn/cvv-2x2-5.pdf"],
+    };
+
+    const { score, chips } = aiCandidateMatchChips(
+      candidate,
+      {
+        code: "CVV 2x2.5",
+        unit: "m",
+        specText: "Ruột đồng 2x2.5mm2 PVC",
+        manufacturer: "CADIVI",
+      },
+      "Cáp điện hạ thế",
+    );
+
+    expect(score).toBeGreaterThanOrEqual(RELIABLE_SEARCH_MATCH_THRESHOLD);
+    expect(chips).toContain("Mã SP");
+  });
+
+  it("keeps AI candidates with wrong provided code below reliable range", () => {
+    const candidate: AiSearchStoredResult = {
+      fields: {
+        code: "CXV-4x6",
+        unit: "m",
+        specText: "Cáp CXV ruột đồng 4x6mm2",
+        manufacturer: "CADIVI",
+      },
+      sourceUrls: ["https://cadivi.vn/cxv-4x6.pdf"],
+      evidence: [],
+      title: "Cáp CXV 4x6 CADIVI",
+      url: "https://cadivi.vn/cxv-4x6.pdf",
+      snippet: "Thông số kỹ thuật CXV 4x6mm2",
+      rankScore: 2,
+      fieldConfidences: {
+        code: 0.95,
+        unit: 0.95,
+        specText: 0.95,
+        manufacturer: 0.95,
+      },
+    };
+
+    expect(
+      scoreAiCandidateCompletion(
+        candidate,
+        {
+          code: "CVV 2x2.5",
+          unit: "m",
+          specText: "Ruột đồng 2x2.5mm2 PVC",
+          manufacturer: "CADIVI",
+        },
+        "Cáp điện hạ thế",
+      ),
+    ).toBeLessThan(RELIABLE_SEARCH_MATCH_THRESHOLD);
+  });
+
+  it("marks top recommended only at reliable threshold", () => {
+    type Recommendable = { score: number; isRecommended?: boolean };
+    const below = markTopRecommended<Recommendable>([
+      { score: 0.74 },
+      { score: 0.5 },
+    ]);
+    expect(below[0]?.isRecommended).toBe(false);
+
+    const reliable = markTopRecommended<Recommendable>([
+      { score: 0.75 },
+      { score: 0.7 },
+    ]);
+    expect(reliable[0]?.isRecommended).toBe(true);
   });
 });
 

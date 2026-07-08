@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { FillableField } from "~/lib/materials/excel-enrich-fields";
-import { scoreAiCandidateCompletion } from "~/lib/materials/search-candidate-match";
+import {
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
+  scoreAiCandidateCompletion,
+} from "~/lib/materials/search-candidate-match";
 import type {
   AiSearchStoredResult,
   WebLinkResult,
@@ -36,6 +39,7 @@ const PROFILE_TOP_LINKS = 8;
 const PROFILE_FETCH_LINKS = 6;
 const FETCH_CONCURRENCY = 3;
 const EXTRACT_CONCURRENCY = 3;
+const PROFILE_AI_WARNING_LIMIT = 6;
 
 export type EnrichProfileRowSearchResult = {
   webLinkResults: WebLinkResult[];
@@ -121,6 +125,29 @@ function webLinkToSearchResult(link: WebLinkResult): WebSearchResult {
   };
 }
 
+function sourceLabel(link: WebSearchResult) {
+  const domain = link.domain.trim();
+  if (domain) return domain;
+  try {
+    return new URL(link.url).hostname;
+  } catch {
+    return link.url;
+  }
+}
+
+function extractionErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error && error.message.trim()
+      ? error.message.trim()
+      : "lỗi không xác định";
+  return message.length > 160 ? `${message.slice(0, 160)}...` : message;
+}
+
+function pushAiExtractionWarning(warnings: string[], warning: string) {
+  if (warnings.length >= PROFILE_AI_WARNING_LIMIT) return;
+  warnings.push(warning);
+}
+
 async function _searchProfileRowWebLinks(
   input: EnrichWebRowInput,
   signal?: AbortSignal,
@@ -151,7 +178,7 @@ async function _searchProfileRowWebLinks(
       maxQueries: 6,
     },
     {
-      context: "interactive",
+      context: "profile_search",
       domainPolicy,
       queryControls,
     },
@@ -176,6 +203,7 @@ async function _searchProfileRowWebLinks(
       manufacturer: input.manufacturer ?? null,
       name: input.name,
       code: input.code ?? null,
+      specText: input.specText ?? null,
       sourceUrl: null,
     },
     searchResponse.domainPolicy ?? domainPolicy,
@@ -210,6 +238,7 @@ async function _extractProfileRowAiCandidates(
   }
 
   const provider = await resolveAiProvider("enrichment");
+  const extractionWarnings: string[] = [];
   const ranked = webLinkResults.map(webLinkToSearchResult);
   const linksToFetch = ranked.slice(0, PROFILE_FETCH_LINKS);
   const enrichedLinks = await runPool(linksToFetch, FETCH_CONCURRENCY, (link) =>
@@ -230,9 +259,15 @@ async function _extractProfileRowAiCandidates(
         );
         const mapped = mapExtractedToFillable(extracted, [link.url]);
         const fieldConfidences = fieldConfidencesFromExtracted(extracted);
-        const hasFields = Object.keys(mapped.fields).length > 0;
+        const hasFields = Object.keys(mapped.fields).some(
+          (field) => field !== "sourceUrl",
+        );
         const hasPdfs = mapped.catalogPdfUrls.length > 0;
         if (!hasFields && !hasPdfs) {
+          pushAiExtractionWarning(
+            extractionWarnings,
+            `AI không tìm thấy trường/PDF dùng được từ ${sourceLabel(link)}.`,
+          );
           return null;
         }
         const candidate: AiSearchStoredResult = {
@@ -250,7 +285,11 @@ async function _extractProfileRowAiCandidates(
           rankScore: link.rankScore,
         };
         return candidate;
-      } catch {
+      } catch (error) {
+        pushAiExtractionWarning(
+          extractionWarnings,
+          `AI không trích xuất được nguồn ${sourceLabel(link)}: ${extractionErrorMessage(error)}.`,
+        );
         return null;
       }
     },
@@ -275,13 +314,25 @@ async function _extractProfileRowAiCandidates(
       scoreAiCandidateCompletion(left, sheetFields, input.name),
   );
 
+  const bestScore =
+    aiSearchCandidates.length > 0
+      ? scoreAiCandidateCompletion(
+          aiSearchCandidates[0]!,
+          sheetFields,
+          input.name,
+        )
+      : 0;
   const recommendedCandidateKey =
-    aiSearchCandidates.length > 0 ? "ai:0" : undefined;
+    bestScore >= RELIABLE_SEARCH_MATCH_THRESHOLD ? "ai:0" : undefined;
+  const warnings =
+    aiSearchCandidates.length > 0 && !recommendedCandidateKey
+      ? ["Có kết quả nhưng chưa đạt ngưỡng tin cậy 75%."]
+      : [];
 
   return {
     aiSearchCandidates,
     recommendedCandidateKey,
-    warnings: [],
+    warnings: [...warnings, ...extractionWarnings],
   };
 }
 
@@ -316,7 +367,9 @@ async function _enrichProfileRowSearch(
       aiSearchCandidates: [],
       warnings: [
         ...web.warnings,
-        error instanceof Error ? error.message : "Không cấu hình AI enrichment.",
+        error instanceof Error
+          ? error.message
+          : "Không cấu hình AI enrichment.",
       ],
     };
   }

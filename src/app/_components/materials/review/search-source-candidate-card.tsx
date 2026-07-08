@@ -86,7 +86,7 @@ export function SearchSourceCandidateCard({
       }}
       aria-pressed={isSelected}
       aria-disabled={isPending || isError}
-      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
         isPending || isError
           ? "cursor-default border-dashed border-slate-400 bg-slate-50 opacity-80"
           : isSelected
@@ -108,7 +108,7 @@ export function SearchSourceCandidateCard({
               className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
               aria-label={`Độ khớp ${label} ${pct}%`}
             >
-              {label} {pct}%
+              {label} · {pct}%
             </span>
           ) : null}
           {hotkeyIndex && hotkeyIndex <= 9 ? (

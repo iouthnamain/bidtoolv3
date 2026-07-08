@@ -348,9 +348,13 @@ describe("searchQueryWithFallback", () => {
     );
 
     const { searchWebForProduct } = await import("./material-web-search");
-    const response = await searchWebForProduct(["query one", "query two"], undefined, {
-      feature: "test",
-    });
+    const response = await searchWebForProduct(
+      ["query one", "query two"],
+      undefined,
+      {
+        feature: "test",
+      },
+    );
 
     const engineWarnings = response.warnings.filter((warning) =>
       warning.includes("engine không phản hồi"),
@@ -426,6 +430,37 @@ describe("searchQueryWithFallback", () => {
 
     expect(ranked[0]?.domain).toBe("binhminhplastic.com.vn");
     expect(ranked[1]?.rankReasons ?? []).toContain("plastic_family_mismatch");
+  });
+
+  it("ranks concrete spec overlap above generic spec keyword results", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Catalog thiết bị điện",
+          url: "https://example.vn/catalog",
+          domain: "example.vn",
+          snippet: "Thông số kỹ thuật chung cho nhiều sản phẩm",
+          query: "catalog thông số",
+          rankScore: 0,
+        },
+        {
+          title: "Cáp CVV CADIVI",
+          url: "https://cadivi.vn/cvv-2x2-5",
+          domain: "cadivi.vn",
+          snippet: "Cáp CVV ruột đồng 2x2.5mm2 cách điện PVC",
+          query: "CVV 2x2.5",
+          rankScore: 0,
+        },
+      ],
+      {
+        name: "Cáp điện hạ thế",
+        specText: "Ruột đồng 2x2.5mm2 cách điện PVC",
+      },
+    );
+
+    expect(ranked[0]?.domain).toBe("cadivi.vn");
+    expect(ranked[0]?.rankReasons ?? []).toContain("spec_overlap");
   });
 
   it("builds SearXNG URL with configured engines, language, safesearch and time range", async () => {

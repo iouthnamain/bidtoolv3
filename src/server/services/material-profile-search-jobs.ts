@@ -12,6 +12,11 @@ import {
   deserializeRowDecision,
   type WebSearchStatus,
 } from "~/lib/materials/review-decision";
+import {
+  RELIABLE_SEARCH_MATCH_THRESHOLD,
+  scoreAiCandidateCompletion,
+  webLinkMatchChips,
+} from "~/lib/materials/search-candidate-match";
 import { db } from "~/server/db";
 import {
   excelWorkspaceItems,
@@ -243,7 +248,9 @@ function parseRunDecision(row: RunRow) {
     aiSearchStatus: row.aiSearchStatus,
     selectedSearchCandidateKey: row.recommendedCandidateKey ?? undefined,
     selectedSource:
-      row.recommendedCandidateKey?.startsWith("ai:") === true ? "ai" : undefined,
+      row.recommendedCandidateKey?.startsWith("ai:") === true
+        ? "ai"
+        : undefined,
   });
 }
 
@@ -336,11 +343,45 @@ function inputSnapshot(item: WorkspaceItemRow): Record<string, unknown> {
   };
 }
 
-function resultHasPayload(input: {
-  webLinkResults: WebLinkResult[];
-  aiSearchCandidates: AiSearchStoredResult[];
-}) {
-  return input.webLinkResults.length > 0 || input.aiSearchCandidates.length > 0;
+function sheetFieldsFromSnapshot(snapshot: Record<string, unknown>) {
+  return {
+    code: textField(snapshot.code),
+    manufacturer: textField(snapshot.manufacturer),
+    unit: textField(snapshot.unit),
+    category: textField(snapshot.category),
+    specText: textField(snapshot.specText),
+    originCountry: textField(snapshot.originCountry),
+  };
+}
+
+function runHasReliableResult(
+  run: Pick<
+    RunRow,
+    | "inputSnapshotJson"
+    | "webLinkResultsJson"
+    | "aiSearchCandidatesJson"
+    | "recommendedCandidateKey"
+  >,
+) {
+  if (run.recommendedCandidateKey) return true;
+
+  const snapshot = asRecord(run.inputSnapshotJson);
+  const rowName = textField(snapshot.name);
+  const sheetFields = sheetFieldsFromSnapshot(snapshot);
+  const decision = parseRunDecision(run as RunRow);
+
+  const webReliable = (decision?.webLinkResults ?? []).some(
+    (link) =>
+      webLinkMatchChips(link, rowName, sheetFields).score >=
+      RELIABLE_SEARCH_MATCH_THRESHOLD,
+  );
+  if (webReliable) return true;
+
+  return (decision?.aiSearchCandidates ?? []).some(
+    (candidate) =>
+      scoreAiCandidateCompletion(candidate, sheetFields, rowName) >=
+      RELIABLE_SEARCH_MATCH_THRESHOLD,
+  );
 }
 
 async function markRunCurrent(runId: number, itemId: number) {
@@ -389,8 +430,11 @@ async function refreshJobCounters(jobId: string) {
   const runs = await db
     .select({
       status: materialProfileSearchRuns.status,
+      inputSnapshotJson: materialProfileSearchRuns.inputSnapshotJson,
       webLinkResultsJson: materialProfileSearchRuns.webLinkResultsJson,
       aiSearchCandidatesJson: materialProfileSearchRuns.aiSearchCandidatesJson,
+      recommendedCandidateKey:
+        materialProfileSearchRuns.recommendedCandidateKey,
     })
     .from(materialProfileSearchRuns)
     .where(eq(materialProfileSearchRuns.jobId, jobId));
@@ -407,13 +451,7 @@ async function refreshJobCounters(jobId: string) {
     if (status === "partial") partial += 1;
     if (status === "failed") failed += 1;
     if (status === "skipped") skipped += 1;
-    if (
-      resultHasPayload({
-        webLinkResults: parseRunDecision(run as RunRow)?.webLinkResults ?? [],
-        aiSearchCandidates:
-          parseRunDecision(run as RunRow)?.aiSearchCandidates ?? [],
-      })
-    ) {
+    if (runHasReliableResult(run as RunRow)) {
       found += 1;
     }
   }
@@ -456,9 +494,9 @@ async function _startMaterialProfileSearchJob(input: {
   itemIds: number[];
   mode: MaterialProfileSearchMode;
 }) {
-  const itemIds = [...new Set(input.itemIds.map((id) => Math.trunc(id)))].filter(
-    (id) => id > 0,
-  );
+  const itemIds = [
+    ...new Set(input.itemIds.map((id) => Math.trunc(id))),
+  ].filter((id) => id > 0);
   if (itemIds.length === 0) {
     throw new MaterialProfileSearchJobError(
       "BAD_REQUEST",
@@ -582,7 +620,9 @@ async function _listMaterialProfileSearchRuns(input: {
 }) {
   const conditions: SQL[] = [];
   if (input.workspaceId != null) {
-    conditions.push(eq(materialProfileSearchRuns.workspaceId, input.workspaceId));
+    conditions.push(
+      eq(materialProfileSearchRuns.workspaceId, input.workspaceId),
+    );
   }
   if (input.jobId) {
     conditions.push(eq(materialProfileSearchRuns.jobId, input.jobId));
@@ -660,7 +700,11 @@ async function _setCurrentMaterialProfileSearchRun(runId: number) {
       "Không tìm thấy lần tìm kiếm.",
     );
   }
-  if (run.status === "queued" || run.status === "running" || run.status === "cancelled") {
+  if (
+    run.status === "queued" ||
+    run.status === "running" ||
+    run.status === "cancelled"
+  ) {
     throw new MaterialProfileSearchJobError(
       "BAD_REQUEST",
       "Chỉ có thể dùng lại lần tìm kiếm đã kết thúc.",
@@ -721,7 +765,7 @@ async function updateRunWithResult(input: {
         string,
         unknown
       >[],
-      recommendedCandidateKey: input.recommendedCandidateKey,
+      recommendedCandidateKey: input.recommendedCandidateKey ?? null,
       warningsJson: warnings,
       errorMessage,
       finishedAt: now,
@@ -810,8 +854,8 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
         warnings: web.warnings,
         errorMessage:
           status === "failed"
-            ? web.warnings.find((warning) => warning.trim()) ??
-              "Không tìm thấy liên kết web."
+            ? (web.warnings.find((warning) => warning.trim()) ??
+              "Không tìm thấy liên kết web.")
             : null,
       });
       return;
@@ -851,7 +895,11 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     }
 
     try {
-      const ai = await extractProfileRowAiCandidates(input, webLinkResults, signal);
+      const ai = await extractProfileRowAiCandidates(
+        input,
+        webLinkResults,
+        signal,
+      );
       warnings.push(...ai.warnings);
       const hasCandidates = ai.aiSearchCandidates.length > 0;
       await updateRunWithResult({
@@ -871,7 +919,9 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Không cấu hình AI enrichment.";
+        error instanceof Error
+          ? error.message
+          : "Không cấu hình AI enrichment.";
       warnings.push(message);
       await updateRunWithResult({
         run,
@@ -904,7 +954,9 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     }
 
     const message =
-      error instanceof Error ? error.message : "Tìm kiếm hồ sơ vật tư thất bại.";
+      error instanceof Error
+        ? error.message
+        : "Tìm kiếm hồ sơ vật tư thất bại.";
     await updateRunWithResult({
       run,
       status: "failed",
@@ -1002,7 +1054,9 @@ async function _completeMaterialProfileSearchJob(jobId: string) {
 
 async function _failMaterialProfileSearchJob(jobId: string, error: unknown) {
   const message =
-    error instanceof Error ? error.message : "Job tìm kiếm hồ sơ vật tư thất bại.";
+    error instanceof Error
+      ? error.message
+      : "Job tìm kiếm hồ sơ vật tư thất bại.";
   const now = new Date().toISOString();
   await db
     .update(materialProfileSearchJobs)

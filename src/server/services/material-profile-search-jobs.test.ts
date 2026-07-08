@@ -17,7 +17,9 @@ const dbMock = vi.hoisted(() => {
     select: typeof select;
     insert: typeof insert;
     update: typeof update;
-    transaction: (callback: (tx: TestDb) => Promise<unknown>) => Promise<unknown>;
+    transaction: (
+      callback: (tx: TestDb) => Promise<unknown>,
+    ) => Promise<unknown>;
   };
 
   const drizzleName = Symbol.for("drizzle:Name");
@@ -168,7 +170,9 @@ const dbMock = vi.hoisted(() => {
     if (!value || typeof value !== "object") return "";
     const chunks = (value as { queryChunks?: unknown[] }).queryChunks;
     if (!Array.isArray(chunks)) return chunkText(value);
-    return chunks.map((chunk) => chunkText(chunk) || allChunkText(chunk)).join("");
+    return chunks
+      .map((chunk) => chunkText(chunk) || allChunkText(chunk))
+      .join("");
   }
 
   function projectRows(rows: TestRow[], selection: unknown) {
@@ -274,8 +278,14 @@ const dbMock = vi.hoisted(() => {
       limit(count: number) {
         return Promise.resolve(projectRows(rows.slice(0, count), selection));
       },
-      then(resolve: (value: TestRow[]) => unknown, reject?: (error: unknown) => unknown) {
-        return Promise.resolve(projectRows(rows, selection)).then(resolve, reject);
+      then(
+        resolve: (value: TestRow[]) => unknown,
+        reject?: (error: unknown) => unknown,
+      ) {
+        return Promise.resolve(projectRows(rows, selection)).then(
+          resolve,
+          reject,
+        );
       },
     };
     return builder;
@@ -325,8 +335,7 @@ const dbMock = vi.hoisted(() => {
     update,
     transaction: async (
       callback: (tx: TestDb) => Promise<unknown>,
-    ): Promise<unknown> =>
-      callback(db),
+    ): Promise<unknown> => callback(db),
   };
 
   function reset() {
@@ -388,6 +397,7 @@ import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
 import {
   cancelMaterialProfileSearchJob,
   completeMaterialProfileSearchJob,
+  getMaterialProfileSearchJob,
   listMaterialProfileSearchRuns,
   processMaterialProfileSearchJob,
   setCurrentMaterialProfileSearchRun,
@@ -429,8 +439,9 @@ async function startAndProcess(mode: "web" | "ai") {
     workspaceId: 1,
     jobId: job.id,
   });
+  const completedJob = await getMaterialProfileSearchJob(job.id);
 
-  return { job, runs };
+  return { job: completedJob ?? job, runs };
 }
 
 describe("material profile search jobs", () => {
@@ -469,7 +480,7 @@ describe("material profile search jobs", () => {
   });
 
   it("auto-runs web first for AI jobs without current web links", async () => {
-    const { runs } = await startAndProcess("ai");
+    const { job, runs } = await startAndProcess("ai");
 
     expect(searchProfileRowWebLinks).toHaveBeenCalledTimes(1);
     expect(extractProfileRowAiCandidates).toHaveBeenCalledWith(
@@ -495,6 +506,27 @@ describe("material profile search jobs", () => {
         url: webLink.url,
       },
     ]);
+    expect(job.found).toBe(1);
+  });
+
+  it("stores below-threshold AI candidates without counting them as found", async () => {
+    vi.mocked(extractProfileRowAiCandidates).mockResolvedValueOnce({
+      aiSearchCandidates: [aiCandidate],
+      recommendedCandidateKey: undefined,
+      warnings: ["Có kết quả nhưng chưa đạt ngưỡng tin cậy 75%."],
+    });
+
+    const { job, runs } = await startAndProcess("ai");
+
+    expect(runs[0]).toMatchObject({
+      status: "completed",
+      recommendedCandidateKey: null,
+    });
+    expect(runs[0]?.aiSearchCandidates).toHaveLength(1);
+    expect(runs[0]?.warnings).toContain(
+      "Có kết quả nhưng chưa đạt ngưỡng tin cậy 75%.",
+    );
+    expect(job.found).toBe(0);
   });
 
   it("keeps web links and marks AI partial when the AI provider fails", async () => {
@@ -562,9 +594,9 @@ describe("material profile search jobs", () => {
       aiSearchStatus: "idle",
     });
     expect(newRun?.aiSearchCandidates).toEqual([]);
-    expect(dbMock.state.runs.find((run) => run.id === oldRun.id)?.isCurrent).toBe(
-      false,
-    );
+    expect(
+      dbMock.state.runs.find((run) => run.id === oldRun.id)?.isCurrent,
+    ).toBe(false);
   });
 
   it("can restore an older finished run as current", async () => {
@@ -577,7 +609,9 @@ describe("material profile search jobs", () => {
     });
     await startAndProcess("web");
 
-    const restored = await setCurrentMaterialProfileSearchRun(Number(oldRun.id));
+    const restored = await setCurrentMaterialProfileSearchRun(
+      Number(oldRun.id),
+    );
 
     expect(restored).toMatchObject({
       id: 60,
@@ -621,9 +655,9 @@ describe("material profile search jobs", () => {
       isCurrent: false,
       errorMessage: "Đã hủy.",
     });
-    expect(dbMock.state.runs.find((run) => run.id === oldRun.id)?.isCurrent).toBe(
-      true,
-    );
+    expect(
+      dbMock.state.runs.find((run) => run.id === oldRun.id)?.isCurrent,
+    ).toBe(true);
     expect(abortMaterialProfileSearchJob).toHaveBeenCalledWith(job.id);
   });
 });

@@ -23,6 +23,7 @@ export type MatchCandidate = {
 
 export type ScoreBreakdown = {
   nameSimilarity: number;
+  codeMatch: number;
   unitMatch: number;
   manufacturerMatch: number;
   originMatch: number;
@@ -47,12 +48,14 @@ export type MatchDecision = {
   createdAt: string;
 };
 
-// Weights reflect the four priority fields: name, specs, manufacturer, origin.
+// Weights keep name-only matches below reliable range while code/spec evidence
+// can lift profile-search candidates above 0.75.
 const WEIGHTS = {
-  nameSimilarity: 0.3,
+  nameSimilarity: 0.15,
+  codeMatch: 0.35,
   unitMatch: 0.1,
-  manufacturerMatch: 0.2,
-  originMatch: 0.1,
+  manufacturerMatch: 0.1,
+  originMatch: 0.05,
   specMatch: 0.2,
   dimensionMatch: 0.1,
 };
@@ -94,14 +97,26 @@ async function _findFuzzyCandidates(
   // Use a lightly normalized name (promo stripped, dimensions canonicalized)
   // for retrieval so recall isn't hurt by badge prefixes or Ø/phi notation.
   const searchName = normalizeSearchName(productName);
+  const productCode = product.sku?.trim() || product.model?.trim() || "";
+  const productCodeCompact = compactCode(productCode);
+  const productSpec = product.specText?.trim() ?? "";
 
   const rows = await db.execute<MaterialRow & { name_sim: number }>(sql`
     SELECT m.*,
            similarity(m.name, ${searchName}) AS name_sim
     FROM materials m
     WHERE m.deleted_at IS NULL
-      AND similarity(m.name, ${searchName}) > ${minSimilarity}
-    ORDER BY name_sim DESC
+      AND (
+        similarity(m.name, ${searchName}) > ${minSimilarity}
+        OR (${productCodeCompact} <> '' AND m.code IS NOT NULL AND regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') LIKE '%' || ${productCodeCompact} || '%')
+        OR (${productSpec} <> '' AND m.spec_text IS NOT NULL AND similarity(m.spec_text, ${productSpec}) > ${minSimilarity})
+      )
+    ORDER BY
+      CASE
+        WHEN ${productCodeCompact} <> '' AND m.code IS NOT NULL AND regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') = ${productCodeCompact} THEN 1
+        ELSE 0
+      END DESC,
+      name_sim DESC
     LIMIT ${limit}
   `);
 
@@ -146,6 +161,7 @@ function _computeScoreBreakdown(
       normalizedProductName,
       normalizedCandidateName,
     ),
+    codeMatch: computeCodeMatch(product.sku ?? product.model, candidate.code),
     unitMatch: computeUnitMatch(product.unit, candidate.unit),
     manufacturerMatch: computeManufacturerMatch(
       product.manufacturer,
@@ -165,6 +181,10 @@ function _computeWeightedScore(breakdown: ScoreBreakdown): number {
   for (const [key, weight] of Object.entries(WEIGHTS)) {
     score += (breakdown[key as keyof ScoreBreakdown] ?? 0) * weight;
   }
+  if (breakdown.codeMatch === -1) {
+    score = Math.min(score, 0.69);
+  }
+  score = Math.min(score, 1);
   return Math.round(score * 1000) / 1000;
 }
 
@@ -217,7 +237,9 @@ function normalizeProductName(
 
   if (brand) {
     const normalizedBrand = stripAccents(brand.toLowerCase());
-    for (const token of normalizedBrand.split(/\s+/).filter((t) => t.length > 1)) {
+    for (const token of normalizedBrand
+      .split(/\s+/)
+      .filter((t) => t.length > 1)) {
       s = s.replace(new RegExp(`\\b${escapeRegExp(token)}\\b`, "g"), " ");
     }
   }
@@ -226,6 +248,39 @@ function normalizeProductName(
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeCode(value: string | null | undefined): string {
+  return stripAccents(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function compactCode(value: string | null | undefined): string {
+  return normalizeCode(value).replace(/\s+/g, "");
+}
+
+function computeCodeMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  const left = normalizeCode(a);
+  const right = normalizeCode(b);
+  if (!left || !right) return 0.5;
+
+  if (compactCode(left) === compactCode(right)) return 1;
+
+  const leftTokens = left.split(/\s+/).filter((token) => token.length >= 2);
+  const rightTokens = new Set(
+    right.split(/\s+/).filter((token) => token.length >= 2),
+  );
+  if (leftTokens.length === 0 || rightTokens.size === 0) return -1;
+
+  const hits = leftTokens.filter((token) => rightTokens.has(token)).length;
+  const overlap = hits / Math.max(leftTokens.length, rightTokens.size);
+  if (overlap >= 0.6) return overlap;
+  return -1;
 }
 
 /** pg_trgm-style trigram Jaccard similarity over normalized strings. */
@@ -317,7 +372,10 @@ function canonicalBrand(normalized: string): string | null {
   // Containment on canonical keys (longest first), skipping short/ambiguous ones.
   const keys = Object.keys(BRAND_ALIASES).sort((a, b) => b.length - a.length);
   for (const canon of keys) {
-    if (canon.length >= 4 && new RegExp(`\\b${escapeRegExp(canon)}\\b`).test(normalized)) {
+    if (
+      canon.length >= 4 &&
+      new RegExp(`\\b${escapeRegExp(canon)}\\b`).test(normalized)
+    ) {
       return canon;
     }
   }
@@ -380,7 +438,10 @@ function normalizeOrigin(value: string | null | undefined): string | null {
   // Containment for multi-char terms, e.g. "made in vietnam".
   for (const [canon, terms] of ORIGIN_TERMS) {
     for (const term of terms) {
-      if (term.length >= 4 && new RegExp(`\\b${escapeRegExp(term)}\\b`).test(normalized)) {
+      if (
+        term.length >= 4 &&
+        new RegExp(`\\b${escapeRegExp(term)}\\b`).test(normalized)
+      ) {
         return canon;
       }
     }
@@ -720,6 +781,9 @@ function buildReasoning(candidate: MatchCandidate): string {
   if (breakdown.nameSimilarity >= 0.6) {
     parts.push(`tên tương tự ${(breakdown.nameSimilarity * 100).toFixed(0)}%`);
   }
+  if (breakdown.codeMatch >= 0.9) {
+    parts.push("mã SP khớp");
+  }
   if (breakdown.unitMatch === 1.0) {
     parts.push("cùng đơn vị");
   }
@@ -739,11 +803,43 @@ function buildReasoning(candidate: MatchCandidate): string {
   return parts.length > 0 ? parts.join(", ") : "điểm tổng hợp đạt ngưỡng";
 }
 
-export const hashScrapedProduct = traceFn(log, "hashScrapedProduct", _hashScrapedProduct);
-export const getCachedDecision = traceFn(log, "getCachedDecision", _getCachedDecision);
-export const findFuzzyCandidates = traceFn(log, "findFuzzyCandidates", _findFuzzyCandidates);
-export const computeScoreBreakdown = traceFn(log, "computeScoreBreakdown", _computeScoreBreakdown);
-export const computeWeightedScore = traceFn(log, "computeWeightedScore", _computeWeightedScore);
-export const computeManufacturerMatch = traceFn(log, "computeManufacturerMatch", _computeManufacturerMatch);
-export const computeOriginMatch = traceFn(log, "computeOriginMatch", _computeOriginMatch);
-export const saveMatchDecision = traceFn(log, "saveMatchDecision", _saveMatchDecision);
+export const hashScrapedProduct = traceFn(
+  log,
+  "hashScrapedProduct",
+  _hashScrapedProduct,
+);
+export const getCachedDecision = traceFn(
+  log,
+  "getCachedDecision",
+  _getCachedDecision,
+);
+export const findFuzzyCandidates = traceFn(
+  log,
+  "findFuzzyCandidates",
+  _findFuzzyCandidates,
+);
+export const computeScoreBreakdown = traceFn(
+  log,
+  "computeScoreBreakdown",
+  _computeScoreBreakdown,
+);
+export const computeWeightedScore = traceFn(
+  log,
+  "computeWeightedScore",
+  _computeWeightedScore,
+);
+export const computeManufacturerMatch = traceFn(
+  log,
+  "computeManufacturerMatch",
+  _computeManufacturerMatch,
+);
+export const computeOriginMatch = traceFn(
+  log,
+  "computeOriginMatch",
+  _computeOriginMatch,
+);
+export const saveMatchDecision = traceFn(
+  log,
+  "saveMatchDecision",
+  _saveMatchDecision,
+);
