@@ -591,6 +591,8 @@ function ExportPreviewStep({
   const selectedCount = selectedRows.length + selectedColumns.length;
   const editSummary = preview?.editSummary;
   const matchCounts = preview?.matchCounts;
+  const reviewReadiness = preview?.reviewReadiness;
+  const unresolvedReviewCount = reviewReadiness?.unresolvedRows ?? 0;
 
   const deleteSelected = () => {
     if (!activeSheet || selectedCount === 0) return;
@@ -624,7 +626,7 @@ function ExportPreviewStep({
               isLoading={isPreviewing}
               leftIcon={<RefreshCw className="h-4 w-4" />}
             >
-              Refresh preview
+              Làm mới preview
             </Button>
             <Button
               variant="secondary"
@@ -646,48 +648,63 @@ function ExportPreviewStep({
         {preview ? (
           <div className="mt-4 grid gap-1 lg:grid-cols-2">
             <div className="rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-              <p className="font-bold">Workbook edit warnings</p>
+              <p className="font-bold">Cảnh báo chỉnh workbook</p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Badge tone="warning" count={editSummary?.editedCellCount ?? 0}>
-                  Cell edits
+                  Ô đã sửa
                 </Badge>
                 <Badge tone="warning" count={editSummary?.deletedRowCount ?? 0}>
-                  Deleted rows
+                  Dòng đã xóa
                 </Badge>
                 <Badge
                   tone="warning"
                   count={editSummary?.deletedColumnCount ?? 0}
                 >
-                  Deleted columns
+                  Cột đã xóa
                 </Badge>
                 <Badge
                   tone="warning"
                   count={editSummary?.deletedMaterialRowCount ?? 0}
                 >
-                  Material rows removed
+                  Dòng vật tư đã xóa
                 </Badge>
               </div>
             </div>
             <div className="rounded border border-slate-400 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <p className="font-bold text-slate-950">Match/catalog counts</p>
+              <p className="font-bold text-slate-950">
+                Trạng thái duyệt/catalog
+              </p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Badge tone="success" count={matchCounts?.matchedCount ?? 0}>
-                  Matched
+                  Đã khớp
                 </Badge>
                 <Badge tone="warning" count={matchCounts?.reviewCount ?? 0}>
-                  Review
+                  Cần duyệt
                 </Badge>
                 <Badge tone="neutral" count={matchCounts?.unmatchedCount ?? 0}>
-                  Unmatched
+                  Chưa khớp
                 </Badge>
                 <Badge
                   tone="info"
                   count={matchCounts?.missingCatalogCount ?? 0}
                 >
-                  Missing catalog
+                  Thiếu catalog
+                </Badge>
+                <Badge tone="warning" count={unresolvedReviewCount}>
+                  Chưa chọn/bỏ qua
                 </Badge>
               </div>
             </div>
+          </div>
+        ) : null}
+        {unresolvedReviewCount > 0 ? (
+          <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+            <p className="font-bold">Hồ sơ chưa duyệt xong</p>
+            <p className="mt-1">
+              Còn {unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa chọn
+              hoặc bỏ qua. Bạn vẫn có thể export, nhưng file có thể thiếu dữ
+              liệu.
+            </p>
           </div>
         ) : null}
       </div>
@@ -695,7 +712,7 @@ function ExportPreviewStep({
       {!preview || !activeSheet ? (
         <EmptyState
           title="Chưa có bản xem trước"
-          description="Bấm Refresh preview để tạo workbook kết quả trước khi export."
+          description="Bấm Làm mới preview để tạo workbook kết quả trước khi export."
           cta={
             <Button onClick={onRefreshPreview} isLoading={isPreviewing}>
               Tạo preview
@@ -723,10 +740,10 @@ function ExportPreviewStep({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-white px-4 py-3">
             <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
-              <span>{selectedRows.length} row selected</span>
-              <span>{selectedColumns.length} column selected</span>
-              <span>{deletedRows.length} deleted rows</span>
-              <span>{deletedColumns.length} deleted columns</span>
+              <span>Đã chọn {selectedRows.length} dòng</span>
+              <span>Đã chọn {selectedColumns.length} cột</span>
+              <span>Đã xóa {deletedRows.length} dòng</span>
+              <span>Đã xóa {deletedColumns.length} cột</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -736,7 +753,7 @@ function ExportPreviewStep({
                 onClick={deleteSelected}
                 leftIcon={<Trash2 className="h-4 w-4" />}
               >
-                Delete selected
+                Xóa khỏi bản export
               </Button>
               <Button
                 size="sm"
@@ -744,13 +761,13 @@ function ExportPreviewStep({
                 disabled={deletedRows.length + deletedColumns.length === 0}
                 onClick={onRefreshPreview}
               >
-                Refresh after restore
+                Làm mới sau khôi phục
               </Button>
             </div>
           </div>
           {deletedRows.length + deletedColumns.length > 0 ? (
             <div className="border-b border-slate-400 bg-rose-50 px-4 py-3 text-xs text-rose-950">
-              <p className="font-bold">Deleted in export preview</p>
+              <p className="font-bold">Đã xóa khỏi bản export</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {deletedRows.map((rowNumber) => (
                   <button
@@ -761,7 +778,7 @@ function ExportPreviewStep({
                     }
                     className="rounded-full bg-white px-2 py-1 font-semibold text-rose-700"
                   >
-                    Restore row {rowNumber}
+                    Khôi phục dòng {rowNumber}
                   </button>
                 ))}
                 {deletedColumns.map((colNumber) => (
@@ -773,7 +790,7 @@ function ExportPreviewStep({
                     }
                     className="rounded-full bg-white px-2 py-1 font-semibold text-rose-700"
                   >
-                    Restore col {colNumber}
+                    Khôi phục cột {colNumber}
                   </button>
                 ))}
               </div>
@@ -956,9 +973,13 @@ export function MaterialProfileDetailClient({
     onSuccess: async (result) => {
       setLastMaterialProfileExportDir(result.parentDirPath);
       await utils.materialProfile.get.invalidate({ workspaceId });
-      if (result.missingCount > 0 || result.warnings.length > 0) {
+      if (
+        result.missingCount > 0 ||
+        result.warnings.length > 0 ||
+        result.unresolvedReviewCount > 0
+      ) {
         toast.warning(
-          `Đã export vào ${result.outputDirPath}, nhưng có ${result.missingCount} cảnh báo catalog.`,
+          `Đã export vào ${result.outputDirPath}, nhưng còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
         toast.success(`Đã export vào ${result.outputDirPath}`);
@@ -1031,6 +1052,12 @@ export function MaterialProfileDetailClient({
   };
 
   const runMatch = async () => {
+    if ((detail?.items.length ?? 0) > 0) {
+      const ok = window.confirm(
+        "Chạy match lại sẽ giữ quyết định cho dòng không đổi; dòng đã sửa cần duyệt lại.",
+      );
+      if (!ok) return;
+    }
     await updateState.mutateAsync({
       workspaceId,
       sheetName: activeSheet?.name,
@@ -1272,9 +1299,13 @@ export function MaterialProfileDetailClient({
       );
       await utils.materialProfile.get.invalidate({ workspaceId });
 
-      if (bundle.missingCount > 0 || bundle.warnings.length > 0) {
+      if (
+        bundle.missingCount > 0 ||
+        bundle.warnings.length > 0 ||
+        bundle.unresolvedReviewCount > 0
+      ) {
         toast.warning(
-          `Đã lưu ${saved.label}, nhưng có ${bundle.missingCount} cảnh báo catalog.`,
+          `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
         toast.success(`Đã lưu export: ${saved.label}`);

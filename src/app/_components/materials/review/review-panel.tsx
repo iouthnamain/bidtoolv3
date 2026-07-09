@@ -199,10 +199,12 @@ export function ReviewPanel({
   emptyTitle?: string;
   emptyDescription?: string;
   onDecisionPersist?: (rowIndex: number, decision: RowDecision) => void;
-  onFlushDecisionsForRows?: (rowIndices: number[]) => void;
+  onFlushDecisionsForRows?: (rowIndices: number[]) => void | Promise<void>;
   searchMode?: ReviewSearchMode;
   onProfileBulkApplyCatalog?: (rowIndices: number[]) => void | Promise<void>;
-  onProfileBulkApplySearchResults?: (rowIndices: number[]) => void;
+  onProfileBulkApplySearchResults?: (
+    rowIndices: number[],
+  ) => void | Promise<void>;
   onProfileUndoBulkApply?: () => void | Promise<void>;
   profileBulkApplyPending?: boolean;
   profileUndoPending?: boolean;
@@ -372,6 +374,28 @@ export function ReviewPanel({
       return next;
     });
   };
+
+  const rowNeedsReview = (row: ReviewRow) => {
+    const decision = decisions.get(row.originalRowIndex);
+    if (decision?.skipped) return false;
+    return !isExportableDecision(
+      decision ?? { materialId: null, acceptedFields: new Set() },
+    );
+  };
+
+  const selectFilteredRows = () => {
+    setCheckedRows(new Set(filtered.map((row) => row.originalRowIndex)));
+  };
+
+  const selectRowsNeedingReview = () => {
+    setCheckedRows(
+      new Set(
+        filtered.filter(rowNeedsReview).map((row) => row.originalRowIndex),
+      ),
+    );
+  };
+
+  const clearCheckedRows = () => setCheckedRows(new Set());
 
   const allFilteredChecked =
     filtered.length > 0 &&
@@ -730,7 +754,7 @@ export function ReviewPanel({
       });
       if (rowIndex === selectedRowIndexRef.current) {
         toast.error(
-          error instanceof Error ? error.message : "Tìm AI thất bại.",
+          error instanceof Error ? error.message : "Trích xuất AI thất bại.",
         );
       }
       throw error;
@@ -752,7 +776,7 @@ export function ReviewPanel({
       return;
     }
 
-    onFlushDecisionsForRows?.(targets.map((row) => row.originalRowIndex));
+    await onFlushDecisionsForRows?.(targets.map((row) => row.originalRowIndex));
     await onProfileSearchJob(
       kind,
       targets.map((row) => row.originalRowIndex),
@@ -793,8 +817,8 @@ export function ReviewPanel({
       } catch {
         toast.error(
           kind === "web"
-            ? "Không bắt đầu được job tìm web."
-            : "Không bắt đầu được job tìm AI.",
+            ? "Không bắt đầu được job tìm nguồn web."
+            : "Không bắt đầu được job trích xuất AI.",
         );
       }
       return;
@@ -813,14 +837,14 @@ export function ReviewPanel({
       );
       toast.success(
         kind === "web"
-          ? `Đã tìm web cho ${targets.length} dòng.`
-          : `Đã tìm AI cho ${targets.length} dòng.`,
+          ? `Đã tìm nguồn web cho ${targets.length} dòng.`
+          : `Đã trích xuất AI cho ${targets.length} dòng.`,
       );
     } catch {
       toast.error(
         kind === "web"
-          ? "Một số dòng tìm web thất bại."
-          : "Một số dòng tìm AI thất bại.",
+          ? "Một số dòng tìm nguồn web thất bại."
+          : "Một số dòng trích xuất AI thất bại.",
       );
     } finally {
       setBulkProgress(null);
@@ -875,6 +899,7 @@ export function ReviewPanel({
     row.name.trim(),
   ).length;
   const selectedRowIndices = Array.from(checkedRows);
+  const filteredNeedsReviewCount = filtered.filter(rowNeedsReview).length;
   const selectedCatalogEligibleCount = isProfileSplit
     ? countCatalogEligibleRows(rows, selectedRowIndices)
     : 0;
@@ -980,8 +1005,10 @@ export function ReviewPanel({
             <>
               {bulkProgress ? (
                 <span className="text-xs text-slate-600">
-                  {bulkProgress.kind === "web" ? "Tìm web" : "Tìm AI"}:{" "}
-                  {bulkProgress.completed}/{bulkProgress.total}
+                  {bulkProgress.kind === "web"
+                    ? "Tìm nguồn web"
+                    : "Trích xuất AI"}
+                  : {bulkProgress.completed}/{bulkProgress.total}
                 </span>
               ) : null}
               <Button
@@ -992,10 +1019,15 @@ export function ReviewPanel({
                   bulkTargetCount === 0 ||
                   isBulkRunning
                 }
+                title={
+                  checkedRows.size === 0
+                    ? "Chọn dòng trước khi tìm nguồn web"
+                    : undefined
+                }
                 onClick={() => void runBulkSearch("web")}
               >
                 <Globe className="h-4 w-4" aria-hidden />
-                Tìm web ({bulkTargetCount.toLocaleString("vi-VN")})
+                Tìm nguồn web ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
               <Button
                 variant="secondary"
@@ -1005,10 +1037,15 @@ export function ReviewPanel({
                   bulkTargetCount === 0 ||
                   isBulkRunning
                 }
+                title={
+                  checkedRows.size === 0
+                    ? "Chọn dòng trước khi trích xuất AI"
+                    : undefined
+                }
                 onClick={() => void runBulkSearch("ai")}
               >
                 <Sparkles className="h-4 w-4" aria-hidden />
-                Tìm AI ({bulkTargetCount.toLocaleString("vi-VN")})
+                Trích xuất AI ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
               <Button
                 variant="secondary"
@@ -1079,6 +1116,43 @@ export function ReviewPanel({
           </Button>
         </div>
       </div>
+
+      {isProfileSplit ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 bg-white px-4 py-2 text-xs text-slate-700">
+          <span className="font-semibold tabular-nums">
+            Đã chọn {checkedRows.size.toLocaleString("vi-VN")} dòng
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={filtered.length === 0}
+            onClick={selectFilteredRows}
+          >
+            Chọn tất cả trong bộ lọc
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={filteredNeedsReviewCount === 0}
+            onClick={selectRowsNeedingReview}
+          >
+            Chọn dòng cần duyệt (
+            {filteredNeedsReviewCount.toLocaleString("vi-VN")})
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={checkedRows.size === 0}
+            onClick={clearCheckedRows}
+          >
+            Bỏ chọn
+          </Button>
+          <span className="text-slate-600">
+            AI dùng nguồn web của dòng; nếu chưa có nguồn, hệ thống sẽ tìm nguồn
+            trước.
+          </span>
+        </div>
+      ) : null}
 
       {isProfileSplit && activeProfileSearchJob && isProfileSearchJobActive ? (
         <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">

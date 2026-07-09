@@ -598,11 +598,16 @@ async function _startMaterialProfileSearchJob(input: {
   const [active] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(materialProfileSearchJobs)
-    .where(inArray(materialProfileSearchJobs.status, ACTIVE_JOB_STATUSES));
+    .where(
+      and(
+        eq(materialProfileSearchJobs.workspaceId, input.workspaceId),
+        inArray(materialProfileSearchJobs.status, ACTIVE_JOB_STATUSES),
+      ),
+    );
   if ((active?.count ?? 0) > 0) {
     throw new MaterialProfileSearchJobError(
       "CONFLICT",
-      "Đang có job tìm kiếm hồ sơ vật tư khác chạy.",
+      "Hồ sơ này đang có job tìm kiếm. Chờ job xong hoặc hủy job trước.",
     );
   }
 

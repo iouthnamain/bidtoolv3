@@ -23,14 +23,14 @@ function SourceTag({ source }: { source: "web" | "ai" }) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-xs font-bold text-white">
         <Globe className="h-3 w-3" aria-hidden />
-        Tìm web
+        Nguồn web
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2 py-0.5 text-xs font-bold text-white">
       <Sparkles className="h-3 w-3" aria-hidden />
-      Tìm AI
+      AI
     </span>
   );
 }

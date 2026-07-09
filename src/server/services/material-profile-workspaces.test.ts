@@ -17,6 +17,7 @@ import {
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
   shouldBulkApplyMaterialProfileCandidate,
+  summarizeMaterialProfileReviewReadiness,
   summarizeMaterialProfileExportEditState,
 } from "~/server/services/material-profile-workspaces";
 
@@ -124,6 +125,52 @@ describe("material profile workspace helpers", () => {
     expect(shouldBulkApplyMaterialProfileCandidate("0.95")).toBe(false);
   });
 
+  it("summarizes review readiness with skipped and unresolved rows", () => {
+    const readiness = summarizeMaterialProfileReviewReadiness([
+      {
+        id: 1,
+        originalRowIndex: 2,
+        materialId: 10,
+        matchStatus: "matched",
+        reviewDecisionJson: {},
+        enrichedSnapshotJson: {
+          status: "auto",
+          fillPlan: [{ action: "filled", field: "specText" }],
+        },
+      },
+      {
+        id: 2,
+        originalRowIndex: 3,
+        materialId: null,
+        matchStatus: "unmatched",
+        reviewDecisionJson: {
+          materialId: null,
+          acceptedFields: [],
+          skipped: true,
+        },
+        enrichedSnapshotJson: { status: "unmatched" },
+      },
+      {
+        id: 3,
+        originalRowIndex: 4,
+        materialId: null,
+        matchStatus: "unmatched",
+        reviewDecisionJson: {},
+        enrichedSnapshotJson: { status: "unmatched" },
+      },
+    ]);
+
+    expect(readiness).toMatchObject({
+      totalRows: 3,
+      resolvedRows: 2,
+      exportableRows: 1,
+      skippedRows: 1,
+      unresolvedRows: 1,
+      canExportWithWarnings: true,
+    });
+    expect(readiness.warnings[0]).toContain("Còn 1 dòng chưa chọn hoặc bỏ qua");
+  });
+
   it("resolves the default downloads directory from the user home", () => {
     const result = resolveDefaultDownloadsDir();
 
@@ -179,15 +226,15 @@ describe("material profile storage root", () => {
   });
 
   it("uses tmpdir on serverless when unconfigured", () => {
-    expect(
-      resolveMaterialProfileStorageRoot(null, { serverless: true }),
-    ).toBe(path.join(os.tmpdir(), "bidtool", "material-profiles"));
+    expect(resolveMaterialProfileStorageRoot(null, { serverless: true })).toBe(
+      path.join(os.tmpdir(), "bidtool", "material-profiles"),
+    );
   });
 
   it("uses cwd/data for local dev when unconfigured", () => {
-    expect(
-      resolveMaterialProfileStorageRoot(null, { serverless: false }),
-    ).toBe(path.join(process.cwd(), "data", "material-profiles"));
+    expect(resolveMaterialProfileStorageRoot(null, { serverless: false })).toBe(
+      path.join(process.cwd(), "data", "material-profiles"),
+    );
   });
 });
 
@@ -201,7 +248,9 @@ describe("resolveWorkspaceWorkbookBuffer", () => {
     await expect(
       resolveWorkspaceWorkbookBuffer({
         sourceWorkbookPath: filePath,
-        workbookJson: { sourceWorkbookBase64: Buffer.from("fallback").toString("base64") },
+        workbookJson: {
+          sourceWorkbookBase64: Buffer.from("fallback").toString("base64"),
+        },
       }),
     ).resolves.toEqual(content);
 

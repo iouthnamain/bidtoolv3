@@ -363,7 +363,11 @@ export function MaterialProfileReviewStep({
   );
 
   const flushDecisionsForRows = useCallback(
-    (rowIndices: number[]) => {
+    async (rowIndices: number[]) => {
+      const payload: Array<{
+        itemId: number;
+        decision: ReturnType<typeof serializeRowDecision>;
+      }> = [];
       for (const rowIndex of rowIndices) {
         const timer = persistTimers.current.get(rowIndex);
         if (timer) {
@@ -373,14 +377,19 @@ export function MaterialProfileReviewStep({
         const decision = decisionsRef.current.get(rowIndex);
         const itemId = itemIdByRowIndex.get(rowIndex);
         if (decision && itemId) {
-          updateReviewDecision.mutate({
+          payload.push({
             itemId,
             decision: serializeRowDecision(decision),
           });
         }
       }
+      if (payload.length === 0) return;
+      await batchUpdateReviewDecisions.mutateAsync({
+        workspaceId,
+        decisions: payload,
+      });
     },
-    [itemIdByRowIndex, updateReviewDecision],
+    [batchUpdateReviewDecisions, itemIdByRowIndex, workspaceId],
   );
 
   const updateDecision = useCallback((rowIndex: number, next: RowDecision) => {
@@ -423,9 +432,12 @@ export function MaterialProfileReviewStep({
 
   const handleUseSearchRun = useCallback(
     async (runId: number) => {
+      if (selectedRowIndex != null) {
+        await flushDecisionsForRows([selectedRowIndex]);
+      }
       await setCurrentSearchRun.mutateAsync({ runId });
     },
-    [setCurrentSearchRun],
+    [flushDecisionsForRows, selectedRowIndex, setCurrentSearchRun],
   );
 
   const flushDecisions = useCallback(async () => {
@@ -481,7 +493,7 @@ export function MaterialProfileReviewStep({
         return;
       }
 
-      flushDecisionsForRows(rowIndices);
+      await flushDecisionsForRows(rowIndices);
 
       try {
         const result = await bulkApplyMatches.mutateAsync({
@@ -506,14 +518,6 @@ export function MaterialProfileReviewStep({
           return next;
         });
 
-        await batchUpdateReviewDecisions.mutateAsync({
-          workspaceId,
-          decisions: eligible.map((entry) => ({
-            itemId: entry.itemId,
-            decision: serializeRowDecision(entry.decision),
-          })),
-        });
-
         toast.success(
           `Đã áp dụng ${result.summary.appliedCount.toLocaleString("vi-VN")} dòng (≥ 85%).`,
         );
@@ -523,7 +527,6 @@ export function MaterialProfileReviewStep({
     },
     [
       applyDecisions,
-      batchUpdateReviewDecisions,
       bulkApplyMatches,
       flushDecisionsForRows,
       itemIdByRowIndex,
@@ -534,34 +537,59 @@ export function MaterialProfileReviewStep({
   );
 
   const handleBulkApplySearchResults = useCallback(
-    (rowIndices: number[]) => {
-      let appliedCount = 0;
-      applyDecisions((prev) => {
-        const next = new Map(prev);
-        for (const rowIndex of rowIndices) {
+    async (rowIndices: number[]) => {
+      const eligible = rowIndices
+        .map((rowIndex) => {
           const row = reviewRowByIndex.get(rowIndex);
-          const current = prev.get(rowIndex);
-          if (!row || !current) continue;
+          const current = decisionsRef.current.get(rowIndex);
+          const itemId = itemIdByRowIndex.get(rowIndex);
+          if (!row || !current || itemId == null) return null;
           const applied = searchResultDecisionForRow(row, current);
-          if (!applied) continue;
-          next.set(rowIndex, applied);
-          persistDecision(rowIndex, applied);
-          appliedCount += 1;
-        }
-        return next;
-      });
+          if (!applied) return null;
+          return { rowIndex, itemId, decision: applied };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry != null);
 
-      if (appliedCount === 0) {
+      if (eligible.length === 0) {
         toast.warning(
           "Không có kết quả đạt ngưỡng tin cậy 75% trên các dòng đã chọn.",
         );
         return;
       }
+
+      for (const entry of eligible) {
+        const timer = persistTimers.current.get(entry.rowIndex);
+        if (timer) {
+          clearTimeout(timer);
+          persistTimers.current.delete(entry.rowIndex);
+        }
+      }
+      applyDecisions((prev) => {
+        const next = new Map(prev);
+        for (const entry of eligible) {
+          next.set(entry.rowIndex, entry.decision);
+        }
+        return next;
+      });
+      await batchUpdateReviewDecisions.mutateAsync({
+        workspaceId,
+        decisions: eligible.map((entry) => ({
+          itemId: entry.itemId,
+          decision: serializeRowDecision(entry.decision),
+        })),
+      });
       toast.success(
-        `Đã áp dụng kết quả tìm kiếm cho ${appliedCount.toLocaleString("vi-VN")} dòng.`,
+        `Đã áp dụng kết quả tìm kiếm cho ${eligible.length.toLocaleString("vi-VN")} dòng.`,
       );
     },
-    [applyDecisions, persistDecision, reviewRowByIndex, toast],
+    [
+      applyDecisions,
+      batchUpdateReviewDecisions,
+      itemIdByRowIndex,
+      reviewRowByIndex,
+      toast,
+      workspaceId,
+    ],
   );
 
   const handleUndoBulkApply = useCallback(async () => {

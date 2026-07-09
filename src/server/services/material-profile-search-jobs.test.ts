@@ -518,6 +518,58 @@ describe("material profile search jobs", () => {
     expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
   });
 
+  it("allows a search job when another workspace has an active job", async () => {
+    dbMock.state.jobs.push({
+      id: "other-job",
+      workspaceId: 2,
+      status: "running",
+      mode: "web",
+      requestedItemIds: [201],
+      total: 1,
+      processed: 0,
+      found: 0,
+      partial: 0,
+      failed: 0,
+      skipped: 0,
+    });
+
+    await expect(
+      startMaterialProfileSearchJob({
+        workspaceId: 1,
+        itemIds: [101],
+        mode: "web",
+      }),
+    ).resolves.toMatchObject({ workspaceId: 1, status: "queued" });
+  });
+
+  it("blocks a search job when the same workspace has an active job", async () => {
+    dbMock.state.jobs.push({
+      id: "same-workspace-job",
+      workspaceId: 1,
+      status: "running",
+      mode: "web",
+      requestedItemIds: [101],
+      total: 1,
+      processed: 0,
+      found: 0,
+      partial: 0,
+      failed: 0,
+      skipped: 0,
+    });
+
+    await expect(
+      startMaterialProfileSearchJob({
+        workspaceId: 1,
+        itemIds: [101],
+        mode: "web",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Hồ sơ này đang có job tìm kiếm. Chờ job xong hoặc hủy job trước.",
+    });
+  });
+
   it("auto-runs web first for AI jobs without current web links", async () => {
     const { job, runs } = await startAndProcess("ai");
 

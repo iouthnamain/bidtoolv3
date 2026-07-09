@@ -10,10 +10,12 @@ import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
 import {
   deriveMatchStatus,
   deserializeRowDecision,
+  seedDecisionFromItem,
   type SerializedRowDecision,
   serializeRowDecision,
   type WebSearchStatus,
 } from "~/lib/materials/review-decision";
+import { isExportableDecision } from "~/lib/materials/enrich-gap-fill";
 import {
   snapshotStatusFromItem,
   topCandidateMaterialIdFromItem,
@@ -50,7 +52,8 @@ import type { MaterialProfileSearchRunSnapshot } from "~/server/services/materia
 type AppDb = typeof appDb;
 type Workspace = typeof excelWorkspaces.$inferSelect;
 type WorkspaceItem = typeof excelWorkspaceItems.$inferSelect;
-type MaterialProfileSearchRunRow = typeof materialProfileSearchRuns.$inferSelect;
+type MaterialProfileSearchRunRow =
+  typeof materialProfileSearchRuns.$inferSelect;
 type MaterialRow = typeof materials.$inferSelect;
 type CatalogDocumentRow = typeof materialCatalogDocuments.$inferSelect;
 
@@ -72,6 +75,7 @@ export type MaterialProfileBulkApplySnapshot = {
     materialId: number | null;
     matchStatus: WorkspaceItem["matchStatus"];
     includedInExport: boolean;
+    reviewDecisionJson: unknown;
   }>;
   summary: {
     selectedCount: number;
@@ -79,6 +83,16 @@ export type MaterialProfileBulkApplySnapshot = {
     reviewCount: number;
     unchangedCount: number;
   };
+};
+
+export type MaterialProfileReviewReadiness = {
+  totalRows: number;
+  resolvedRows: number;
+  exportableRows: number;
+  skippedRows: number;
+  unresolvedRows: number;
+  canExportWithWarnings: boolean;
+  warnings: string[];
 };
 
 function searchStatus(value: string): WebSearchStatus {
@@ -105,7 +119,9 @@ function materialProfileSearchRunSnapshot(
     aiSearchStatus: row.aiSearchStatus,
     selectedSearchCandidateKey: row.recommendedCandidateKey ?? undefined,
     selectedSource:
-      row.recommendedCandidateKey?.startsWith("ai:") === true ? "ai" : undefined,
+      row.recommendedCandidateKey?.startsWith("ai:") === true
+        ? "ai"
+        : undefined,
   });
 
   return {
@@ -133,7 +149,9 @@ function materialProfileSearchRunSnapshot(
         ? row.inputSnapshotJson
         : {},
     queries: Array.isArray(row.queriesJson)
-      ? row.queriesJson.filter((item): item is string => typeof item === "string")
+      ? row.queriesJson.filter(
+          (item): item is string => typeof item === "string",
+        )
       : [],
     webLinksStatus: searchStatus(row.webLinksStatus),
     aiSearchStatus: searchStatus(row.aiSearchStatus),
@@ -141,7 +159,9 @@ function materialProfileSearchRunSnapshot(
     aiSearchCandidates: parsed?.aiSearchCandidates ?? [],
     recommendedCandidateKey: row.recommendedCandidateKey,
     warnings: Array.isArray(row.warningsJson)
-      ? row.warningsJson.filter((item): item is string => typeof item === "string")
+      ? row.warningsJson.filter(
+          (item): item is string => typeof item === "string",
+        )
       : [],
     errorMessage: row.errorMessage,
     startedAt: row.startedAt,
@@ -172,10 +192,16 @@ function reviewDecisionJsonWithCurrentSearchRun(
     selectedSearchCandidateKey:
       typeof base.selectedSearchCandidateKey === "string"
         ? base.selectedSearchCandidateKey
-        : run.recommendedCandidateKey ?? undefined,
+        : (run.recommendedCandidateKey ?? undefined),
     catalogPdfUrls:
       base.catalogPdfUrls ?? aiSearchResult?.catalogPdfUrls ?? undefined,
   };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function serializeMaterialProfileUserDecision(decision: SerializedRowDecision) {
@@ -190,6 +216,71 @@ function serializeMaterialProfileUserDecision(decision: SerializedRowDecision) {
     aiSearchCandidates: undefined,
     aiSearchStatus: undefined,
   };
+}
+
+export function summarizeMaterialProfileReviewReadiness(
+  items: Array<{
+    id: number;
+    originalRowIndex: number;
+    materialId: number | null;
+    matchStatus: WorkspaceItem["matchStatus"];
+    reviewDecisionJson: unknown;
+    enrichedSnapshotJson: unknown;
+  }>,
+): MaterialProfileReviewReadiness {
+  let exportableRows = 0;
+  let skippedRows = 0;
+
+  for (const item of items) {
+    const decision = seedDecisionFromItem(item);
+    if (decision.skipped) {
+      skippedRows += 1;
+      continue;
+    }
+    if (isExportableDecision(decision)) {
+      exportableRows += 1;
+    }
+  }
+
+  const totalRows = items.length;
+  const resolvedRows = exportableRows + skippedRows;
+  const unresolvedRows = Math.max(0, totalRows - resolvedRows);
+  const warnings =
+    unresolvedRows > 0
+      ? [
+          `Còn ${unresolvedRows.toLocaleString("vi-VN")} dòng chưa chọn hoặc bỏ qua. File export có thể thiếu dữ liệu.`,
+        ]
+      : [];
+
+  return {
+    totalRows,
+    resolvedRows,
+    exportableRows,
+    skippedRows,
+    unresolvedRows,
+    canExportWithWarnings: true,
+    warnings,
+  };
+}
+
+function normalizeReviewIdentityPart(value: unknown) {
+  return typeof value === "string"
+    ? value.toLocaleLowerCase("vi-VN").replace(/\s+/g, " ").trim()
+    : "";
+}
+
+function materialProfileReviewIdentity(input: {
+  originalRowIndex: number;
+  productName: string;
+  unit: string | null;
+  specText: string | null;
+}) {
+  return [
+    input.originalRowIndex,
+    normalizeReviewIdentityPart(input.productName),
+    normalizeReviewIdentityPart(input.unit),
+    normalizeReviewIdentityPart(input.specText),
+  ].join("|");
 }
 
 export const MATERIAL_PROFILE_EXPORT_COLUMNS = [
@@ -272,8 +363,7 @@ export function buildMaterialProfileOutputPrefix(
 
 function isServerlessEnvironment() {
   return (
-    process.env.VERCEL === "1" ||
-    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
+    process.env.VERCEL === "1" || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
   );
 }
 
@@ -720,6 +810,10 @@ function parseLastBulkApplySnapshot(
           itemRecord.materialId == null ? null : Number(itemRecord.materialId),
         matchStatus: matchStatus as WorkspaceItem["matchStatus"],
         includedInExport: Boolean(itemRecord.includedInExport),
+        reviewDecisionJson:
+          "reviewDecisionJson" in itemRecord
+            ? itemRecord.reviewDecisionJson
+            : {},
       };
     })
     .filter(
@@ -924,20 +1018,24 @@ export async function getMaterialProfileWorkspace(
       materialProfileSearchRunSnapshot(run),
     ]),
   );
+  const itemsWithCurrentSearch = items.map((item) => {
+    const currentSearchRun = currentRunByItemId.get(item.id) ?? null;
+    return {
+      ...item,
+      currentSearchRun,
+      reviewDecisionJson: reviewDecisionJsonWithCurrentSearchRun(
+        item.reviewDecisionJson,
+        currentSearchRun,
+      ),
+    };
+  });
   return {
     workspace,
-    items: items.map((item) => {
-      const currentSearchRun = currentRunByItemId.get(item.id) ?? null;
-      return {
-        ...item,
-        currentSearchRun,
-        reviewDecisionJson: reviewDecisionJsonWithCurrentSearchRun(
-          item.reviewDecisionJson,
-          currentSearchRun,
-        ),
-      };
-    }),
+    items: itemsWithCurrentSearch,
     workbook: parseWorkbookJson(workspace.workbookJson),
+    reviewReadiness: summarizeMaterialProfileReviewReadiness(
+      itemsWithCurrentSearch,
+    ),
   };
 }
 
@@ -991,10 +1089,7 @@ export async function uploadMaterialProfileWorkbook(
       sourceSheetName: selectedSheet.name,
       rowCount: selectedSheet.rows.length,
       columnMappingJson: selectedSheet.suggestedMapping,
-      workbookJson: workbookJsonFromSheets(
-        parsed.sheets,
-        sourceWorkbookBase64,
-      ),
+      workbookJson: workbookJsonFromSheets(parsed.sheets, sourceWorkbookBase64),
       editStateJson: {},
       exportEditStateJson: {},
       updatedAt: now,
@@ -1098,6 +1193,45 @@ export async function matchMaterialProfileWorkspace(
   const rows = extractRowFields(sheet, workspace.columnMappingJson);
   const results = await matchRows(db, rows);
   const rowByIndex = new Map(rows.map((row) => [row.originalRowIndex, row]));
+  const existingItems = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, workspace.id));
+  const currentRuns = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(
+      and(
+        eq(materialProfileSearchRuns.workspaceId, workspace.id),
+        eq(materialProfileSearchRuns.isCurrent, true),
+      ),
+    );
+  const currentRunByItemId = new Map(
+    currentRuns.map((run) => [
+      run.itemId,
+      materialProfileSearchRunSnapshot(run),
+    ]),
+  );
+  const preservedByIdentity = new Map<
+    string,
+    {
+      materialId: number | null;
+      matchStatus: WorkspaceItem["matchStatus"];
+      reviewDecisionJson: Record<string, unknown>;
+    }
+  >();
+  for (const item of existingItems) {
+    preservedByIdentity.set(materialProfileReviewIdentity(item), {
+      materialId: item.materialId,
+      matchStatus: item.matchStatus,
+      reviewDecisionJson: jsonRecord(
+        reviewDecisionJsonWithCurrentSearchRun(
+          item.reviewDecisionJson,
+          currentRunByItemId.get(item.id) ?? null,
+        ),
+      ),
+    });
+  }
 
   await db
     .delete(excelWorkspaceItems)
@@ -1108,6 +1242,17 @@ export async function matchMaterialProfileWorkspace(
     await db.insert(excelWorkspaceItems).values(
       results.map((result, index) => {
         const source = rowByIndex.get(result.originalRowIndex);
+        const productName = source?.name ?? `Dòng ${result.originalRowIndex}`;
+        const specText = source?.fields.specText ?? "";
+        const unit = source?.fields.unit ?? "";
+        const preserved = preservedByIdentity.get(
+          materialProfileReviewIdentity({
+            originalRowIndex: result.originalRowIndex,
+            productName,
+            specText,
+            unit,
+          }),
+        );
         const autoMaterialId =
           result.status === "auto" ? result.topCandidate?.materialId : null;
         const matchStatus =
@@ -1118,12 +1263,12 @@ export async function matchMaterialProfileWorkspace(
               : ("unmatched" as const);
         return {
           workspaceId: workspace.id,
-          materialId: autoMaterialId ?? null,
+          materialId: preserved?.materialId ?? autoMaterialId ?? null,
           originalRowIndex: result.originalRowIndex,
           originalDataJson: source?.fields ?? {},
-          productName: source?.name ?? `Dòng ${result.originalRowIndex}`,
-          specText: source?.fields.specText ?? "",
-          unit: source?.fields.unit ?? "",
+          productName,
+          specText,
+          unit,
           currency: "VND",
           vendorHint: source?.fields.manufacturer ?? null,
           originHint: source?.fields.originCountry ?? null,
@@ -1139,7 +1284,8 @@ export async function matchMaterialProfileWorkspace(
             fillPlan: result.fillPlan,
             sheetFields: source?.fields ?? {},
           },
-          matchStatus,
+          reviewDecisionJson: preserved?.reviewDecisionJson ?? undefined,
+          matchStatus: preserved?.matchStatus ?? matchStatus,
           createdAt: now,
           updatedAt: now,
         };
@@ -1280,6 +1426,12 @@ export async function batchUpdateMaterialProfileItemReviewDecisions(
   const itemIds = Array.from(
     new Set(input.decisions.map((entry) => entry.itemId)),
   );
+  if (itemIds.length !== input.decisions.length) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Có dòng bị lặp trong danh sách quyết định duyệt.",
+    );
+  }
   const items = await db
     .select()
     .from(excelWorkspaceItems)
@@ -1291,39 +1443,71 @@ export async function batchUpdateMaterialProfileItemReviewDecisions(
     );
 
   const itemById = new Map(items.map((item) => [item.id, item]));
-  const now = new Date().toISOString();
-  const updatedItems: WorkspaceItem[] = [];
-
-  for (const entry of input.decisions) {
-    const item = itemById.get(entry.itemId);
-    if (!item) continue;
-    const reviewItem = workspaceItemForReview(item);
-    const snapshotStatus = snapshotStatusFromItem(reviewItem);
-    const topCandidateMaterialId = topCandidateMaterialIdFromItem(reviewItem);
-    const decision = deserializeRowDecision(entry.decision);
-    if (!decision) continue;
-
-    const matchStatus = deriveMatchStatus(
-      decision,
-      snapshotStatus,
-      topCandidateMaterialId,
+  const missingItemIds = itemIds.filter((itemId) => !itemById.has(itemId));
+  if (missingItemIds.length > 0) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      `Không tìm thấy ${missingItemIds.length.toLocaleString("vi-VN")} dòng trong hồ sơ này.`,
     );
-    const [updated] = await db
-      .update(excelWorkspaceItems)
-      .set({
-        reviewDecisionJson: serializeMaterialProfileUserDecision(
-          serializeRowDecision(decision),
-        ),
-        materialId: decision.materialId,
-        matchStatus,
-        updatedAt: now,
-      })
-      .where(eq(excelWorkspaceItems.id, entry.itemId))
-      .returning();
-    if (updated) updatedItems.push(updated);
   }
 
-  return { updatedCount: updatedItems.length, items: updatedItems };
+  const prepared = input.decisions.map((entry) => {
+    const item = itemById.get(entry.itemId);
+    if (!item) {
+      throw new MaterialProfileWorkspaceError(
+        "BAD_REQUEST",
+        "Không tìm thấy dòng trong hồ sơ này.",
+      );
+    }
+    const reviewItem = workspaceItemForReview(item);
+    const decision = deserializeRowDecision(entry.decision);
+    if (!decision) {
+      throw new MaterialProfileWorkspaceError(
+        "BAD_REQUEST",
+        "Quyết định duyệt không hợp lệ.",
+      );
+    }
+    return {
+      item,
+      decision,
+      snapshotStatus: snapshotStatusFromItem(reviewItem),
+      topCandidateMaterialId: topCandidateMaterialIdFromItem(reviewItem),
+    };
+  });
+
+  return await db.transaction(async (tx) => {
+    const now = new Date().toISOString();
+    const updatedItems: WorkspaceItem[] = [];
+
+    for (const entry of prepared) {
+      const matchStatus = deriveMatchStatus(
+        entry.decision,
+        entry.snapshotStatus,
+        entry.topCandidateMaterialId,
+      );
+      const [updated] = await tx
+        .update(excelWorkspaceItems)
+        .set({
+          reviewDecisionJson: serializeMaterialProfileUserDecision(
+            serializeRowDecision(entry.decision),
+          ),
+          materialId: entry.decision.materialId,
+          matchStatus,
+          updatedAt: now,
+        })
+        .where(eq(excelWorkspaceItems.id, entry.item.id))
+        .returning();
+      if (!updated) {
+        throw new MaterialProfileWorkspaceError(
+          "BAD_REQUEST",
+          "Không lưu được quyết định duyệt.",
+        );
+      }
+      updatedItems.push(updated);
+    }
+
+    return { updatedCount: updatedItems.length, items: updatedItems };
+  });
 }
 
 export async function updateMaterialProfileItemEnrichmentDraft(
@@ -1574,6 +1758,7 @@ export async function bulkApplyMaterialProfileMatches(
   let appliedCount = 0;
   let reviewCount = 0;
   let unchangedCount = 0;
+  const updates: Array<{ item: WorkspaceItem; materialId: number }> = [];
   for (const item of items) {
     const candidate = topCandidateFromSnapshot(item.enrichedSnapshotJson);
     if (
@@ -1591,14 +1776,7 @@ export async function bulkApplyMaterialProfileMatches(
       continue;
     }
     appliedCount += 1;
-    await db
-      .update(excelWorkspaceItems)
-      .set({
-        materialId: candidate.materialId,
-        matchStatus: "matched",
-        updatedAt: now,
-      })
-      .where(eq(excelWorkspaceItems.id, item.id));
+    updates.push({ item, materialId: candidate.materialId });
   }
 
   const summary = {
@@ -1616,19 +1794,41 @@ export async function bulkApplyMaterialProfileMatches(
       materialId: item.materialId,
       matchStatus: item.matchStatus,
       includedInExport: item.includedInExport,
+      reviewDecisionJson: item.reviewDecisionJson,
     })),
     summary,
   };
-  await db
-    .update(excelWorkspaces)
-    .set({
-      templateConfigJson: {
-        ...workspace.templateConfigJson,
-        materialProfileLastBulkApply: snapshot,
-      },
-      updatedAt: now,
-    })
-    .where(eq(excelWorkspaces.id, workspace.id));
+  await db.transaction(async (tx) => {
+    for (const update of updates) {
+      const decision = seedDecisionFromItem({
+        ...update.item,
+        materialId: update.materialId,
+        matchStatus: "matched",
+        reviewDecisionJson: {},
+      });
+      await tx
+        .update(excelWorkspaceItems)
+        .set({
+          materialId: update.materialId,
+          matchStatus: "matched",
+          reviewDecisionJson: serializeMaterialProfileUserDecision(
+            serializeRowDecision(decision),
+          ),
+          updatedAt: now,
+        })
+        .where(eq(excelWorkspaceItems.id, update.item.id));
+    }
+    await tx
+      .update(excelWorkspaces)
+      .set({
+        templateConfigJson: {
+          ...workspace.templateConfigJson,
+          materialProfileLastBulkApply: snapshot,
+        },
+        updatedAt: now,
+      })
+      .where(eq(excelWorkspaces.id, workspace.id));
+  });
 
   return { summary, undoAvailable: items.length > 0 };
 }
@@ -1653,6 +1853,7 @@ export async function undoLastMaterialProfileBulkApply(
         materialId: previous.materialId,
         matchStatus: previous.matchStatus,
         includedInExport: previous.includedInExport,
+        reviewDecisionJson: jsonRecord(previous.reviewDecisionJson),
         updatedAt: now,
       })
       .where(
@@ -1903,6 +2104,16 @@ export async function previewMaterialProfileExportWorkbook(
   const exportEditState = parseMaterialProfileExportEditState(
     workspace.exportEditStateJson,
   );
+  const previewSheetName =
+    workspace.sourceSheetName ??
+    materialProfileSheetMeta(workspace)?.name ??
+    "";
+  const previewItems = items.filter(
+    (item) =>
+      item.includedInExport &&
+      !isMaterialRowDeleted(item, previewSheetName, exportEditState),
+  );
+  const reviewReadiness = summarizeMaterialProfileReviewReadiness(previewItems);
 
   const workbook = new ExcelJS.Workbook();
   const sourceBuffer = await readWorkspaceWorkbook(workspace);
@@ -1912,28 +2123,31 @@ export async function previewMaterialProfileExportWorkbook(
   const maxColumnBySheet = originalColumnCountBySheet(workbook);
   applyCellEdits(workbook, workspace.editStateJson, maxColumnBySheet);
 
-  const targetSheetName =
+  const activeTargetSheetName =
     workspace.sourceSheetName ?? workbook.worksheets[0]?.name ?? "";
   const selectedMeta = materialProfileSheetMeta(workspace);
 
   return {
-    selectedSheetName: targetSheetName,
+    selectedSheetName: activeTargetSheetName,
     exportEditState,
+    reviewReadiness,
+    reviewWarnings: reviewReadiness.warnings,
+    unresolvedReviewCount: reviewReadiness.unresolvedRows,
     editSummary: summarizeMaterialProfileExportEditState(
       exportEditState,
-      targetSheetName,
+      activeTargetSheetName,
     ),
     matchCounts: materialProfileMatchCounts(
       items,
       docsByMaterial,
       materialsById,
-      targetSheetName,
+      activeTargetSheetName,
       exportEditState,
     ),
     sheets: workbook.worksheets.map((sheet) => {
       const originalColumnCount =
         maxColumnBySheet.get(sheet.name) ?? sheet.columnCount;
-      const isMaterialSheet = sheet.name === targetSheetName;
+      const isMaterialSheet = sheet.name === activeTargetSheetName;
       const startColumn = isMaterialSheet ? originalColumnCount + 1 : null;
       const rows = worksheetToRows(
         sheet,
@@ -2081,6 +2295,8 @@ type MaterialProfileExportBundle = {
   catalogFiles: Array<{ fileName: string; buffer: Buffer }>;
   missingCount: number;
   warnings: string[];
+  reviewReadiness: MaterialProfileReviewReadiness;
+  reviewWarnings: string[];
   catalogCount: number;
 };
 
@@ -2122,6 +2338,7 @@ async function buildMaterialProfileExportBundle(
       item.includedInExport &&
       !isMaterialRowDeleted(item, materialSheetName, exportEditState),
   );
+  const reviewReadiness = summarizeMaterialProfileReviewReadiness(exportItems);
   const materialIds = materialIdsFromItems(exportItems);
   const materialRows = await loadMaterialRows(db, materialIds);
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
@@ -2135,7 +2352,7 @@ async function buildMaterialProfileExportBundle(
   const catalogBuffersByFileName = new Map<string, Buffer>();
   const catalogFilesByMaterial = new Map<number, string[]>();
   const missingRows: Array<Array<string | number | null>> = [];
-  const warnings: string[] = [];
+  const warnings: string[] = [...reviewReadiness.warnings];
 
   for (const item of exportItems) {
     const materialId = item.materialId;
@@ -2283,6 +2500,8 @@ async function buildMaterialProfileExportBundle(
       ),
       missingCount: missingRows.length,
       warnings,
+      reviewReadiness,
+      reviewWarnings: reviewReadiness.warnings,
       catalogCount: copiedCatalogByDocKey.size,
     },
   };
@@ -2310,6 +2529,9 @@ export async function exportMaterialProfileDownloadBundle(
     catalogCount: bundle.catalogCount,
     missingCount: bundle.missingCount,
     warnings: bundle.warnings,
+    reviewReadiness: bundle.reviewReadiness,
+    unresolvedReviewCount: bundle.reviewReadiness.unresolvedRows,
+    reviewWarnings: bundle.reviewWarnings,
   };
 }
 
@@ -2348,5 +2570,8 @@ export async function exportMaterialProfileWorkspace(
     catalogCount: bundle.catalogCount,
     missingCount: bundle.missingCount,
     warnings: bundle.warnings,
+    reviewReadiness: bundle.reviewReadiness,
+    unresolvedReviewCount: bundle.reviewReadiness.unresolvedRows,
+    reviewWarnings: bundle.reviewWarnings,
   };
 }

@@ -9,7 +9,10 @@ import {
 import { type EnrichCandidate } from "~/app/_components/enrich/product-candidate-card";
 import { planForCandidate } from "~/app/_components/materials/review/review-plan";
 import type { SearchSourceCandidate } from "~/app/_components/materials/review/search-source-candidate-card";
-import type { ReviewRow, ReviewSearchMode } from "~/app/_components/materials/review/review-types";
+import type {
+  ReviewRow,
+  ReviewSearchMode,
+} from "~/app/_components/materials/review/review-types";
 import { Button } from "~/app/_components/ui";
 import { useToast } from "~/app/_components/ui/toast";
 import {
@@ -42,7 +45,10 @@ import { api } from "~/trpc/react";
 function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
   const raw = fields.defaultUnitPrice?.trim();
   if (!raw) return undefined;
-  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(/,/g, "");
+  const normalized = raw
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(/,/g, "");
   const parsed = parseOptionalNumber(normalized);
   if (parsed == null) return undefined;
   return formatMoney(parsed, fields.currency?.trim() ?? "VND");
@@ -109,7 +115,8 @@ export function MatchChooser({
   );
   const upsertMaterial = api.material.upsertMaterial.useMutation();
 
-  const selectedSearchCandidateKey = decision?.selectedSearchCandidateKey ?? null;
+  const selectedSearchCandidateKey =
+    decision?.selectedSearchCandidateKey ?? null;
   const selectedId =
     selectedSearchCandidateKey == null &&
     (decision?.selectedSource === "catalog" || decision?.selectedSource == null)
@@ -119,7 +126,7 @@ export function MatchChooser({
   const aiCandidates = aiCandidatesFromDecision(decision);
   const selectedAiCandidate =
     parsedSearchKey?.source === "ai"
-      ? aiCandidates[Number(parsedSearchKey.id)] ?? null
+      ? (aiCandidates[Number(parsedSearchKey.id)] ?? null)
       : null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
@@ -147,7 +154,9 @@ export function MatchChooser({
   const selectedCandidate =
     selectedId != null
       ? (cards.find((candidate) => candidate.materialId === selectedId) ??
-        row.candidates.find((candidate) => candidate.materialId === selectedId) ??
+        row.candidates.find(
+          (candidate) => candidate.materialId === selectedId,
+        ) ??
         null)
       : null;
 
@@ -160,8 +169,9 @@ export function MatchChooser({
       ? selectedAiCandidate.fields
       : webProposedFields;
 
-  const profileSearchRunning =
-    [isWebLinksPending, isAiSearchPending].some((v) => v === true);
+  const profileSearchRunning = [isWebLinksPending, isAiSearchPending].some(
+    (v) => v === true,
+  );
 
   const searchSourceCandidates = useMemo((): SearchSourceCandidate[] => {
     if (!isProfileSplit) return [];
@@ -282,9 +292,9 @@ export function MatchChooser({
   ]);
 
   const selectedSearchCandidate = selectedSearchCandidateKey
-    ? searchSourceCandidates.find(
+    ? (searchSourceCandidates.find(
         (candidate) => candidate.key === selectedSearchCandidateKey,
-      ) ?? null
+      ) ?? null)
     : null;
 
   const afterColumnLabel =
@@ -350,13 +360,17 @@ export function MatchChooser({
     if (!parsed) return;
 
     if (parsed.source === "web") {
-      const link = decision?.webLinkResults?.find((item) => item.url === parsed.id);
+      const link = decision?.webLinkResults?.find(
+        (item) => item.url === parsed.id,
+      );
       if (!link) {
         toast.warning("Chưa có liên kết web để chọn.");
         return;
       }
 
-      const matchingAi = aiCandidates.find((candidate) => candidate.url === link.url);
+      const matchingAi = aiCandidates.find(
+        (candidate) => candidate.url === link.url,
+      );
       if (matchingAi) {
         const { acceptedFields, editedValues: nextEdited } =
           applyAllProposedFieldsWithCurrency(matchingAi.fields);
@@ -377,7 +391,9 @@ export function MatchChooser({
         return;
       }
 
-      const pdfFromUrl = link.url.toLowerCase().includes(".pdf") ? [link.url] : [];
+      const pdfFromUrl = link.url.toLowerCase().includes(".pdf")
+        ? [link.url]
+        : [];
       const nextEdited: Partial<Record<FillableField, string>> = {
         sourceUrl: link.url,
       };
@@ -582,10 +598,7 @@ export function MatchChooser({
       toast.error("ĐVT không được để trống.");
       return;
     }
-    if (
-      !isProfileSplit &&
-      accepted.size === 0
-    ) {
+    if (!isProfileSplit && accepted.size === 0) {
       toast.error("Chọn ít nhất một trường trước khi lưu.");
       return;
     }
@@ -632,9 +645,7 @@ export function MatchChooser({
             applySavedMaterialToDecision(material.id, effective, decision),
           );
           toast.success(
-            selectedId != null
-              ? "Đã cập nhật vật tư."
-              : "Đã lưu vào vật tư.",
+            selectedId != null ? "Đã cập nhật vật tư." : "Đã lưu vào vật tư.",
           );
         },
         onError: (error) => {
@@ -712,7 +723,7 @@ export function MatchChooser({
               ) : (
                 <Globe className="h-4 w-4" aria-hidden />
               )}
-              Tìm web
+              Tìm nguồn web
             </Button>
             <Button
               variant="secondary"
@@ -725,7 +736,7 @@ export function MatchChooser({
               ) : (
                 <Sparkles className="h-4 w-4" aria-hidden />
               )}
-              Tìm AI
+              Trích xuất AI
             </Button>
           </>
         ) : (
