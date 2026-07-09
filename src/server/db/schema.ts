@@ -472,6 +472,13 @@ export const materials = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     materialsNameIdx: index("materials_name_idx").on(table.name),
     materialsCategoryIdx: index("materials_category_idx").on(table.category),
+    // pg_trgm GIN indexes (extension + materials_name_trgm_idx from 0016_ai_match_support.sql).
+    materialsSpecTextTrgmIdx: index("materials_spec_text_trgm_idx")
+      .using("gin", table.specText.op("gin_trgm_ops"))
+      .where(sql`${table.deletedAt} IS NULL`),
+    materialsCodeTrgmIdx: index("materials_code_trgm_idx")
+      .using("gin", table.code.op("gin_trgm_ops"))
+      .where(sql`${table.deletedAt} IS NULL AND ${table.code} IS NOT NULL`),
   }),
 );
 
@@ -572,6 +579,14 @@ export const excelWorkspaces = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    /**
+     * Template pack headers plus optional material-profile options.
+     *
+     * `materialProfileOptions` (optional nested object; defaults when absent):
+     * `{ autoSearchAfterMatch: true, exportMode: "clean" }`
+     * - `autoSearchAfterMatch`: enqueue post-match search job after catalog match
+     * - `exportMode`: `"clean"` | `"legacy_templates"`
+     */
     templateConfigJson: jsonb("template_config_json")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -593,6 +608,8 @@ export const excelWorkspaces = pgTable(
           "Đơn vị kính đề nghị mua các vật tư phục vụ công tác đào tạo theo bảng dưới đây.",
         ],
         signerLabels: ["Người lập", "Đơn vị", "Phòng vật tư", "Hiệu trưởng"],
+        // Profile defaults live under materialProfileOptions when set by Worker B.
+        // Documented shape: { autoSearchAfterMatch: true, exportMode: "clean" }
       }),
     selectedSheetTemplateIds: jsonb("selected_sheet_template_ids")
       .$type<string[]>()
@@ -721,6 +738,13 @@ export const excelWorkspaceItems = pgTable(
     matchStatus: productMatchStatusEnum("match_status")
       .notNull()
       .default("unmatched"),
+    /** When the row was saved/linked into `materials` from a profile workspace. */
+    committedAt: timestamp("committed_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    /** e.g. `profile_save` | `manual_link` — set by profile commit / link flows. */
+    commitSource: text("commit_source"),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -740,6 +764,9 @@ export const excelWorkspaceItems = pgTable(
     excelWorkspaceItemsEnrichmentIdx: index(
       "excel_workspace_items_enrichment_idx",
     ).on(table.workspaceId, table.enrichmentStatus, table.enrichmentUpdatedAt),
+    excelWorkspaceItemsCommittedIdx: index(
+      "excel_workspace_items_committed_idx",
+    ).on(table.workspaceId, table.committedAt),
   }),
 );
 

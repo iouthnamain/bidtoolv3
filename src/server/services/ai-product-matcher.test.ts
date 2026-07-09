@@ -177,4 +177,61 @@ describe("full scoring — priority cases", () => {
     expect(breakdown.codeMatch).toBe(-1);
     expect(total).toBeLessThan(0.7);
   });
+
+  it("weights unit+spec more when both query fields are present", () => {
+    const p = product({
+      name: "Ống nhựa PVC",
+      unit: "m",
+      specText: "Ø21, độ dày 1.3mm",
+    });
+    const good = material({
+      name: "Ống nhựa PVC",
+      unit: "m",
+      specText: "Ống PVC Ø21 độ dày 1.3mm",
+    });
+    const badUnit = material({
+      name: "Ống nhựa PVC",
+      unit: "cuộn",
+      specText: "Ống PVC Ø21 độ dày 1.3mm",
+    });
+    const goodBreakdown = computeScoreBreakdown(p, good);
+    const badBreakdown = computeScoreBreakdown(p, badUnit);
+    const goodScore = computeWeightedScore(goodBreakdown, {
+      queryHasUnit: true,
+      queryHasSpec: true,
+    });
+    const badScore = computeWeightedScore(badBreakdown, {
+      queryHasUnit: true,
+      queryHasSpec: true,
+    });
+    expect(goodScore).toBeGreaterThan(badScore);
+    expect(goodScore).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("soft-penalizes missing candidate unit/spec when query provided them", () => {
+    const p = product({
+      name: "Cáp CVV",
+      unit: "m",
+      specText: "2x2.5mm2 ruột đồng",
+    });
+    const complete = material({
+      name: "Cáp CVV",
+      unit: "m",
+      specText: "2x2.5mm2 ruột đồng PVC",
+    });
+    const incomplete = material({
+      name: "Cáp CVV",
+      unit: "",
+      specText: "",
+    });
+    const completeScore = computeWeightedScore(
+      computeScoreBreakdown(p, complete),
+      { queryHasUnit: true, queryHasSpec: true },
+    );
+    const incompleteScore = computeWeightedScore(
+      computeScoreBreakdown(p, incomplete),
+      { queryHasUnit: true, queryHasSpec: true },
+    );
+    expect(completeScore).toBeGreaterThan(incompleteScore);
+  });
 });

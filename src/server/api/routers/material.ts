@@ -202,24 +202,43 @@ function materialUpdateValues(input: MaterialInput, now: string) {
   return updateValues;
 }
 
+/** Trigram similarity floor for `/materials` keyword search (pg_trgm). */
+const MATERIAL_KEYWORD_TRGM_THRESHOLD = 0.18;
+
+/**
+ * Keyword predicate: trigram similarity / `%` on name+spec (+ code) with ilike
+ * fallbacks so short tokens and exact substrings still match. Relies on
+ * materials_*_trgm_idx GIN indexes when present.
+ */
+export function materialKeywordCondition(keywordRaw: string) {
+  const keyword = keywordRaw.trim();
+  if (!keyword) return undefined;
+
+  const like = `%${keyword}%`;
+  const threshold = MATERIAL_KEYWORD_TRGM_THRESHOLD;
+
+  return or(
+    sql`${materials.name} % ${keyword}`,
+    sql`similarity(${materials.name}, ${keyword}) > ${threshold}`,
+    sql`${materials.specText} % ${keyword}`,
+    sql`similarity(${materials.specText}, ${keyword}) > ${threshold}`,
+    sql`${materials.code} is not null and (${materials.code} % ${keyword} or similarity(${materials.code}, ${keyword}) > ${threshold})`,
+    ilike(materials.name, like),
+    ilike(materials.code, like),
+    ilike(materials.unit, like),
+    ilike(materials.category, like),
+    ilike(materials.specText, like),
+    ilike(materials.manufacturer, like),
+    ilike(materials.originCountry, like),
+  );
+}
+
 function materialFilterConditions(
   input: z.infer<typeof materialSearchFiltersInput>,
 ) {
-  const keyword = input.keyword ? `%${input.keyword}%` : undefined;
-
   return [
     isNull(materials.deletedAt),
-    keyword
-      ? or(
-          ilike(materials.name, keyword),
-          ilike(materials.code, keyword),
-          ilike(materials.unit, keyword),
-          ilike(materials.category, keyword),
-          ilike(materials.specText, keyword),
-          ilike(materials.manufacturer, keyword),
-          ilike(materials.originCountry, keyword),
-        )
-      : undefined,
+    input.keyword ? materialKeywordCondition(input.keyword) : undefined,
     input.name ? eq(materials.name, input.name) : undefined,
     input.unit ? eq(materials.unit, input.unit) : undefined,
     input.category ? eq(materials.category, input.category) : undefined,

@@ -18,6 +18,8 @@ const REQUIRED_EXCEL_WORKSPACE_ITEM_COLUMNS = [
   "ai_evidence_json",
   "enrichment_updated_at",
   "review_decision_json",
+  "committed_at",
+  "commit_source",
 ] as const;
 
 loadEnv({ path: path.join(rootDir, ".env") });

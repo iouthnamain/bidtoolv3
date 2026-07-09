@@ -415,6 +415,47 @@ const dbMock = vi.hoisted(() => {
   return { db, state, reset, addCompletedRun };
 });
 
+const profileBulkApplyMock = vi.hoisted(() => {
+  let actualSearchResultDecisionForRow:
+    | typeof import("~/lib/materials/profile-review-bulk-apply").searchResultDecisionForRow
+    | null = null;
+  const searchResultDecisionForRow = vi.fn(
+    (
+      ...args: Parameters<
+        typeof import("~/lib/materials/profile-review-bulk-apply").searchResultDecisionForRow
+      >
+    ) => {
+      if (!actualSearchResultDecisionForRow) {
+        throw new Error("actual searchResultDecisionForRow not set");
+      }
+      return actualSearchResultDecisionForRow(...args);
+    },
+  );
+  return {
+    setActual(
+      fn: typeof import("~/lib/materials/profile-review-bulk-apply").searchResultDecisionForRow,
+    ) {
+      actualSearchResultDecisionForRow = fn;
+    },
+    restoreActual() {
+      searchResultDecisionForRow.mockReset();
+      searchResultDecisionForRow.mockImplementation(
+        (
+          ...args: Parameters<
+            typeof import("~/lib/materials/profile-review-bulk-apply").searchResultDecisionForRow
+          >
+        ) => {
+          if (!actualSearchResultDecisionForRow) {
+            throw new Error("actual searchResultDecisionForRow not set");
+          }
+          return actualSearchResultDecisionForRow(...args);
+        },
+      );
+    },
+    searchResultDecisionForRow,
+  };
+});
+
 vi.mock("~/server/db", () => ({
   db: dbMock.db,
 }));
@@ -428,18 +469,34 @@ vi.mock("~/server/services/enrich-profile-row-search", () => ({
   extractProfileRowAiCandidates: vi.fn(),
 }));
 
+vi.mock("~/lib/materials/profile-review-bulk-apply", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("~/lib/materials/profile-review-bulk-apply")
+    >();
+  profileBulkApplyMock.setActual(actual.searchResultDecisionForRow);
+  return {
+    ...actual,
+    searchResultDecisionForRow: profileBulkApplyMock.searchResultDecisionForRow,
+  };
+});
+
 import {
   extractProfileRowAiCandidates,
   searchProfileRowWebLinks,
 } from "~/server/services/enrich-profile-row-search";
 import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
+import { searchResultDecisionForRow } from "~/lib/materials/profile-review-bulk-apply";
 import {
+  cancelActiveMaterialProfileSearchJobsForWorkspace,
   cancelMaterialProfileSearchJob,
   completeMaterialProfileSearchJob,
   getMaterialProfileSearchJob,
   listMaterialProfileSearchRuns,
   processMaterialProfileSearchJob,
   setCurrentMaterialProfileSearchRun,
+  shouldAttemptAutoApplyReliableSearchRun,
+  shouldSkipAutoApplyOverwrite,
   startMaterialProfileSearchJob,
 } from "~/server/services/material-profile-search-jobs";
 
@@ -489,6 +546,7 @@ describe("material profile search jobs", () => {
     vi.mocked(searchProfileRowWebLinks).mockReset();
     vi.mocked(extractProfileRowAiCandidates).mockReset();
     vi.mocked(abortMaterialProfileSearchJob).mockReset();
+    profileBulkApplyMock.restoreActual();
 
     vi.mocked(searchProfileRowWebLinks).mockResolvedValue({
       webLinkResults: [webLink],
@@ -903,5 +961,157 @@ describe("material profile search jobs", () => {
       dbMock.state.runs.find((run) => run.id === oldRun.id)?.isCurrent,
     ).toBe(true);
     expect(abortMaterialProfileSearchJob).toHaveBeenCalledWith(job.id);
+  });
+
+  it("cancels all active workspace jobs before rematch can delete items", async () => {
+    dbMock.state.jobs.push(
+      {
+        id: "active-a",
+        workspaceId: 1,
+        status: "queued",
+        mode: "ai",
+        requestedItemIds: [101],
+        total: 1,
+        processed: 0,
+        found: 0,
+        partial: 0,
+        failed: 0,
+        skipped: 0,
+      },
+      {
+        id: "active-b",
+        workspaceId: 1,
+        status: "running",
+        mode: "web",
+        requestedItemIds: [101],
+        total: 1,
+        processed: 0,
+        found: 0,
+        partial: 0,
+        failed: 0,
+        skipped: 0,
+      },
+      {
+        id: "other-ws",
+        workspaceId: 2,
+        status: "running",
+        mode: "ai",
+        requestedItemIds: [201],
+        total: 1,
+        processed: 0,
+        found: 0,
+        partial: 0,
+        failed: 0,
+        skipped: 0,
+      },
+      {
+        id: "done-ws",
+        workspaceId: 1,
+        status: "completed",
+        mode: "ai",
+        requestedItemIds: [101],
+        total: 1,
+        processed: 1,
+        found: 1,
+        partial: 0,
+        failed: 0,
+        skipped: 0,
+      },
+    );
+
+    const cancelled =
+      await cancelActiveMaterialProfileSearchJobsForWorkspace(1);
+
+    expect(cancelled.map((job) => job.id).sort()).toEqual([
+      "active-a",
+      "active-b",
+    ]);
+    expect(
+      dbMock.state.jobs.find((job) => job.id === "active-a")?.status,
+    ).toBe("cancelled");
+    expect(
+      dbMock.state.jobs.find((job) => job.id === "active-b")?.status,
+    ).toBe("cancelled");
+    expect(
+      dbMock.state.jobs.find((job) => job.id === "other-ws")?.status,
+    ).toBe("running");
+    expect(
+      dbMock.state.jobs.find((job) => job.id === "done-ws")?.status,
+    ).toBe("completed");
+    expect(abortMaterialProfileSearchJob).toHaveBeenCalledWith("active-a");
+    expect(abortMaterialProfileSearchJob).toHaveBeenCalledWith("active-b");
+  });
+
+  it("gates auto-apply attempts on completed/partial reliable runs only", () => {
+    expect(
+      shouldAttemptAutoApplyReliableSearchRun({
+        status: "completed",
+        hasReliableResult: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAttemptAutoApplyReliableSearchRun({
+        status: "partial",
+        hasReliableResult: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAttemptAutoApplyReliableSearchRun({
+        status: "completed",
+        hasReliableResult: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAttemptAutoApplyReliableSearchRun({
+        status: "failed",
+        hasReliableResult: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAttemptAutoApplyReliableSearchRun({
+        status: "queued",
+        hasReliableResult: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("skips auto-apply overwrite when an exportable decision already exists", () => {
+    expect(
+      shouldSkipAutoApplyOverwrite({ hasExistingExportableDecision: true }),
+    ).toBe(true);
+    expect(
+      shouldSkipAutoApplyOverwrite({ hasExistingExportableDecision: false }),
+    ).toBe(false);
+  });
+
+  it("auto-applies reliable AI results when completing a search job", async () => {
+    profileBulkApplyMock.searchResultDecisionForRow.mockReturnValue({
+      materialId: null,
+      selectedSource: "ai",
+      selectedSearchCandidateKey: "ai:0",
+      acceptedFields: new Set(["unit", "specText", "manufacturer"]),
+      overwriteFields: new Set(),
+      editedValues: {
+        unit: "m",
+        specText: "D50",
+        manufacturer: "Bình Minh",
+      },
+      catalogPdfUrls: ["https://example.vn/catalog.pdf"],
+    });
+
+    const { job } = await startAndProcess("ai");
+
+    expect(job).toMatchObject({
+      status: "completed",
+    });
+    expect(String(job.message ?? "")).toMatch(/tự điền/i);
+    expect(searchResultDecisionForRow).toHaveBeenCalled();
+
+    const item = dbMock.state.items.find((row) => row.id === 101);
+    const decision = item?.reviewDecisionJson as
+      | { selectedSource?: string; acceptedFields?: string[] }
+      | undefined;
+    expect(decision?.selectedSource).toBe("ai");
+    expect(decision?.acceptedFields?.length).toBeGreaterThan(0);
   });
 });

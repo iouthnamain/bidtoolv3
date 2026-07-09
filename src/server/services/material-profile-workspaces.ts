@@ -8,6 +8,15 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
 import {
+  DEFAULT_MATERIAL_PROFILE_OPTIONS,
+  MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS,
+  parseMaterialProfileOptions,
+  withMaterialProfileOptions,
+  type FillableField,
+  type MaterialProfileExportMode,
+  type MaterialProfileOptions,
+} from "~/lib/materials/excel-enrich-fields";
+import {
   deriveMatchStatus,
   deserializeRowDecision,
   seedDecisionFromItem,
@@ -20,6 +29,7 @@ import {
   snapshotStatusFromItem,
   topCandidateMaterialIdFromItem,
   type WorkspaceItemForReview,
+  workspaceItemToReviewRow,
 } from "~/lib/materials/workspace-review-row";
 import type {
   ColumnMapping,
@@ -28,6 +38,7 @@ import type {
 import { extractRowFields, matchRows } from "~/server/services/excel-enrich";
 import {
   parseWorkbookBase64,
+  profileMatchMappingError,
   rebuildSheetWithHeaderRow,
 } from "~/server/services/excel-workbook";
 import {
@@ -47,7 +58,13 @@ import {
   materialCatalogDocuments,
   materials,
 } from "~/server/db/schema";
-import type { MaterialProfileSearchRunSnapshot } from "~/server/services/material-profile-search-jobs";
+import {
+  cancelActiveMaterialProfileSearchJobsForWorkspace,
+  startMaterialProfileSearchJob,
+  type MaterialProfileSearchJobSnapshot,
+  type MaterialProfileSearchRunSnapshot,
+} from "~/server/services/material-profile-search-jobs";
+import { catalogDecisionForRow } from "~/lib/materials/profile-review-bulk-apply";
 
 type AppDb = typeof appDb;
 type Workspace = typeof excelWorkspaces.$inferSelect;
@@ -290,13 +307,204 @@ export const MATERIAL_PROFILE_EXPORT_COLUMNS = [
   { key: "unit", header: "BT - ĐVT" },
   { key: "category", header: "BT - Nhóm" },
   { key: "specText", header: "BT - Thông số" },
-  { key: "manufacturer", header: "BT - NCC" },
+  { key: "manufacturer", header: "BT - Nhà sản xuất" },
   { key: "originCountry", header: "BT - Xuất xứ" },
   { key: "defaultUnitPrice", header: "BT - Đơn giá" },
   { key: "currency", header: "BT - Tiền tệ" },
   { key: "sourceUrl", header: "BT - Nguồn" },
   { key: "catalogFiles", header: "BT - Catalog files" },
+  { key: "catalogPdfUrls", header: "BT - URL catalog" },
 ] as const;
+
+export {
+  MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS,
+  parseMaterialProfileOptions,
+  withMaterialProfileOptions,
+  DEFAULT_MATERIAL_PROFILE_OPTIONS,
+};
+
+export type MaterialProfileMatchResult = Awaited<
+  ReturnType<typeof getMaterialProfileWorkspace>
+> & {
+  autoSearchJob: MaterialProfileSearchJobSnapshot | null;
+  autoSearchSkippedReason: string | null;
+  matchSummary: {
+    totalRows: number;
+    matched: number;
+    candidatesFound: number;
+    unmatched: number;
+    autoSearchItemCount: number;
+  };
+};
+
+/**
+ * Profile fillable fields that should trigger post-match auto-search when empty
+ * after catalog match (code/spec/manufacturer/origin/price/source + catalog URL).
+ * Unit is usually present from the sheet; category/currency are lower priority.
+ */
+const PROFILE_AUTO_SEARCH_GAP_FIELDS = [
+  "code",
+  "specText",
+  "manufacturer",
+  "originCountry",
+  "defaultUnitPrice",
+  "sourceUrl",
+] as const satisfies readonly FillableField[];
+
+function textFromUnknown(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+}
+
+/**
+ * True when a matched row still has empty fillable gaps that search should try
+ * to fill. Does not rely on fillPlan `missing-both` (omitted by buildFillPlan).
+ */
+export function matchedRowHasAutoSearchGaps(item: {
+  materialId?: number | null;
+  reviewDecisionJson?: unknown;
+  enrichedSnapshotJson?: unknown;
+  originalDataJson?: unknown;
+}): boolean {
+  const decision = seedDecisionFromItem({
+    id: 0,
+    originalRowIndex: 0,
+    materialId: item.materialId ?? null,
+    matchStatus: "matched",
+    reviewDecisionJson: item.reviewDecisionJson ?? {},
+    enrichedSnapshotJson: item.enrichedSnapshotJson ?? {},
+  });
+  if (decision.skipped) return false;
+
+  const snapshot =
+    item.enrichedSnapshotJson && typeof item.enrichedSnapshotJson === "object"
+      ? (item.enrichedSnapshotJson as {
+          fillPlan?: unknown;
+          sheetFields?: unknown;
+          topCandidate?: unknown;
+        })
+      : null;
+  const sheetFields =
+    snapshot?.sheetFields && typeof snapshot.sheetFields === "object"
+      ? (snapshot.sheetFields as Record<string, unknown>)
+      : item.originalDataJson && typeof item.originalDataJson === "object"
+        ? (item.originalDataJson as Record<string, unknown>)
+        : {};
+  const topCandidate =
+    snapshot?.topCandidate && typeof snapshot.topCandidate === "object"
+      ? (snapshot.topCandidate as Record<string, unknown>)
+      : null;
+  const candidateFields =
+    topCandidate && typeof topCandidate.fields === "object"
+      ? (topCandidate.fields as Record<string, unknown>)
+      : topCandidate ?? {};
+
+  const decisionValue = (field: FillableField) => {
+    if (!decision.acceptedFields.has(field)) return "";
+    const edited = decision.editedValues?.[field];
+    if (typeof edited === "string" && edited.trim()) return edited.trim();
+    const proposed = decision.webProposedFields?.[field];
+    if (typeof proposed === "string" && proposed.trim()) return proposed.trim();
+    return "";
+  };
+
+  for (const field of PROFILE_AUTO_SEARCH_GAP_FIELDS) {
+    if (decisionValue(field)) continue;
+    if (textFromUnknown(sheetFields[field])) continue;
+    if (textFromUnknown(candidateFields[field])) continue;
+    // Candidate display shape may use specSnippet instead of specText.
+    if (
+      field === "specText" &&
+      textFromUnknown(candidateFields.specSnippet)
+    ) {
+      continue;
+    }
+    return true;
+  }
+
+  // No primary fillable gaps — still search when the row is not exportable yet.
+  if (!isExportableDecision(decision)) return true;
+
+  // Exportable + filled primary fields: only chase missing catalog URL when
+  // neither decision nor sheet already has one.
+  const catalogUrls = decision.catalogPdfUrls ?? [];
+  if (catalogUrls.some((url) => url.trim().length > 0)) return false;
+  if (textFromUnknown(sheetFields.catalogPdfUrls)) return false;
+  return true;
+}
+
+/** Item IDs that should enter post-match auto-search (unmatched / low-confidence / matched+gappy). */
+export function selectMaterialProfileAutoSearchItemIds(
+  items: Array<{
+    id: number;
+    matchStatus: WorkspaceItem["matchStatus"];
+    productName: string;
+    materialId?: number | null;
+    reviewDecisionJson?: unknown;
+    enrichedSnapshotJson?: unknown;
+    originalDataJson?: unknown;
+  }>,
+): number[] {
+  return items
+    .filter((item) => {
+      if (!item.productName.trim()) return false;
+      if (
+        item.matchStatus === "unmatched" ||
+        item.matchStatus === "candidates_found"
+      ) {
+        return true;
+      }
+      if (item.matchStatus === "matched") {
+        return matchedRowHasAutoSearchGaps(item);
+      }
+      return false;
+    })
+    .map((item) => item.id);
+}
+
+/** Pure preserve-map entry used when rematch re-links the same row identity. */
+export type MaterialProfileRematchPreserve = {
+  materialId: number | null;
+  matchStatus: WorkspaceItem["matchStatus"];
+  reviewDecisionJson: Record<string, unknown>;
+  committedAt: string | null;
+  commitSource: string | null;
+};
+
+/** Build rematch preserve entries (includes save-audit fields). */
+export function buildMaterialProfileRematchPreserveMap(
+  items: Array<{
+    originalRowIndex: number;
+    productName: string;
+    unit: string | null;
+    specText: string | null;
+    materialId: number | null;
+    matchStatus: WorkspaceItem["matchStatus"];
+    reviewDecisionJson: unknown;
+    committedAt: string | null;
+    commitSource: string | null;
+  }>,
+  reviewDecisionForItem: (item: (typeof items)[number]) => Record<string, unknown>,
+): Map<string, MaterialProfileRematchPreserve> {
+  const preservedByIdentity = new Map<string, MaterialProfileRematchPreserve>();
+  for (const item of items) {
+    preservedByIdentity.set(materialProfileReviewIdentity(item), {
+      materialId: item.materialId,
+      matchStatus: item.matchStatus,
+      reviewDecisionJson: reviewDecisionForItem(item),
+      committedAt: item.committedAt,
+      commitSource: item.commitSource,
+    });
+  }
+  return preservedByIdentity;
+}
+
+export function materialProfileOptionsFromWorkspace(
+  workspace: Pick<Workspace, "templateConfigJson">,
+): MaterialProfileOptions {
+  return parseMaterialProfileOptions(workspace.templateConfigJson);
+}
 
 export class MaterialProfileWorkspaceError extends Error {
   constructor(
@@ -727,6 +935,15 @@ function isMaterialRowDeleted(
   );
 }
 
+function catalogPdfUrlsFromItem(item: WorkspaceItem, material?: MaterialRow) {
+  const decision = deserializeRowDecision(item.reviewDecisionJson);
+  const fromDecision = decision?.catalogPdfUrls ?? [];
+  const fromMaterial = material?.sourceUrl?.toLowerCase().endsWith(".pdf")
+    ? [material.sourceUrl]
+    : [];
+  return [...new Set([...fromDecision, ...fromMaterial].filter(Boolean))];
+}
+
 function materialValue(
   material: MaterialRow | undefined,
   key: (typeof MATERIAL_PROFILE_EXPORT_COLUMNS)[number]["key"],
@@ -758,6 +975,8 @@ function materialValue(
       return material?.sourceUrl ?? "";
     case "catalogFiles":
       return catalogFiles.join("\n");
+    case "catalogPdfUrls":
+      return catalogPdfUrlsFromItem(item, material).join("\n");
   }
 }
 
@@ -931,7 +1150,7 @@ export async function createMaterialProfileWorkspace(
     throw new MaterialProfileWorkspaceError("BAD_REQUEST", "Nhập Số TBMT.");
   }
   const now = new Date().toISOString();
-  const [workspace] = await db
+  const [created] = await db
     .insert(excelWorkspaces)
     .values({
       name: noticeNumber,
@@ -941,13 +1160,50 @@ export async function createMaterialProfileWorkspace(
       updatedAt: now,
     })
     .returning();
-  if (!workspace) {
+  if (!created) {
     throw new MaterialProfileWorkspaceError(
       "BAD_REQUEST",
       "Không tạo được hồ sơ vật tư.",
     );
   }
-  return workspace;
+  const [workspace] = await db
+    .update(excelWorkspaces)
+    .set({
+      templateConfigJson: withMaterialProfileOptions(
+        created.templateConfigJson,
+        DEFAULT_MATERIAL_PROFILE_OPTIONS,
+      ),
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaces.id, created.id))
+    .returning();
+  return workspace ?? created;
+}
+
+export async function updateMaterialProfileOptions(
+  db: AppDb,
+  input: {
+    workspaceId: number;
+    autoSearchAfterMatch?: boolean;
+    exportMode?: MaterialProfileExportMode;
+  },
+) {
+  const workspace = await requireWorkspace(db, input.workspaceId);
+  const [updated] = await db
+    .update(excelWorkspaces)
+    .set({
+      templateConfigJson: withMaterialProfileOptions(
+        workspace.templateConfigJson,
+        {
+          autoSearchAfterMatch: input.autoSearchAfterMatch,
+          exportMode: input.exportMode,
+        },
+      ),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(excelWorkspaces.id, workspace.id))
+    .returning();
+  return updated ?? requireWorkspace(db, workspace.id);
 }
 
 export async function listMaterialProfileWorkspaces(
@@ -1164,14 +1420,21 @@ export async function matchMaterialProfileWorkspace(
     sheetName?: string;
     headerRowIndex?: number;
     mapping?: ColumnMapping;
+    /** Override workspace option; default ON via materialProfileOptions. */
+    autoSearchAfterMatch?: boolean;
   },
-) {
+): Promise<MaterialProfileMatchResult> {
   const workspace = await updateMaterialProfileWorkspaceState(db, {
     workspaceId: input.workspaceId,
     sheetName: input.sheetName,
     headerRowIndex: input.headerRowIndex,
     mapping: input.mapping,
   });
+  const mappingError = profileMatchMappingError(workspace.columnMappingJson);
+  if (mappingError) {
+    throw new MaterialProfileWorkspaceError("BAD_REQUEST", mappingError);
+  }
+
   const parsed = await parseWorkspaceWorkbook(workspace);
   const baseSheet = selectParsedSheet(parsed.sheets, workspace.sourceSheetName);
   if (!baseSheet) {
@@ -1190,7 +1453,21 @@ export async function matchMaterialProfileWorkspace(
       selectedMeta?.activeHeaderRowIndex ??
       baseSheet.activeHeaderRowIndex,
   );
-  const rows = extractRowFields(sheet, workspace.columnMappingJson);
+
+  let rows: ReturnType<typeof extractRowFields>;
+  try {
+    rows = extractRowFields(sheet, workspace.columnMappingJson, {
+      requireProfileMatchMapping: true,
+    });
+  } catch (error) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      error instanceof Error
+        ? error.message
+        : "Ánh xạ cột chưa đủ để khớp vật tư.",
+    );
+  }
+
   const results = await matchRows(db, rows);
   const rowByIndex = new Map(rows.map((row) => [row.originalRowIndex, row]));
   const existingItems = await db
@@ -1212,26 +1489,20 @@ export async function matchMaterialProfileWorkspace(
       materialProfileSearchRunSnapshot(run),
     ]),
   );
-  const preservedByIdentity = new Map<
-    string,
-    {
-      materialId: number | null;
-      matchStatus: WorkspaceItem["matchStatus"];
-      reviewDecisionJson: Record<string, unknown>;
-    }
-  >();
-  for (const item of existingItems) {
-    preservedByIdentity.set(materialProfileReviewIdentity(item), {
-      materialId: item.materialId,
-      matchStatus: item.matchStatus,
-      reviewDecisionJson: jsonRecord(
+  const preservedByIdentity = buildMaterialProfileRematchPreserveMap(
+    existingItems,
+    (item) =>
+      jsonRecord(
         reviewDecisionJsonWithCurrentSearchRun(
           item.reviewDecisionJson,
           currentRunByItemId.get(item.id) ?? null,
         ),
       ),
-    });
-  }
+  );
+
+  // Cancel active search jobs before deleting items so in-flight runs do not
+  // cascade-delete mid-process and rematch can start a fresh auto-search job.
+  await cancelActiveMaterialProfileSearchJobsForWorkspace(workspace.id);
 
   await db
     .delete(excelWorkspaceItems)
@@ -1261,9 +1532,49 @@ export async function matchMaterialProfileWorkspace(
             : result.status === "review"
               ? ("candidates_found" as const)
               : ("unmatched" as const);
+        const materialId = preserved?.materialId ?? autoMaterialId ?? null;
+        const enrichedSnapshotJson = {
+          status: result.status,
+          score: result.topCandidate?.score ?? null,
+          topCandidate: result.topCandidate,
+          candidates: result.candidates,
+          fillPlan: result.fillPlan,
+          sheetFields: source?.fields ?? {},
+        };
+        // Seed catalog auto-accept into reviewDecision when score ≥ auto threshold
+        // and no preserved manual decision exists.
+        let reviewDecisionJson: Record<string, unknown> | undefined =
+          preserved?.reviewDecisionJson;
+        if (
+          (!reviewDecisionJson || Object.keys(reviewDecisionJson).length === 0) &&
+          result.status === "auto" &&
+          materialId != null
+        ) {
+          const reviewRow = workspaceItemToReviewRow({
+            id: 0,
+            originalRowIndex: result.originalRowIndex,
+            productName,
+            specText,
+            unit,
+            vendorHint: source?.fields.manufacturer ?? null,
+            originHint: source?.fields.originCountry ?? null,
+            unitPrice: source?.fields.defaultUnitPrice
+              ? Number(source.fields.defaultUnitPrice.replace(/[^\d.-]/g, ""))
+              : null,
+            currency: "VND",
+            originalDataJson: source?.fields ?? {},
+            enrichedSnapshotJson,
+          });
+          const catalogDecision = catalogDecisionForRow(reviewRow);
+          if (catalogDecision) {
+            reviewDecisionJson = serializeMaterialProfileUserDecision(
+              serializeRowDecision(catalogDecision),
+            ) as Record<string, unknown>;
+          }
+        }
         return {
           workspaceId: workspace.id,
-          materialId: preserved?.materialId ?? autoMaterialId ?? null,
+          materialId,
           originalRowIndex: result.originalRowIndex,
           originalDataJson: source?.fields ?? {},
           productName,
@@ -1276,16 +1587,11 @@ export async function matchMaterialProfileWorkspace(
             ? Number(source.fields.defaultUnitPrice.replace(/[^\d.-]/g, ""))
             : null,
           sortOrder: index,
-          enrichedSnapshotJson: {
-            status: result.status,
-            score: result.topCandidate?.score ?? null,
-            topCandidate: result.topCandidate,
-            candidates: result.candidates,
-            fillPlan: result.fillPlan,
-            sheetFields: source?.fields ?? {},
-          },
-          reviewDecisionJson: preserved?.reviewDecisionJson ?? undefined,
+          enrichedSnapshotJson,
+          reviewDecisionJson: reviewDecisionJson ?? undefined,
           matchStatus: preserved?.matchStatus ?? matchStatus,
+          committedAt: preserved?.committedAt ?? null,
+          commitSource: preserved?.commitSource ?? null,
           createdAt: now,
           updatedAt: now,
         };
@@ -1293,16 +1599,76 @@ export async function matchMaterialProfileWorkspace(
     );
   }
 
+  // Ensure materialProfileOptions defaults exist on older workspaces.
+  const options = parseMaterialProfileOptions(workspace.templateConfigJson);
+  const nextTemplateConfig = withMaterialProfileOptions(
+    workspace.templateConfigJson,
+    options,
+  );
+
   await db
     .update(excelWorkspaces)
     .set({
       status: "matched",
       rowCount: rows.length,
+      templateConfigJson: nextTemplateConfig,
       updatedAt: now,
     })
     .where(eq(excelWorkspaces.id, workspace.id));
 
-  return getMaterialProfileWorkspace(db, workspace.id);
+  const detail = await getMaterialProfileWorkspace(db, workspace.id);
+  const matchSummary = {
+    totalRows: detail.items.length,
+    matched: detail.items.filter(
+      (item) => item.matchStatus === "matched" || item.matchStatus === "manual",
+    ).length,
+    candidatesFound: detail.items.filter(
+      (item) => item.matchStatus === "candidates_found",
+    ).length,
+    unmatched: detail.items.filter((item) => item.matchStatus === "unmatched")
+      .length,
+    autoSearchItemCount: 0,
+  };
+
+  const autoSearchEnabled =
+    input.autoSearchAfterMatch !== undefined
+      ? input.autoSearchAfterMatch
+      : options.autoSearchAfterMatch;
+
+  let autoSearchJob: MaterialProfileSearchJobSnapshot | null = null;
+  let autoSearchSkippedReason: string | null = null;
+
+  if (!autoSearchEnabled) {
+    autoSearchSkippedReason = "Đã tắt tự tìm sau khi khớp.";
+  } else {
+    const autoSearchItemIds = selectMaterialProfileAutoSearchItemIds(
+      detail.items,
+    );
+    matchSummary.autoSearchItemCount = autoSearchItemIds.length;
+    if (autoSearchItemIds.length === 0) {
+      autoSearchSkippedReason = "Không còn dòng cần tìm kiếm bổ sung.";
+    } else {
+      try {
+        autoSearchJob = await startMaterialProfileSearchJob({
+          workspaceId: workspace.id,
+          itemIds: autoSearchItemIds,
+          mode: "ai",
+        });
+      } catch (error) {
+        autoSearchSkippedReason =
+          error instanceof Error
+            ? error.message
+            : "Không khởi động được job tìm kiếm tự động.";
+      }
+    }
+  }
+
+  return {
+    ...detail,
+    autoSearchJob,
+    autoSearchSkippedReason,
+    matchSummary,
+  };
 }
 
 export async function updateMaterialProfileItem(
@@ -2086,11 +2452,121 @@ function materialProfileMatchCounts(
   };
 }
 
-export async function previewMaterialProfileExportWorkbook(
+export async function previewMaterialProfileCleanExportWorkbook(
   db: AppDb,
   workspaceId: number,
 ) {
   const workspace = await requireWorkspace(db, workspaceId);
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
+    .orderBy(excelWorkspaceItems.sortOrder);
+  const exportEditState = parseMaterialProfileExportEditState(
+    workspace.exportEditStateJson,
+  );
+  const previewSheetName = workspace.sourceSheetName ?? "";
+  const previewItems = items.filter(
+    (item) =>
+      item.includedInExport &&
+      !isMaterialRowDeleted(item, previewSheetName, exportEditState),
+  );
+  const reviewReadiness = summarizeMaterialProfileReviewReadiness(previewItems);
+  const materialIds = materialIdsFromItems(previewItems);
+  const materialRows = await loadMaterialRows(db, materialIds);
+  const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+  const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+  const options = parseMaterialProfileOptions(workspace.templateConfigJson);
+
+  const header = MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map(
+    (column) => column.header,
+  );
+  const dataRows: string[][] = [];
+  for (const item of previewItems) {
+    const decision = seedDecisionFromItem(item);
+    if (decision.skipped) continue;
+    const material =
+      item.materialId == null ? undefined : materialsById.get(item.materialId);
+    const docs =
+      item.materialId == null ? [] : (docsByMaterial.get(item.materialId) ?? []);
+    const catalogUrls = [
+      ...catalogPdfUrlsFromItem(item, material),
+      ...docs
+        .map((doc) => doc.sourceUrl)
+        .filter(
+          (url): url is string => typeof url === "string" && url.length > 0,
+        ),
+    ];
+    dataRows.push(
+      MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map((column) =>
+        String(
+          cleanExportCellValue(
+            column.key,
+            item,
+            material,
+            [...new Set(catalogUrls)],
+          ) ?? "",
+        ),
+      ),
+    );
+  }
+
+  return {
+    exportMode: "clean" as const,
+    profileOptions: options,
+    selectedSheetName: "Vật tư",
+    exportEditState,
+    reviewReadiness,
+    reviewWarnings: reviewReadiness.warnings,
+    unresolvedReviewCount: reviewReadiness.unresolvedRows,
+    editSummary: summarizeMaterialProfileExportEditState(
+      exportEditState,
+      previewSheetName,
+    ),
+    matchCounts: materialProfileMatchCounts(
+      items,
+      docsByMaterial,
+      materialsById,
+      previewSheetName,
+      exportEditState,
+    ),
+    cleanHeaders: header,
+    sheets: [
+      {
+        name: "Vật tư",
+        isMaterialSheet: true,
+        headerRowIndex: 1,
+        originalColumnCount: header.length,
+        appendedStartColumn: null,
+        rowCount: dataRows.length + 1,
+        columnCount: header.length,
+        rowNumbers: Array.from(
+          { length: dataRows.length + 1 },
+          (_, index) => index + 1,
+        ),
+        columnNumbers: Array.from(
+          { length: header.length },
+          (_, index) => index + 1,
+        ),
+        rows: [header, ...dataRows],
+      },
+    ],
+  };
+}
+
+export async function previewMaterialProfileExportWorkbook(
+  db: AppDb,
+  workspaceId: number,
+  options: { exportMode?: MaterialProfileExportMode } = {},
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const exportMode =
+    options.exportMode ??
+    parseMaterialProfileOptions(workspace.templateConfigJson).exportMode;
+  if (exportMode === "clean") {
+    return previewMaterialProfileCleanExportWorkbook(db, workspaceId);
+  }
+
   const items = await db
     .select()
     .from(excelWorkspaceItems)
@@ -2126,8 +2602,13 @@ export async function previewMaterialProfileExportWorkbook(
   const activeTargetSheetName =
     workspace.sourceSheetName ?? workbook.worksheets[0]?.name ?? "";
   const selectedMeta = materialProfileSheetMeta(workspace);
+  const profileOptions = parseMaterialProfileOptions(
+    workspace.templateConfigJson,
+  );
 
   return {
+    exportMode: "legacy_templates" as const,
+    profileOptions,
     selectedSheetName: activeTargetSheetName,
     exportEditState,
     reviewReadiness,
@@ -2143,6 +2624,9 @@ export async function previewMaterialProfileExportWorkbook(
       materialsById,
       activeTargetSheetName,
       exportEditState,
+    ),
+    cleanHeaders: MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map(
+      (column) => column.header,
     ),
     sheets: workbook.worksheets.map((sheet) => {
       const originalColumnCount =
@@ -2317,6 +2801,221 @@ async function markMaterialProfileWorkspaceExported(
       updatedAt: now,
     })
     .where(eq(excelWorkspaces.id, workspaceId));
+}
+
+function cleanExportCellValue(
+  key: (typeof MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS)[number]["key"],
+  item: WorkspaceItem,
+  material: MaterialRow | undefined,
+  catalogUrls: string[],
+) {
+  const decision = seedDecisionFromItem(item);
+  const fieldValue = (field: FillableField) => {
+    if (decision.acceptedFields.has(field)) {
+      const edited = decision.editedValues?.[field]?.trim();
+      if (edited) return edited;
+      const proposed = decision.webProposedFields?.[field]?.trim();
+      if (proposed) return proposed;
+    }
+    return "";
+  };
+
+  switch (key) {
+    case "code":
+      return fieldValue("code") || material?.code || "";
+    case "name":
+      return material?.name || item.productName;
+    case "unit":
+      return fieldValue("unit") || material?.unit || item.unit || "";
+    case "specText":
+      return fieldValue("specText") || material?.specText || item.specText || "";
+    case "manufacturer":
+      return (
+        fieldValue("manufacturer") ||
+        material?.manufacturer ||
+        item.vendorHint ||
+        ""
+      );
+    case "originCountry":
+      return (
+        fieldValue("originCountry") ||
+        material?.originCountry ||
+        item.originHint ||
+        ""
+      );
+    case "defaultUnitPrice": {
+      const fromDecision = fieldValue("defaultUnitPrice");
+      if (fromDecision) return fromDecision;
+      if (material?.defaultUnitPrice != null) return material.defaultUnitPrice;
+      return item.unitPrice ?? "";
+    }
+    case "sourceUrl":
+      return fieldValue("sourceUrl") || material?.sourceUrl || "";
+    case "catalogPdfUrls":
+      return catalogUrls.join("\n");
+    case "currency":
+      return fieldValue("currency") || material?.currency || item.currency || "VND";
+    case "category":
+      return fieldValue("category") || material?.category || "";
+    case "matchStatus":
+      return item.matchStatus;
+  }
+}
+
+/**
+ * Standalone clean workbook (Vietnamese headers) — primary profile export.
+ */
+export async function buildMaterialProfileCleanExportBundle(
+  db: AppDb,
+  workspaceId: number,
+): Promise<{ workspace: Workspace; bundle: MaterialProfileExportBundle }> {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
+    .orderBy(excelWorkspaceItems.sortOrder);
+  const exportEditState = parseMaterialProfileExportEditState(
+    workspace.exportEditStateJson,
+  );
+  const materialSheetName = workspace.sourceSheetName ?? "";
+  const exportItems = items.filter(
+    (item) =>
+      item.includedInExport &&
+      !isMaterialRowDeleted(item, materialSheetName, exportEditState),
+  );
+  const reviewReadiness = summarizeMaterialProfileReviewReadiness(exportItems);
+  const materialIds = materialIdsFromItems(exportItems);
+  const materialRows = await loadMaterialRows(db, materialIds);
+  const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+  const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+
+  const noticeNumber = workspace.noticeNumber ?? workspace.name;
+  const prefix = `${buildMaterialProfileOutputPrefix(noticeNumber)}_clean`;
+
+  const copiedCatalogByDocKey = new Map<string, string>();
+  const usedCatalogNames = new Set<string>();
+  const catalogBuffersByFileName = new Map<string, Buffer>();
+  const warnings: string[] = [...reviewReadiness.warnings];
+  let missingCount = 0;
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Vật tư");
+  sheet.addRow(
+    MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map((column) => column.header),
+  );
+
+  for (const item of exportItems) {
+    const decision = seedDecisionFromItem(item);
+    if (decision.skipped) continue;
+    if (!isExportableDecision(decision) && item.materialId == null) {
+      missingCount += 1;
+      warnings.push(
+        `Dòng ${item.originalRowIndex}: chưa đủ dữ liệu để xuất sạch.`,
+      );
+    }
+
+    const material =
+      item.materialId == null ? undefined : materialsById.get(item.materialId);
+    const docs =
+      item.materialId == null ? [] : (docsByMaterial.get(item.materialId) ?? []);
+    const catalogUrls = [
+      ...catalogPdfUrlsFromItem(item, material),
+      ...docs
+        .map((doc) => doc.sourceUrl)
+        .filter((url): url is string => typeof url === "string" && url.length > 0),
+    ];
+    const uniqueCatalogUrls = [...new Set(catalogUrls)];
+
+    for (const doc of docs) {
+      const docKey = doc.localFilePath
+        ? `local:${doc.localFilePath}`
+        : doc.sourceUrl
+          ? `url:${doc.sourceUrl}`
+          : `doc:${doc.id}`;
+      if (copiedCatalogByDocKey.has(docKey)) continue;
+      try {
+        const sourceFileName =
+          doc.fileName ??
+          (doc.sourceUrl
+            ? catalogPdfFileNameFromUrl(doc.sourceUrl)
+            : "catalog.pdf");
+        const fileName = uniqueFileName(sourceFileName, usedCatalogNames);
+        const buffer = doc.localFilePath
+          ? await readCatalogPdfFile(doc.localFilePath)
+          : doc.sourceUrl
+            ? await downloadCatalogPdfFromUrl(doc.sourceUrl)
+            : null;
+        if (!buffer) continue;
+        catalogBuffersByFileName.set(fileName, buffer);
+        copiedCatalogByDocKey.set(docKey, fileName);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Không copy được catalog PDF.";
+        warnings.push(`${item.productName}: ${message}`);
+      }
+    }
+
+    // Also download decision-only PDF URLs into Catalog/ when possible.
+    for (const url of uniqueCatalogUrls) {
+      const docKey = `url:${url}`;
+      if (copiedCatalogByDocKey.has(docKey)) continue;
+      if (!/\.pdf($|\?)/i.test(url)) continue;
+      try {
+        const fileName = uniqueFileName(
+          catalogPdfFileNameFromUrl(url),
+          usedCatalogNames,
+        );
+        const buffer = await downloadCatalogPdfFromUrl(url);
+        catalogBuffersByFileName.set(fileName, buffer);
+        copiedCatalogByDocKey.set(docKey, fileName);
+      } catch {
+        // URL column still carries the link even if download fails.
+      }
+    }
+
+    sheet.addRow(
+      MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map((column) =>
+        cleanExportCellValue(column.key, item, material, uniqueCatalogUrls),
+      ),
+    );
+  }
+
+  const excelFileName = `${prefix}.xlsx`;
+  const excelBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+  return {
+    workspace,
+    bundle: {
+      outputFolderName: prefix,
+      excelFileName,
+      excelBuffer,
+      catalogFiles: Array.from(catalogBuffersByFileName.entries()).map(
+        ([fileName, buffer]) => ({ fileName, buffer }),
+      ),
+      missingCount,
+      warnings,
+      reviewReadiness,
+      reviewWarnings: reviewReadiness.warnings,
+      catalogCount: copiedCatalogByDocKey.size,
+    },
+  };
+}
+
+async function resolveMaterialProfileExportBundle(
+  db: AppDb,
+  workspaceId: number,
+  exportMode?: MaterialProfileExportMode,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const mode =
+    exportMode ?? parseMaterialProfileOptions(workspace.templateConfigJson).exportMode;
+  if (mode === "legacy_templates") {
+    return buildMaterialProfileExportBundle(db, workspaceId);
+  }
+  return buildMaterialProfileCleanExportBundle(db, workspaceId);
 }
 
 async function buildMaterialProfileExportBundle(
@@ -2510,15 +3209,26 @@ async function buildMaterialProfileExportBundle(
 export async function exportMaterialProfileDownloadBundle(
   db: AppDb,
   workspaceId: number,
+  options: { exportMode?: MaterialProfileExportMode } = {},
 ) {
-  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
+  const { bundle } = await resolveMaterialProfileExportBundle(
+    db,
+    workspaceId,
+    options.exportMode,
+  );
   await markMaterialProfileWorkspaceExported(
     db,
     workspaceId,
     bundle.excelFileName,
     null,
   );
+  const exportMode =
+    options.exportMode ??
+    parseMaterialProfileOptions(
+      (await requireWorkspace(db, workspaceId)).templateConfigJson,
+    ).exportMode;
   return {
+    exportMode,
     outputFolderName: bundle.outputFolderName,
     excelFileName: bundle.excelFileName,
     workbookBase64: bundle.excelBuffer.toString("base64"),
@@ -2539,8 +3249,13 @@ export async function exportMaterialProfileWorkspace(
   db: AppDb,
   workspaceId: number,
   outputDirPathInput: string,
+  options: { exportMode?: MaterialProfileExportMode } = {},
 ) {
-  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
+  const { bundle } = await resolveMaterialProfileExportBundle(
+    db,
+    workspaceId,
+    options.exportMode,
+  );
   const parentDir = await assertExportDirWritable(outputDirPathInput);
   const outputDir = path.join(parentDir, bundle.outputFolderName);
   const catalogDir = path.join(outputDir, "Catalog");
@@ -2562,7 +3277,14 @@ export async function exportMaterialProfileWorkspace(
     outputDir,
   );
 
+  const exportMode =
+    options.exportMode ??
+    parseMaterialProfileOptions(
+      (await requireWorkspace(db, workspaceId)).templateConfigJson,
+    ).exportMode;
+
   return {
+    exportMode,
     outputDirPath: outputDir,
     parentDirPath: parentDir,
     excelFileName: bundle.excelFileName,

@@ -141,6 +141,10 @@ export function MaterialProfileReviewStep({
     }
     return map;
   }, [items]);
+  const committedCount = useMemo(
+    () => items.filter((item) => item.committedAt != null).length,
+    [items],
+  );
 
   const [decisions, setDecisions] = useState<Map<number, RowDecision>>(() =>
     seedDecisionsFromItems(reviewItems),
@@ -270,6 +274,27 @@ export function MaterialProfileReviewStep({
       onError: (error) =>
         toast.error(error.message || "Không dùng lại được lần tìm kiếm."),
     });
+  const saveToMaterials = api.materialProfile.saveToMaterials.useMutation({
+    onSuccess: async (summary) => {
+      await utils.materialProfile.get.invalidate({ workspaceId });
+      await utils.materialProfile.list.invalidate();
+      const parts = [
+        `thêm ${summary.inserted.toLocaleString("vi-VN")}`,
+        `cập nhật ${summary.updated.toLocaleString("vi-VN")}`,
+        `liên kết ${summary.linked.toLocaleString("vi-VN")}`,
+        `bỏ qua ${summary.skipped.toLocaleString("vi-VN")}`,
+        `lỗi ${summary.failed.toLocaleString("vi-VN")}`,
+      ];
+      const message = `Đã lưu vào danh mục: ${parts.join(" · ")} (trên ${summary.selectedCount.toLocaleString("vi-VN")} dòng).`;
+      if (summary.failed > 0) {
+        toast.warning(message);
+      } else {
+        toast.success(message);
+      }
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không lưu được vào danh mục vật tư."),
+  });
   const activeProfileSearchJobId = activeProfileSearchJob?.id ?? null;
   const terminalSearchJobKey =
     latestProfileSearchJob && isProfileSearchJobTerminal(latestProfileSearchJob)
@@ -619,6 +644,21 @@ export function MaterialProfileReviewStep({
     }
   };
 
+  const handleSaveToMaterials = async () => {
+    setIsFlushing(true);
+    try {
+      await flushDecisions();
+      await saveToMaterials.mutateAsync({
+        workspaceId,
+        includedOnly: true,
+      });
+    } catch {
+      // Errors surfaced by mutation onError / flush toast.
+    } finally {
+      setIsFlushing(false);
+    }
+  };
+
   const fieldsToFill = useMemo(
     () => countFieldsToFill(decisions.values()),
     [decisions],
@@ -627,6 +667,19 @@ export function MaterialProfileReviewStep({
     () => countResolvedRows(decisions.values()),
     [decisions],
   );
+  const prefilledCount = useMemo(() => {
+    let count = 0;
+    for (const decision of decisions.values()) {
+      if (decision.skipped) continue;
+      if (
+        isExportableDecision(decision) ||
+        (decision.acceptedFields?.size ?? 0) > 0
+      ) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [decisions]);
   const pendingUnmatched = useMemo(() => {
     return reviewRows.filter((row) => {
       const decision = decisions.get(row.originalRowIndex);
@@ -646,11 +699,17 @@ export function MaterialProfileReviewStep({
   if (items.length === 0) {
     return (
       <EmptyState
-        title="Chưa có kết quả match"
-        description="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
+        title="Chưa có kết quả khớp"
+        description="Quay lại bước 2, map đủ Tên · ĐVT · Thông số rồi bấm «Khớp vật tư»."
       />
     );
   }
+
+  const searchBusy = Boolean(activeProfileSearchJob);
+  const saveBusy =
+    isFlushing ||
+    saveToMaterials.isPending ||
+    batchUpdateReviewDecisions.isPending;
 
   return (
     <ReviewPanel
@@ -696,18 +755,38 @@ export function MaterialProfileReviewStep({
       onProfileSearchJob={handleProfileSearchJob}
       onProfileCancelSearchJob={handleCancelProfileSearchJob}
       onProfileUseSearchRun={handleUseSearchRun}
-      emptyTitle="Chưa có kết quả match"
-      emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
+      title="Duyệt kết quả đã điền sẵn"
+      subtitleHint={`${prefilledCount.toLocaleString("vi-VN")} dòng đã có dữ liệu điền · ${committedCount.toLocaleString("vi-VN")} đã lưu danh mục · có thể chỉnh tay trước khi lưu`}
+      emptyTitle="Chưa có kết quả khớp"
+      emptyDescription="Quay lại bước 2, map đủ Tên · ĐVT · Thông số rồi bấm «Khớp vật tư»."
       headerActions={
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={isFlushing || batchUpdateReviewDecisions.isPending}
-          isLoading={isFlushing || batchUpdateReviewDecisions.isPending}
-          onClick={() => void handleContinue()}
-        >
-          Qua preview export
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={saveBusy || searchBusy || matchedCount === 0}
+            isLoading={saveToMaterials.isPending || isFlushing}
+            title={
+              searchBusy
+                ? "Đợi job tìm kiếm hoàn tất (hoặc hủy) rồi lưu"
+                : matchedCount === 0
+                  ? "Chưa có dòng đủ dữ liệu để lưu"
+                  : "Lưu các dòng đã chọn/điền vào /materials"
+            }
+            onClick={() => void handleSaveToMaterials()}
+          >
+            Lưu vào danh mục vật tư
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={saveBusy}
+            isLoading={isFlushing && !saveToMaterials.isPending}
+            onClick={() => void handleContinue()}
+          >
+            Qua xuất sheet sạch
+          </Button>
+        </div>
       }
     />
   );

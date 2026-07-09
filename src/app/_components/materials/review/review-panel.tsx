@@ -160,6 +160,8 @@ export function ReviewPanel({
   matchedCount,
   pendingUnmatched,
   headerActions,
+  title = "Xét duyệt & chọn sản phẩm",
+  subtitleHint,
   emptyTitle = "Không có dòng để đối chiếu",
   emptyDescription = "File không có dòng dữ liệu hợp lệ với cột tên vật tư đã chọn.",
   onDecisionPersist,
@@ -196,6 +198,10 @@ export function ReviewPanel({
   matchedCount: number;
   pendingUnmatched: number;
   headerActions?: ReactNode;
+  /** Optional panel title override (profile auto-fill UX). */
+  title?: string;
+  /** Optional secondary hint under the title (profile pre-filled state). */
+  subtitleHint?: string;
   emptyTitle?: string;
   emptyDescription?: string;
   onDecisionPersist?: (rowIndex: number, decision: RowDecision) => void;
@@ -939,8 +945,13 @@ export function ReviewPanel({
       <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-slate-50 px-4 py-3">
         <div>
           <h3 className="text-sm font-bold text-balance text-slate-900">
-            Xét duyệt & chọn sản phẩm
+            {title}
           </h3>
+          {subtitleHint ? (
+            <p className="mt-1 text-xs font-semibold text-emerald-800">
+              {subtitleHint}
+            </p>
+          ) : null}
           <p className="mt-1 flex flex-wrap gap-1 text-xs text-slate-700">
             <span className="tabular-nums">
               {summary.totalRows.toLocaleString("vi-VN")} dòng

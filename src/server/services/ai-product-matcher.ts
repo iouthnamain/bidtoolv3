@@ -48,17 +48,25 @@ export type MatchDecision = {
   createdAt: string;
 };
 
-// Weights keep name-only matches below reliable range while code/spec evidence
-// can lift profile-search candidates above 0.75.
+/**
+ * Base weights: name-only stays below reliable range; code/spec can lift
+ * profile-search candidates above 0.75. When the query supplies unit and/or
+ * spec, `computeWeightedScore` rebalances toward those signals (see below).
+ */
 const WEIGHTS = {
   nameSimilarity: 0.15,
-  codeMatch: 0.35,
-  unitMatch: 0.1,
-  manufacturerMatch: 0.1,
+  codeMatch: 0.3,
+  unitMatch: 0.12,
+  manufacturerMatch: 0.08,
   originMatch: 0.05,
   specMatch: 0.2,
   dimensionMatch: 0.1,
 };
+
+/** Minimum trigram similarity for SQL candidate retrieval (index-friendly). */
+export const FUZZY_CANDIDATE_MIN_SIMILARITY = 0.12;
+/** Cap rows hydrated from SQL before JS re-score (keeps match batch cheap). */
+export const FUZZY_CANDIDATE_SQL_LIMIT = 24;
 
 function _hashScrapedProduct(product: ScrapedShopProduct): string {
   const input = `${product.sourceUrl}|${product.name}|${product.unit ?? ""}`;
@@ -88,7 +96,7 @@ async function _getCachedDecision(
 async function _findFuzzyCandidates(
   db: AppDb,
   product: ScrapedShopProduct,
-  minSimilarity = 0.1,
+  minSimilarity = FUZZY_CANDIDATE_MIN_SIMILARITY,
   limit = 10,
 ): Promise<MatchCandidate[]> {
   const productName = product.name.trim();
@@ -100,31 +108,89 @@ async function _findFuzzyCandidates(
   const productCode = product.sku?.trim() || product.model?.trim() || "";
   const productCodeCompact = compactCode(productCode);
   const productSpec = product.specText?.trim() ?? "";
+  const productUnit = product.unit?.trim() ?? "";
+  // Fetch a wider SQL pool, then re-rank in JS and return `limit` (hydrate cap).
+  const sqlLimit = Math.max(limit, Math.min(FUZZY_CANDIDATE_SQL_LIMIT, limit * 3));
 
-  const rows = await db.execute<MaterialRow & { name_sim: number }>(sql`
+  // Prefer predicates that can use GIN trigram indexes on name / spec_text / code.
+  // Avoid wrapping indexed columns in regexp_replace in the hot path; use
+  // similarity/% for code when present, with a compact equality boost in ORDER BY.
+  const rows = await db.execute<
+    MaterialRow & { name_sim: number; spec_sim: number; code_sim: number }
+  >(sql`
     SELECT m.*,
-           similarity(m.name, ${searchName}) AS name_sim
+           similarity(m.name, ${searchName}) AS name_sim,
+           CASE
+             WHEN ${productSpec} <> '' THEN similarity(m.spec_text, ${productSpec})
+             ELSE 0
+           END AS spec_sim,
+           CASE
+             WHEN ${productCodeCompact} <> '' AND m.code IS NOT NULL
+               THEN greatest(
+                 similarity(m.code, ${productCode}),
+                 similarity(
+                   regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g'),
+                   ${productCodeCompact}
+                 )
+               )
+             ELSE 0
+           END AS code_sim
     FROM materials m
     WHERE m.deleted_at IS NULL
       AND (
-        similarity(m.name, ${searchName}) > ${minSimilarity}
-        OR (${productCodeCompact} <> '' AND m.code IS NOT NULL AND regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') LIKE '%' || ${productCodeCompact} || '%')
-        OR (${productSpec} <> '' AND m.spec_text IS NOT NULL AND similarity(m.spec_text, ${productSpec}) > ${minSimilarity})
+        m.name % ${searchName}
+        OR similarity(m.name, ${searchName}) > ${minSimilarity}
+        OR (
+          ${productSpec} <> ''
+          AND (
+            m.spec_text % ${productSpec}
+            OR similarity(m.spec_text, ${productSpec}) > ${minSimilarity}
+          )
+        )
+        OR (
+          ${productCodeCompact} <> ''
+          AND m.code IS NOT NULL
+          AND (
+            m.code % ${productCode}
+            OR similarity(m.code, ${productCode}) > ${minSimilarity}
+            OR regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') = ${productCodeCompact}
+          )
+        )
       )
     ORDER BY
       CASE
-        WHEN ${productCodeCompact} <> '' AND m.code IS NOT NULL AND regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') = ${productCodeCompact} THEN 1
+        WHEN ${productCodeCompact} <> ''
+          AND m.code IS NOT NULL
+          AND regexp_replace(lower(m.code), '[^a-z0-9]+', '', 'g') = ${productCodeCompact}
+          THEN 1
         ELSE 0
       END DESC,
-      name_sim DESC
-    LIMIT ${limit}
+      CASE
+        WHEN ${productUnit} <> ''
+          AND lower(btrim(m.unit)) = lower(btrim(${productUnit}))
+          THEN 1
+        ELSE 0
+      END DESC,
+      (similarity(m.name, ${searchName})
+        + CASE WHEN ${productSpec} <> '' THEN similarity(m.spec_text, ${productSpec}) ELSE 0 END
+        + CASE
+            WHEN ${productCodeCompact} <> '' AND m.code IS NOT NULL
+              THEN similarity(m.code, ${productCode})
+            ELSE 0
+          END
+      ) DESC
+    LIMIT ${sqlLimit}
   `);
 
   if (!rows.length) return [];
 
   const candidates: MatchCandidate[] = rows.map((row) => {
     const breakdown = computeScoreBreakdown(product, row);
-    const score = computeWeightedScore(breakdown);
+    const score = computeWeightedScore(breakdown, {
+      queryHasUnit: Boolean(productUnit),
+      queryHasSpec: Boolean(productSpec),
+      queryHasCode: Boolean(productCodeCompact),
+    });
     return {
       materialId: row.id,
       name: row.name,
@@ -135,7 +201,7 @@ async function _findFuzzyCandidates(
   });
 
   candidates.sort((a, b) => b.score - a.score);
-  return candidates;
+  return candidates.slice(0, limit);
 }
 
 function _computeScoreBreakdown(
@@ -176,15 +242,59 @@ function _computeScoreBreakdown(
   };
 }
 
-function _computeWeightedScore(breakdown: ScoreBreakdown): number {
+export type WeightedScoreOptions = {
+  /** Query supplied a unit — weight unit more; soft-penalize missing candidate unit. */
+  queryHasUnit?: boolean;
+  /** Query supplied spec text — weight spec more; soft-penalize empty candidate spec. */
+  queryHasSpec?: boolean;
+  /** Query supplied a product code — keep code weight prominent. */
+  queryHasCode?: boolean;
+};
+
+function resolveWeights(opts: WeightedScoreOptions = {}): typeof WEIGHTS {
+  const weights = { ...WEIGHTS };
+  if (opts.queryHasUnit && opts.queryHasSpec) {
+    // Profile match path: name + unit + spec are the required signals.
+    weights.nameSimilarity = 0.18;
+    weights.unitMatch = 0.18;
+    weights.specMatch = 0.28;
+    weights.codeMatch = opts.queryHasCode ? 0.2 : 0.12;
+    weights.manufacturerMatch = 0.06;
+    weights.originMatch = 0.04;
+    weights.dimensionMatch = 0.14;
+  } else if (opts.queryHasSpec) {
+    weights.specMatch = 0.28;
+    weights.nameSimilarity = 0.18;
+    weights.unitMatch = 0.1;
+    weights.codeMatch = opts.queryHasCode ? 0.28 : 0.2;
+  } else if (opts.queryHasUnit) {
+    weights.unitMatch = 0.18;
+    weights.nameSimilarity = 0.2;
+    weights.specMatch = 0.14;
+  }
+  return weights;
+}
+
+function _computeWeightedScore(
+  breakdown: ScoreBreakdown,
+  opts: WeightedScoreOptions = {},
+): number {
+  const weights = resolveWeights(opts);
   let score = 0;
-  for (const [key, weight] of Object.entries(WEIGHTS)) {
+  for (const [key, weight] of Object.entries(weights)) {
     score += (breakdown[key as keyof ScoreBreakdown] ?? 0) * weight;
   }
   if (breakdown.codeMatch === -1) {
     score = Math.min(score, 0.69);
   }
-  score = Math.min(score, 1);
+  // Soft penalties when the query provided unit/spec but the candidate lacks them.
+  if (opts.queryHasUnit && breakdown.unitMatch === 0) {
+    score -= 0.06;
+  }
+  if (opts.queryHasSpec && breakdown.specMatch <= 0.15) {
+    score -= 0.05;
+  }
+  score = Math.max(0, Math.min(score, 1));
   return Math.round(score * 1000) / 1000;
 }
 
@@ -317,6 +427,8 @@ function computeUnitMatch(
 ): number {
   const na = normalizeUnit(a);
   const nb = normalizeUnit(b);
+  // Both missing: neutral. Query present / candidate missing: soft miss (0)
+  // so weighted score + queryHasUnit penalty can demote empty catalog units.
   if (!na && !nb) return 0.5;
   if (!na || !nb) return 0;
   return na === nb ? 1.0 : 0;
@@ -615,11 +727,17 @@ function computeSpecMatch(
     return scores.reduce((sum, s) => sum + s, 0) / scores.length;
   }
 
-  // No shared structured spec types: fall back to token overlap of specText.
-  const hasSpecText =
-    Boolean(product.specText?.trim()) || Boolean(candidate.specText?.trim());
-  if (!hasSpecText) return 0.5; // no signal either way
-  return computeTokenOverlap(product.specText, candidate.specText);
+  // No shared structured spec types: fall back to trigram + token overlap.
+  const productSpec = product.specText?.trim() ?? "";
+  const candidateSpec = candidate.specText?.trim() ?? "";
+  if (!productSpec && !candidateSpec) return 0.5; // no signal either way
+  if (!productSpec || !candidateSpec) return 0.15; // one-sided: weak, not neutral
+  const trigram = trigramSimilarity(
+    stripAccents(productSpec.toLowerCase()),
+    stripAccents(candidateSpec.toLowerCase()),
+  );
+  const tokens = computeTokenOverlap(productSpec, candidateSpec);
+  return Math.max(trigram, tokens);
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFillPlanWithEdits,
+  CATALOG_PDF_URLS_LABEL,
+  FIELD_LABELS,
+  MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS,
+  parseMaterialProfileOptions,
+  withMaterialProfileOptions,
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
 
@@ -70,5 +75,30 @@ describe("buildFillPlanWithEdits", () => {
     const cell = planFor("specText", plan);
     expect(cell?.action).toBe("overwritten");
     expect(cell?.after).toBe("đã sửa");
+  });
+});
+
+describe("material profile field labels / options", () => {
+  it("keeps manufacturer label as Nhà sản xuất and URL catalog export label", () => {
+    expect(FIELD_LABELS.manufacturer).toBe("Nhà sản xuất");
+    expect(CATALOG_PDF_URLS_LABEL).toBe("URL catalog");
+    expect(
+      MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.find(
+        (column) => column.key === "catalogPdfUrls",
+      )?.header,
+    ).toBe("URL catalog");
+  });
+
+  it("merges materialProfileOptions without dropping other template keys", () => {
+    const next = withMaterialProfileOptions(
+      { organizationLine1: "UBND", materialProfileLastBulkApply: { x: 1 } },
+      { exportMode: "legacy_templates" },
+    );
+    expect(next.organizationLine1).toBe("UBND");
+    expect(next.materialProfileLastBulkApply).toEqual({ x: 1 });
+    expect(parseMaterialProfileOptions(next)).toEqual({
+      autoSearchAfterMatch: true,
+      exportMode: "legacy_templates",
+    });
   });
 });

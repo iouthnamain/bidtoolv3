@@ -4,11 +4,17 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS,
+  parseMaterialProfileOptions,
+} from "~/lib/materials/excel-enrich-fields";
+import {
   assertExportDirWritable,
   buildOpenFolderCommand,
   buildMaterialProfileOutputPrefix,
+  buildMaterialProfileRematchPreserveMap,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
   isMaterialProfileExportRowDeleted,
+  matchedRowHasAutoSearchGaps,
   MaterialProfileWorkspaceError,
   parseMaterialProfileExportEditState,
   resolveDefaultDownloadsDir,
@@ -16,6 +22,7 @@ import {
   resolveWorkspaceWorkbookBuffer,
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
+  selectMaterialProfileAutoSearchItemIds,
   shouldBulkApplyMaterialProfileCandidate,
   summarizeMaterialProfileReviewReadiness,
   summarizeMaterialProfileExportEditState,
@@ -61,13 +68,206 @@ describe("material profile workspace helpers", () => {
       "BT - ĐVT",
       "BT - Nhóm",
       "BT - Thông số",
-      "BT - NCC",
+      "BT - Nhà sản xuất",
       "BT - Xuất xứ",
       "BT - Đơn giá",
       "BT - Tiền tệ",
       "BT - Nguồn",
       "BT - Catalog files",
+      "BT - URL catalog",
     ]);
+  });
+
+  it("defines clean export Vietnamese headers including URL catalog", () => {
+    expect(
+      MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS.map((column) => column.header),
+    ).toEqual([
+      "Mã vật tư",
+      "Tên vật tư",
+      "ĐVT",
+      "Thông số",
+      "Nhà sản xuất",
+      "Xuất xứ",
+      "Đơn giá",
+      "Nguồn",
+      "URL catalog",
+      "Tiền tệ",
+      "Nhóm",
+      "Trạng thái khớp",
+    ]);
+  });
+
+  it("defaults materialProfileOptions to auto-search + clean export", () => {
+    expect(parseMaterialProfileOptions({})).toEqual({
+      autoSearchAfterMatch: true,
+      exportMode: "clean",
+    });
+    expect(
+      parseMaterialProfileOptions({
+        materialProfileOptions: {
+          autoSearchAfterMatch: false,
+          exportMode: "legacy_templates",
+        },
+      }),
+    ).toEqual({
+      autoSearchAfterMatch: false,
+      exportMode: "legacy_templates",
+    });
+  });
+
+  it("selects unmatched, candidates_found, and matched+gappy rows for auto-search", () => {
+    expect(
+      selectMaterialProfileAutoSearchItemIds([
+        {
+          id: 1,
+          matchStatus: "matched",
+          productName: "A",
+          materialId: 9,
+          reviewDecisionJson: {
+            materialId: 9,
+            acceptedFields: ["unit", "specText"],
+            editedValues: {
+              unit: "mét",
+              specText: "2x2.5",
+            },
+          },
+          enrichedSnapshotJson: {
+            status: "auto",
+            fillPlan: [],
+            sheetFields: { unit: "mét", specText: "2x2.5" },
+          },
+        },
+        { id: 2, matchStatus: "unmatched", productName: "B" },
+        { id: 3, matchStatus: "candidates_found", productName: "C" },
+        { id: 4, matchStatus: "unmatched", productName: "   " },
+        {
+          id: 5,
+          matchStatus: "matched",
+          productName: "Complete",
+          materialId: 10,
+          reviewDecisionJson: {
+            materialId: 10,
+            acceptedFields: [
+              "code",
+              "unit",
+              "specText",
+              "manufacturer",
+              "originCountry",
+              "defaultUnitPrice",
+              "sourceUrl",
+            ],
+            editedValues: {
+              code: "CV-1",
+              unit: "mét",
+              specText: "2x2.5",
+              manufacturer: "CADIVI",
+              originCountry: "VN",
+              defaultUnitPrice: "1000",
+              sourceUrl: "https://example.vn",
+            },
+            catalogPdfUrls: ["https://example.vn/a.pdf"],
+          },
+          enrichedSnapshotJson: {
+            status: "auto",
+            fillPlan: [],
+            sheetFields: {
+              code: "CV-1",
+              unit: "mét",
+              specText: "2x2.5",
+              manufacturer: "CADIVI",
+              originCountry: "VN",
+              defaultUnitPrice: "1000",
+              sourceUrl: "https://example.vn",
+              catalogPdfUrls: "https://example.vn/a.pdf",
+            },
+          },
+        },
+      ]),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it("detects matched-row fill gaps without relying on missing-both fillPlan cells", () => {
+    expect(
+      matchedRowHasAutoSearchGaps({
+        materialId: 1,
+        reviewDecisionJson: {
+          materialId: 1,
+          acceptedFields: ["unit"],
+          editedValues: { unit: "cái" },
+        },
+        enrichedSnapshotJson: {
+          sheetFields: { unit: "cái" },
+          topCandidate: { fields: { unit: "cái" } },
+          fillPlan: [{ field: "unit", action: "kept" }],
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      matchedRowHasAutoSearchGaps({
+        materialId: 1,
+        reviewDecisionJson: {
+          materialId: 1,
+          acceptedFields: [
+            "code",
+            "specText",
+            "manufacturer",
+            "originCountry",
+            "defaultUnitPrice",
+            "sourceUrl",
+          ],
+          editedValues: {
+            code: "X",
+            specText: "S",
+            manufacturer: "M",
+            originCountry: "VN",
+            defaultUnitPrice: "1",
+            sourceUrl: "https://x",
+          },
+          catalogPdfUrls: ["https://x/c.pdf"],
+        },
+        enrichedSnapshotJson: {
+          sheetFields: {
+            code: "X",
+            specText: "S",
+            manufacturer: "M",
+            originCountry: "VN",
+            defaultUnitPrice: "1",
+            sourceUrl: "https://x",
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("preserves committedAt and commitSource in rematch identity map", () => {
+    const map = buildMaterialProfileRematchPreserveMap(
+      [
+        {
+          originalRowIndex: 2,
+          productName: "Cáp CV",
+          unit: "mét",
+          specText: "2x2.5",
+          materialId: 44,
+          matchStatus: "matched",
+          reviewDecisionJson: { materialId: 44, acceptedFields: ["unit"] },
+          committedAt: "2026-07-09T12:00:00.000Z",
+          commitSource: "profile_save",
+        },
+      ],
+      (item) =>
+        item.reviewDecisionJson && typeof item.reviewDecisionJson === "object"
+          ? (item.reviewDecisionJson as Record<string, unknown>)
+          : {},
+    );
+
+    const preserved = [...map.values()][0];
+    expect(preserved).toMatchObject({
+      materialId: 44,
+      matchStatus: "matched",
+      committedAt: "2026-07-09T12:00:00.000Z",
+      commitSource: "profile_save",
+    });
   });
 
   it("builds a platform-specific open-folder command", () => {

@@ -20,27 +20,79 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type Workspace = RouterOutputs["materialProfile"]["list"][number];
 
-const statusLabel: Record<Workspace["status"], string> = {
-  draft: "Nháp",
-  imported: "Đã import",
-  mapped: "Đã map",
-  reviewed: "Đã duyệt",
-  matched: "Đã match",
-  exported: "Đã export",
-  catalog_generated: "Đã xuất catalog",
-  checked: "Đã kiểm tra",
-  approved: "Đã duyệt cuối",
-};
-
-function statusTone(status: Workspace["status"]) {
-  if (status === "catalog_generated" || status === "exported") return "success";
-  if (status === "matched" || status === "reviewed") return "info";
-  if (status === "draft") return "neutral";
-  return "warning";
-}
+type HubPhase =
+  | "draft"
+  | "uploaded"
+  | "mapped"
+  | "matched"
+  | "exported"
+  | "other";
 
 function formatDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString("vi-VN") : "-";
+}
+
+function deriveHubPhase(workspace: Workspace): HubPhase {
+  if (workspace.exportedAt || workspace.status === "exported") {
+    return "exported";
+  }
+  if (
+    workspace.status === "matched" ||
+    workspace.status === "reviewed" ||
+    workspace.status === "catalog_generated" ||
+    workspace.status === "checked" ||
+    workspace.status === "approved"
+  ) {
+    return "matched";
+  }
+  if (workspace.status === "mapped") return "mapped";
+  if (workspace.status === "imported" || workspace.sourceFileName) {
+    return "uploaded";
+  }
+  if (workspace.status === "draft") return "draft";
+  return "other";
+}
+
+function phaseLabel(phase: HubPhase, workspace: Workspace): string {
+  switch (phase) {
+    case "exported":
+      return "Đã xuất";
+    case "matched":
+      return workspace.status === "reviewed" ? "Đã duyệt" : "Đã khớp";
+    case "mapped":
+      return "Đã map";
+    case "uploaded":
+      return "Đã tải lên";
+    case "draft":
+      return "Nháp";
+    default:
+      return workspace.status;
+  }
+}
+
+function phaseTone(
+  phase: HubPhase,
+): "success" | "info" | "warning" | "neutral" {
+  if (phase === "exported") return "success";
+  if (phase === "matched") return "info";
+  if (phase === "draft") return "neutral";
+  return "warning";
+}
+
+function phaseHint(workspace: Workspace, phase: HubPhase): string {
+  if (phase === "exported" && workspace.exportedAt) {
+    return `Xuất ${formatDate(workspace.exportedAt)}`;
+  }
+  if (phase === "matched") {
+    return "Sẵn sàng duyệt / lưu danh mục";
+  }
+  if (phase === "uploaded" || phase === "mapped") {
+    return "Cần map Tên · ĐVT · Thông số rồi khớp";
+  }
+  if (phase === "draft") {
+    return "Chưa upload Excel";
+  }
+  return formatDate(workspace.updatedAt);
 }
 
 export function MaterialProfilesClient() {
@@ -120,7 +172,7 @@ export function MaterialProfilesClient() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title={`Xóa hồ sơ "${deleteTarget?.noticeNumber ?? deleteTarget?.name ?? ""}"?`}
-        description="Hồ sơ và các dòng match liên quan sẽ bị xóa khỏi danh sách. Không thể hoàn tác."
+        description="Hồ sơ và các dòng khớp liên quan sẽ bị xóa khỏi danh sách. Không thể hoàn tác."
         confirmLabel="Xóa hồ sơ"
         variant="danger"
         isLoading={deleteMutation.isPending}
@@ -134,8 +186,12 @@ export function MaterialProfilesClient() {
 
       <div className="grid gap-2">
         <section className="panel p-4">
-          <p className="section-title">Work mới</p>
+          <p className="section-title">Hồ sơ mới</p>
           <h2 className="mt-1 text-base font-bold text-slate-950">Số TBMT</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Tạo hồ sơ → upload Excel → map Tên · ĐVT · Thông số → khớp / tìm →
+            lưu danh mục → xuất sheet sạch.
+          </p>
 
           <form
             className="mt-3 space-y-3"
@@ -167,9 +223,9 @@ export function MaterialProfilesClient() {
 
         <section className="panel overflow-hidden">
           <div className="border-b border-slate-400 px-4 py-4">
-            <p className="section-title">Danh sách trước đó</p>
+            <p className="section-title">Danh sách hồ sơ</p>
             <h2 className="mt-1 text-base font-bold text-slate-950">
-              Previous work
+              Công việc trước đó
             </h2>
           </div>
 
@@ -196,13 +252,13 @@ export function MaterialProfilesClient() {
             <div className="p-5">
               <EmptyState
                 title="Chưa có hồ sơ vật tư"
-                description="Tạo work đầu tiên bằng Số TBMT để bắt đầu upload và map Excel."
+                description="Tạo hồ sơ đầu tiên bằng Số TBMT để bắt đầu upload và map Excel."
                 icon={<FileSpreadsheet className="h-6 w-6" aria-hidden />}
               />
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] divide-y divide-slate-200 text-sm">
+              <table className="w-full min-w-[860px] divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-700 uppercase">
                   <tr>
                     <th className="px-4 py-3">Số TBMT</th>
@@ -216,6 +272,7 @@ export function MaterialProfilesClient() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {workspaces.map((workspace) => {
                     const isEditing = editingWorkspaceId === workspace.id;
+                    const phase = deriveHubPhase(workspace);
                     return (
                       <tr key={workspace.id}>
                         <td className="px-4 py-3 font-bold text-slate-950">
@@ -245,9 +302,28 @@ export function MaterialProfilesClient() {
                           {workspace.sourceFileName ?? "Chưa upload"}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge tone={statusTone(workspace.status)}>
-                            {statusLabel[workspace.status]}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge tone={phaseTone(phase)}>
+                              {phaseLabel(phase, workspace)}
+                            </Badge>
+                            <span className="text-[11px] font-semibold text-slate-500">
+                              {phaseHint(workspace, phase)}
+                            </span>
+                            {workspace.exportedAt ? (
+                              <span className="text-[11px] font-semibold text-emerald-700">
+                                Đã xuất · {formatDate(workspace.exportedAt)}
+                              </span>
+                            ) : null}
+                            {workspace.outputDirPath ? (
+                              <span
+                                className="inline-flex max-w-48 items-center gap-1 truncate text-[11px] font-semibold text-slate-500"
+                                title={workspace.outputDirPath}
+                              >
+                                <FolderOpen className="h-3 w-3 shrink-0" />
+                                Có thư mục output
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums">
                           {workspace.rowCount.toLocaleString("vi-VN")}
@@ -281,20 +357,11 @@ export function MaterialProfilesClient() {
                               </>
                             ) : (
                               <>
-                                {workspace.outputDirPath ? (
-                                  <span
-                                    className="inline-flex items-center gap-1 rounded border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-600"
-                                    title={workspace.outputDirPath}
-                                  >
-                                    <FolderOpen className="h-3.5 w-3.5" />
-                                    Có output
-                                  </span>
-                                ) : null}
                                 <Link
                                   href={`/material-profiles/${workspace.id}`}
                                   className="inline-flex min-h-9 items-center gap-1.5 rounded bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
                                 >
-                                  Resume
+                                  Tiếp tục
                                   <ArrowRight
                                     className="h-3.5 w-3.5"
                                     aria-hidden

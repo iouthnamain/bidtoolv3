@@ -85,7 +85,46 @@ export type ImportedWorkbookRow = {
   searchKeywords: string[];
 };
 
+/** Required for catalog import / generic workbook row extraction. */
 const REQUIRED_PRODUCT_KEY: ColumnKey = "materialName";
+
+/**
+ * Required column keys for material-profile match readiness (Tên + ĐVT + Thông số).
+ * Profile match / extractRowFields (requireProfileMatchMapping) enforce these.
+ * Generic `/materials` import still only requires `materialName`.
+ */
+export const PROFILE_MATCH_REQUIRED_KEYS = [
+  "materialName",
+  "unit",
+  "specText",
+] as const satisfies readonly ColumnKey[];
+
+export type ProfileMatchRequiredKey =
+  (typeof PROFILE_MATCH_REQUIRED_KEYS)[number];
+
+const PROFILE_MATCH_REQUIRED_LABELS: Record<ProfileMatchRequiredKey, string> = {
+  materialName: "Tên vật tư",
+  unit: "ĐVT",
+  specText: "Thông số kỹ thuật",
+};
+
+/** Returns missing required profile-match mapping keys (column not mapped). */
+export function missingProfileMatchMappingKeys(
+  mapping: ColumnMapping,
+): ProfileMatchRequiredKey[] {
+  return PROFILE_MATCH_REQUIRED_KEYS.filter((key) => {
+    const column = mapping[key];
+    return typeof column !== "string" || column.trim().length === 0;
+  });
+}
+
+/** vi-VN error when profile match mapping is incomplete. */
+export function profileMatchMappingError(mapping: ColumnMapping): string | null {
+  const missing = missingProfileMatchMappingKeys(mapping);
+  if (missing.length === 0) return null;
+  const labels = missing.map((key) => PROFILE_MATCH_REQUIRED_LABELS[key]);
+  return `Cần ánh xạ đủ cột bắt buộc trước khi khớp: ${labels.join(", ")}.`;
+}
 
 const aliases: Record<ColumnKey, string[]> = {
   code: [
@@ -132,14 +171,32 @@ const aliases: Record<ColumnKey, string[]> = {
     "desc",
     "spec",
     "specification",
+    "specifications",
+    "technical specifications",
+    "technical spec",
     "quy cach",
     "qui cach",
+    "quy cach ky thuat",
+    "qui cach ky thuat",
     "thong so",
     "thong so ky thuat",
     "thong so ki thuat",
+    "thong so kt",
+    "tskt",
     "mo ta",
+    "mo ta ky thuat",
+    "chi tiet",
+    "chi tiet ky thuat",
   ],
-  unit: ["unit", "uom", "don vi", "don vi tinh", "dvt"],
+  unit: [
+    "unit",
+    "uom",
+    "don vi",
+    "don vi tinh",
+    "dvt",
+    "dv tinh",
+    "unit of measure",
+  ],
   term: ["term", "hoc ky", "hocky", "semester", "ky"],
   qtyTotal: [
     "qty",
@@ -376,10 +433,13 @@ function headerScore(row: unknown[]): number {
   const mapping = suggestColumnMapping(headers);
   const mappedCount = Object.values(mapping).filter(Boolean).length;
   const hasName = mapping.materialName ? 4 : 0;
-  const hasUnit = mapping.unit ? 2 : 0;
+  const hasUnit = mapping.unit ? 3 : 0;
+  const hasSpec = mapping.specText ? 3 : 0;
   const hasQty = mapping.qtyTotal ? 2 : 0;
   const nonEmpty = row.filter((cell) => cleanCell(cell).length > 0).length;
-  return mappedCount * 5 + hasName + hasUnit + hasQty + Math.min(nonEmpty, 8);
+  return (
+    mappedCount * 5 + hasName + hasUnit + hasSpec + hasQty + Math.min(nonEmpty, 8)
+  );
 }
 
 function _detectHeaderIndex(rows: unknown[][]): number {
@@ -598,7 +658,7 @@ function _rowsFromMapping(
 ): ImportedWorkbookRow[] {
   const productColumn = mapping[REQUIRED_PRODUCT_KEY];
   if (!productColumn) {
-    throw new Error("Material name column is required.");
+    throw new Error("Cần chọn cột Tên vật tư.");
   }
 
   return sheet.rows

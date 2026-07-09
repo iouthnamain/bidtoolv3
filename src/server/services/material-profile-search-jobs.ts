@@ -8,8 +8,11 @@ import type {
   AiSearchStoredResult,
   WebLinkResult,
 } from "~/lib/materials/enrich-gap-fill";
+import { searchResultDecisionForRow } from "~/lib/materials/profile-review-bulk-apply";
 import {
+  deriveMatchStatus,
   deserializeRowDecision,
+  serializeRowDecision,
   type WebSearchStatus,
 } from "~/lib/materials/review-decision";
 import {
@@ -17,6 +20,11 @@ import {
   scoreAiCandidateCompletion,
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
+import {
+  snapshotStatusFromItem,
+  topCandidateMaterialIdFromItem,
+  workspaceItemToReviewRow,
+} from "~/lib/materials/workspace-review-row";
 import { db } from "~/server/db";
 import {
   excelWorkspaceItems,
@@ -1092,6 +1100,163 @@ async function _processMaterialProfileSearchJob(
   });
 }
 
+/**
+ * After a reliable search run completes, merge into reviewDecisionJson without
+ * blocking the UI. Uses searchResultDecisionForRow + RELIABLE_SEARCH_MATCH_THRESHOLD.
+ */
+async function autoApplyReliableSearchRunToItem(run: RunRow) {
+  if (
+    !shouldAttemptAutoApplyReliableSearchRun({
+      status: run.status,
+      hasReliableResult: runHasReliableResult(run),
+    })
+  ) {
+    return false;
+  }
+
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.id, run.itemId))
+    .limit(1);
+  if (!item) return false;
+
+  const runDecision = parseRunDecision(run);
+  if (!runDecision) return false;
+
+  const existing = deserializeRowDecision(item.reviewDecisionJson);
+  // Do not overwrite an already-exportable user/catalog decision.
+  if (
+    existing &&
+    existing.acceptedFields.size > 0 &&
+    (existing.materialId != null ||
+      existing.selectedSource === "catalog" ||
+      existing.selectedSource === "ai" ||
+      existing.selectedSource === "web")
+  ) {
+    if (
+      shouldSkipAutoApplyOverwrite({
+        hasExistingExportableDecision: true,
+      })
+    ) {
+      // Still refresh search candidate payloads onto the stored decision.
+      const mergedSearch = {
+        ...existing,
+        webLinkResults: runDecision.webLinkResults ?? existing.webLinkResults,
+        webLinksStatus: runDecision.webLinksStatus ?? existing.webLinksStatus,
+        aiSearchCandidates:
+          runDecision.aiSearchCandidates ?? existing.aiSearchCandidates,
+        aiSearchResult: runDecision.aiSearchResult ?? existing.aiSearchResult,
+        aiSearchStatus: runDecision.aiSearchStatus ?? existing.aiSearchStatus,
+        catalogPdfUrls: existing.catalogPdfUrls ?? runDecision.catalogPdfUrls,
+      };
+      await db
+        .update(excelWorkspaceItems)
+        .set({
+          reviewDecisionJson: serializeRowDecision(mergedSearch),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(excelWorkspaceItems.id, item.id));
+      return false;
+    }
+  }
+
+  const reviewRow = workspaceItemToReviewRow(item);
+  const decisionWithSearch = {
+    materialId: existing?.materialId ?? item.materialId,
+    acceptedFields: existing?.acceptedFields ?? new Set(),
+    overwriteFields: existing?.overwriteFields ?? new Set(),
+    editedValues: existing?.editedValues,
+    webProposedFields: existing?.webProposedFields,
+    webEvidence: existing?.webEvidence,
+    webSearchStatus: existing?.webSearchStatus,
+    webLinkResults: runDecision.webLinkResults,
+    webLinksStatus: runDecision.webLinksStatus,
+    aiSearchResult: runDecision.aiSearchResult,
+    aiSearchCandidates: runDecision.aiSearchCandidates,
+    aiSearchStatus: runDecision.aiSearchStatus,
+    selectedSource: existing?.selectedSource,
+    selectedSearchCandidateKey:
+      existing?.selectedSearchCandidateKey ??
+      run.recommendedCandidateKey ??
+      undefined,
+    catalogPdfUrls:
+      existing?.catalogPdfUrls ?? runDecision.catalogPdfUrls,
+    skipped: existing?.skipped,
+  };
+
+  const applied = searchResultDecisionForRow(
+    reviewRow,
+    decisionWithSearch,
+    RELIABLE_SEARCH_MATCH_THRESHOLD,
+  );
+  if (!applied) {
+    // Persist search payloads even when below auto-apply threshold.
+    await db
+      .update(excelWorkspaceItems)
+      .set({
+        reviewDecisionJson: serializeRowDecision(decisionWithSearch),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(excelWorkspaceItems.id, item.id));
+    return false;
+  }
+
+  const snapshotStatus = snapshotStatusFromItem(item);
+  const topCandidateMaterialId = topCandidateMaterialIdFromItem(item);
+  const matchStatus = deriveMatchStatus(
+    applied,
+    snapshotStatus,
+    topCandidateMaterialId,
+  );
+  const now = new Date().toISOString();
+  await db
+    .update(excelWorkspaceItems)
+    .set({
+      reviewDecisionJson: serializeRowDecision(applied),
+      materialId: applied.materialId ?? item.materialId,
+      matchStatus,
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaceItems.id, item.id));
+  return true;
+}
+
+async function autoApplyReliableSearchResultsForJob(jobId: string) {
+  const runs = await db
+    .select()
+    .from(materialProfileSearchRuns)
+    .where(
+      and(
+        eq(materialProfileSearchRuns.jobId, jobId),
+        eq(materialProfileSearchRuns.isCurrent, true),
+      ),
+    );
+  let applied = 0;
+  for (const run of runs) {
+    try {
+      if (await autoApplyReliableSearchRunToItem(run)) {
+        applied += 1;
+      }
+    } catch (error) {
+      log.warn("auto_apply_search_run_failed", {
+        jobId,
+        runId: run.id,
+        itemId: run.itemId,
+        error,
+      });
+    }
+  }
+  return applied;
+}
+
+/** Exported for unit tests / manual re-apply after job completion. */
+export async function autoApplyReliableMaterialProfileSearchResults(
+  jobId: string,
+) {
+  return autoApplyReliableSearchResultsForJob(jobId);
+}
+
 async function _completeMaterialProfileSearchJob(jobId: string) {
   await refreshJobCounters(jobId);
   const now = new Date().toISOString();
@@ -1099,6 +1264,14 @@ async function _completeMaterialProfileSearchJob(jobId: string) {
   if (!job || job.status === "cancelled") {
     return;
   }
+
+  let autoApplied = 0;
+  try {
+    autoApplied = await autoApplyReliableSearchResultsForJob(jobId);
+  } catch (error) {
+    log.warn("auto_apply_on_complete_failed", { jobId, error });
+  }
+
   await db
     .update(materialProfileSearchJobs)
     .set({
@@ -1106,7 +1279,10 @@ async function _completeMaterialProfileSearchJob(jobId: string) {
       currentItemId: null,
       currentRowIndex: null,
       currentProductName: null,
-      message: "Job tìm kiếm hồ sơ vật tư đã hoàn tất.",
+      message:
+        autoApplied > 0
+          ? `Job tìm kiếm hoàn tất. Đã tự điền ${autoApplied.toLocaleString("vi-VN")} dòng đáng tin cậy.`
+          : "Job tìm kiếm hồ sơ vật tư đã hoàn tất.",
       error: null,
       finishedAt: now,
       lastProgressAt: now,
@@ -1162,6 +1338,60 @@ export const cancelMaterialProfileSearchJob = traceFn(
   "cancelMaterialProfileSearchJob",
   _cancelMaterialProfileSearchJob,
 );
+
+/**
+ * Cancel every queued/running search job for a workspace before rematch
+ * deletes excel_workspace_items (runs cascade on item_id).
+ */
+async function _cancelActiveMaterialProfileSearchJobsForWorkspace(
+  workspaceId: number,
+) {
+  const activeJobs = await db
+    .select({ id: materialProfileSearchJobs.id })
+    .from(materialProfileSearchJobs)
+    .where(
+      and(
+        eq(materialProfileSearchJobs.workspaceId, workspaceId),
+        inArray(materialProfileSearchJobs.status, ACTIVE_JOB_STATUSES),
+      ),
+    );
+  const cancelled: MaterialProfileSearchJobSnapshot[] = [];
+  for (const job of activeJobs) {
+    cancelled.push(await cancelMaterialProfileSearchJob(job.id));
+  }
+  return cancelled;
+}
+
+export const cancelActiveMaterialProfileSearchJobsForWorkspace = traceFn(
+  log,
+  "cancelActiveMaterialProfileSearchJobsForWorkspace",
+  _cancelActiveMaterialProfileSearchJobsForWorkspace,
+);
+
+/**
+ * Pure decision: whether a completed/partial run should attempt auto-apply.
+ * Exported for unit tests (DB merge path stays in autoApplyReliableSearchRunToItem).
+ */
+export function shouldAttemptAutoApplyReliableSearchRun(input: {
+  status: MaterialProfileSearchRunStatus;
+  hasReliableResult: boolean;
+}): boolean {
+  if (input.status !== "completed" && input.status !== "partial") {
+    return false;
+  }
+  return input.hasReliableResult;
+}
+
+/**
+ * Pure merge policy for auto-apply: skip overwriting exportable catalog/AI/web
+ * decisions (search payloads may still be refreshed by the DB path).
+ */
+export function shouldSkipAutoApplyOverwrite(input: {
+  hasExistingExportableDecision: boolean;
+}): boolean {
+  return input.hasExistingExportableDecision;
+}
+
 export const setCurrentMaterialProfileSearchRun = traceFn(
   log,
   "setCurrentMaterialProfileSearchRun",

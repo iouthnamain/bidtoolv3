@@ -4,10 +4,13 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 
 import {
+  missingProfileMatchMappingKeys,
   normalizeToken,
   parseOptionalNumber,
   parseWorkbookBase64,
+  profileMatchMappingError,
   rowsFromMapping,
+  suggestColumnMapping,
 } from "~/server/services/excel-workbook";
 
 function sampleBase64(path: string) {
@@ -139,6 +142,26 @@ describe("standard Excel workbook parser", () => {
   it("normalizes Vietnamese d-stroke before accent stripping", () => {
     expect(normalizeToken("ĐVT")).toBe("dvt");
     expect(normalizeToken("Đơn vị tính")).toBe("don vi tinh");
+  });
+
+  it("maps Thông số kỹ thuật aliases for profile match readiness", () => {
+    const mapping = suggestColumnMapping([
+      "Tên vật tư",
+      "ĐVT",
+      "Thông số kỹ thuật",
+    ]);
+    expect(mapping.materialName).toBe("Tên vật tư");
+    expect(mapping.unit).toBe("ĐVT");
+    expect(mapping.specText).toBe("Thông số kỹ thuật");
+    expect(missingProfileMatchMappingKeys(mapping)).toEqual([]);
+    expect(profileMatchMappingError(mapping)).toBeNull();
+
+    const tskt = suggestColumnMapping(["Tên", "ĐVT", "TSKT"]);
+    expect(tskt.specText).toBe("TSKT");
+
+    expect(
+      missingProfileMatchMappingKeys({ materialName: "Tên vật tư" }),
+    ).toEqual(["unit", "specText"]);
   });
 
   it("parses localized numeric strings used in material imports", () => {

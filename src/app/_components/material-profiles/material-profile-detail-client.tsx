@@ -18,6 +18,7 @@ import { Badge, Button, EmptyState } from "~/app/_components/ui";
 import { stepNavReachableClass } from "~/app/_components/ui/button-classes";
 import { useToast } from "~/app/_components/ui/toast";
 import { MaterialProfileReviewStep } from "~/app/_components/material-profiles/material-profile-review-step";
+import { parseMaterialProfileOptions } from "~/lib/materials/excel-enrich-fields";
 import {
   getLastMaterialProfileExportDir,
   pickMaterialProfileBrowserExportDirectory,
@@ -32,29 +33,49 @@ type Sheet = WorkspaceDetail["workbook"]["sheets"][number];
 type PreviewResult = RouterOutputs["materialProfile"]["previewExportWorkbook"];
 type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
+type ExportMode = "clean" | "legacy_templates";
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
 
 const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
   [
     { id: 1, label: "Tải lên Excel" },
-    { id: 2, label: "Ánh xạ & chỉnh sheet" },
-    { id: 3, label: "Duyệt vật tư" },
-    { id: 4, label: "Xem trước & xuất" },
+    { id: 2, label: "Ánh xạ cột bắt buộc" },
+    { id: 3, label: "Duyệt & lưu danh mục" },
+    { id: 4, label: "Xuất sheet sạch" },
   ];
 
 const mappingFields = [
   { key: "materialName", label: "Tên vật tư", required: true },
+  { key: "unit", label: "ĐVT", required: true },
+  { key: "specText", label: "Thông số kỹ thuật", required: true },
   { key: "code", label: "Mã vật tư" },
-  { key: "unit", label: "ĐVT" },
   { key: "category", label: "Nhóm" },
-  { key: "specText", label: "Thông số" },
-  { key: "vendorHint", label: "NCC" },
+  { key: "vendorHint", label: "Nhà sản xuất" },
   { key: "originHint", label: "Xuất xứ" },
   { key: "unitPrice", label: "Đơn giá" },
   { key: "sourceUrl", label: "Nguồn" },
   { key: "catalogPdfUrls", label: "URL catalog" },
 ] as const;
+
+const REQUIRED_MAPPING_KEYS = mappingFields
+  .filter((field) => "required" in field && field.required)
+  .map((field) => field.key);
+
+function missingRequiredMappingKeys(mapping: Record<string, string | null>) {
+  return REQUIRED_MAPPING_KEYS.filter((key) => !mapping[key]);
+}
+
+function requiredMappingChecklist(mapping: Record<string, string | null>) {
+  return mappingFields
+    .filter((field) => "required" in field && field.required)
+    .map((field) => ({
+      key: field.key,
+      label: field.label,
+      mapped: Boolean(mapping[field.key]),
+      header: mapping[field.key],
+    }));
+}
 
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -366,6 +387,7 @@ function WorkbookMappingStep({
   edits,
   isSaving,
   isMatching,
+  autoSearchAfterMatch,
   onSheetChange,
   onHeaderRowChange,
   onMappingChange,
@@ -373,7 +395,9 @@ function WorkbookMappingStep({
   onSave,
   onRunMatch,
   onContinueToReview,
+  onToggleAutoSearch,
   canContinueToReview,
+  isUpdatingOptions,
 }: {
   sheets: Sheet[];
   activeSheet: Sheet;
@@ -383,6 +407,7 @@ function WorkbookMappingStep({
   edits: CellEdits;
   isSaving: boolean;
   isMatching: boolean;
+  autoSearchAfterMatch: boolean;
   onSheetChange: (sheetName: string) => void;
   onHeaderRowChange: (rowIndex: number) => void;
   onMappingChange: (key: string, value: string | null) => void;
@@ -390,25 +415,31 @@ function WorkbookMappingStep({
   onSave: () => void;
   onRunMatch: () => void;
   onContinueToReview: () => void;
+  onToggleAutoSearch: (enabled: boolean) => void;
   canContinueToReview: boolean;
+  isUpdatingOptions: boolean;
 }) {
-  const hasNameColumn = Boolean(mapping.materialName);
+  const checklist = requiredMappingChecklist(mapping);
+  const missingRequired = missingRequiredMappingKeys(mapping);
+  const canRunMatch = missingRequired.length === 0;
   const optionalMapped = mappingFields.filter(
     (field) =>
       !("required" in field && field.required) && Boolean(mapping[field.key]),
   ).length;
+  const optionalTotal = mappingFields.length - REQUIRED_MAPPING_KEYS.length;
 
   return (
     <section className="panel overflow-hidden">
       <div className="border-b border-slate-400 bg-white px-4 py-4">
-        <p className="section-title">Map & chỉnh workbook</p>
+        <p className="section-title">Map & chuẩn bị khớp</p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
           <div>
             <h2 className="text-lg font-bold text-slate-950">
-              Map cột vật tư và chỉnh cell
+              Ánh xạ cột bắt buộc rồi khớp vật tư
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Đã map {optionalMapped}/{mappingFields.length - 1} cột phụ.
+              Bắt buộc: Tên vật tư · ĐVT · Thông số kỹ thuật. Đã map{" "}
+              {optionalMapped}/{optionalTotal} cột phụ.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -418,28 +449,89 @@ function WorkbookMappingStep({
               isLoading={isSaving}
               leftIcon={<Check className="h-4 w-4" />}
             >
-              Lưu state
+              Lưu ánh xạ
             </Button>
             <Button
-              disabled={!hasNameColumn}
+              disabled={!canRunMatch}
               onClick={onRunMatch}
               isLoading={isMatching}
               leftIcon={<Search className="h-4 w-4" />}
+              title={
+                canRunMatch
+                  ? "Lưu ánh xạ và khớp với danh mục vật tư"
+                  : "Cần map đủ Tên vật tư, ĐVT và Thông số kỹ thuật"
+              }
             >
-              Lưu & chạy match
+              Khớp vật tư
             </Button>
             <Button
               variant="primary"
               disabled={!canContinueToReview}
               onClick={onContinueToReview}
             >
-              Tiếp tục duyệt vật tư
+              Tiếp tục duyệt
             </Button>
           </div>
         </div>
       </div>
 
       <div className="grid gap-2 p-4">
+        <div
+          className={`rounded border px-3 py-3 text-sm ${
+            canRunMatch
+              ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+              : "border-amber-300 bg-amber-50 text-amber-950"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <p className="font-bold">
+            {canRunMatch
+              ? "Đã đủ cột bắt buộc — có thể khớp vật tư"
+              : "Chưa đủ cột bắt buộc để khớp"}
+          </p>
+          <ul className="mt-2 grid gap-1.5 sm:grid-cols-3">
+            {checklist.map((item) => (
+              <li
+                key={item.key}
+                className="flex items-start gap-2 rounded border border-current/15 bg-white/70 px-2.5 py-2 text-xs"
+              >
+                <span
+                  className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold ${
+                    item.mapped
+                      ? "bg-emerald-600 text-white"
+                      : "bg-amber-200 text-amber-950"
+                  }`}
+                  aria-hidden
+                >
+                  {item.mapped ? "✓" : "!"}
+                </span>
+                <span>
+                  <span className="font-bold">{item.label}</span>
+                  <span className="mt-0.5 block text-[11px] opacity-80">
+                    {item.mapped
+                      ? `← ${item.header}`
+                      : "Chưa chọn cột Excel"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!canRunMatch ? (
+            <p className="mt-2 text-xs font-semibold">
+              Nút «Khớp vật tư» bị khóa đến khi map đủ{" "}
+              {missingRequired
+                .map(
+                  (key) =>
+                    mappingFields.find((field) => field.key === key)?.label ??
+                    key,
+                )
+                .join(", ")}
+              .
+            </p>
+          ) : null}
+        </div>
+
         <div className="grid gap-1 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
@@ -459,7 +551,7 @@ function WorkbookMappingStep({
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Header row
+              Dòng tiêu đề
             </span>
             <input
               type="number"
@@ -471,40 +563,60 @@ function WorkbookMappingStep({
               className="h-10 rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 shadow-[var(--shadow-flat)]"
             />
           </label>
-          <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            <p className="font-bold text-slate-900">Điều kiện qua bước</p>
-            <p className="mt-1">
-              Cần map cột Tên vật tư, chạy match, rồi bấm «Tiếp tục duyệt vật
-              tư» để sang bước 3.
-            </p>
-          </div>
+          <label className="flex items-start gap-2 rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-slate-500"
+              checked={autoSearchAfterMatch}
+              disabled={isUpdatingOptions}
+              onChange={(event) => onToggleAutoSearch(event.target.checked)}
+            />
+            <span>
+              <span className="font-bold text-slate-900">
+                Tự tìm kiếm sau khi khớp
+              </span>
+              <span className="mt-0.5 block text-slate-600">
+                Bật mặc định: sau khớp, hệ thống tự chạy job tìm AI cho dòng
+                chưa đủ dữ liệu — không hỏi thêm.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
-          {mappingFields.map((field) => (
-            <label key={field.key} className="flex flex-col gap-1">
-              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                {field.label}
-                {"required" in field && field.required ? (
-                  <span className="text-rose-500"> *</span>
-                ) : null}
-              </span>
-              <select
-                value={mapping[field.key] ?? ""}
-                onChange={(event) =>
-                  onMappingChange(field.key, event.target.value || null)
-                }
-                className="h-9 rounded border border-slate-500 bg-white px-2 text-xs text-slate-900 shadow-[var(--shadow-flat)]"
-              >
-                <option value="">Không map</option>
-                {activeSheet.headers.map((header) => (
-                  <option key={`${field.key}-${header}`} value={header}>
-                    {header}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          {mappingFields.map((field) => {
+            const isRequired = "required" in field && field.required;
+            const isMapped = Boolean(mapping[field.key]);
+            return (
+              <label key={field.key} className="flex flex-col gap-1">
+                <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                  {field.label}
+                  {isRequired ? (
+                    <span className="text-rose-600"> *</span>
+                  ) : null}
+                </span>
+                <select
+                  value={mapping[field.key] ?? ""}
+                  onChange={(event) =>
+                    onMappingChange(field.key, event.target.value || null)
+                  }
+                  className={`h-9 rounded border bg-white px-2 text-xs text-slate-900 shadow-[var(--shadow-flat)] ${
+                    isRequired && !isMapped
+                      ? "border-amber-500 ring-1 ring-amber-200"
+                      : "border-slate-500"
+                  }`}
+                  aria-invalid={isRequired && !isMapped}
+                >
+                  <option value="">Không map</option>
+                  {activeSheet.headers.map((header) => (
+                    <option key={`${field.key}-${header}`} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
         </div>
 
         <WorkbookGrid sheet={activeSheet} edits={edits} onEdit={onEdit} />
@@ -516,21 +628,27 @@ function WorkbookMappingStep({
 function ExportPreviewStep({
   preview,
   exportEditState,
+  exportMode,
   isPreviewing,
   isSaving,
   isExporting,
+  isUpdatingOptions,
   onRefreshPreview,
   onPreviewEdit,
   onDeleteSelection,
   onRestoreDeleted,
   onSavePreview,
   onExport,
+  onExportLegacy,
+  onExportModeChange,
 }: {
   preview: PreviewResult | null;
   exportEditState: ExportEditState;
+  exportMode: "clean" | "legacy_templates";
   isPreviewing: boolean;
   isSaving: boolean;
   isExporting: boolean;
+  isUpdatingOptions: boolean;
   onRefreshPreview: () => void;
   onPreviewEdit: (
     sheetName: string,
@@ -550,6 +668,8 @@ function ExportPreviewStep({
   ) => void;
   onSavePreview: () => void;
   onExport: () => void;
+  onExportLegacy: () => void;
+  onExportModeChange: (mode: "clean" | "legacy_templates") => void;
 }) {
   const [activePreviewSheetName, setActivePreviewSheetName] = useState("");
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
@@ -605,19 +725,37 @@ function ExportPreviewStep({
     setSelectedColumns([]);
   };
 
+  const isCleanMode = exportMode === "clean";
+  const previewModeLabel =
+    preview?.exportMode === "legacy_templates"
+      ? "Biểu mẫu cũ (BT + template)"
+      : "Sheet sạch (mặc định)";
+  const cleanHeaders =
+    preview && "cleanHeaders" in preview && Array.isArray(preview.cleanHeaders)
+      ? preview.cleanHeaders
+      : null;
+
   return (
     <section className="space-y-4">
       <div className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-1">
           <div>
-            <p className="section-title">Xem trước kết quả</p>
+            <p className="section-title">Xuất kết quả</p>
             <h2 className="mt-1 text-lg font-bold text-slate-950">
-              Kiểm tra workbook trước export
+              {isCleanMode
+                ? "Xem trước sheet sạch rồi tải về"
+                : "Xem trước biểu mẫu cũ (BT + template)"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Xem trước toàn bộ workbook. Sheet vật tư có thêm các cột BT, các
-              sheet khác vẫn có thể chỉnh giá trị trước khi xuất.
+              {isCleanMode
+                ? "Xuất sheet độc lập với tiêu đề tiếng Việt: Mã, Tên, ĐVT, Thông số, Nhà sản xuất, Xuất xứ, Đơn giá, Nguồn, URL catalog."
+                : "Chế độ cũ gắn cột BT vào workbook nguồn và kèm gói biểu mẫu. Dùng khi cần tương thích quy trình trước đây."}
             </p>
+            {cleanHeaders && cleanHeaders.length > 0 && isCleanMode ? (
+              <p className="mt-2 text-xs font-semibold text-slate-500">
+                Cột: {cleanHeaders.join(" · ")}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -634,16 +772,57 @@ function ExportPreviewStep({
               isLoading={isSaving}
               leftIcon={<Check className="h-4 w-4" />}
             >
-              Lưu preview
+              Lưu chỉnh sửa
             </Button>
             <Button
               onClick={onExport}
               isLoading={isExporting}
               leftIcon={<Download className="h-4 w-4" />}
             >
-              Chọn thư mục & export
+              {isCleanMode ? "Tải sheet sạch" : "Xuất biểu mẫu cũ"}
             </Button>
+            {isCleanMode ? (
+              <Button
+                variant="ghost"
+                onClick={onExportLegacy}
+                isLoading={isExporting}
+                disabled={isExporting}
+              >
+                Xuất biểu mẫu cũ
+              </Button>
+            ) : null}
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-slate-400 bg-slate-50 px-3 py-3 text-sm">
+          <span className="text-xs font-bold tracking-wide text-slate-600 uppercase">
+            Chế độ xuất
+          </span>
+          <label className="inline-flex items-center gap-2 font-semibold text-slate-900">
+            <input
+              type="radio"
+              name="export-mode"
+              checked={isCleanMode}
+              disabled={isUpdatingOptions || isPreviewing}
+              onChange={() => onExportModeChange("clean")}
+            />
+            Sheet sạch
+          </label>
+          <label className="inline-flex items-center gap-2 font-semibold text-slate-700">
+            <input
+              type="radio"
+              name="export-mode"
+              checked={!isCleanMode}
+              disabled={isUpdatingOptions || isPreviewing}
+              onChange={() => onExportModeChange("legacy_templates")}
+            />
+            Biểu mẫu cũ
+          </label>
+          {preview ? (
+            <Badge tone={isCleanMode ? "success" : "warning"}>
+              Preview: {previewModeLabel}
+            </Badge>
+          ) : null}
         </div>
         {preview ? (
           <div className="mt-4 grid gap-1 lg:grid-cols-2">
@@ -907,6 +1086,8 @@ export function MaterialProfileDetailClient({
     useState<ExportEditState>(emptyExportEditState);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewAutoRequested, setPreviewAutoRequested] = useState(false);
+  const [exportMode, setExportMode] = useState<ExportMode>("clean");
+  const [autoSearchAfterMatch, setAutoSearchAfterMatch] = useState(true);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -921,6 +1102,10 @@ export function MaterialProfileDetailClient({
       ) ??
       sheets[0],
     [detail?.workspace.sourceSheetName, selectedSheetName, sheets],
+  );
+  const profileOptions = useMemo(
+    () => parseMaterialProfileOptions(detail?.workspace.templateConfigJson),
+    [detail?.workspace.templateConfigJson],
   );
 
   const reach = useCallback((nextStep: MaterialProfileStep) => {
@@ -939,18 +1124,49 @@ export function MaterialProfileDetailClient({
   const updateState = api.materialProfile.updateState.useMutation({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
-      toast.success("Đã lưu trạng thái workbook.");
+      toast.success("Đã lưu ánh xạ workbook.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const updateOptions = api.materialProfile.updateOptions.useMutation({
+    onSuccess: async (workspace) => {
+      const next = parseMaterialProfileOptions(workspace.templateConfigJson);
+      setAutoSearchAfterMatch(next.autoSearchAfterMatch);
+      setExportMode(next.exportMode);
+      await utils.materialProfile.get.invalidate({ workspaceId });
     },
     onError: (error) => toast.error(error.message),
   });
   const match = api.materialProfile.match.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await utils.materialProfile.get.invalidate({ workspaceId });
+      await utils.materialProfile.listSearchJobs.invalidate();
       setPreview(null);
       setPreviewAutoRequested(false);
-      toast.success(
-        "Đã match vật tư từ catalog. Bấm «Tiếp tục duyệt vật tư» để sang bước 3.",
-      );
+
+      const summary = result.matchSummary;
+      const matchedParts = [
+        `${summary.matched.toLocaleString("vi-VN")} khớp`,
+        `${summary.candidatesFound.toLocaleString("vi-VN")} cần duyệt`,
+        `${summary.unmatched.toLocaleString("vi-VN")} chưa khớp`,
+      ];
+      if (result.autoSearchJob) {
+        toast.success(
+          `Đã khớp catalog (${matchedParts.join(" · ")}). Đang tự tìm AI cho ${result.autoSearchJob.total.toLocaleString("vi-VN")} dòng — chuyển sang bước duyệt để theo dõi.`,
+        );
+        reach(3);
+        return;
+      }
+      if (result.autoSearchSkippedReason) {
+        toast.info(
+          `Đã khớp catalog (${matchedParts.join(" · ")}). ${result.autoSearchSkippedReason}`,
+        );
+      } else {
+        toast.success(
+          `Đã khớp catalog (${matchedParts.join(" · ")}). Tiếp tục duyệt để kiểm tra và lưu danh mục.`,
+        );
+      }
+      reach(3);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -958,6 +1174,17 @@ export function MaterialProfileDetailClient({
     onSuccess: (result) => {
       setPreview(result);
       setExportEditState(result.exportEditState);
+      if (result.exportMode === "clean" || result.exportMode === "legacy_templates") {
+        setExportMode(result.exportMode);
+      }
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const previewCleanExport = api.materialProfile.previewCleanExport.useMutation({
+    onSuccess: (result) => {
+      setPreview(result);
+      setExportEditState(result.exportEditState);
+      setExportMode("clean");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -965,7 +1192,7 @@ export function MaterialProfileDetailClient({
     api.materialProfile.updateExportEditState.useMutation({
       onSuccess: async () => {
         await utils.materialProfile.get.invalidate({ workspaceId });
-        toast.success("Đã lưu preview export.");
+        toast.success("Đã lưu chỉnh sửa preview.");
       },
       onError: (error) => toast.error(error.message),
     });
@@ -973,16 +1200,19 @@ export function MaterialProfileDetailClient({
     onSuccess: async (result) => {
       setLastMaterialProfileExportDir(result.parentDirPath);
       await utils.materialProfile.get.invalidate({ workspaceId });
+      await utils.materialProfile.list.invalidate();
+      const modeLabel =
+        result.exportMode === "legacy_templates" ? "biểu mẫu cũ" : "sheet sạch";
       if (
         result.missingCount > 0 ||
         result.warnings.length > 0 ||
         result.unresolvedReviewCount > 0
       ) {
         toast.warning(
-          `Đã export vào ${result.outputDirPath}, nhưng còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
+          `Đã xuất ${modeLabel} vào ${result.outputDirPath}, còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
-        toast.success(`Đã export vào ${result.outputDirPath}`);
+        toast.success(`Đã xuất ${modeLabel} vào ${result.outputDirPath}`);
       }
     },
     onError: (error) => toast.error(error.message),
@@ -1011,31 +1241,50 @@ export function MaterialProfileDetailClient({
     setExportEditState(
       normalizeExportEditState(detail.workspace.exportEditStateJson),
     );
+    setAutoSearchAfterMatch(profileOptions.autoSearchAfterMatch);
+    setExportMode(profileOptions.exportMode);
 
     let nextMax: MaterialProfileStep = 1;
     if (detail.workbook.sheets.length > 0) nextMax = 2;
     if (detail.items.length > 0) nextMax = 3;
-    if (detail.items.length > 0) nextMax = 4;
+    if (
+      detail.items.length > 0 &&
+      (detail.workspace.exportedAt || detail.workspace.status === "exported")
+    ) {
+      nextMax = 4;
+    } else if (detail.items.length > 0) {
+      nextMax = 4;
+    }
     setMaxReached((current) => (nextMax > current ? nextMax : current));
-  }, [detail]);
+  }, [detail, profileOptions.autoSearchAfterMatch, profileOptions.exportMode]);
 
-  const refreshPreview = useCallback(() => {
-    setPreviewAutoRequested(true);
-    previewExport.mutate({ workspaceId });
-  }, [previewExport, workspaceId]);
+  const refreshPreview = useCallback(
+    (mode: ExportMode = exportMode) => {
+      setPreviewAutoRequested(true);
+      if (mode === "clean") {
+        previewCleanExport.mutate({ workspaceId });
+        return;
+      }
+      previewExport.mutate({ workspaceId, exportMode: mode });
+    },
+    [exportMode, previewCleanExport, previewExport, workspaceId],
+  );
 
   useEffect(() => {
     if (
       step === 4 &&
       !preview &&
       !previewExport.isPending &&
+      !previewCleanExport.isPending &&
       !previewAutoRequested
     ) {
-      refreshPreview();
+      refreshPreview(exportMode);
     }
   }, [
+    exportMode,
     preview,
     previewAutoRequested,
+    previewCleanExport.isPending,
     previewExport.isPending,
     refreshPreview,
     step,
@@ -1052,9 +1301,21 @@ export function MaterialProfileDetailClient({
   };
 
   const runMatch = async () => {
+    const missing = missingRequiredMappingKeys(mapping);
+    if (missing.length > 0) {
+      toast.error(
+        `Cần map đủ Tên vật tư, ĐVT và Thông số kỹ thuật trước khi khớp. Thiếu: ${missing
+          .map(
+            (key) =>
+              mappingFields.find((field) => field.key === key)?.label ?? key,
+          )
+          .join(", ")}.`,
+      );
+      return;
+    }
     if ((detail?.items.length ?? 0) > 0) {
       const ok = window.confirm(
-        "Chạy match lại sẽ giữ quyết định cho dòng không đổi; dòng đã sửa cần duyệt lại.",
+        "Khớp lại sẽ giữ quyết định cho dòng không đổi; dòng đã sửa có thể cần duyệt lại. Tiếp tục?",
       );
       if (!ok) return;
     }
@@ -1070,7 +1331,38 @@ export function MaterialProfileDetailClient({
       sheetName: activeSheet?.name,
       headerRowIndex,
       mapping,
+      autoSearchAfterMatch,
     });
+  };
+
+  const handleToggleAutoSearch = (enabled: boolean) => {
+    setAutoSearchAfterMatch(enabled);
+    updateOptions.mutate({
+      workspaceId,
+      autoSearchAfterMatch: enabled,
+    });
+  };
+
+  const handleExportModeChange = (mode: ExportMode) => {
+    setExportMode(mode);
+    setPreview(null);
+    setPreviewAutoRequested(false);
+    updateOptions.mutate(
+      {
+        workspaceId,
+        exportMode: mode,
+      },
+      {
+        onSuccess: () => {
+          toast.success(
+            mode === "clean"
+              ? "Đã chọn xuất sheet sạch."
+              : "Đã chọn xuất biểu mẫu cũ.",
+          );
+          refreshPreview(mode);
+        },
+      },
+    );
   };
 
   const handleFile = async (file: File | null) => {
@@ -1118,37 +1410,30 @@ export function MaterialProfileDetailClient({
         },
       },
     }));
-    setPreview((current) =>
-      current
-        ? {
-            ...current,
-            sheets: current.sheets.map((sheet) =>
-              sheet.name === sheetName
-                ? {
-                    ...sheet,
-                    rows: sheet.rows.map((row, rIndex) => {
-                      const currentRowNumber =
-                        sheet.rowNumbers?.[rIndex] ?? rIndex + 1;
-                      if (currentRowNumber !== rowNumber) {
-                        return row;
-                      }
-                      return Array.from({
-                        length: Math.max(
-                          row.length,
-                          sheet.columnNumbers.length,
-                        ),
-                      }).map((_, cIndex) =>
-                        sheet.columnNumbers[cIndex] === colNumber
-                          ? value
-                          : (row[cIndex] ?? ""),
-                      );
-                    }),
-                  }
-                : sheet,
-            ),
-          }
-        : current,
-    );
+    setPreview((current) => {
+      if (!current) return current;
+      const nextSheets = current.sheets.map((sheet) => {
+        if (sheet.name !== sheetName) return sheet;
+        return {
+          ...sheet,
+          rows: sheet.rows.map((row, rIndex) => {
+            const currentRowNumber =
+              sheet.rowNumbers?.[rIndex] ?? rIndex + 1;
+            if (currentRowNumber !== rowNumber) {
+              return row;
+            }
+            return Array.from({
+              length: Math.max(row.length, sheet.columnNumbers.length),
+            }).map((_, cIndex) =>
+              sheet.columnNumbers[cIndex] === colNumber
+                ? value
+                : (row[cIndex] ?? ""),
+            );
+          }),
+        };
+      });
+      return { ...current, sheets: nextSheets } as PreviewResult;
+    });
   };
 
   const saveExportEditState = async () => {
@@ -1178,41 +1463,33 @@ export function MaterialProfileDetailClient({
         ).sort((a, b) => a - b),
       },
     }));
-    setPreview((current) =>
-      current
-        ? {
-            ...current,
-            sheets: current.sheets.map((sheet) =>
-              sheet.name === sheetName
-                ? {
-                    ...sheet,
-                    rowNumbers: sheet.rowNumbers.filter(
-                      (rowNumber) => !rowNumbers.includes(rowNumber),
-                    ),
-                    columnNumbers: sheet.columnNumbers.filter(
-                      (colNumber) => !colNumbers.includes(colNumber),
-                    ),
-                    rows: sheet.rows
-                      .filter(
-                        (_, rowIndex) =>
-                          !rowNumbers.includes(
-                            sheet.rowNumbers[rowIndex] ?? -1,
-                          ),
-                      )
-                      .map((row) =>
-                        row.filter(
-                          (_, colIndex) =>
-                            !colNumbers.includes(
-                              sheet.columnNumbers[colIndex] ?? -1,
-                            ),
-                        ),
-                      ),
-                  }
-                : sheet,
+    setPreview((current) => {
+      if (!current) return current;
+      const nextSheets = current.sheets.map((sheet) => {
+        if (sheet.name !== sheetName) return sheet;
+        return {
+          ...sheet,
+          rowNumbers: sheet.rowNumbers.filter(
+            (rowNumber) => !rowNumbers.includes(rowNumber),
+          ),
+          columnNumbers: sheet.columnNumbers.filter(
+            (colNumber) => !colNumbers.includes(colNumber),
+          ),
+          rows: sheet.rows
+            .filter(
+              (_, rowIndex) =>
+                !rowNumbers.includes(sheet.rowNumbers[rowIndex] ?? -1),
+            )
+            .map((row) =>
+              row.filter(
+                (_, colIndex) =>
+                  !colNumbers.includes(sheet.columnNumbers[colIndex] ?? -1),
+              ),
             ),
-          }
-        : current,
-    );
+        };
+      });
+      return { ...current, sheets: nextSheets } as PreviewResult;
+    });
   };
 
   const restoreDeletedExportValue = (
@@ -1260,7 +1537,7 @@ export function MaterialProfileDetailClient({
     });
   };
 
-  const handleExportClick = async () => {
+  const handleExportClick = async (mode: ExportMode = exportMode) => {
     if (exportWorkspace.isPending || exportDownloadBundle.isPending) {
       return;
     }
@@ -1268,6 +1545,7 @@ export function MaterialProfileDetailClient({
     const isDesktop = !!window.bidtoolDesktop?.isDesktop;
     let desktopOutputPath: string | null = null;
     let browserDirectoryHandle: FileSystemDirectoryHandle | null = null;
+    const modeLabel = mode === "legacy_templates" ? "biểu mẫu cũ" : "sheet sạch";
 
     try {
       if (isDesktop) {
@@ -1288,16 +1566,21 @@ export function MaterialProfileDetailClient({
         exportWorkspace.mutate({
           workspaceId,
           outputDirPath: desktopOutputPath,
+          exportMode: mode,
         });
         return;
       }
 
-      const bundle = await exportDownloadBundle.mutateAsync({ workspaceId });
+      const bundle = await exportDownloadBundle.mutateAsync({
+        workspaceId,
+        exportMode: mode,
+      });
       const saved = await saveMaterialProfileExportBundleInBrowser(
         bundle,
         browserDirectoryHandle,
       );
       await utils.materialProfile.get.invalidate({ workspaceId });
+      await utils.materialProfile.list.invalidate();
 
       if (
         bundle.missingCount > 0 ||
@@ -1305,17 +1588,17 @@ export function MaterialProfileDetailClient({
         bundle.unresolvedReviewCount > 0
       ) {
         toast.warning(
-          `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
+          `Đã lưu ${modeLabel} (${saved.label}), còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
-        toast.success(`Đã lưu export: ${saved.label}`);
+        toast.success(`Đã lưu ${modeLabel}: ${saved.label}`);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
       toast.error(
-        error instanceof Error ? error.message : "Không export được.",
+        error instanceof Error ? error.message : "Không xuất được file.",
       );
     }
   };
@@ -1391,6 +1674,8 @@ export function MaterialProfileDetailClient({
           edits={edits}
           isSaving={updateState.isPending}
           isMatching={match.isPending}
+          autoSearchAfterMatch={autoSearchAfterMatch}
+          isUpdatingOptions={updateOptions.isPending}
           onSheetChange={(sheetName) => {
             const sheet = sheets.find((item) => item.name === sheetName);
             setSelectedSheetName(sheetName);
@@ -1407,6 +1692,7 @@ export function MaterialProfileDetailClient({
           onSave={() => void saveState()}
           onRunMatch={() => void runMatch()}
           onContinueToReview={() => reach(3)}
+          onToggleAutoSearch={handleToggleAutoSearch}
           canContinueToReview={(detail?.items.length ?? 0) > 0}
         />
       ) : null}
@@ -1434,17 +1720,23 @@ export function MaterialProfileDetailClient({
         <ExportPreviewStep
           preview={preview}
           exportEditState={exportEditState}
-          isPreviewing={previewExport.isPending}
+          exportMode={exportMode}
+          isPreviewing={
+            previewExport.isPending || previewCleanExport.isPending
+          }
           isSaving={updateExportEditState.isPending}
           isExporting={
             exportWorkspace.isPending || exportDownloadBundle.isPending
           }
-          onRefreshPreview={refreshPreview}
+          isUpdatingOptions={updateOptions.isPending}
+          onRefreshPreview={() => refreshPreview(exportMode)}
           onPreviewEdit={updateExportCellEdit}
           onDeleteSelection={deleteExportSelection}
           onRestoreDeleted={restoreDeletedExportValue}
           onSavePreview={() => void saveExportEditState()}
-          onExport={() => void handleExportClick()}
+          onExport={() => void handleExportClick(exportMode)}
+          onExportLegacy={() => void handleExportClick("legacy_templates")}
+          onExportModeChange={handleExportModeChange}
         />
       ) : null}
     </div>

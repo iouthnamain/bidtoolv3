@@ -767,6 +767,8 @@ async function runMaterialProfileSearchJob(job: MaterialProfileSearchJobRow) {
       return;
     }
 
+    // completeMaterialProfileSearchJob also auto-merges reliable search
+    // results into excel_workspace_items.reviewDecisionJson (no UI prompts).
     await completeMaterialProfileSearchJob(job.id);
     log.info("job_completed", {
       jobType: "material_profile_search",

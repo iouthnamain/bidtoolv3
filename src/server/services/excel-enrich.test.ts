@@ -5,11 +5,16 @@ import {
   buildFillPlan,
   classifyStatus,
   decodeBase64ForTest,
+  extractRowFields,
   rowToScrapedProduct,
   writeEnrichedWorkbook,
   type FillableField,
 } from "~/server/services/excel-enrich";
-import { suggestColumnMapping } from "~/server/services/excel-workbook";
+import {
+  profileMatchMappingError,
+  suggestColumnMapping,
+  type ParsedWorkbookSheet,
+} from "~/server/services/excel-workbook";
 import type { materials } from "~/server/db/schema";
 
 type MaterialRow = typeof materials.$inferSelect;
@@ -578,5 +583,68 @@ describe("decodeBase64ForTest", () => {
     const b = decodeBase64ForTest(withPrefix);
     expect(a.equals(b)).toBe(true);
     expect(a.toString("utf8")).toBe("hello world");
+  });
+});
+
+describe("extractRowFields profile match mapping", () => {
+  const sheet = {
+    name: "Sheet1",
+    detectedHeaderRowIndex: 1,
+    activeHeaderRowIndex: 1,
+    headerRowIndex: 1,
+    rawRows: [
+      ["Tên vật tư", "ĐVT", "Thông số kỹ thuật"],
+      ["Ống PVC", "m", "Ø21"],
+    ],
+    headers: ["Tên vật tư", "ĐVT", "Thông số kỹ thuật"],
+    rows: [
+      {
+        originalRowIndex: 2,
+        values: {
+          "Tên vật tư": "Ống PVC",
+          ĐVT: "m",
+          "Thông số kỹ thuật": "Ø21",
+        },
+      },
+    ],
+    previewRows: [],
+    suggestedMapping: {},
+    warnings: [],
+  } satisfies ParsedWorkbookSheet;
+
+  it("fails fast when profile required mapping is incomplete", () => {
+    expect(
+      profileMatchMappingError({ materialName: "Tên vật tư" }),
+    ).toMatch(/ĐVT/);
+    expect(() =>
+      extractRowFields(
+        sheet,
+        { materialName: "Tên vật tư" },
+        { requireProfileMatchMapping: true },
+      ),
+    ).toThrow(/ĐVT|Thông số/);
+  });
+
+  it("extracts rows when profile required mapping is complete", () => {
+    const rows = extractRowFields(
+      sheet,
+      {
+        materialName: "Tên vật tư",
+        unit: "ĐVT",
+        specText: "Thông số kỹ thuật",
+      },
+      { requireProfileMatchMapping: true },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: "Ống PVC",
+      fields: { unit: "m", specText: "Ø21" },
+    });
+  });
+
+  it("keeps name-only requirement for generic enrich", () => {
+    const rows = extractRowFields(sheet, { materialName: "Tên vật tư" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toBe("Ống PVC");
   });
 });

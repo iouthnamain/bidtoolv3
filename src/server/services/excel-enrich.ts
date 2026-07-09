@@ -5,6 +5,7 @@ import type { db as appDb } from "~/server/db";
 import { materials } from "~/server/db/schema";
 import {
   findFuzzyCandidates,
+  FUZZY_CANDIDATE_MIN_SIMILARITY,
   type ScoreBreakdown,
 } from "~/server/services/ai-product-matcher";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
@@ -13,6 +14,7 @@ const log = createLogger("services-excel-enrich");
 import {
   columnKeys,
   parseOptionalNumber,
+  profileMatchMappingError,
   type ColumnKey,
   type ColumnMapping,
   type ParsedWorkbookSheet,
@@ -53,7 +55,8 @@ export {
 export type { FillableField, FillAction, FillPlanCell, EnrichStatus };
 export type { ColumnMapping };
 
-export const MATCH_CONCURRENCY = 10;
+/** Concurrent catalog match queries per batch (keep explicit for profile + enrich). */
+export const MATCH_CONCURRENCY = 8;
 
 export type EnrichCandidate = {
   materialId: number;
@@ -243,10 +246,16 @@ async function mapWithConcurrency<T, R>(
 async function _matchRows(
   db: AppDb,
   rows: Array<EnrichRowInput & { name?: string }>,
-  opts: { minSimilarity?: number; limit?: number } = {},
+  opts: {
+    minSimilarity?: number;
+    limit?: number;
+    /** Cap concurrent findFuzzyCandidates calls (default MATCH_CONCURRENCY). */
+    concurrency?: number;
+  } = {},
 ): Promise<EnrichRowResult[]> {
-  const minSimilarity = opts.minSimilarity ?? 0.1;
+  const minSimilarity = opts.minSimilarity ?? FUZZY_CANDIDATE_MIN_SIMILARITY;
   const limit = opts.limit ?? 8;
+  const concurrency = opts.concurrency ?? MATCH_CONCURRENCY;
   const matchKeyForRow = (row: EnrichRowInput & { name?: string }) =>
     JSON.stringify({
       name: row.name?.trim() ?? "",
@@ -265,7 +274,7 @@ async function _matchRows(
 
   const uniqueRawResults = await mapWithConcurrency(
     Array.from(uniqueRows.entries()),
-    MATCH_CONCURRENCY,
+    concurrency,
     async ([key, row]) => {
       const product = rowToScrapedProduct({ ...row.fields, name: row.name });
       if (!product.name) {
@@ -593,6 +602,14 @@ function cellToText(value: ExcelJS.CellValue): string {
   return "";
 }
 
+export type ExtractRowFieldsOptions = {
+  /**
+   * When true (material-profile match), require mapped Tên + ĐVT + Thông số
+   * and fail fast with a vi-VN error. Generic enrich keeps name-only.
+   */
+  requireProfileMatchMapping?: boolean;
+};
+
 /**
  * Resolve the row field map for a sheet given its mapping, keyed by the
  * fillable field set. The product name lives under the reserved `name` key.
@@ -600,10 +617,18 @@ function cellToText(value: ExcelJS.CellValue): string {
 function _extractRowFields(
   sheet: ParsedWorkbookSheet,
   mapping: ColumnMapping,
+  opts: ExtractRowFieldsOptions = {},
 ): Array<EnrichRowInput & { name: string }> {
+  if (opts.requireProfileMatchMapping) {
+    const mappingError = profileMatchMappingError(mapping);
+    if (mappingError) {
+      throw new Error(mappingError);
+    }
+  }
+
   const nameColumn = mapping.materialName;
   if (!nameColumn) {
-    throw new Error("Cần chọn cột tên vật tư để đối chiếu.");
+    throw new Error("Cần chọn cột Tên vật tư để đối chiếu.");
   }
 
   const getColumn = (key: ColumnKey): string | null => mapping[key] ?? null;

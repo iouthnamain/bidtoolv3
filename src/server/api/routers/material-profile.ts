@@ -8,6 +8,10 @@ import {
   requirePermission,
 } from "~/server/api/trpc";
 import {
+  MaterialProfileCommitError,
+  saveMaterialProfileItemsToMaterials,
+} from "~/server/services/material-profile-commit";
+import {
   bulkApplyMaterialProfileMatches,
   bulkAiSearchMaterialProfileItems,
   bulkUpdateMaterialProfileItems,
@@ -29,6 +33,7 @@ import {
   updateMaterialProfileItem,
   updateMaterialProfileItemReviewDecision,
   batchUpdateMaterialProfileItemReviewDecisions,
+  updateMaterialProfileOptions,
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
 } from "~/server/services/material-profile-workspaces";
@@ -54,7 +59,10 @@ function mapMaterialProfileError(error: unknown): never {
       message: error.message,
     });
   }
-  if (error instanceof MaterialProfileWorkspaceError) {
+  if (
+    error instanceof MaterialProfileWorkspaceError ||
+    error instanceof MaterialProfileCommitError
+  ) {
     throw new TRPCError({
       code:
         error.code === "NOT_FOUND"
@@ -85,6 +93,7 @@ const searchJobIdInput = z.object({
 });
 
 const searchModeInput = z.enum(["web", "ai"]);
+const exportModeInput = z.enum(["clean", "legacy_templates"]);
 
 const cellEditsSchema = z.record(z.string(), z.record(z.string(), z.string()));
 const sheetNumberMapSchema = z.record(
@@ -193,6 +202,19 @@ export const materialProfileRouter = createTRPCRouter({
       ),
     ),
 
+  updateOptions: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        autoSearchAfterMatch: z.boolean().optional(),
+        exportMode: exportModeInput.optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileOptions(ctx.db, input),
+      ),
+    ),
+
   delete: requirePermission("material:write")
     .input(workspaceIdInput)
     .mutation(({ ctx, input }) =>
@@ -235,11 +257,26 @@ export const materialProfileRouter = createTRPCRouter({
         sheetName: z.string().trim().min(1).optional(),
         headerRowIndex: z.number().int().min(1).optional(),
         mapping: z.record(z.string(), z.string().nullable()).optional(),
+        autoSearchAfterMatch: z.boolean().optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         matchMaterialProfileWorkspace(ctx.db, input),
+      ),
+    ),
+
+  /** Persist included/exportable rows into `materials` (insert/update/link). */
+  saveToMaterials: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).max(500).optional(),
+        includedOnly: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        saveMaterialProfileItemsToMaterials(ctx.db, input),
       ),
     ),
 
@@ -336,6 +373,10 @@ export const materialProfileRouter = createTRPCRouter({
       ),
     ),
 
+  /**
+   * @deprecated Prefer `startSearchJob` (mode `ai`). Kept temporarily for
+   * older FE clients; Worker C should remove UI entry points.
+   */
   bulkAiSearchItems: requirePermission("material:write")
     .input(
       workspaceIdInput.extend({
@@ -463,6 +504,7 @@ export const materialProfileRouter = createTRPCRouter({
     .input(
       workspaceIdInput.extend({
         outputDirPath: z.string().trim().min(1),
+        exportMode: exportModeInput.optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -471,15 +513,22 @@ export const materialProfileRouter = createTRPCRouter({
           ctx.db,
           input.workspaceId,
           input.outputDirPath,
+          { exportMode: input.exportMode },
         ),
       ),
     ),
 
   exportDownloadBundle: requirePermission("material:write")
-    .input(workspaceIdInput)
+    .input(
+      workspaceIdInput.extend({
+        exportMode: exportModeInput.optional(),
+      }),
+    )
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
-        exportMaterialProfileDownloadBundle(ctx.db, input.workspaceId),
+        exportMaterialProfileDownloadBundle(ctx.db, input.workspaceId, {
+          exportMode: input.exportMode,
+        }),
       ),
     ),
 
@@ -488,10 +537,27 @@ export const materialProfileRouter = createTRPCRouter({
   })),
 
   previewExportWorkbook: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        exportMode: exportModeInput.optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        previewMaterialProfileExportWorkbook(ctx.db, input.workspaceId, {
+          exportMode: input.exportMode,
+        }),
+      ),
+    ),
+
+  /** Alias for Worker C: clean-first preview (same as previewExportWorkbook default). */
+  previewCleanExport: requirePermission("material:write")
     .input(workspaceIdInput)
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
-        previewMaterialProfileExportWorkbook(ctx.db, input.workspaceId),
+        previewMaterialProfileExportWorkbook(ctx.db, input.workspaceId, {
+          exportMode: "clean",
+        }),
       ),
     ),
 

@@ -63,6 +63,77 @@ export const FIELD_LABELS: Record<FillableField, string> = {
   sourceUrl: "Nguồn",
 };
 
+/** Export-only column (not in FILLABLE_FIELDS) for catalog PDF URL lists. */
+export const CATALOG_PDF_URLS_LABEL = "URL catalog";
+
+/**
+ * Primary clean-sheet column order for material-profile export.
+ * Includes product name + URL catalog; trailing extras are optional.
+ */
+export const MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS = [
+  { key: "code", header: FIELD_LABELS.code },
+  { key: "name", header: "Tên vật tư" },
+  { key: "unit", header: FIELD_LABELS.unit },
+  { key: "specText", header: FIELD_LABELS.specText },
+  { key: "manufacturer", header: FIELD_LABELS.manufacturer },
+  { key: "originCountry", header: FIELD_LABELS.originCountry },
+  { key: "defaultUnitPrice", header: FIELD_LABELS.defaultUnitPrice },
+  { key: "sourceUrl", header: FIELD_LABELS.sourceUrl },
+  { key: "catalogPdfUrls", header: CATALOG_PDF_URLS_LABEL },
+  { key: "currency", header: FIELD_LABELS.currency },
+  { key: "category", header: FIELD_LABELS.category },
+  { key: "matchStatus", header: "Trạng thái khớp" },
+] as const;
+
+export type MaterialProfileCleanExportColumnKey =
+  (typeof MATERIAL_PROFILE_CLEAN_EXPORT_COLUMNS)[number]["key"];
+
+/** Profile workspace options stored under templateConfigJson.materialProfileOptions. */
+export const DEFAULT_MATERIAL_PROFILE_OPTIONS = {
+  autoSearchAfterMatch: true,
+  exportMode: "clean" as const,
+};
+
+export type MaterialProfileExportMode = "clean" | "legacy_templates";
+
+export type MaterialProfileOptions = {
+  autoSearchAfterMatch: boolean;
+  exportMode: MaterialProfileExportMode;
+};
+
+export function parseMaterialProfileOptions(
+  templateConfigJson: unknown,
+): MaterialProfileOptions {
+  const root =
+    templateConfigJson && typeof templateConfigJson === "object"
+      ? (templateConfigJson as Record<string, unknown>)
+      : {};
+  const raw =
+    root.materialProfileOptions &&
+    typeof root.materialProfileOptions === "object"
+      ? (root.materialProfileOptions as Record<string, unknown>)
+      : {};
+  return {
+    autoSearchAfterMatch: raw.autoSearchAfterMatch !== false,
+    exportMode: raw.exportMode === "legacy_templates" ? "legacy_templates" : "clean",
+  };
+}
+
+export function withMaterialProfileOptions(
+  templateConfigJson: Record<string, unknown>,
+  patch: Partial<MaterialProfileOptions>,
+): Record<string, unknown> {
+  const current = parseMaterialProfileOptions(templateConfigJson);
+  return {
+    ...templateConfigJson,
+    materialProfileOptions: {
+      autoSearchAfterMatch:
+        patch.autoSearchAfterMatch ?? current.autoSearchAfterMatch,
+      exportMode: patch.exportMode ?? current.exportMode,
+    },
+  };
+}
+
 export const PRICE_FIELDS = new Set<FillableField>([
   "defaultUnitPrice",
   "currency",
