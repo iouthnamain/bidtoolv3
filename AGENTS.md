@@ -22,7 +22,7 @@
 
 - `ok agents, do <request>` means run the full `codex-feature-pipeline` workflow.
 - `ok <agent-name>, <request>` means call only that named custom agent, role, or limux pane.
-- Configured custom agents are `scout`, `planner`, `worker`, `reviewer`, `tester`, and `doctor`.
+- Configured custom agents are `scout`, `planner`, `worker`, `reviewer`, `tester`, `doctor`, and `researcher`.
 - Canonical limux roles are `orchestrator`, `worker-ui`, `worker-api`, `worker-db`, `security-reviewer`, `documenter`, and `release-prep`.
 - Do not expand a targeted `ok <agent-name>` request into the full pipeline.
 - If the named agent or role is unknown or ambiguous, stop and ask which role to use.
