@@ -42,6 +42,44 @@ function isProfileSearchJobActive(
   return job?.status === "queued" || job?.status === "running";
 }
 
+function isProfileSearchJobTerminal(
+  job: Pick<ProfileSearchJobPanelState, "status"> | null | undefined,
+) {
+  return (
+    job?.status === "completed" ||
+    job?.status === "failed" ||
+    job?.status === "cancelled"
+  );
+}
+
+function isMergeableSearchRun(run: ProfileSearchRunPanelState) {
+  return (
+    run.status === "completed" ||
+    run.status === "partial" ||
+    run.status === "failed"
+  );
+}
+
+function mergeDecisionWithSearchRun(
+  decision: RowDecision,
+  run: ProfileSearchRunPanelState,
+): RowDecision {
+  const aiSearchResult = run.aiSearchCandidates[0];
+  return {
+    ...decision,
+    webLinkResults: run.webLinkResults,
+    webLinksStatus: run.webLinksStatus,
+    aiSearchCandidates: run.aiSearchCandidates,
+    aiSearchResult,
+    aiSearchStatus: run.aiSearchStatus,
+    selectedSearchCandidateKey:
+      typeof decision.selectedSearchCandidateKey === "string"
+        ? decision.selectedSearchCandidateKey
+        : (run.recommendedCandidateKey ?? undefined),
+    catalogPdfUrls: decision.catalogPdfUrls ?? aiSearchResult?.catalogPdfUrls,
+  };
+}
+
 function toReviewItem(item: WorkspaceItem): WorkspaceItemForReview & {
   materialId: number | null;
   matchStatus: WorkspaceItem["matchStatus"];
@@ -85,6 +123,10 @@ export function MaterialProfileReviewStep({
     () => reviewItems.map((item) => workspaceItemToReviewRow(item)),
     [reviewItems],
   );
+  const reviewRowByIndex = useMemo(
+    () => new Map(reviewRows.map((row) => [row.originalRowIndex, row])),
+    [reviewRows],
+  );
   const reviewSummary = useMemo(
     () => ({
       totalRows: reviewRows.length,
@@ -114,6 +156,8 @@ export function MaterialProfileReviewStep({
   const persistTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const previousActiveSearchJobIdRef = useRef<string | null>(null);
+  const invalidatedTerminalSearchJobKeyRef = useRef<string | null>(null);
   const decisionsRef = useRef(decisions);
   decisionsRef.current = decisions;
 
@@ -161,6 +205,7 @@ export function MaterialProfileReviewStep({
       staleTime: 0,
     },
   );
+  const latestProfileSearchJob = searchJobsQuery.data?.[0] ?? null;
   const activeProfileSearchJob =
     searchJobsQuery.data?.find(isProfileSearchJobActive) ?? null;
   const selectedItemId =
@@ -177,6 +222,19 @@ export function MaterialProfileReviewStep({
       enabled: selectedItemId != null,
       refetchInterval: () =>
         activeProfileSearchJob ? PROFILE_SEARCH_POLL_MS : false,
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+    },
+  );
+  const activeSearchRunsQuery = api.materialProfile.listSearchRuns.useQuery(
+    {
+      workspaceId,
+      jobId: activeProfileSearchJob?.id,
+      limit: Math.max(1, Math.min(activeProfileSearchJob?.total ?? 1, 500)),
+    },
+    {
+      enabled: activeProfileSearchJob != null,
+      refetchInterval: PROFILE_SEARCH_POLL_MS,
       refetchOnWindowFocus: false,
       staleTime: 0,
     },
@@ -212,18 +270,61 @@ export function MaterialProfileReviewStep({
       onError: (error) =>
         toast.error(error.message || "Không dùng lại được lần tìm kiếm."),
     });
-  const activeProfileSearchJobProgressKey = activeProfileSearchJob
-    ? `${activeProfileSearchJob.id}:${activeProfileSearchJob.processed}:${activeProfileSearchJob.status}`
-    : null;
+  const activeProfileSearchJobId = activeProfileSearchJob?.id ?? null;
+  const terminalSearchJobKey =
+    latestProfileSearchJob && isProfileSearchJobTerminal(latestProfileSearchJob)
+      ? `${latestProfileSearchJob.id}:${latestProfileSearchJob.status}`
+      : null;
 
   useEffect(() => {
-    if (!activeProfileSearchJobProgressKey) return;
+    if (activeProfileSearchJobId) {
+      previousActiveSearchJobIdRef.current = activeProfileSearchJobId;
+      return;
+    }
+    if (!terminalSearchJobKey) return;
+    const wasPreviouslyActive =
+      previousActiveSearchJobIdRef.current === latestProfileSearchJob?.id;
+    if (
+      !wasPreviouslyActive &&
+      invalidatedTerminalSearchJobKeyRef.current === terminalSearchJobKey
+    ) {
+      return;
+    }
+    previousActiveSearchJobIdRef.current = null;
+    invalidatedTerminalSearchJobKeyRef.current = terminalSearchJobKey;
     void utils.materialProfile.get.invalidate({ workspaceId });
   }, [
-    activeProfileSearchJobProgressKey,
+    activeProfileSearchJobId,
+    latestProfileSearchJob?.id,
+    terminalSearchJobKey,
     utils.materialProfile.get,
     workspaceId,
   ]);
+
+  useEffect(() => {
+    const runs = (activeSearchRunsQuery.data ?? []).filter(
+      isMergeableSearchRun,
+    );
+    if (runs.length === 0) return;
+
+    setDecisions((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const run of runs) {
+        if (!reviewRowByIndex.has(run.originalRowIndex)) continue;
+        const current = prev.get(run.originalRowIndex) ?? {
+          materialId: null,
+          acceptedFields: new Set(),
+        };
+        next.set(
+          run.originalRowIndex,
+          mergeDecisionWithSearchRun(current, run),
+        );
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [activeSearchRunsQuery.data, reviewRowByIndex]);
 
   useEffect(() => {
     setDecisions(seedDecisionsFromItems(reviewItems));
@@ -366,9 +467,7 @@ export function MaterialProfileReviewStep({
     async (rowIndices: number[]) => {
       const eligible = rowIndices
         .map((rowIndex) => {
-          const row = reviewRows.find(
-            (item) => item.originalRowIndex === rowIndex,
-          );
+          const row = reviewRowByIndex.get(rowIndex);
           const itemId = itemIdByRowIndex.get(rowIndex);
           if (!row || itemId == null) return null;
           const decision = catalogDecisionForRow(row);
@@ -428,7 +527,7 @@ export function MaterialProfileReviewStep({
       bulkApplyMatches,
       flushDecisionsForRows,
       itemIdByRowIndex,
-      reviewRows,
+      reviewRowByIndex,
       toast,
       workspaceId,
     ],
@@ -440,9 +539,7 @@ export function MaterialProfileReviewStep({
       applyDecisions((prev) => {
         const next = new Map(prev);
         for (const rowIndex of rowIndices) {
-          const row = reviewRows.find(
-            (item) => item.originalRowIndex === rowIndex,
-          );
+          const row = reviewRowByIndex.get(rowIndex);
           const current = prev.get(rowIndex);
           if (!row || !current) continue;
           const applied = searchResultDecisionForRow(row, current);
@@ -464,7 +561,7 @@ export function MaterialProfileReviewStep({
         `Đã áp dụng kết quả tìm kiếm cho ${appliedCount.toLocaleString("vi-VN")} dòng.`,
       );
     },
-    [applyDecisions, persistDecision, reviewRows, toast],
+    [applyDecisions, persistDecision, reviewRowByIndex, toast],
   );
 
   const handleUndoBulkApply = useCallback(async () => {
@@ -554,6 +651,12 @@ export function MaterialProfileReviewStep({
       profileUndoAvailable={bulkApplyUndoAvailable}
       activeProfileSearchJob={
         activeProfileSearchJob as ProfileSearchJobPanelState | null
+      }
+      activeProfileSearchRuns={
+        (activeSearchRunsQuery.data ?? []) as ProfileSearchRunPanelState[]
+      }
+      latestProfileSearchJob={
+        latestProfileSearchJob as ProfileSearchJobPanelState | null
       }
       profileSearchJobPending={
         startSearchJob.isPending || cancelSearchJob.isPending

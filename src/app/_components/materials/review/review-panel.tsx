@@ -54,10 +54,13 @@ export type ProfileSearchJobPanelState = {
   currentRowIndex: number | null;
   currentProductName: string | null;
   message: string | null;
+  error: string | null;
 };
 
 export type ProfileSearchRunPanelState = {
   id: number;
+  itemId: number;
+  originalRowIndex: number;
   mode: "web" | "ai";
   status:
     | "queued"
@@ -68,8 +71,11 @@ export type ProfileSearchRunPanelState = {
     | "skipped"
     | "cancelled";
   isCurrent: boolean;
+  webLinksStatus: "idle" | "pending" | "done" | "error";
+  aiSearchStatus: "idle" | "pending" | "done" | "error";
   webLinkResults: WebLinkResult[];
   aiSearchCandidates: AiSearchStoredResult[];
+  recommendedCandidateKey: string | null;
   warnings: string[];
   errorMessage: string | null;
   updatedAt: string;
@@ -103,6 +109,29 @@ function profileRunStatusLabel(status: ProfileSearchRunPanelState["status"]) {
       return "Bỏ qua";
     case "cancelled":
       return "Đã hủy";
+  }
+}
+
+function profileRunBadgeMeta(run: ProfileSearchRunPanelState): {
+  label: string;
+  tone: "neutral" | "success" | "warning" | "critical" | "info";
+} {
+  const prefix = run.mode === "web" ? "Web" : "AI";
+  switch (run.status) {
+    case "queued":
+      return { label: `${prefix} chờ`, tone: "neutral" };
+    case "running":
+      return { label: `${prefix} đang chạy`, tone: "info" };
+    case "completed":
+      return { label: `${prefix} xong`, tone: "success" };
+    case "partial":
+      return { label: `${prefix} một phần`, tone: "warning" };
+    case "failed":
+      return { label: `${prefix} lỗi`, tone: "critical" };
+    case "skipped":
+      return { label: "Bỏ qua", tone: "warning" };
+    case "cancelled":
+      return { label: "Đã hủy", tone: "neutral" };
   }
 }
 
@@ -143,6 +172,8 @@ export function ReviewPanel({
   profileUndoPending = false,
   profileUndoAvailable = false,
   activeProfileSearchJob = null,
+  activeProfileSearchRuns = [],
+  latestProfileSearchJob = null,
   profileSearchJobPending = false,
   profileSearchRuns = [],
   profileSearchHistoryLoading = false,
@@ -177,6 +208,8 @@ export function ReviewPanel({
   profileUndoPending?: boolean;
   profileUndoAvailable?: boolean;
   activeProfileSearchJob?: ProfileSearchJobPanelState | null;
+  activeProfileSearchRuns?: ProfileSearchRunPanelState[];
+  latestProfileSearchJob?: ProfileSearchJobPanelState | null;
   profileSearchJobPending?: boolean;
   profileSearchRuns?: ProfileSearchRunPanelState[];
   profileSearchHistoryLoading?: boolean;
@@ -266,30 +299,42 @@ export function ReviewPanel({
 
   const selectedRow =
     rows.find((row) => row.originalRowIndex === selectedRowIndex) ?? null;
-  const webPendingCount = Array.from(decisions.values()).filter(
-    (decision) =>
-      decision.webSearchStatus === "pending" ||
-      decision.webLinksStatus === "pending",
-  ).length;
-  const aiPendingCount = Array.from(decisions.values()).filter(
-    (decision) => decision.aiSearchStatus === "pending",
-  ).length;
-  const savedToMaterialsCount = Array.from(decisions.values()).filter(
-    (decision) => decision.materialId != null,
-  ).length;
+  const decisionStats = useMemo(() => {
+    let webPendingCount = 0;
+    let aiPendingCount = 0;
+    let savedToMaterialsCount = 0;
+    for (const decision of decisions.values()) {
+      if (
+        decision.webSearchStatus === "pending" ||
+        decision.webLinksStatus === "pending"
+      ) {
+        webPendingCount += 1;
+      }
+      if (decision.aiSearchStatus === "pending") aiPendingCount += 1;
+      if (decision.materialId != null) savedToMaterialsCount += 1;
+    }
+    return { webPendingCount, aiPendingCount, savedToMaterialsCount };
+  }, [decisions]);
   const isProfileSearchJobActive =
     activeProfileSearchJob?.status === "queued" ||
     activeProfileSearchJob?.status === "running";
-  const activeProfileSearchItemIds = useMemo(
-    () => new Set(activeProfileSearchJob?.requestedItemIds ?? []),
-    [activeProfileSearchJob?.requestedItemIds],
-  );
-  const profileSearchJobMode = activeProfileSearchJob?.mode;
+  const activeRunByItemId = useMemo(() => {
+    const map = new Map<number, ProfileSearchRunPanelState>();
+    for (const run of activeProfileSearchRuns) {
+      map.set(run.itemId, run);
+    }
+    return map;
+  }, [activeProfileSearchRuns]);
+  const selectedRowActiveProfileRun =
+    selectedRow != null
+      ? (activeRunByItemId.get(selectedRow.key) ?? null)
+      : null;
+  const profileSearchJobMode =
+    selectedRowActiveProfileRun?.mode ?? activeProfileSearchJob?.mode;
   const profileSearchBusy = profileSearchJobPending || isProfileSearchJobActive;
   const selectedRowProfileSearchPending =
-    selectedRow != null &&
-    activeProfileSearchItemIds.has(selectedRow.key) &&
-    isProfileSearchJobActive;
+    selectedRowActiveProfileRun?.status === "queued" ||
+    selectedRowActiveProfileRun?.status === "running";
 
   const catalogFieldsForRow = (
     row: ReviewRow,
@@ -849,6 +894,12 @@ export function ReviewPanel({
             100,
         )
       : 0;
+  const terminalProfileSearchJob =
+    !activeProfileSearchJob &&
+    (latestProfileSearchJob?.status === "failed" ||
+      latestProfileSearchJob?.status === "cancelled")
+      ? latestProfileSearchJob
+      : null;
 
   if (rows.length === 0) {
     return (
@@ -880,20 +931,24 @@ export function ReviewPanel({
             </span>
             {!isProfileSplit ? (
               <span className="tabular-nums">
-                {webPendingCount.toLocaleString("vi-VN")} đang tìm web
+                {decisionStats.webPendingCount.toLocaleString("vi-VN")} đang tìm
+                web
               </span>
             ) : (
               <>
                 <span className="tabular-nums">
-                  {webPendingCount.toLocaleString("vi-VN")} đang tìm liên kết
+                  {decisionStats.webPendingCount.toLocaleString("vi-VN")} đang
+                  tìm liên kết
                 </span>
                 <span className="tabular-nums">
-                  {aiPendingCount.toLocaleString("vi-VN")} đang tìm AI
+                  {decisionStats.aiPendingCount.toLocaleString("vi-VN")} đang
+                  tìm AI
                 </span>
               </>
             )}
             <span className="tabular-nums">
-              {savedToMaterialsCount.toLocaleString("vi-VN")} đã lưu vật tư
+              {decisionStats.savedToMaterialsCount.toLocaleString("vi-VN")} đã
+              lưu vật tư
             </span>
           </p>
         </div>
@@ -1025,7 +1080,7 @@ export function ReviewPanel({
         </div>
       </div>
 
-      {isProfileSplit && activeProfileSearchJob ? (
+      {isProfileSplit && activeProfileSearchJob && isProfileSearchJobActive ? (
         <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1038,9 +1093,7 @@ export function ReviewPanel({
               </p>
               <p className="mt-1 text-xs text-slate-700">
                 {activeProfileSearchJob.message ??
-                  (isProfileSearchJobActive
-                    ? "Đang xử lý."
-                    : "Đã kết thúc.")}
+                  (isProfileSearchJobActive ? "Đang xử lý." : "Đã kết thúc.")}
                 {activeProfileSearchJob.currentProductName
                   ? ` · ${activeProfileSearchJob.currentProductName}`
                   : ""}
@@ -1071,10 +1124,28 @@ export function ReviewPanel({
             aria-label="Tiến độ tìm kiếm hồ sơ vật tư"
           >
             <div
-              className="h-full bg-brand transition-all"
+              className="bg-brand h-full transition-all"
               style={{ width: `${profileSearchProgressPct}%` }}
             />
           </div>
+        </div>
+      ) : null}
+
+      {isProfileSplit && terminalProfileSearchJob ? (
+        <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold text-slate-900">
+            {terminalProfileSearchJob.mode === "web"
+              ? "Job tìm web"
+              : "Job tìm AI"}{" "}
+            {terminalProfileSearchJob.status === "failed" ? "đã lỗi" : "đã hủy"}
+          </p>
+          <p className="mt-1 text-xs text-slate-700">
+            {terminalProfileSearchJob.error ??
+              terminalProfileSearchJob.message ??
+              (terminalProfileSearchJob.status === "failed"
+                ? "Job tìm kiếm kết thúc với lỗi."
+                : "Job tìm kiếm đã được hủy.")}
+          </p>
         </div>
       ) : null}
 
@@ -1100,8 +1171,10 @@ export function ReviewPanel({
             );
             const meta = STATUS_META[rowStatus];
             const isSelected = row.originalRowIndex === selectedRowIndex;
-            const isRowSearchActive =
-              isProfileSearchJobActive && activeProfileSearchItemIds.has(row.key);
+            const activeProfileRun = activeRunByItemId.get(row.key) ?? null;
+            const profileRunBadge = activeProfileRun
+              ? profileRunBadgeMeta(activeProfileRun)
+              : null;
             const name = row.name.trim()
               ? row.name
               : (row.topCandidate?.name ?? `Dòng ${row.originalRowIndex}`);
@@ -1142,25 +1215,23 @@ export function ReviewPanel({
                       decision?.webSearchStatus === "error" ? (
                       <Badge tone="critical">Web lỗi</Badge>
                     ) : null}
-                    {isProfileSplit &&
-                    decision?.webLinksStatus === "pending" ? (
-                      <Badge tone="info">Web…</Badge>
+                    {isProfileSplit && profileRunBadge ? (
+                      <Badge tone={profileRunBadge.tone}>
+                        {profileRunBadge.label}
+                      </Badge>
                     ) : isProfileSplit &&
-                      isRowSearchActive &&
-                      profileSearchJobMode === "web" ? (
-                      <Badge tone="info">Web…</Badge>
+                      decision?.webLinksStatus === "pending" ? (
+                      <Badge tone="info">Web đang chạy</Badge>
                     ) : isProfileSplit &&
                       decision?.webLinksStatus === "error" ? (
                       <Badge tone="critical">Web lỗi</Badge>
                     ) : null}
                     {isProfileSplit &&
+                    !profileRunBadge &&
                     decision?.aiSearchStatus === "pending" ? (
-                      <Badge tone="info">AI…</Badge>
+                      <Badge tone="info">AI đang chạy</Badge>
                     ) : isProfileSplit &&
-                      isRowSearchActive &&
-                      profileSearchJobMode === "ai" ? (
-                      <Badge tone="info">AI…</Badge>
-                    ) : isProfileSplit &&
+                      !profileRunBadge &&
                       decision?.aiSearchStatus === "error" ? (
                       <Badge tone="critical">AI lỗi</Badge>
                     ) : null}
@@ -1215,20 +1286,22 @@ export function ReviewPanel({
                 onWebLinksSearch={() => void runWebLinksAction(selectedRow)}
                 onAiSearch={() => void runAiSearchAction(selectedRow)}
                 isWebLinksPending={
-                  decisions.get(selectedRow.originalRowIndex)?.webLinksStatus ===
-                    "pending" ||
-                  (selectedRowProfileSearchPending &&
-                    profileSearchJobMode === "web")
+                  isProfileSplit
+                    ? selectedRowProfileSearchPending &&
+                      profileSearchJobMode === "web"
+                    : decisions.get(selectedRow.originalRowIndex)
+                        ?.webLinksStatus === "pending"
                 }
                 isAiSearchPending={
-                  decisions.get(selectedRow.originalRowIndex)?.aiSearchStatus ===
-                    "pending" ||
-                  (selectedRowProfileSearchPending &&
-                    profileSearchJobMode === "ai")
+                  isProfileSplit
+                    ? selectedRowProfileSearchPending &&
+                      profileSearchJobMode === "ai"
+                    : decisions.get(selectedRow.originalRowIndex)
+                        ?.aiSearchStatus === "pending"
                 }
                 isWebSearchPending={
-                  decisions.get(selectedRow.originalRowIndex)?.webSearchStatus ===
-                  "pending"
+                  decisions.get(selectedRow.originalRowIndex)
+                    ?.webSearchStatus === "pending"
                 }
               />
 
@@ -1276,7 +1349,9 @@ export function ReviewPanel({
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => void onProfileUseSearchRun(run.id)}
+                                onClick={() =>
+                                  void onProfileUseSearchRun(run.id)
+                                }
                               >
                                 Dùng lại
                               </Button>

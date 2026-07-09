@@ -129,6 +129,13 @@ export class MaterialProfileSearchJobError extends Error {
 type JobRow = typeof materialProfileSearchJobs.$inferSelect;
 type RunRow = typeof materialProfileSearchRuns.$inferSelect;
 type WorkspaceItemRow = typeof excelWorkspaceItems.$inferSelect;
+type JobCounterDelta = {
+  processed: number;
+  found: number;
+  partial: number;
+  failed: number;
+  skipped: number;
+};
 
 const MAX_JOB_ITEMS = 500;
 const ROW_CONCURRENCY = 3;
@@ -343,6 +350,21 @@ function inputSnapshot(item: WorkspaceItemRow): Record<string, unknown> {
   };
 }
 
+function inputFromSnapshot(
+  snapshot: Record<string, unknown>,
+): EnrichWebRowInput {
+  const sheetFields = sheetFieldsFromSnapshot(snapshot);
+  return {
+    name: textField(snapshot.name),
+    code: sheetFields.code,
+    manufacturer: sheetFields.manufacturer,
+    specText: sheetFields.specText,
+    unit: sheetFields.unit,
+    category: sheetFields.category,
+    originCountry: sheetFields.originCountry,
+  };
+}
+
 function sheetFieldsFromSnapshot(snapshot: Record<string, unknown>) {
   return {
     code: textField(snapshot.code),
@@ -382,6 +404,41 @@ function runHasReliableResult(
       scoreAiCandidateCompletion(candidate, sheetFields, rowName) >=
       RELIABLE_SEARCH_MATCH_THRESHOLD,
   );
+}
+
+function zeroJobCounterDelta(): JobCounterDelta {
+  return { processed: 0, found: 0, partial: 0, failed: 0, skipped: 0 };
+}
+
+function deltaForRunResult(input: {
+  run: RunRow;
+  status: MaterialProfileSearchRunStatus;
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+  recommendedCandidateKey?: string;
+}): JobCounterDelta {
+  const delta = zeroJobCounterDelta();
+  if (DONE_RUN_STATUSES.has(input.status)) delta.processed = 1;
+  if (input.status === "partial") delta.partial = 1;
+  if (input.status === "failed") delta.failed = 1;
+  if (input.status === "skipped") delta.skipped = 1;
+  if (
+    runHasReliableResult({
+      inputSnapshotJson: input.run.inputSnapshotJson,
+      webLinkResultsJson: input.webLinkResults as unknown as Record<
+        string,
+        unknown
+      >[],
+      aiSearchCandidatesJson: input.aiSearchCandidates as unknown as Record<
+        string,
+        unknown
+      >[],
+      recommendedCandidateKey: input.recommendedCandidateKey ?? null,
+    })
+  ) {
+    delta.found = 1;
+  }
+  return delta;
 }
 
 async function markRunCurrent(runId: number, itemId: number) {
@@ -465,6 +522,22 @@ async function refreshJobCounters(jobId: string) {
       partial,
       failed,
       skipped,
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    .where(eq(materialProfileSearchJobs.id, jobId));
+}
+
+async function incrementJobCounters(jobId: string, delta: JobCounterDelta) {
+  const now = new Date().toISOString();
+  await db
+    .update(materialProfileSearchJobs)
+    .set({
+      processed: sql<number>`${materialProfileSearchJobs.processed} + ${delta.processed}`,
+      found: sql<number>`${materialProfileSearchJobs.found} + ${delta.found}`,
+      partial: sql<number>`${materialProfileSearchJobs.partial} + ${delta.partial}`,
+      failed: sql<number>`${materialProfileSearchJobs.failed} + ${delta.failed}`,
+      skipped: sql<number>`${materialProfileSearchJobs.skipped} + ${delta.skipped}`,
       lastProgressAt: now,
       updatedAt: now,
     })
@@ -642,7 +715,7 @@ async function _listMaterialProfileSearchRuns(input: {
     .from(materialProfileSearchRuns)
     .where(and(...conditions))
     .orderBy(desc(materialProfileSearchRuns.updatedAt))
-    .limit(Math.min(Math.max(input.limit ?? 10, 1), 100));
+    .limit(Math.min(Math.max(input.limit ?? 10, 1), MAX_JOB_ITEMS));
   return rows.map(toRunSnapshot);
 }
 
@@ -732,7 +805,7 @@ async function updateRunWithResult(input: {
   warnings: string[];
   errorMessage?: string | null;
   sourceWebRunId?: number | null;
-}) {
+}): Promise<JobCounterDelta> {
   const now = new Date().toISOString();
   const webLinkResults = sanitizeStoredJson(
     input.webLinkResults,
@@ -776,23 +849,27 @@ async function updateRunWithResult(input: {
   if (input.status !== "cancelled" && input.status !== "skipped") {
     await markRunCurrent(input.run.id, input.run.itemId);
   }
+
+  return deltaForRunResult({
+    run: input.run,
+    status: input.status,
+    webLinkResults,
+    aiSearchCandidates,
+    recommendedCandidateKey: input.recommendedCandidateKey,
+  });
 }
 
 async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
   throwIfAborted(signal);
   const now = new Date().toISOString();
-  const [item] = await db
-    .select()
-    .from(excelWorkspaceItems)
-    .where(eq(excelWorkspaceItems.id, run.itemId))
-    .limit(1);
+  const input = inputFromSnapshot(asRecord(run.inputSnapshotJson));
 
   await db
     .update(materialProfileSearchJobs)
     .set({
       currentItemId: run.itemId,
       currentRowIndex: run.originalRowIndex,
-      currentProductName: item?.productName ?? null,
+      currentProductName: input.name || null,
       message:
         job.mode === "web"
           ? "Đang tìm liên kết web."
@@ -807,24 +884,8 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     .set({ status: "running", startedAt: now, updatedAt: now })
     .where(eq(materialProfileSearchRuns.id, run.id));
 
-  if (!item) {
-    await updateRunWithResult({
-      run,
-      status: "failed",
-      webLinksStatus: "error",
-      aiSearchStatus: "idle",
-      webLinkResults: [],
-      aiSearchCandidates: [],
-      queries: [],
-      warnings: [],
-      errorMessage: "Không tìm thấy dòng.",
-    });
-    return;
-  }
-
-  const input = inputFromWorkspaceItem(item);
   if (!input.name.trim()) {
-    await updateRunWithResult({
+    return updateRunWithResult({
       run,
       status: "skipped",
       webLinksStatus: "idle",
@@ -835,7 +896,6 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       warnings: ["Tên vật tư trống."],
       errorMessage: "Tên vật tư trống.",
     });
-    return;
   }
 
   try {
@@ -843,7 +903,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       const web = await searchProfileRowWebLinks(input, signal);
       const status: MaterialProfileSearchRunStatus =
         web.webLinkResults.length > 0 ? "completed" : "failed";
-      await updateRunWithResult({
+      return updateRunWithResult({
         run,
         status,
         webLinksStatus: web.webLinkResults.length > 0 ? "done" : "error",
@@ -858,7 +918,6 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
               "Không tìm thấy liên kết web.")
             : null,
       });
-      return;
     }
 
     const currentRun = await loadCurrentRunForItem(run.itemId);
@@ -877,7 +936,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     }
 
     if (webLinkResults.length === 0) {
-      await updateRunWithResult({
+      return updateRunWithResult({
         run,
         status: "failed",
         webLinksStatus: "error",
@@ -891,7 +950,6 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
           "Không có nguồn web để trích xuất AI.",
         sourceWebRunId,
       });
-      return;
     }
 
     try {
@@ -902,7 +960,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       );
       warnings.push(...ai.warnings);
       const hasCandidates = ai.aiSearchCandidates.length > 0;
-      await updateRunWithResult({
+      return updateRunWithResult({
         run,
         status: hasCandidates ? "completed" : "partial",
         webLinksStatus: "done",
@@ -923,7 +981,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
           ? error.message
           : "Không cấu hình AI enrichment.";
       warnings.push(message);
-      await updateRunWithResult({
+      return updateRunWithResult({
         run,
         status: "partial",
         webLinksStatus: "done",
@@ -957,7 +1015,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       error instanceof Error
         ? error.message
         : "Tìm kiếm hồ sơ vật tư thất bại.";
-    await updateRunWithResult({
+    return updateRunWithResult({
       run,
       status: "failed",
       webLinksStatus: "error",
@@ -1023,8 +1081,8 @@ async function _processMaterialProfileSearchJob(
       throw new Error("Job tìm kiếm đã bị hủy.");
     }
 
-    await processRun(job, run, signal);
-    await refreshJobCounters(jobId);
+    const delta = await processRun(job, run, signal);
+    await incrementJobCounters(jobId, delta);
     options.onProgress?.(await loadJobProgress(jobId));
   });
 }

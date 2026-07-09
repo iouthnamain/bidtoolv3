@@ -175,6 +175,37 @@ const dbMock = vi.hoisted(() => {
       .join("");
   }
 
+  function firstNumberParam(value: unknown): number | null {
+    if (typeof value === "number") return value;
+    if (!value || typeof value !== "object") return null;
+    if (
+      "value" in value &&
+      typeof (value as { value: unknown }).value === "number"
+    ) {
+      return (value as { value: number }).value;
+    }
+    const chunks = (value as { queryChunks?: unknown[] }).queryChunks;
+    if (!Array.isArray(chunks)) return null;
+    for (const chunk of chunks) {
+      const found = firstNumberParam(chunk);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  function resolvePatchValue(row: TestRow, value: unknown): unknown {
+    if (!value || typeof value !== "object") return value;
+    const chunks = (value as { queryChunks?: unknown[] }).queryChunks;
+    if (!Array.isArray(chunks)) return value;
+    const column = firstColumn(value);
+    const amount = firstNumberParam(value);
+    if (!column || amount == null || !allChunkText(value).includes("+")) {
+      return value;
+    }
+    const prop = columnProps[column] ?? column;
+    return Number(row[prop] ?? 0) + amount;
+  }
+
   function projectRows(rows: TestRow[], selection: unknown) {
     if (selection && typeof selection === "object" && "count" in selection) {
       return [{ count: rows.length }];
@@ -322,7 +353,15 @@ const dbMock = vi.hoisted(() => {
       },
       where(where: unknown) {
         for (const row of rows) {
-          if (matches(row, where)) Object.assign(row, patch);
+          if (matches(row, where)) {
+            const resolved = Object.fromEntries(
+              Object.entries(patch).map(([key, value]) => [
+                key,
+                resolvePatchValue(row, value),
+              ]),
+            );
+            Object.assign(row, resolved);
+          }
         }
         return Promise.resolve();
       },
@@ -507,6 +546,159 @@ describe("material profile search jobs", () => {
       },
     ]);
     expect(job.found).toBe(1);
+  });
+
+  it("reuses an existing current web run for AI jobs", async () => {
+    dbMock.addCompletedRun({
+      id: 80,
+      itemId: 101,
+      mode: "web",
+      webLinksStatus: "done",
+      aiSearchStatus: "idle",
+      webLinkResultsJson: [webLink],
+      aiSearchCandidatesJson: [],
+      recommendedCandidateKey: null,
+      queriesJson: ["cached web"],
+      updatedAt: "2026-07-03T00:00:00.000Z",
+    });
+
+    const { runs } = await startAndProcess("ai");
+
+    expect(searchProfileRowWebLinks).not.toHaveBeenCalled();
+    expect(extractProfileRowAiCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Ống PVC D50" }),
+      [webLink],
+      undefined,
+    );
+    expect(runs[0]).toMatchObject({
+      status: "completed",
+      sourceWebRunId: 80,
+      webLinkResults: [webLink],
+    });
+  });
+
+  it("increments mixed terminal run counters while processing", async () => {
+    const unrelatedLink: WebLinkResult = {
+      title: "Khuyến mãi tổng hợp",
+      url: "https://shopee.vn/khuyen-mai",
+      domain: "shopee.vn",
+      snippet: "Nội dung không liên quan",
+      query: "khuyến mãi",
+      rankScore: 0.1,
+    };
+    dbMock.state.items = [
+      dbMock.state.items[0]!,
+      {
+        id: 102,
+        workspaceId: 1,
+        originalRowIndex: 5,
+        sortOrder: 1,
+        productName: "Van cổng DN100",
+        specText: "DN100",
+        unit: "cái",
+        vendorHint: null,
+        originHint: null,
+        originalDataJson: {},
+      },
+      {
+        id: 103,
+        workspaceId: 1,
+        originalRowIndex: 6,
+        sortOrder: 2,
+        productName: "Máy bơm lỗi",
+        specText: "",
+        unit: "cái",
+        vendorHint: null,
+        originHint: null,
+        originalDataJson: {},
+      },
+      {
+        id: 104,
+        workspaceId: 1,
+        originalRowIndex: 7,
+        sortOrder: 3,
+        productName: "",
+        specText: "",
+        unit: "cái",
+        vendorHint: null,
+        originHint: null,
+        originalDataJson: {},
+      },
+    ];
+    vi.mocked(searchProfileRowWebLinks).mockImplementation(async (input) => {
+      if (input.name === "Ống PVC D50") {
+        return {
+          webLinkResults: [webLink],
+          queries: ["Ống PVC D50"],
+          warnings: [],
+        };
+      }
+      if (input.name === "Van cổng DN100") {
+        return {
+          webLinkResults: [unrelatedLink],
+          queries: ["Van cổng DN100"],
+          warnings: [],
+        };
+      }
+      return {
+        webLinkResults: [],
+        queries: [input.name],
+        warnings: ["Không tìm thấy liên kết web."],
+      };
+    });
+    vi.mocked(extractProfileRowAiCandidates).mockImplementation(
+      async (input) => {
+        if (input.name === "Ống PVC D50") {
+          return {
+            aiSearchCandidates: [aiCandidate],
+            recommendedCandidateKey: "ai:0",
+            warnings: [],
+          };
+        }
+        return {
+          aiSearchCandidates: [],
+          recommendedCandidateKey: undefined,
+          warnings: ["Không có ứng viên AI."],
+        };
+      },
+    );
+
+    const job = await startMaterialProfileSearchJob({
+      workspaceId: 1,
+      itemIds: [101, 102, 103, 104],
+      mode: "ai",
+    });
+    await processMaterialProfileSearchJob(job.id);
+
+    const processedJob = await getMaterialProfileSearchJob(job.id);
+    expect(processedJob).toMatchObject({
+      processed: 4,
+      found: 1,
+      partial: 1,
+      failed: 1,
+      skipped: 1,
+    });
+
+    await completeMaterialProfileSearchJob(job.id);
+    const completedJob = await getMaterialProfileSearchJob(job.id);
+    expect(completedJob).toMatchObject({
+      processed: 4,
+      found: 1,
+      partial: 1,
+      failed: 1,
+      skipped: 1,
+    });
+    const runs = await listMaterialProfileSearchRuns({
+      workspaceId: 1,
+      jobId: job.id,
+      limit: 10,
+    });
+    expect(runs.map((run) => run.status).sort()).toEqual([
+      "completed",
+      "failed",
+      "partial",
+      "skipped",
+    ]);
   });
 
   it("stores below-threshold AI candidates without counting them as found", async () => {

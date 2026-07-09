@@ -365,20 +365,18 @@ export const materialProfileRouter = createTRPCRouter({
       ),
     ),
 
-  getSearchJob: protectedProcedure
-    .input(searchJobIdInput)
-    .query(({ input }) =>
-      withMaterialProfileErrors(async () => {
-        const job = await getMaterialProfileSearchJob(input.jobId);
-        if (!job) {
-          throw new MaterialProfileSearchJobError(
-            "NOT_FOUND",
-            "Không tìm thấy job tìm kiếm.",
-          );
-        }
-        return job;
-      }),
-    ),
+  getSearchJob: protectedProcedure.input(searchJobIdInput).query(({ input }) =>
+    withMaterialProfileErrors(async () => {
+      const job = await getMaterialProfileSearchJob(input.jobId);
+      if (!job) {
+        throw new MaterialProfileSearchJobError(
+          "NOT_FOUND",
+          "Không tìm thấy job tìm kiếm.",
+        );
+      }
+      return job;
+    }),
+  ),
 
   listSearchJobs: protectedProcedure
     .input(
@@ -401,7 +399,7 @@ export const materialProfileRouter = createTRPCRouter({
         workspaceId: z.number().int().positive().optional(),
         jobId: z.string().uuid().optional(),
         itemId: z.number().int().positive().optional(),
-        limit: z.number().int().min(1).max(100).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
       }),
     )
     .query(({ input }) =>
