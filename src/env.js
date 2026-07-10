@@ -98,11 +98,6 @@ const envSchema = createEnv({
       .max(90)
       .optional(),
     BIDTOOL_EXCEL_RESEARCH_DIR: z.string().optional(),
-    BETTER_AUTH_SECRET: z.string().optional(),
-    BETTER_AUTH_URL: z.string().url().optional(),
-    AUTH_ENABLED: z.enum(["true", "false"]).default("false"),
-    AUTH_BOOTSTRAP_TOKEN: z.string().optional(),
-    AUTH_DESKTOP_AUTO_ADMIN: z.enum(["true", "false"]).default("true"),
   },
 
   /**
@@ -172,11 +167,6 @@ const envSchema = createEnv({
     SEARCH_RESULT_LIMIT_PER_QUERY: process.env.SEARCH_RESULT_LIMIT_PER_QUERY,
     SEARCH_AUDIT_RETENTION_DAYS: process.env.SEARCH_AUDIT_RETENTION_DAYS,
     BIDTOOL_EXCEL_RESEARCH_DIR: process.env.BIDTOOL_EXCEL_RESEARCH_DIR,
-    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
-    AUTH_ENABLED: process.env.AUTH_ENABLED,
-    AUTH_BOOTSTRAP_TOKEN: process.env.AUTH_BOOTSTRAP_TOKEN,
-    AUTH_DESKTOP_AUTO_ADMIN: process.env.AUTH_DESKTOP_AUTO_ADMIN,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**
@@ -190,16 +180,5 @@ const envSchema = createEnv({
    */
   emptyStringAsUndefined: true,
 });
-
-if (envSchema.AUTH_ENABLED === "true") {
-  if (
-    !envSchema.BETTER_AUTH_SECRET ||
-    envSchema.BETTER_AUTH_SECRET.length < 32
-  ) {
-    throw new Error(
-      "BETTER_AUTH_SECRET must be at least 32 characters when AUTH_ENABLED=true.",
-    );
-  }
-}
 
 export const env = envSchema;

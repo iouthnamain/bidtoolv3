@@ -74,6 +74,33 @@ function fieldConfidencesFromExtracted(
   return result;
 }
 
+function verifiedCatalogUrlsFromSources(
+  urls: string[],
+  sources: WebSearchResult[],
+) {
+  const normalize = (value: string) => {
+    try {
+      const parsed = new URL(value);
+      parsed.hash = "";
+      return parsed.toString().replace(/\/$/, "");
+    } catch {
+      return "";
+    }
+  };
+  return urls.filter((url) => {
+    const normalized = normalize(url);
+    if (!normalized) return false;
+    return sources.some((source) => {
+      const discovered = source.discoveredPdfUrls ?? [];
+      return (
+        normalize(source.url) === normalized ||
+        source.snippet.includes(url) ||
+        discovered.some((candidate) => normalize(candidate) === normalized)
+      );
+    });
+  });
+}
+
 async function runPool<T, R>(
   items: T[],
   concurrency: number,
@@ -108,9 +135,11 @@ async function enrichLinkWithFetch(
   if (!fetched) return link;
   return {
     ...link,
+    url: fetched.url || link.url,
     title: fetched.title.trim() || link.title,
     snippet: fetched.snippet.trim() || link.snippet,
     domain: fetched.domain || link.domain,
+    discoveredPdfUrls: fetched.discoveredPdfUrls ?? link.discoveredPdfUrls,
   };
 }
 
@@ -205,6 +234,7 @@ async function _searchProfileRowWebLinks(
       code: input.code ?? null,
       specText: input.specText ?? null,
       sourceUrl: null,
+      profileSearch: true,
     },
     searchResponse.domainPolicy ?? domainPolicy,
   ).slice(0, PROFILE_TOP_LINKS);
@@ -259,6 +289,10 @@ async function _extractProfileRowAiCandidates(
         );
         const mapped = mapExtractedToFillable(extracted, [link.url]);
         const fieldConfidences = fieldConfidencesFromExtracted(extracted);
+        const catalogEvidenceUrls = verifiedCatalogUrlsFromSources(
+          mapped.catalogPdfUrls,
+          [link],
+        );
         const hasFields = Object.keys(mapped.fields).some(
           (field) => field !== "sourceUrl",
         );
@@ -278,6 +312,8 @@ async function _extractProfileRowAiCandidates(
             mapped.catalogPdfUrls.length > 0
               ? mapped.catalogPdfUrls
               : undefined,
+          catalogEvidenceUrls:
+            catalogEvidenceUrls.length > 0 ? catalogEvidenceUrls : undefined,
           fieldConfidences,
           title: link.title,
           url: link.url,

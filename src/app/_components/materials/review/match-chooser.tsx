@@ -40,6 +40,7 @@ import {
   sortCandidatesByScore,
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
+import { validateMaterialProfileResolution } from "~/lib/materials/profile-input-contract";
 import { api } from "~/trpc/react";
 
 function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
@@ -73,6 +74,14 @@ function aiCandidatesFromDecision(decision: RowDecision | undefined) {
     return [decision.aiSearchResult];
   }
   return [];
+}
+
+function sourceLabelFromUrl(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./i, "");
+  } catch {
+    return value;
+  }
 }
 
 export function MatchChooser({
@@ -193,6 +202,14 @@ export function MatchChooser({
     } else {
       links.forEach((link) => {
         const { score, chips } = webLinkMatchChips(link, row.name, sheetFields);
+        const linkedAiCandidate = aiCandidates.find((candidate) =>
+          [candidate.url, ...candidate.sourceUrls].some(
+            (sourceUrl) => sourceUrl === link.url,
+          ),
+        );
+        const linkedPriceLabel = linkedAiCandidate
+          ? aiPriceLabel(linkedAiCandidate.fields)
+          : undefined;
         items.push({
           key: searchCandidateKey("web", link.url),
           source: "web",
@@ -202,6 +219,12 @@ export function MatchChooser({
           score,
           chips,
           sourceUrl: link.url,
+          priceLabel: linkedPriceLabel,
+          priceStatus: linkedAiCandidate
+            ? linkedPriceLabel
+              ? "available"
+              : "not_found"
+            : "unchecked",
           isRecommended: false,
           status:
             decision?.webLinksStatus === "error" ? "error" : ("done" as const),
@@ -238,6 +261,7 @@ export function MatchChooser({
           .map((value) => value?.trim())
           .find((value) => (value?.length ?? 0) > 0);
         const snippet = candidate.snippet?.trim() ?? "";
+        const priceLabel = aiPriceLabel(candidate.fields);
         items.push({
           key: searchCandidateKey("ai", String(index)),
           source: "ai",
@@ -250,7 +274,8 @@ export function MatchChooser({
           score,
           chips,
           sourceUrl: candidate.url ?? candidate.sourceUrls[0],
-          priceLabel: aiPriceLabel(candidate.fields),
+          priceLabel,
+          priceStatus: priceLabel ? "available" : "not_found",
           isRecommended: false,
           status:
             fillCount > 0
@@ -589,6 +614,8 @@ export function MatchChooser({
           overwriteFields: overwrite,
         });
     const unit = effective.unit?.trim() ?? sheetFields.unit?.trim() ?? "";
+    const specText =
+      effective.specText?.trim() ?? sheetFields.specText?.trim() ?? "";
     const name = row.name.trim();
     if (!name) {
       toast.error("Tên vật tư không được để trống.");
@@ -615,6 +642,50 @@ export function MatchChooser({
       return trimmed;
     };
 
+    const sourceUrl = trimmedOrUndefined(effective.sourceUrl);
+    const catalogPdfUrls = decision?.catalogPdfUrls ?? [];
+
+    // Material-profile rows are a stricter contract than the legacy material
+    // editor. Do not let a one-click review action create a partial canonical
+    // material: it must carry the complete requested product record and an
+    // actual catalog URL. A user-entered record is considered manually
+    // verified, while the automatic path has its own 85% confidence gate.
+    if (isProfileSplit) {
+      const resolution = validateMaterialProfileResolution({
+        input: {
+          name,
+          unit,
+          specText,
+          rowIndex: row.originalRowIndex,
+        },
+        candidate: {
+          code: trimmedOrUndefined(effective.code),
+          name,
+          unit,
+          specText,
+          manufacturer: trimmedOrUndefined(effective.manufacturer),
+          originCountry: trimmedOrUndefined(effective.originCountry),
+          unitPrice: parseOptionalNumber(effective.defaultUnitPrice ?? ""),
+          source: sourceUrl ? sourceLabelFromUrl(sourceUrl) : "",
+          sourceUrl,
+          catalogUrl: catalogPdfUrls[0],
+          evidenceUrls: [
+            ...catalogPdfUrls,
+            ...webEvidence
+              .map((evidence) => evidence.sourceUrl ?? "")
+              .filter(Boolean),
+          ],
+          confidence: 1,
+          provenance: "manual_verified",
+        },
+        promotionConfidence: 0,
+      });
+      if (!resolution.promotable) {
+        toast.error(`Chưa thể lưu vào vật tư: ${resolution.reasons.join(" ")}`);
+        return;
+      }
+    }
+
     upsertMaterial.mutate(
       {
         id: selectedId ?? undefined,
@@ -623,15 +694,15 @@ export function MatchChooser({
           unit,
           code: trimmedOrUndefined(effective.code),
           category: trimmedOrUndefined(effective.category),
-          specText: trimmedOrUndefined(effective.specText),
+          specText: trimmedOrUndefined(specText),
           manufacturer: trimmedOrUndefined(effective.manufacturer),
           originCountry: trimmedOrUndefined(effective.originCountry),
           defaultUnitPrice: parseOptionalNumber(
             effective.defaultUnitPrice ?? "",
           ),
-          sourceUrl: trimmedOrUndefined(effective.sourceUrl),
+          sourceUrl,
           currency: "VND",
-          catalogPdfUrls: decision?.catalogPdfUrls,
+          catalogPdfUrls,
         },
       },
       {
@@ -811,6 +882,7 @@ export function MatchChooser({
           isProfileSplit ? chooseSearchCandidate : undefined
         }
         unifiedCandidateGrid={isProfileSplit}
+        decisionPaneLayout={isProfileSplit ? "sideBySide" : "stacked"}
       />
 
       {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (
@@ -846,6 +918,7 @@ export function MatchChooser({
         selectedCandidate={selectedCandidate}
         onApplyToRow={applyManualValues}
         onSavedToCatalog={handleSavedToCatalog}
+        allowSaveToCatalog={!isProfileSplit}
       />
     </div>
   );

@@ -4,11 +4,11 @@ BidTool v3 ships to three independent deployment surfaces from a single
 codebase. Every surface is built and published by the `Release` GitHub Actions
 workflow when you push a `v*` tag.
 
-| Surface | Audience | Runtime | Database |
-| --- | --- | --- | --- |
-| **Vercel web** | Internal hosted instance | Vercel (Next.js standalone) | Hosted PostgreSQL |
-| **On-prem Docker** | B2B single-tenant customers | Docker Compose (Caddy + app + Postgres) | Bundled PostgreSQL container |
-| **Electron desktop** | Individual users / on-prem clients | Local Electron window or remote server | Local Docker Postgres or remote |
+| Surface              | Audience                           | Runtime                                 | Database                        |
+| -------------------- | ---------------------------------- | --------------------------------------- | ------------------------------- |
+| **Vercel web**       | Internal hosted instance           | Vercel (Next.js standalone)             | Hosted PostgreSQL               |
+| **On-prem Docker**   | B2B single-tenant customers        | Docker Compose (Caddy + app + Postgres) | Bundled PostgreSQL container    |
+| **Electron desktop** | Individual users / on-prem clients | Local Electron window or remote server  | Local Docker Postgres or remote |
 
 All surfaces run the same Next.js app (`output: "standalone"`). The
 `BIDTOOL_DEPLOYMENT_SURFACE` env var (`web` | `onprem` | `desktop-bundled`)
@@ -30,56 +30,37 @@ tells the running app which surface it is.
 Server env is validated by `src/env.js` (`@t3-oss/env-nextjs`). During Docker
 builds validation is skipped with `SKIP_ENV_VALIDATION="1"`.
 
-| Variable | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `NODE_ENV` | yes | — | `development` \| `test` \| `production` |
-| `DATABASE_URL` | yes (prod) | — | Postgres connection string. Write flows fail if empty. |
-| `APP_BASE_URL` | recommended | — | Public URL users open in the browser/client |
-| `BIDWINNER_BASE_URL` | no | `https://bidwinner.info` | Upstream BidWinner site |
-| `BIDWINNER_TIMEOUT_MS` | no | `15000` | Upstream request timeout |
-| `ENABLE_DEMO_SEED` | no | `false` | Keep `false` in production |
-| `SCRAPE_MAX_CONCURRENT_JOBS` | no | `2` | Scrape queue concurrency |
-| `SCRAPE_MAX_CONCURRENT_PAGES` | no | `2` | Pages per scrape job |
-| `IMPORT_MAX_CONCURRENT_JOBS` | no | `2` | Import queue concurrency |
-| `SCRAPE_JOB_TTL_DAYS` | no | `7` | Scrape job retention |
-| `EXCEL_RESEARCH_MAX_CONCURRENT_JOBS` | no | `1` | Excel research job concurrency — see [excel-product-research.md](./excel-product-research.md) |
-| `EXCEL_RESEARCH_BATCH_SIZE` | no | `10` | Rows per research batch |
-| `EXCEL_RESEARCH_JOB_TTL_DAYS` | no | `7` | Excel research job retention |
-| `SEARXNG_BASE_URL` | no | — | SearXNG base URL for `/enrich` web research (step 3). JSON API may be disabled on hosted instances; the app falls back to HTML search. |
-| `SEARXNG_API_KEY` | no | — | Optional bearer token when SearXNG or its reverse proxy requires auth |
-| `BIDTOOL_EXCEL_RESEARCH_DIR` | no | `data/excel-research` | On-disk storage for research job files |
-| `AI_MATCH_AUTO_THRESHOLD` | no | `0.85` | Auto-match confidence cutoff |
-| `AI_MATCH_CANDIDATE_THRESHOLD` | no | `0.4` | Candidate suggestion cutoff |
-| `BIDTOOL_DEPLOYMENT_SURFACE` | no | — | `web` \| `onprem` \| `desktop-bundled` |
-| `BIDTOOL_APP_VERSION` | no | `0.1.0` | Stamped at build/release time |
-| `BIDTOOL_RUN_MIGRATIONS` | no | `true` | On-prem: run migrations on container start |
-| `BIDTOOL_MIGRATION_ATTEMPTS` | no | `30` | Migration retry count while Postgres boots |
-| `BIDTOOL_MIGRATION_RETRY_MS` | no | `2000` | Delay between migration retries |
-| `BIDTOOL_SERVER_URL` | no | — | Desktop: point client at a remote on-prem server |
+| Variable                             | Required    | Default                  | Notes                                                                                                                                  |
+| ------------------------------------ | ----------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                           | yes         | —                        | `development` \| `test` \| `production`                                                                                                |
+| `DATABASE_URL`                       | yes (prod)  | —                        | Postgres connection string. Write flows fail if empty.                                                                                 |
+| `APP_BASE_URL`                       | recommended | —                        | Public URL users open in the browser/client                                                                                            |
+| `BIDWINNER_BASE_URL`                 | no          | `https://bidwinner.info` | Upstream BidWinner site                                                                                                                |
+| `BIDWINNER_TIMEOUT_MS`               | no          | `15000`                  | Upstream request timeout                                                                                                               |
+| `ENABLE_DEMO_SEED`                   | no          | `false`                  | Keep `false` in production                                                                                                             |
+| `SCRAPE_MAX_CONCURRENT_JOBS`         | no          | `2`                      | Scrape queue concurrency                                                                                                               |
+| `SCRAPE_MAX_CONCURRENT_PAGES`        | no          | `2`                      | Pages per scrape job                                                                                                                   |
+| `IMPORT_MAX_CONCURRENT_JOBS`         | no          | `2`                      | Import queue concurrency                                                                                                               |
+| `SCRAPE_JOB_TTL_DAYS`                | no          | `7`                      | Scrape job retention                                                                                                                   |
+| `EXCEL_RESEARCH_MAX_CONCURRENT_JOBS` | no          | `1`                      | Excel research job concurrency — see [excel-product-research.md](./excel-product-research.md)                                          |
+| `EXCEL_RESEARCH_BATCH_SIZE`          | no          | `10`                     | Rows per research batch                                                                                                                |
+| `EXCEL_RESEARCH_JOB_TTL_DAYS`        | no          | `7`                      | Excel research job retention                                                                                                           |
+| `SEARXNG_BASE_URL`                   | no          | —                        | SearXNG base URL for `/enrich` web research (step 3). JSON API may be disabled on hosted instances; the app falls back to HTML search. |
+| `SEARXNG_API_KEY`                    | no          | —                        | Optional bearer token when SearXNG or its reverse proxy requires auth                                                                  |
+| `BIDTOOL_EXCEL_RESEARCH_DIR`         | no          | `data/excel-research`    | On-disk storage for research job files                                                                                                 |
+| `AI_MATCH_AUTO_THRESHOLD`            | no          | `0.85`                   | Auto-match confidence cutoff                                                                                                           |
+| `AI_MATCH_CANDIDATE_THRESHOLD`       | no          | `0.4`                    | Candidate suggestion cutoff                                                                                                            |
+| `BIDTOOL_DEPLOYMENT_SURFACE`         | no          | —                        | `web` \| `onprem` \| `desktop-bundled`                                                                                                 |
+| `BIDTOOL_APP_VERSION`                | no          | `0.1.0`                  | Stamped at build/release time                                                                                                          |
+| `BIDTOOL_RUN_MIGRATIONS`             | no          | `true`                   | On-prem: run migrations on container start                                                                                             |
+| `BIDTOOL_MIGRATION_ATTEMPTS`         | no          | `30`                     | Migration retry count while Postgres boots                                                                                             |
+| `BIDTOOL_MIGRATION_RETRY_MS`         | no          | `2000`                   | Delay between migration retries                                                                                                        |
+| `BIDTOOL_SERVER_URL`                 | no          | —                        | Desktop: point client at a remote on-prem server                                                                                       |
 
-> **Authentication & RBAC.** The app supports email + password authentication
-> with role-based access control (Better Auth, self-hosted). Roles are
-> `admin` / `manager` / `staff` / `customer`, and the build is multi-tenant: a
-> `customer` is an external, tenant-isolated user confined to the `/portal`
-> surface, while `admin` / `manager` / `staff` use the internal dashboard. Auth
-> is **surface-aware** and gated behind `AUTH_ENABLED` (default `false`).
->
-> - **web / on-prem** — set `AUTH_ENABLED=true` and provide `BETTER_AUTH_SECRET`
->   (min 32 chars). Create the first admin via the one-time `/setup` page gated
->   by `AUTH_BOOTSTRAP_TOKEN`, then run `bun run auth:backfill` to attribute
->   existing data to the host tenant. **Sequence each release as: ship
->   migrations → run backfill → flip `AUTH_ENABLED=true`.** Flipping the flag
->   before the auth tables migrate will lock out the deployment.
-> - **desktop-bundled** — auth stays on but `AUTH_DESKTOP_AUTO_ADMIN=true`
->   (default) bootstraps and signs in a local admin on first run, so the solo
->   user is never blocked. Secure cookies are relaxed for `http://localhost`.
->
-> With `AUTH_ENABLED=false` the app behaves exactly as before (no login gate,
-> no per-user scoping) — the single-user / single-tenant mode below still
-> applies. On-prem network exposure is controlled by Caddy and host ports; do
-> not expose an on-prem instance to the public internet without a trusted
-> network boundary or external access control in front of Caddy, regardless of
-> in-app auth. See `docs/auth-and-rbac.md` for the full design.
+> **Single-user local mode.** BidTool does not include an in-app login or
+> tenant boundary. Keep on-prem instances behind a trusted network boundary or
+> external access control; do not expose the app directly to the public
+> internet.
 
 ---
 

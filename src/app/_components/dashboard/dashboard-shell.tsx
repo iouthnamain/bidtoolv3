@@ -20,22 +20,22 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex min-h-full flex-col space-y-2">
-      <header className="border-b border-slate-400 pb-2">
+    <section className="flex min-h-full flex-col space-y-3">
+      <header className="border-line border-b pb-3">
         <Breadcrumbs />
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="h-7 w-1 rounded bg-brand" aria-hidden />
-              <h1 className="text-2xl leading-tight font-extrabold tracking-tight text-balance text-slate-950">
+              <span className="bg-brand h-7 w-1 rounded" aria-hidden />
+              <h1 className="text-ink-1 text-2xl leading-tight font-extrabold tracking-tight text-balance">
                 {title}
               </h1>
             </div>
-            <p className="mt-1 max-w-4xl pl-3 text-base leading-snug text-pretty text-slate-800">
+            <p className="text-ink-2 mt-1 max-w-4xl pl-3 text-base leading-snug text-pretty">
               {description}
             </p>
           </div>
-          <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1 text-xs font-bold tracking-wide text-slate-700">
+          <div className="border-line bg-surface-1 text-ink-2 rounded-[var(--radius-panel)] border px-2.5 py-1 text-xs font-bold tracking-wide shadow-[var(--shadow-flat)]">
             BidTool v3
           </div>
         </div>

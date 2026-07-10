@@ -8,8 +8,7 @@ REM  It will:
 REM    1. Pull the latest code from git
 REM    2. Make sure Docker Desktop is running
 REM    3. Refresh dependencies + database migrations (bun run dev:update)
-REM    4. Prepare auth (host-tenant backfill) and show how to create
-REM       the first admin when authentication is enabled
+REM    4. Run in single-user local mode (no sign-in or account setup)
 REM    5. Start the app (bun run dev:run) and open http://localhost:3000
 REM  Close this window (or press Ctrl+C) to stop the dev server.
 REM ============================================================
@@ -73,14 +72,14 @@ if errorlevel 1 (
 echo.
 
 REM --- Ensure .env exists -------------------------------------
-REM     Several steps below read .env (auth setup) and the dev workflow
-REM     expects it to exist. Create it from the template on first run so a
-REM     fresh checkout starts cleanly.
+REM     The dev workflow reads .env for local database, search and AI settings.
+REM     Create it from the template on first run so a fresh checkout starts
+REM     cleanly.
 if not exist ".env" (
     if exist ".env.example" (
         copy /y ".env.example" ".env" >nul
-        echo       Created .env from .env.example. Review it and add any
-        echo       required secrets ^(e.g. AUTH_BOOTSTRAP_TOKEN^) if needed.
+        echo       Created .env from .env.example. Review database, search and
+        echo       AI provider settings if you use those integrations.
     ) else (
         echo [WARNING] No .env and no .env.example found. The app may fail to
         echo           start until a .env file is provided.
@@ -130,57 +129,8 @@ if errorlevel 1 (
 )
 echo.
 
-REM --- 4. Prepare auth (only when AUTH_ENABLED=true) ----------
-REM     Reads AUTH_ENABLED + AUTH_BOOTSTRAP_TOKEN from .env, runs the
-REM     idempotent host-tenant backfill, and prints how to create the
-REM     first admin. Skipped entirely when auth is off, so the default
-REM     no-auth experience is unchanged.
-echo [4/5] Checking authentication setup...
-set "AUTH_ENABLED_VAL="
-set "AUTH_TOKEN_VAL="
-if exist ".env" (
-    for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
-        if /i "%%A"=="AUTH_ENABLED" (
-            set "AUTH_ENABLED_VAL=%%~B"
-        )
-        if /i "%%A"=="AUTH_BOOTSTRAP_TOKEN" (
-            set "AUTH_TOKEN_VAL=%%~B"
-        )
-    )
-)
-REM Strip surrounding quotes/spaces that may remain from the .env value.
-set "AUTH_ENABLED_VAL=%AUTH_ENABLED_VAL:"=%"
-set "AUTH_TOKEN_VAL=%AUTH_TOKEN_VAL:"=%"
-
-if /i "%AUTH_ENABLED_VAL%"=="true" (
-    echo       Authentication is ENABLED. Ensuring the host tenant exists...
-    call bun run auth:backfill
-    if errorlevel 1 (
-        echo.
-        echo [WARNING] "bun run auth:backfill" did not complete cleanly.
-        echo           The app will still start; re-run it later with
-        echo           "bun run auth:backfill" if customer data looks unscoped.
-        echo.
-    )
-    echo.
-    echo       ----------------------------------------------------------
-    echo       FIRST ADMIN ACCOUNT
-    echo       If no user exists yet, open this page to create the admin:
-    echo           %APP_URL%/setup
-    if defined AUTH_TOKEN_VAL (
-        echo       Setup token ^(from .env AUTH_BOOTSTRAP_TOKEN^):
-        echo           %AUTH_TOKEN_VAL%
-    ) else (
-        echo       [!] AUTH_BOOTSTRAP_TOKEN is not set in .env - /setup is
-        echo           DISABLED until you set it. Generate one and add it.
-    )
-    echo       Once a user exists, /setup turns itself off. Manage further
-    echo       users and tenants under Settings after signing in at /login.
-    echo       ----------------------------------------------------------
-) else (
-    echo       Authentication is OFF ^(AUTH_ENABLED is not "true"^). Skipping.
-    echo       The app runs as the single-user tool with no login.
-)
+REM --- 4. Local single-user mode --------------------------------
+echo [4/5] Single-user local mode (no sign-in required).
 echo.
 
 REM --- 5. Open the browser once the server is listening -------

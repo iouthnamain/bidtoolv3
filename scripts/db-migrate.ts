@@ -18,6 +18,13 @@ const REQUIRED_EXCEL_WORKSPACE_ITEM_COLUMNS = [
   "ai_evidence_json",
   "enrichment_updated_at",
   "review_decision_json",
+  "source_fingerprint",
+  "is_stale",
+] as const;
+
+const REQUIRED_MATERIAL_PROFILE_TABLES = [
+  "material_profile_search_cache",
+  "material_profile_promotion_ledger",
 ] as const;
 
 loadEnv({ path: path.join(rootDir, ".env") });
@@ -31,38 +38,56 @@ if (!databaseUrl) {
 const client = postgres(databaseUrl, { max: 1 });
 const db = drizzle(client);
 
-async function verifyExcelWorkspaceItemColumns() {
-  const rows = await client<{ column_name: string }[]>`
+async function verifyMaterialProfileSchema() {
+  const [columnRows, tableRows] = await Promise.all([
+    client<{ column_name: string }[]>`
     SELECT column_name
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'excel_workspace_items'
-  `;
+    `,
+    client<{ table_name: string }[]>`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `,
+  ]);
 
-  const present = new Set(rows.map((row) => row.column_name));
-  const missing = REQUIRED_EXCEL_WORKSPACE_ITEM_COLUMNS.filter(
-    (column) => !present.has(column),
+  const presentColumns = new Set(columnRows.map((row) => row.column_name));
+  const missingColumns = REQUIRED_EXCEL_WORKSPACE_ITEM_COLUMNS.filter(
+    (column) => !presentColumns.has(column),
+  );
+  const presentTables = new Set(tableRows.map((row) => row.table_name));
+  const missingTables = REQUIRED_MATERIAL_PROFILE_TABLES.filter(
+    (table) => !presentTables.has(table),
   );
 
-  if (missing.length === 0) {
+  if (missingColumns.length === 0 && missingTables.length === 0) {
     return;
   }
 
   throw new Error(
     [
       "Database schema is behind the application code.",
-      `Missing columns on excel_workspace_items: ${missing.join(", ")}`,
+      missingColumns.length > 0
+        ? `Missing columns on excel_workspace_items: ${missingColumns.join(", ")}`
+        : null,
+      missingTables.length > 0
+        ? `Missing material-profile tables: ${missingTables.join(", ")}`
+        : null,
       "Ensure drizzle/meta/_journal.json lists every SQL file in drizzle/, then run:",
       "  bun run db:migrate",
-    ].join("\n"),
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join("\n"),
   );
 }
 
 try {
   console.log("Applying database migrations...");
   await migrate(db, { migrationsFolder: path.join(rootDir, "drizzle") });
-  console.log("Verifying required schema columns...");
-  await verifyExcelWorkspaceItemColumns();
+  console.log("Verifying required material-profile schema...");
+  await verifyMaterialProfileSchema();
   console.log("Migrations applied successfully.");
 } catch (error) {
   console.error("Migration failed:");

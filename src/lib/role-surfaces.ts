@@ -1,8 +1,4 @@
-import {
-  can as canPure,
-  type Permission,
-  type Role,
-} from "~/lib/permissions";
+import { can as canPure, type Permission, type Role } from "~/lib/permissions";
 
 export type NavIconName =
   | "dashboard"
@@ -106,7 +102,12 @@ export const ROLE_CAPABILITIES: Record<Role, RoleCapability> = {
     tone: "amber",
     landingPath: "/portal",
     summary: "Cổng khách hàng chỉ để xem dữ liệu thuộc tổ chức của mình.",
-    see: ["Thông báo", "Job nghiên cứu", "Job làm giàu", "Danh sách theo dõi tenant"],
+    see: [
+      "Thông báo",
+      "Job nghiên cứu",
+      "Job làm giàu",
+      "Danh sách theo dõi tenant",
+    ],
     do: ["Xem tiến độ và kết quả được chia sẻ"],
     cannot: ["Không vào dashboard nội bộ", "Không tạo/sửa/chạy tác vụ"],
   },
@@ -284,7 +285,11 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
             label: "Nhà cung cấp AI",
             permission: "settings:manage",
           },
-          { href: "/settings/desktop", label: "Ứng dụng desktop", roles: ["admin"] },
+          {
+            href: "/settings/desktop",
+            label: "Ứng dụng desktop",
+            roles: ["admin"],
+          },
           {
             href: "/settings/updates",
             label: "Cập nhật",
@@ -328,7 +333,9 @@ export function canSeeNavItem(
     canPure(role, permission),
 ): boolean {
   if (!role) return true;
-  return item.roles.includes(role) && (!item.permission || can(item.permission));
+  return (
+    item.roles.includes(role) && (!item.permission || can(item.permission))
+  );
 }
 
 export function canSeeSubNavItem(
@@ -350,7 +357,28 @@ export function buildNavSections(
     canPure(role, permission),
 ): RoleSurfaceNavSection[] {
   if (!role) {
-    return NAV_SECTIONS.filter((section) => section.id !== "administration");
+    const retiredAuthHrefs = new Set([
+      "/admin",
+      "/manager",
+      "/staff",
+      "/settings/users",
+      "/settings/tenants",
+    ]);
+    return NAV_SECTIONS.filter(
+      (section) => section.id !== "home" && section.id !== "administration",
+    )
+      .map((section) => ({
+        ...section,
+        items: section.items
+          .filter((item) => !retiredAuthHrefs.has(item.href))
+          .map((item) => ({
+            ...item,
+            subItems: item.subItems?.filter(
+              (subItem) => !retiredAuthHrefs.has(subItem.href),
+            ),
+          })),
+      }))
+      .filter((section) => section.items.length > 0);
   }
 
   return NAV_SECTIONS.flatMap((section) => {
@@ -398,13 +426,20 @@ const ROUTE_RULES: Array<{
   { prefixes: ["/admin"], roles: ["admin"] },
   { prefixes: ["/manager"], roles: ["manager"] },
   { prefixes: ["/staff"], roles: ["staff"] },
-  { prefixes: ["/settings/users", "/settings/tenants"], roles: GOVERNANCE_ROLES },
+  {
+    prefixes: ["/settings/users", "/settings/tenants"],
+    roles: GOVERNANCE_ROLES,
+  },
   {
     prefixes: ["/settings/ai"],
     roles: GOVERNANCE_ROLES,
     permission: "settings:manage",
   },
-  { prefixes: ["/settings/updates"], roles: ["admin"], permission: "onprem:admin" },
+  {
+    prefixes: ["/settings/updates"],
+    roles: ["admin"],
+    permission: "onprem:admin",
+  },
   { prefixes: ["/settings/desktop"], roles: ["admin"] },
   {
     prefixes: ["/dashboard", "/notifications", "/help", "/settings"],
@@ -429,5 +464,7 @@ export function canAccessRoute(
   );
 
   if (!rule) return true;
-  return rule.roles.includes(role) && (!rule.permission || can(rule.permission));
+  return (
+    rule.roles.includes(role) && (!rule.permission || can(rule.permission))
+  );
 }

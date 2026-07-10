@@ -2,32 +2,16 @@
 
 import { useMemo } from "react";
 
-import { useSession } from "~/lib/auth-client";
-import {
-  can as canPure,
-  isInternalRole,
-  ROLES,
-  type Permission,
-  type Role,
-} from "~/lib/permissions";
-import { ROLE_LABELS } from "~/lib/role-surfaces";
-import { useRolePreview } from "~/lib/use-role-preview";
+import type { Permission, Role } from "~/lib/permissions";
 
-/**
- * Narrow an unknown role string from the session into our canonical {@link Role}
- * union, or null if it is missing/unrecognized.
- */
-function normalizeRole(role: string | null | undefined): Role | null {
-  if (role && (ROLES as readonly string[]).includes(role)) {
-    return role as Role;
-  }
-  return null;
-}
-
-/** The session user payload (includes the custom `tenantId` field). */
-type SessionUser = NonNullable<
-  ReturnType<typeof useSession>["data"]
->["user"];
+/** Compatibility-only shape for legacy user-management components. */
+type LegacyUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  tenantId: string | null;
+};
 
 export interface UsePermissionsResult {
   /** The current user's canonical role, or null when unauthenticated/unknown. */
@@ -37,7 +21,7 @@ export interface UsePermissionsResult {
   /** True for internal roles (admin/manager/staff), false for customer/none. */
   isInternal: boolean;
   /** The raw session user, or null when there is no session. */
-  user: SessionUser | null;
+  user: LegacyUser | null;
   /** True while the session is still loading (avoid flashing gated UI). */
   isPending: boolean;
   /** True when a development-only synthetic role is driving the UI. */
@@ -47,44 +31,19 @@ export interface UsePermissionsResult {
 }
 
 /**
- * Client hook deriving role-based permissions from the Better Auth session.
- *
- * Pure RBAC logic lives in `~/lib/permissions`; this hook only wires the live
- * session into those pure helpers so UI can hide/disable actions. It is safe
- * when auth is disabled or there is no session: role is null and `can()`
- * returns false for everything.
+ * BidTool is a single-user local dashboard. Keep the familiar hook shape for
+ * existing UI, but do not load a browser session client or synthesize a role.
  */
 export function usePermissions(): UsePermissionsResult {
-  const { data, isPending } = useSession();
-  const preview = useRolePreview();
-  const user = data?.user ?? null;
-  const sessionRole = normalizeRole(user?.role);
-  const previewRole = preview.role;
-  const role = sessionRole ?? previewRole;
-  const isPreview = !sessionRole && !!previewRole;
-  const effectiveUser =
-    user ??
-    (isPreview && previewRole
-      ? ({
-          id: `preview-${previewRole}`,
-          name: `${ROLE_LABELS[previewRole]} preview`,
-          email: `${previewRole}@preview.local`,
-          role: previewRole,
-          tenantId: previewRole === "customer" ? "preview-tenant" : null,
-        } as unknown as SessionUser)
-      : null);
-
-  const can = useMemo(() => {
-    return (permission: Permission) => canPure(role, permission);
-  }, [role]);
+  const can = useMemo(() => (_permission: Permission) => true, []);
 
   return {
-    role,
+    role: null,
     can,
-    isInternal: isInternalRole(role),
-    user: effectiveUser,
-    isPending,
-    isPreview,
-    previewAvailable: preview.available,
+    isInternal: false,
+    user: null,
+    isPending: false,
+    isPreview: false,
+    previewAvailable: false,
   };
 }

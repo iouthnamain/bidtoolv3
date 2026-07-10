@@ -47,6 +47,7 @@ export function MaterialProfilesClient() {
   const router = useRouter();
   const toast = useToast();
   const utils = api.useUtils();
+  const [profileName, setProfileName] = useState("");
   const [noticeNumber, setNoticeNumber] = useState("");
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<number | null>(
     null,
@@ -56,9 +57,10 @@ export function MaterialProfilesClient() {
   const listQuery = api.materialProfile.list.useQuery({ limit: 50 });
   const createMutation = api.materialProfile.create.useMutation({
     onSuccess: async (workspace) => {
+      setProfileName("");
       setNoticeNumber("");
       await utils.materialProfile.list.invalidate();
-      toast.success("Đã tạo hồ sơ vật tư.");
+      toast.success("Đã tạo hồ sơ. Hãy tải sheet vật tư để bắt đầu.");
       router.push(`/material-profiles/${workspace.id}`);
     },
     onError: (error) => toast.error(error.message),
@@ -88,7 +90,7 @@ export function MaterialProfilesClient() {
 
   const startEditing = (workspace: Workspace) => {
     setEditingWorkspaceId(workspace.id);
-    setEditNoticeNumber(workspace.noticeNumber ?? workspace.name);
+    setEditNoticeNumber(workspace.noticeNumber ?? "");
   };
 
   const cancelEditing = () => {
@@ -98,20 +100,14 @@ export function MaterialProfilesClient() {
 
   const submitWorkspaceUpdate = () => {
     const nextNoticeNumber = editNoticeNumber.trim();
-    if (!editingWorkspace || !nextNoticeNumber) {
-      toast.error("Nhập Số TBMT.");
-      return;
-    }
-    if (
-      nextNoticeNumber ===
-      (editingWorkspace.noticeNumber ?? editingWorkspace.name)
-    ) {
+    if (!editingWorkspace) return;
+    if (nextNoticeNumber === (editingWorkspace.noticeNumber ?? "")) {
       cancelEditing();
       return;
     }
     updateMutation.mutate({
       workspaceId: editingWorkspace.id,
-      noticeNumber: nextNoticeNumber,
+      noticeNumber: nextNoticeNumber.length > 0 ? nextNoticeNumber : null,
     });
   };
 
@@ -119,7 +115,11 @@ export function MaterialProfilesClient() {
     <>
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Xóa hồ sơ "${deleteTarget?.noticeNumber ?? deleteTarget?.name ?? ""}"?`}
+        title={`Xóa hồ sơ "${
+          [deleteTarget?.name, deleteTarget?.noticeNumber].find(
+            (value) => value?.trim().length,
+          ) ?? ""
+        }"?`}
         description="Hồ sơ và các dòng match liên quan sẽ bị xóa khỏi danh sách. Không thể hoàn tác."
         confirmLabel="Xóa hồ sơ"
         variant="danger"
@@ -134,18 +134,46 @@ export function MaterialProfilesClient() {
 
       <div className="grid gap-2">
         <section className="panel p-4">
-          <p className="section-title">Work mới</p>
-          <h2 className="mt-1 text-base font-bold text-slate-950">Số TBMT</h2>
+          <p className="section-title">Hồ sơ mới</p>
+          <h2 className="mt-1 text-base font-bold text-slate-950">
+            Bắt đầu từ sheet vật tư
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Tên hồ sơ và Số TBMT chỉ để nhận diện, có thể để trống. Sheet sẽ
+            được kiểm tra Tên vật tư, ĐVT và Thông số kỹ thuật ở bước tiếp theo.
+          </p>
 
           <form
-            className="mt-3 space-y-3"
+            className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end"
             onSubmit={(event) => {
               event.preventDefault();
-              createMutation.mutate({ noticeNumber });
+              createMutation.mutate({
+                name:
+                  profileName.trim().length > 0
+                    ? profileName.trim()
+                    : undefined,
+                noticeNumber:
+                  noticeNumber.trim().length > 0
+                    ? noticeNumber.trim()
+                    : undefined,
+              });
             }}
           >
             <label className="flex flex-col gap-1">
-              <span className="sr-only">Số TBMT</span>
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                Tên hồ sơ (tùy chọn)
+              </span>
+              <input
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="VD: Vật tư gói thầu tháng 7"
+                className="h-11 rounded border border-slate-500 bg-white px-3 text-sm font-semibold text-slate-900 shadow-[var(--shadow-flat)] focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+                Số TBMT (tùy chọn)
+              </span>
               <input
                 value={noticeNumber}
                 onChange={(event) => setNoticeNumber(event.target.value)}
@@ -156,20 +184,19 @@ export function MaterialProfilesClient() {
             <Button
               type="submit"
               variant="primary"
-              disabled={!noticeNumber.trim()}
               isLoading={createMutation.isPending}
               leftIcon={<Plus className="h-4 w-4" />}
             >
-              Tạo hồ sơ
+              Tạo & nhập sheet
             </Button>
           </form>
         </section>
 
         <section className="panel overflow-hidden">
           <div className="border-b border-slate-400 px-4 py-4">
-            <p className="section-title">Danh sách trước đó</p>
+            <p className="section-title">Hồ sơ đã tạo</p>
             <h2 className="mt-1 text-base font-bold text-slate-950">
-              Previous work
+              Tiếp tục công việc
             </h2>
           </div>
 
@@ -196,7 +223,7 @@ export function MaterialProfilesClient() {
             <div className="p-5">
               <EmptyState
                 title="Chưa có hồ sơ vật tư"
-                description="Tạo work đầu tiên bằng Số TBMT để bắt đầu upload và map Excel."
+                description="Tạo hồ sơ rồi tải lên sheet có Tên vật tư, ĐVT và Thông số kỹ thuật để bắt đầu xử lý."
                 icon={<FileSpreadsheet className="h-6 w-6" aria-hidden />}
               />
             </div>
@@ -205,7 +232,7 @@ export function MaterialProfilesClient() {
               <table className="w-full min-w-[760px] divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-bold tracking-wide text-slate-700 uppercase">
                   <tr>
-                    <th className="px-4 py-3">Số TBMT</th>
+                    <th className="px-4 py-3">Hồ sơ</th>
                     <th className="px-4 py-3">File gốc</th>
                     <th className="px-4 py-3">Trạng thái</th>
                     <th className="px-4 py-3 text-right">Dòng</th>
@@ -238,7 +265,9 @@ export function MaterialProfilesClient() {
                               autoFocus
                             />
                           ) : (
-                            (workspace.noticeNumber ?? workspace.name)
+                            ([workspace.name, workspace.noticeNumber].find(
+                              (value) => value?.trim().length,
+                            ) ?? "Hồ sơ vật tư")
                           )}
                         </td>
                         <td className="max-w-52 truncate px-4 py-3 text-slate-600">

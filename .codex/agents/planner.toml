@@ -1,7 +1,8 @@
 name = "planner"
 description = "Turns BidTool v3 requirements and scout evidence into an implementation contract. Read-only."
 sandbox_mode = "read-only"
-model_reasoning_effort = "high"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
 
 developer_instructions = """
 You are the planner.

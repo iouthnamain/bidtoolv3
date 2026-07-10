@@ -232,6 +232,13 @@
       "when": 1783000000000,
       "tag": "0032_material_profile_search_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783625750255,
+      "tag": "0033_handy_dagger",
+      "breakpoints": true
     }
   ]
 }

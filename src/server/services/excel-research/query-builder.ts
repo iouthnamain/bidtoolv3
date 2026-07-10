@@ -17,6 +17,7 @@ export type SearchQuery = {
     | "vn_spec"
     | "vn_pdf"
     | "site_vn"
+    | "vn_product"
     | "vn_supplier"
     | "vn_price"
     | "negative_marketplace";
@@ -341,13 +342,46 @@ function _buildSearchQueries(
       );
     }
   };
+  const profileQueryBase = brand ? `${name} ${brand}` : name;
+  const pushProfileDiscoveryQueries = () => {
+    // The profile search budget is intentionally led by sources that can sell
+    // the material, before catalog/PDF queries used for validation.
+    push(`${profileQueryBase} sản phẩm`, "vn_product", true);
+    push(`${profileQueryBase} đại lý nhà phân phối`, "vn_supplier", true);
+    push(`${profileQueryBase} giá bán`, "vn_price", true);
+  };
+  const pushProfileConstrainedVariants = () => {
+    if (enableSiteVnVariants) {
+      push(`${profileQueryBase} site:.vn`, "site_vn", true);
+    }
+
+    if (enableNegativeMarketplaceVariants) {
+      const suffix = negativeMarketplaceSuffix(options?.domainPolicy);
+      push(
+        `${profileQueryBase} sản phẩm ${suffix}`,
+        "negative_marketplace",
+        true,
+      );
+    }
+  };
+  const pushProfileValidationQuery = () => {
+    // Retain one bounded slot for an authoritative catalog/spec source. Without
+    // it, the six-query profile budget would contain seller discovery only.
+    if (brand && identifier) {
+      push(`${brand} ${identifier} datasheet filetype:pdf`, "pdf", true);
+      return;
+    }
+    push(`${profileQueryBase} catalog datasheet`, "datasheet", true);
+  };
   const modelSpec = extractModelSpecPhrase(name, identifier);
   const modelSpecVariants = specSpacingVariants(modelSpec);
   const nameVariants = specSpacingVariants(name);
   const relaxedNames = relaxedSpecNameVariants(name);
 
   if (isProfileSearch) {
-    pushConstrainedVariants();
+    pushProfileDiscoveryQueries();
+    pushProfileConstrainedVariants();
+    pushProfileValidationQuery();
   }
 
   if (brand && !identifier) {

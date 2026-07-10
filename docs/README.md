@@ -16,4 +16,3 @@ Detailed technical notes for individual features:
 - [excel-product-research.md](./temp/excel-product-research.md) — Excel research background jobs
 - [material-enrichment.md](./temp/material-enrichment.md) — Catalog web enrichment jobs
 - [materials.md](./temp/materials.md) — Material catalog CRUD and import
-- [auth-and-rbac.md](./temp/auth-and-rbac.md) — Authentication and permissions

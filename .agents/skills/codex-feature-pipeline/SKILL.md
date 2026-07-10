@@ -53,6 +53,21 @@ asks. If the agent name is unknown or ambiguous, stop and ask which role to use.
 12. Stop on blockers involving migrations, authentication, billing, destructive operations, production credentials, or public API changes unless the user explicitly approves.
 13. Do not commit, push, merge, deploy, or rotate secrets unless explicitly asked.
 
+## GPT-5.6 role routing
+
+Keep role defaults in `.codex/agents/*.toml`; do not override them per run unless
+the user asks.
+
+| Role | Model | Reasoning |
+| --- | --- | --- |
+| scout, planner, tester, researcher, doctor | `gpt-5.6-luna` | low for scout; medium otherwise |
+| reviewer | `gpt-5.6-terra` | medium |
+| worker | `gpt-5.6-sol` | high |
+
+Use Luna for read-only discovery, testing, product-use checks, and research.
+Use Terra for independent review. Reserve Sol for coding workers and genuinely
+hard implementation work.
+
 ## Pipeline
 
 1. Spawn `scout` to find relevant code and write `scout.md`.

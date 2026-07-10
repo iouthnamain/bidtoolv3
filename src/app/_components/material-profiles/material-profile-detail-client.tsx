@@ -30,6 +30,8 @@ import { api, type RouterOutputs } from "~/trpc/react";
 type WorkspaceDetail = RouterOutputs["materialProfile"]["get"];
 type Sheet = WorkspaceDetail["workbook"]["sheets"][number];
 type PreviewResult = RouterOutputs["materialProfile"]["previewExportWorkbook"];
+type CleanExportPreview =
+  RouterOutputs["materialProfile"]["previewCleanExport"];
 type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
 type CellEdits = Record<string, Record<string, string>>;
@@ -38,17 +40,17 @@ type MaterialProfileStep = 1 | 2 | 3 | 4;
 const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
   [
     { id: 1, label: "Tải lên Excel" },
-    { id: 2, label: "Ánh xạ & chỉnh sheet" },
-    { id: 3, label: "Duyệt vật tư" },
-    { id: 4, label: "Xem trước & xuất" },
+    { id: 2, label: "Kiểm tra dữ liệu" },
+    { id: 3, label: "Tự tìm & điền" },
+    { id: 4, label: "Tải file chuẩn" },
   ];
 
 const mappingFields = [
   { key: "materialName", label: "Tên vật tư", required: true },
   { key: "code", label: "Mã vật tư" },
-  { key: "unit", label: "ĐVT" },
+  { key: "unit", label: "ĐVT", required: true },
   { key: "category", label: "Nhóm" },
-  { key: "specText", label: "Thông số" },
+  { key: "specText", label: "Thông số kỹ thuật", required: true },
   { key: "vendorHint", label: "NCC" },
   { key: "originHint", label: "Xuất xứ" },
   { key: "unitPrice", label: "Đơn giá" },
@@ -86,26 +88,6 @@ function editedCellValue(
 ) {
   const key = cellKey(rowIndex, colIndex);
   return edits[sheetName]?.[key] ?? rawValue ?? "";
-}
-
-function emptyExportEditState(): ExportEditState {
-  return {
-    cellEdits: {},
-    deletedRows: {},
-    deletedColumns: {},
-    updatedAt: undefined,
-  };
-}
-
-function normalizeExportEditState(value: unknown): ExportEditState {
-  if (!value || typeof value !== "object") return emptyExportEditState();
-  const record = value as Partial<ExportEditState>;
-  return {
-    cellEdits: record.cellEdits ?? {},
-    deletedRows: record.deletedRows ?? {},
-    deletedColumns: record.deletedColumns ?? {},
-    updatedAt: record.updatedAt,
-  };
 }
 
 function hasLastBulkApply(config: Record<string, unknown> | null | undefined) {
@@ -392,7 +374,12 @@ function WorkbookMappingStep({
   onContinueToReview: () => void;
   canContinueToReview: boolean;
 }) {
-  const hasNameColumn = Boolean(mapping.materialName);
+  const requiredFields = mappingFields.filter(
+    (field) => "required" in field && field.required,
+  );
+  const hasRequiredColumns = requiredFields.every((field) =>
+    Boolean(mapping[field.key]),
+  );
   const optionalMapped = mappingFields.filter(
     (field) =>
       !("required" in field && field.required) && Boolean(mapping[field.key]),
@@ -408,7 +395,10 @@ function WorkbookMappingStep({
               Map cột vật tư và chỉnh cell
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Đã map {optionalMapped}/{mappingFields.length - 1} cột phụ.
+              Đã map{" "}
+              {requiredFields.filter((field) => mapping[field.key]).length}/
+              {requiredFields.length} cột bắt buộc và {optionalMapped} cột bổ
+              sung.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -421,25 +411,36 @@ function WorkbookMappingStep({
               Lưu state
             </Button>
             <Button
-              disabled={!hasNameColumn}
+              disabled={!hasRequiredColumns}
               onClick={onRunMatch}
               isLoading={isMatching}
               leftIcon={<Search className="h-4 w-4" />}
             >
-              Lưu & chạy match
+              Kiểm tra & đối chiếu
             </Button>
             <Button
               variant="primary"
               disabled={!canContinueToReview}
               onClick={onContinueToReview}
             >
-              Tiếp tục duyệt vật tư
+              Tiếp tục tự xử lý
             </Button>
           </div>
         </div>
       </div>
 
       <div className="grid gap-2 p-4">
+        {!hasRequiredColumns ? (
+          <div
+            className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+            role="alert"
+          >
+            Chưa thể tự xử lý: hãy map đủ <strong>Tên vật tư</strong>,
+            <strong> ĐVT</strong> và <strong> Thông số kỹ thuật</strong>. Dòng
+            thiếu giá trị ở các cột này sẽ được giữ lại để sửa, không bị gửi đi
+            tìm kiếm.
+          </div>
+        ) : null}
         <div className="grid gap-1 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
@@ -474,8 +475,8 @@ function WorkbookMappingStep({
           <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <p className="font-bold text-slate-900">Điều kiện qua bước</p>
             <p className="mt-1">
-              Cần map cột Tên vật tư, chạy match, rồi bấm «Tiếp tục duyệt vật
-              tư» để sang bước 3.
+              Cần map Tên vật tư, ĐVT, Thông số kỹ thuật, chạy kiểm tra rồi bấm
+              «Tiếp tục tự xử lý» để sang bước 3.
             </p>
           </div>
         </div>
@@ -513,7 +514,182 @@ function WorkbookMappingStep({
   );
 }
 
-function ExportPreviewStep({
+function CleanExportStep({
+  preview,
+  isLoading,
+  isExporting,
+  onRefresh,
+  onExport,
+  onBackToReview,
+}: {
+  preview: CleanExportPreview | undefined;
+  isLoading: boolean;
+  isExporting: boolean;
+  onRefresh: () => void;
+  onExport: () => void;
+  onBackToReview: () => void;
+}) {
+  const incompleteRows = preview?.incompleteRows ?? 0;
+  const canExport = preview?.canExport === true;
+
+  return (
+    <section className="space-y-4">
+      <div className="panel p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-3xl">
+            <p className="section-title">Danh mục chuẩn</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">
+              Một sheet sạch, sẵn sàng gửi đi
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              File xuất chỉ có 11 cột chuẩn. Mỗi dòng phải có mã, tên, ĐVT,
+              thông số, nhà sản xuất, xuất xứ, đơn giá, nguồn và URL catalog hợp
+              lệ — không còn bản xem trước nào có thể làm lệch file tải về.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={onRefresh}
+              isLoading={isLoading}
+              leftIcon={<RefreshCw className="h-4 w-4" />}
+            >
+              Làm mới kiểm tra
+            </Button>
+            <Button
+              onClick={onExport}
+              disabled={!canExport}
+              isLoading={isExporting}
+              leftIcon={<Download className="h-4 w-4" />}
+              title={
+                canExport
+                  ? "Tải danh mục vật tư chuẩn"
+                  : "Hoàn thiện các dòng còn thiếu trước khi xuất"
+              }
+            >
+              Tải danh mục chuẩn
+            </Button>
+          </div>
+        </div>
+
+        {preview ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <div className="rounded border border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <p className="font-bold text-slate-950">Dòng sẽ xuất</p>
+              <p className="mt-1 text-2xl font-extrabold text-slate-950 tabular-nums">
+                {preview.totalRows.toLocaleString("vi-VN")}
+              </p>
+            </div>
+            <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+              <p className="font-bold">Đủ điều kiện</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums">
+                {preview.completeRows.toLocaleString("vi-VN")}
+              </p>
+            </div>
+            <div
+              className={`rounded border px-3 py-3 text-sm ${
+                incompleteRows > 0
+                  ? "border-amber-300 bg-amber-50 text-amber-950"
+                  : "border-slate-300 bg-slate-50 text-slate-700"
+              }`}
+            >
+              <p className="font-bold">Cần hoàn thiện</p>
+              <p className="mt-1 text-2xl font-extrabold tabular-nums">
+                {incompleteRows.toLocaleString("vi-VN")}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {isLoading && !preview ? (
+        <div className="panel p-4 text-sm text-slate-600" aria-live="polite">
+          Đang kiểm tra dữ liệu trước khi xuất…
+        </div>
+      ) : null}
+
+      {preview && incompleteRows > 0 ? (
+        <div className="panel border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-bold">Chưa thể tạo file chuẩn</p>
+          <p className="mt-1 leading-6">
+            Hệ thống không xuất dòng thiếu trường bắt buộc. Hãy quay lại bước tự
+            tìm & điền để xử lý các dòng sau.
+          </p>
+          <ul className="mt-3 space-y-1 text-xs leading-5">
+            {preview.issues.slice(0, 8).map((issue) => (
+              <li key={`${issue.originalRowIndex}-${issue.name}`}>
+                Dòng {issue.originalRowIndex} · {issue.name}:{" "}
+                {issue.reasons.join(" ")}
+              </li>
+            ))}
+          </ul>
+          <Button className="mt-3" variant="secondary" onClick={onBackToReview}>
+            Quay lại tự tìm & điền
+          </Button>
+        </div>
+      ) : null}
+
+      {preview?.emptyReason ? (
+        <div className="panel border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-bold">Chưa có dòng để xuất</p>
+          <p className="mt-1 leading-6">{preview.emptyReason}</p>
+          <Button className="mt-3" onClick={onBackToReview}>
+            Quay lại tự tìm & điền
+          </Button>
+        </div>
+      ) : null}
+
+      {preview ? (
+        <div className="panel overflow-hidden">
+          <div className="border-b border-slate-300 bg-slate-50 px-4 py-3">
+            <p className="font-bold text-slate-950">
+              Xem trước đúng file sẽ tải
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              Các cột và giá trị dưới đây là định dạng chính thức của file
+              Excel.
+            </p>
+          </div>
+          <div className="max-h-[580px] overflow-auto">
+            <table className="min-w-full border-separate border-spacing-0 text-xs">
+              <thead>
+                <tr>
+                  {preview.headers.map((header) => (
+                    <th
+                      key={header}
+                      className="sticky top-0 z-10 min-w-32 border-r border-b border-slate-300 bg-slate-100 px-3 py-2 text-left font-bold text-slate-800"
+                    >
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {preview.headers.map((header) => (
+                      <td
+                        key={header}
+                        className="max-w-72 border-r border-b border-slate-200 px-3 py-2 align-top text-slate-700"
+                      >
+                        {String(
+                          (row as Record<string, string | number>)[header] ??
+                            "",
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+export function ExportPreviewStep({
   preview,
   exportEditState,
   isPreviewing,
@@ -903,10 +1079,6 @@ export function MaterialProfileDetailClient({
   const [headerRowIndex, setHeaderRowIndex] = useState(1);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [edits, setEdits] = useState<CellEdits>({});
-  const [exportEditState, setExportEditState] =
-    useState<ExportEditState>(emptyExportEditState);
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [previewAutoRequested, setPreviewAutoRequested] = useState(false);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -932,7 +1104,8 @@ export function MaterialProfileDetailClient({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
       toast.success("Đã upload và đọc workbook.");
-      reach(2);
+      setStep(2);
+      setMaxReached(2);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -946,29 +1119,12 @@ export function MaterialProfileDetailClient({
   const match = api.materialProfile.match.useMutation({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
-      setPreview(null);
-      setPreviewAutoRequested(false);
       toast.success(
         "Đã match vật tư từ catalog. Bấm «Tiếp tục duyệt vật tư» để sang bước 3.",
       );
     },
     onError: (error) => toast.error(error.message),
   });
-  const previewExport = api.materialProfile.previewExportWorkbook.useMutation({
-    onSuccess: (result) => {
-      setPreview(result);
-      setExportEditState(result.exportEditState);
-    },
-    onError: (error) => toast.error(error.message),
-  });
-  const updateExportEditState =
-    api.materialProfile.updateExportEditState.useMutation({
-      onSuccess: async () => {
-        await utils.materialProfile.get.invalidate({ workspaceId });
-        toast.success("Đã lưu preview export.");
-      },
-      onError: (error) => toast.error(error.message),
-    });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
       setLastMaterialProfileExportDir(result.parentDirPath);
@@ -996,6 +1152,15 @@ export function MaterialProfileDetailClient({
       enabled: step === 4,
       staleTime: Infinity,
     });
+  const cleanExportPreviewQuery =
+    api.materialProfile.previewCleanExport.useQuery(
+      { workspaceId },
+      {
+        enabled: step === 4,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+      },
+    );
 
   useEffect(() => {
     if (!detail) return;
@@ -1008,38 +1173,13 @@ export function MaterialProfileDetailClient({
     setHeaderRowIndex(sheet?.activeHeaderRowIndex ?? 1);
     setMapping(detail.workspace.columnMappingJson);
     setEdits(detail.workspace.editStateJson);
-    setExportEditState(
-      normalizeExportEditState(detail.workspace.exportEditStateJson),
-    );
-
     let nextMax: MaterialProfileStep = 1;
     if (detail.workbook.sheets.length > 0) nextMax = 2;
     if (detail.items.length > 0) nextMax = 3;
     if (detail.items.length > 0) nextMax = 4;
-    setMaxReached((current) => (nextMax > current ? nextMax : current));
+    setMaxReached(nextMax);
+    setStep((current) => (current > nextMax ? nextMax : current));
   }, [detail]);
-
-  const refreshPreview = useCallback(() => {
-    setPreviewAutoRequested(true);
-    previewExport.mutate({ workspaceId });
-  }, [previewExport, workspaceId]);
-
-  useEffect(() => {
-    if (
-      step === 4 &&
-      !preview &&
-      !previewExport.isPending &&
-      !previewAutoRequested
-    ) {
-      refreshPreview();
-    }
-  }, [
-    preview,
-    previewAutoRequested,
-    previewExport.isPending,
-    refreshPreview,
-    step,
-  ]);
 
   const saveState = async () => {
     await updateState.mutateAsync({
@@ -1052,12 +1192,6 @@ export function MaterialProfileDetailClient({
   };
 
   const runMatch = async () => {
-    if ((detail?.items.length ?? 0) > 0) {
-      const ok = window.confirm(
-        "Chạy match lại sẽ giữ quyết định cho dòng không đổi; dòng đã sửa cần duyệt lại.",
-      );
-      if (!ok) return;
-    }
     await updateState.mutateAsync({
       workspaceId,
       sheetName: activeSheet?.name,
@@ -1101,165 +1235,6 @@ export function MaterialProfileDetailClient({
     }));
   };
 
-  const updateExportCellEdit = (
-    sheetName: string,
-    rowNumber: number,
-    colNumber: number,
-    value: string,
-  ) => {
-    const key = `${rowNumber}:${colNumber}`;
-    setExportEditState((prev) => ({
-      ...prev,
-      cellEdits: {
-        ...prev.cellEdits,
-        [sheetName]: {
-          ...(prev.cellEdits[sheetName] ?? {}),
-          [key]: value,
-        },
-      },
-    }));
-    setPreview((current) =>
-      current
-        ? {
-            ...current,
-            sheets: current.sheets.map((sheet) =>
-              sheet.name === sheetName
-                ? {
-                    ...sheet,
-                    rows: sheet.rows.map((row, rIndex) => {
-                      const currentRowNumber =
-                        sheet.rowNumbers?.[rIndex] ?? rIndex + 1;
-                      if (currentRowNumber !== rowNumber) {
-                        return row;
-                      }
-                      return Array.from({
-                        length: Math.max(
-                          row.length,
-                          sheet.columnNumbers.length,
-                        ),
-                      }).map((_, cIndex) =>
-                        sheet.columnNumbers[cIndex] === colNumber
-                          ? value
-                          : (row[cIndex] ?? ""),
-                      );
-                    }),
-                  }
-                : sheet,
-            ),
-          }
-        : current,
-    );
-  };
-
-  const saveExportEditState = async () => {
-    await updateExportEditState.mutateAsync({
-      workspaceId,
-      exportEditState,
-    });
-  };
-
-  const deleteExportSelection = (
-    sheetName: string,
-    rowNumbers: number[],
-    colNumbers: number[],
-  ) => {
-    setExportEditState((prev) => ({
-      ...prev,
-      deletedRows: {
-        ...prev.deletedRows,
-        [sheetName]: Array.from(
-          new Set([...(prev.deletedRows[sheetName] ?? []), ...rowNumbers]),
-        ).sort((a, b) => a - b),
-      },
-      deletedColumns: {
-        ...prev.deletedColumns,
-        [sheetName]: Array.from(
-          new Set([...(prev.deletedColumns[sheetName] ?? []), ...colNumbers]),
-        ).sort((a, b) => a - b),
-      },
-    }));
-    setPreview((current) =>
-      current
-        ? {
-            ...current,
-            sheets: current.sheets.map((sheet) =>
-              sheet.name === sheetName
-                ? {
-                    ...sheet,
-                    rowNumbers: sheet.rowNumbers.filter(
-                      (rowNumber) => !rowNumbers.includes(rowNumber),
-                    ),
-                    columnNumbers: sheet.columnNumbers.filter(
-                      (colNumber) => !colNumbers.includes(colNumber),
-                    ),
-                    rows: sheet.rows
-                      .filter(
-                        (_, rowIndex) =>
-                          !rowNumbers.includes(
-                            sheet.rowNumbers[rowIndex] ?? -1,
-                          ),
-                      )
-                      .map((row) =>
-                        row.filter(
-                          (_, colIndex) =>
-                            !colNumbers.includes(
-                              sheet.columnNumbers[colIndex] ?? -1,
-                            ),
-                        ),
-                      ),
-                  }
-                : sheet,
-            ),
-          }
-        : current,
-    );
-  };
-
-  const restoreDeletedExportValue = (
-    sheetName: string,
-    kind: "row" | "column",
-    value: number,
-  ) => {
-    setExportEditState((prev) => ({
-      ...prev,
-      deletedRows:
-        kind === "row"
-          ? {
-              ...prev.deletedRows,
-              [sheetName]: (prev.deletedRows[sheetName] ?? []).filter(
-                (rowNumber) => rowNumber !== value,
-              ),
-            }
-          : prev.deletedRows,
-      deletedColumns:
-        kind === "column"
-          ? {
-              ...prev.deletedColumns,
-              [sheetName]: (prev.deletedColumns[sheetName] ?? []).filter(
-                (colNumber) => colNumber !== value,
-              ),
-            }
-          : prev.deletedColumns,
-    }));
-    setPreview(null);
-    setPreviewAutoRequested(false);
-    toast.info("Đã restore trong state. Lưu preview rồi refresh để hiện lại.");
-  };
-
-  const savePreviewForExport = async () => {
-    await updateState.mutateAsync({
-      workspaceId,
-      sheetName: activeSheet?.name,
-      headerRowIndex,
-      mapping,
-      editState: edits,
-    });
-    await updateExportEditState.mutateAsync({
-      workspaceId,
-      exportEditState,
-    });
-  };
-
   const handleExportClick = async () => {
     if (exportWorkspace.isPending || exportDownloadBundle.isPending) {
       return;
@@ -1281,8 +1256,6 @@ export function MaterialProfileDetailClient({
         browserDirectoryHandle =
           await pickMaterialProfileBrowserExportDirectory();
       }
-
-      await savePreviewForExport();
 
       if (isDesktop && desktopOutputPath) {
         exportWorkspace.mutate({
@@ -1431,20 +1404,15 @@ export function MaterialProfileDetailClient({
       ) : null}
 
       {step === 4 ? (
-        <ExportPreviewStep
-          preview={preview}
-          exportEditState={exportEditState}
-          isPreviewing={previewExport.isPending}
-          isSaving={updateExportEditState.isPending}
+        <CleanExportStep
+          preview={cleanExportPreviewQuery.data}
+          isLoading={cleanExportPreviewQuery.isLoading}
           isExporting={
             exportWorkspace.isPending || exportDownloadBundle.isPending
           }
-          onRefreshPreview={refreshPreview}
-          onPreviewEdit={updateExportCellEdit}
-          onDeleteSelection={deleteExportSelection}
-          onRestoreDeleted={restoreDeletedExportValue}
-          onSavePreview={() => void saveExportEditState()}
+          onRefresh={() => void cleanExportPreviewQuery.refetch()}
           onExport={() => void handleExportClick()}
+          onBackToReview={() => reach(3)}
         />
       ) : null}
     </div>

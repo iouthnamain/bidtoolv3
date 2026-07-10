@@ -52,7 +52,7 @@ export function SettingsLayoutClient({
       sectionNavItems={sectionNavItems}
       sectionNavTitle="Cài đặt"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
         {children}
       </div>
     </DashboardShell>

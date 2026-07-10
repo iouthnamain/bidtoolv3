@@ -438,6 +438,7 @@ import {
   completeMaterialProfileSearchJob,
   getMaterialProfileSearchJob,
   listMaterialProfileSearchRuns,
+  MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS,
   processMaterialProfileSearchJob,
   setCurrentMaterialProfileSearchRun,
   startMaterialProfileSearchJob,
@@ -516,6 +517,26 @@ describe("material profile search jobs", () => {
     expect(runs[0]?.webLinkResults).toEqual([webLink]);
     expect(runs[0]?.aiSearchCandidates).toEqual([]);
     expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
+  });
+
+  it("rejects auto jobs above the dedicated bulk limit before querying the database", async () => {
+    const itemIds = Array.from(
+      { length: MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS + 1 },
+      (_, index) => index + 1,
+    );
+
+    await expect(
+      startMaterialProfileSearchJob({
+        workspaceId: 1,
+        itemIds,
+        mode: "auto",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: `Tối đa ${MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS.toLocaleString("vi-VN")} dòng mỗi job tìm kiếm.`,
+    });
+    expect(dbMock.state.jobs).toEqual([]);
+    expect(dbMock.state.runs).toEqual([]);
   });
 
   it("allows a search job when another workspace has an active job", async () => {

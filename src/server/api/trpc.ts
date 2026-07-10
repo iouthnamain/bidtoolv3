@@ -10,9 +10,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "~/server/db";
-import { env } from "~/env";
-import { auth } from "~/server/auth";
-import { can, type Permission, type Role } from "~/lib/permissions";
+import { type Permission, type Role } from "~/lib/permissions";
 import { createLogger } from "~/server/lib/logger";
 import { resolveSlowProcedureLogMs } from "~/server/lib/trpc-request-log";
 
@@ -43,53 +41,19 @@ type ContextUser = {
   tenantId: string | null;
 };
 
-/** The session half of Better Auth's getSession result. */
-type ContextSession = NonNullable<
-  Awaited<ReturnType<typeof auth.api.getSession>>
->["session"];
+/** Kept as a stable context shape while the local product has no sessions. */
+type ContextSession = { id: string };
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const authEnabled = env.AUTH_ENABLED === "true";
-
-  // When auth is disabled we skip session resolution entirely. This keeps the
-  // pre-rollout behavior byte-for-byte identical: no DB session lookup, no
-  // user, no tenant. The app runs exactly as it does today.
-  if (!authEnabled) {
-    return {
-      db,
-      ...opts,
-      user: null as ContextUser | null,
-      session: null as ContextSession | null,
-      tenantId: null as string | null,
-      authEnabled,
-    };
-  }
-
-  // Auth is enabled: resolve the session. A session-lookup failure (DB hiccup,
-  // malformed cookie, etc.) must never 500 the whole request — on error we
-  // simply treat the request as unauthenticated.
-  let user: ContextUser | null = null;
-  let session: ContextSession | null = null;
-
-  try {
-    const result = await auth.api.getSession({ headers: opts.headers });
-    if (result) {
-      // `tenantId` is an additional field not present in Better Auth's inferred
-      // user type, so we cast through unknown to our narrower ContextUser.
-      user = result.user as unknown as ContextUser;
-      session = result.session;
-    }
-  } catch (error) {
-    log.warn("session_resolution_failed", { error });
-  }
-
   return {
     db,
     ...opts,
-    user,
-    session,
-    tenantId: user?.tenantId ?? null,
-    authEnabled,
+    user: null as ContextUser | null,
+    session: null as ContextSession | null,
+    tenantId: null as string | null,
+    // BidTool v3 is a local, single-user tool. Keep this flag for compatible
+    // tenant-scope helpers, but never resolve or enforce a session.
+    authEnabled: false,
   };
 };
 
@@ -235,84 +199,14 @@ const rateLimitMiddleware = t.middleware(async ({ next, path, ctx }) => {
   return next();
 });
 
-/**
- * Middleware that enforces authentication when auth is enabled.
- *
- * - When auth is disabled, there is no user to require, so it passes through
- *   (ctx.user stays null). This keeps the app fully functional while
- *   AUTH_ENABLED=false.
- * - When auth is enabled and there is no user, it throws UNAUTHORIZED.
- * - Otherwise it narrows ctx so downstream resolvers see a non-null user.
- */
-const enforceAuth = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.authEnabled) {
-    return next();
-  }
-
-  if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
-
-  return next({
-    ctx: {
-      // Re-attach as non-null so ctx.user / ctx.session narrow for downstream
-      // procedures.
-      user: ctx.user,
-      session: ctx.session,
-    },
-  });
-});
-
 const baseProcedure = t.procedure
   .use(rateLimitMiddleware)
   .use(timingMiddleware);
 
-/**
- * Public procedure means "no special permission required". It still requires a
- * valid session when AUTH_ENABLED=true; `/api/trpc` is intentionally excluded
- * from middleware redirects and must return JSON 401s itself.
- */
-export const publicProcedure = baseProcedure.use(enforceAuth);
-
-/**
- * Protected procedure. Requires an authenticated user when auth is enabled;
- * passes through (with a null user) when auth is disabled. Use this for any
- * procedure that should be gated behind login but does not need a specific
- * permission.
- */
+/** All procedures are local single-user procedures. */
+export const publicProcedure = baseProcedure;
 export const protectedProcedure = publicProcedure;
 
-/**
- * Builds a procedure that requires a specific {@link Permission}. Layers on top
- * of protectedProcedure, then checks the resolved user's role against the
- * permission map in `~/lib/permissions`.
- *
- * - When auth is disabled, enforcement is skipped (no role to check, app stays
- *   usable pre-rollout).
- * - When auth is enabled, throws FORBIDDEN if the user's role lacks the
- *   permission.
- *
- * Usage in routers: `requirePermission("material:write").input(...).mutation(...)`.
- */
-export const requirePermission = (permission: Permission) =>
-  protectedProcedure.use(async ({ ctx, next }) => {
-    // When auth is disabled, ctx.user is null and there is nothing to enforce.
-    if (!ctx.authEnabled) {
-      return next();
-    }
-
-    // Auth is enabled, so enforceAuth has already guaranteed a user; the guard
-    // also narrows the type for the permission check below.
-    if (!ctx.user) {
-      throw new TRPCError({ code: "UNAUTHORIZED" });
-    }
-
-    if (!can(ctx.user.role, permission)) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: `Bạn không có quyền thực hiện thao tác này (${permission}).`,
-      });
-    }
-
-    return next();
-  });
+/** Compatibility builder for existing routers; permissions are not applicable. */
+export const requirePermission = (_permission: Permission) =>
+  protectedProcedure;

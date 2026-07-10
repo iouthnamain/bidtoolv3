@@ -1,4 +1,4 @@
-import { Building2, Search, ShieldCheck, Users, Workflow } from "lucide-react";
+import { Boxes, FileSpreadsheet, Search, Workflow } from "lucide-react";
 
 import { createPageMetadata } from "~/app/_lib/seo";
 import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
@@ -10,90 +10,84 @@ import {
 import { getRoleDashboardSnapshot } from "~/app/_lib/role-dashboard-data";
 
 export const metadata = createPageMetadata({
-  title: "Dashboard điều hành",
+  title: "Bảng điều hành",
   description:
-    "Theo dõi tổng quan gói thầu, cảnh báo, workflow và trạng thái vận hành trong BidTool v3.",
+    "Theo dõi vật tư, catalog, job và quy trình vận hành trong BidTool.",
   path: "/dashboard",
-  keywords: ["dashboard đấu thầu", "theo dõi gói thầu", "cảnh báo đấu thầu"],
+  keywords: ["dashboard đấu thầu", "vật tư", "catalog", "quy trình"],
 });
 
 export default async function DashboardPage() {
   const snapshot = await getRoleDashboardSnapshot();
-  const { operations, governance } = snapshot;
+  const { operations } = snapshot;
 
   return (
     <DashboardShell
-      title="Role dashboard launcher"
-      description="Khi có role thật hoặc role preview, bạn sẽ được đưa sang /admin, /manager, /staff hoặc /portal. Màn hình này giữ trải nghiệm dev khi auth tắt và preview chưa chọn."
+      title="Bảng điều hành"
+      description="Không gian local một người dùng để theo dõi công việc và đi nhanh tới các luồng chính."
     >
       <div className="space-y-3">
         <MetricStrip
           metrics={[
             {
-              label: "Users",
-              value: governance.totalUsers,
-              hint: "Chọn manager/admin preview để quản trị",
+              label: "Vật tư",
+              value: operations.totalMaterials,
+              hint: `${operations.pricedMaterials} vật tư đã có giá`,
               tone: "info",
             },
             {
-              label: "Materials",
-              value: operations.totalMaterials,
-              hint: "Chọn staff preview để vận hành",
+              label: "Catalog PDF",
+              value: operations.totalCatalogDocuments,
+              hint: `${operations.catalogLinkedMaterials} vật tư đã liên kết`,
               tone: "neutral",
             },
             {
-              label: "Workflows",
+              label: "Job đang chạy",
+              value: operations.activeJobs,
+              hint: `${operations.failedJobs} job lỗi`,
+              tone: operations.failedJobs > 0 ? "critical" : "success",
+            },
+            {
+              label: "Quy trình",
               value: operations.activeWorkflows,
               hint: `${operations.failedWorkflowRuns} lần chạy lỗi`,
               tone: operations.failedWorkflowRuns > 0 ? "warning" : "success",
-            },
-            {
-              label: "Alerts",
-              value: operations.unreadAlerts,
-              hint: "Thông báo chưa đọc",
-              tone: operations.unreadAlerts > 0 ? "warning" : "success",
             },
           ]}
         />
 
         <div className="grid gap-1 xl:grid-cols-[0.95fr_1.05fr]">
           <WorkQueuePanel
-            title="Role preview start"
-            description="Dùng banner preview phía trên để chuyển sang dashboard riêng từng vai trò."
+            title="Cần chú ý"
+            description="Cảnh báo và lỗi vận hành cần được xử lý trước."
             items={snapshot.attentionQueue}
-            emptyText="Chọn Admin, Manager, Staff hoặc Customer trên preview banner để vào đúng surface."
+            emptyText="Chưa có việc nào cần xử lý."
           />
           <QuickLaunchGrid
             items={[
               {
-                href: "/admin",
-                label: "Admin",
-                description: "Command center quản trị.",
-                icon: ShieldCheck,
+                href: "/material-profiles",
+                label: "Hồ sơ vật tư",
+                description: "Nhập sheet, tự tìm và tải danh mục chuẩn.",
+                icon: FileSpreadsheet,
               },
               {
-                href: "/manager",
-                label: "Manager",
-                description: "Governance board.",
-                icon: Users,
-              },
-              {
-                href: "/staff",
-                label: "Staff",
-                description: "Operations board.",
-                icon: Workflow,
-              },
-              {
-                href: "/portal",
-                label: "Customer",
-                description: "Read-only portal.",
-                icon: Building2,
+                href: "/materials",
+                label: "Danh mục vật tư",
+                description: "Quản lý sản phẩm, giá, nguồn và catalog.",
+                icon: Boxes,
               },
               {
                 href: "/search/packages",
-                label: "Tìm kiếm cũ",
-                description: "Auth off/no preview vẫn dùng được.",
+                label: "Tìm gói thầu",
+                description: "Tìm kiếm và lưu bộ lọc thông minh.",
                 icon: Search,
+              },
+              {
+                href: "/workflows",
+                label: "Quy trình",
+                description: "Theo dõi workflow và các lần chạy.",
+                icon: Workflow,
               },
             ]}
           />

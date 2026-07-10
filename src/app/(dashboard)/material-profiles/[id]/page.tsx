@@ -16,9 +16,9 @@ export async function generateMetadata({
 }: MaterialProfileDetailPageProps): Promise<Metadata> {
   const { id } = await params;
   return createPageMetadata({
-    title: `Hồ sơ vật tư #${id}`,
+    title: `Xử lý hồ sơ vật tư #${id}`,
     description:
-      "Tải lên, chỉnh sửa, ánh xạ vật tư và xuất Excel/Catalog cho hồ sơ vật tư.",
+      "Kiểm tra sheet vật tư, tự tìm dữ liệu sản phẩm, lưu danh mục và tải file chuẩn.",
     path: `/material-profiles/${id}`,
     noIndex: true,
   });
@@ -35,8 +35,8 @@ export default async function MaterialProfileDetailPage({
 
   return (
     <DashboardShell
-      title="Hồ sơ vật tư"
-      description="Tải file Excel, chỉnh ô, ánh xạ vật tư, duyệt catalog và xuất file ra máy local."
+      title="Xử lý hồ sơ vật tư"
+      description="Kiểm tra dữ liệu đầu vào, tự tìm & điền kết quả đáng tin cậy, rồi tải file chuẩn."
     >
       <MaterialProfileDetailClient workspaceId={id} />
     </DashboardShell>

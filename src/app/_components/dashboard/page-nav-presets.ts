@@ -377,7 +377,12 @@ export function getSettingsSectionNavItems(
   role: Role | null | undefined,
   can: (permission: Permission) => boolean,
 ): PageSectionNavItem[] {
-  if (!role) return settingsSectionNavItems;
+  if (!role) {
+    return settingsSectionNavItems.filter(
+      (item) =>
+        item.href !== "/settings/users" && item.href !== "/settings/tenants",
+    );
+  }
 
   return settingsSectionNavItems.filter((item) => {
     const rule = settingsNavRules[item.href];
@@ -434,12 +439,6 @@ export const helpSectionNavItems: PageSectionNavItem[] = [
     label: "Bắt đầu",
     description: "Cài đặt, mở app và kiểm tra dashboard.",
     icon: "home",
-  },
-  {
-    href: "/help/vai-tro",
-    label: "Vai trò & quyền",
-    description: "Ranh giới admin, manager, staff và customer.",
-    icon: "clipboard",
   },
   {
     href: "/help/tim-kiem",

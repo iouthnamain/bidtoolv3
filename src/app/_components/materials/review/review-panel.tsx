@@ -43,7 +43,7 @@ export type ReviewPanelSummary = {
 export type ProfileSearchJobPanelState = {
   id: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  mode: "web" | "ai";
+  mode: "web" | "ai" | "auto";
   requestedItemIds: number[];
   total: number;
   processed: number;
@@ -61,7 +61,7 @@ export type ProfileSearchRunPanelState = {
   id: number;
   itemId: number;
   originalRowIndex: number;
-  mode: "web" | "ai";
+  mode: "web" | "ai" | "auto";
   status:
     | "queued"
     | "running"
@@ -935,7 +935,7 @@ export function ReviewPanel({
   }
 
   return (
-    <section className="panel overflow-hidden">
+    <section className="panel min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-1 border-b border-slate-400 bg-slate-50 px-4 py-3">
         <div>
           <h3 className="text-sm font-bold text-balance text-slate-900">
@@ -1223,8 +1223,8 @@ export function ReviewPanel({
         </div>
       ) : null}
 
-      <div className="grid lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-        <div className="max-h-[32rem] divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 lg:max-h-[40rem] lg:border-r lg:border-b-0">
+      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[clamp(15rem,18vw,18rem)_minmax(0,1fr)]">
+        <div className="max-h-64 min-w-0 divide-y divide-slate-100 overflow-y-auto border-b border-slate-400 xl:max-h-[40rem] xl:border-r xl:border-b-0">
           {isProfileSplit && filtered.length > 0 ? (
             <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700">
               <input

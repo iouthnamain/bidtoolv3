@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
 import {
@@ -17,6 +17,15 @@ import {
 } from "~/lib/materials/review-decision";
 import { isExportableDecision } from "~/lib/materials/enrich-gap-fill";
 import {
+  CLEAN_MATERIAL_PROFILE_EXPORT_HEADERS,
+  createMaterialProfileSourceFingerprint,
+  toMaterialProfileCleanExportRow,
+  validateMaterialProfileInput,
+  validateMaterialProfileResolution,
+  type MaterialProfileResolution,
+} from "~/lib/materials/profile-input-contract";
+import type { FillableField } from "~/lib/materials/excel-enrich-fields";
+import {
   snapshotStatusFromItem,
   topCandidateMaterialIdFromItem,
   type WorkspaceItemForReview,
@@ -25,9 +34,10 @@ import type {
   ColumnMapping,
   ParsedWorkbookSheet,
 } from "~/server/services/excel-workbook";
-import { extractRowFields, matchRows } from "~/server/services/excel-enrich";
+import { matchRows } from "~/server/services/excel-enrich";
 import {
   parseWorkbookBase64,
+  parseOptionalNumber,
   rebuildSheetWithHeaderRow,
 } from "~/server/services/excel-workbook";
 import {
@@ -42,6 +52,7 @@ import type { db as appDb } from "~/server/db";
 import {
   excelWorkspaceItems,
   excelWorkspaces,
+  materialProfileSearchJobs,
   materialProfileSearchRuns,
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
@@ -131,7 +142,7 @@ function materialProfileSearchRunSnapshot(
     itemId: row.itemId,
     originalRowIndex: row.originalRowIndex,
     sortOrder: row.sortOrder,
-    mode: row.mode === "ai" ? "ai" : "web",
+    mode: row.mode === "ai" || row.mode === "auto" ? row.mode : "web",
     status:
       row.status === "queued" ||
       row.status === "running" ||
@@ -204,6 +215,81 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function firstMaterialProfileText(...values: Array<string | null | undefined>) {
+  return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
+}
+
+/**
+ * Fill only canonical blanks from a result that already passed the strict
+ * profile gate. This prevents the clean profile export from displaying a
+ * generated/input-derived value that `/materials` itself does not retain.
+ */
+export function buildMaterialProfileCanonicalBackfillPatch(input: {
+  material: Pick<
+    MaterialRow,
+    | "code"
+    | "name"
+    | "unit"
+    | "category"
+    | "specText"
+    | "manufacturer"
+    | "originCountry"
+    | "defaultUnitPrice"
+    | "currency"
+    | "sourceUrl"
+    | "metadataJson"
+  >;
+  resolution: Pick<MaterialProfileResolution, "candidate">;
+  category?: string | null;
+  resolvedAt: string;
+}) {
+  const candidate = input.resolution.candidate;
+  const currentMetadata = jsonRecord(input.material.metadataJson);
+  const currentProfile = jsonRecord(currentMetadata.materialProfile);
+  return {
+    code: firstMaterialProfileText(input.material.code, candidate.code) || null,
+    name: firstMaterialProfileText(input.material.name, candidate.name),
+    unit: firstMaterialProfileText(input.material.unit, candidate.unit),
+    category:
+      firstMaterialProfileText(input.material.category, input.category) || null,
+    specText: firstMaterialProfileText(
+      input.material.specText,
+      candidate.specText,
+    ),
+    manufacturer:
+      firstMaterialProfileText(
+        input.material.manufacturer,
+        candidate.manufacturer,
+      ) || null,
+    originCountry:
+      firstMaterialProfileText(
+        input.material.originCountry,
+        candidate.originCountry,
+      ) || null,
+    defaultUnitPrice:
+      input.material.defaultUnitPrice ?? candidate.unitPrice ?? null,
+    currency: firstMaterialProfileText(input.material.currency, "VND"),
+    sourceUrl:
+      firstMaterialProfileText(input.material.sourceUrl, candidate.sourceUrl) ||
+      null,
+    metadataJson: {
+      ...currentMetadata,
+      materialProfile: {
+        ...currentProfile,
+        confidence: candidate.confidence,
+        source: candidate.source,
+        sourceUrl: candidate.sourceUrl,
+        catalogUrl: candidate.catalogUrl,
+        provenance:
+          candidate.provenance ?? currentProfile.provenance ?? "catalog",
+        codeProvenance:
+          candidate.codeProvenance ?? currentProfile.codeProvenance ?? null,
+        resolvedAt: input.resolvedAt,
+      },
+    },
+  };
+}
+
 function serializeMaterialProfileUserDecision(decision: SerializedRowDecision) {
   const restored = deserializeRowDecision(decision);
   if (!restored) return decision;
@@ -261,26 +347,6 @@ export function summarizeMaterialProfileReviewReadiness(
     canExportWithWarnings: true,
     warnings,
   };
-}
-
-function normalizeReviewIdentityPart(value: unknown) {
-  return typeof value === "string"
-    ? value.toLocaleLowerCase("vi-VN").replace(/\s+/g, " ").trim()
-    : "";
-}
-
-function materialProfileReviewIdentity(input: {
-  originalRowIndex: number;
-  productName: string;
-  unit: string | null;
-  specText: string | null;
-}) {
-  return [
-    input.originalRowIndex,
-    normalizeReviewIdentityPart(input.productName),
-    normalizeReviewIdentityPart(input.unit),
-    normalizeReviewIdentityPart(input.specText),
-  ].join("|");
 }
 
 export const MATERIAL_PROFILE_EXPORT_COLUMNS = [
@@ -655,13 +721,6 @@ function editValueForCell(
   return edits[sheetName]?.[`${rowNumber}:${colNumber}`];
 }
 
-function applyExportCellEdits(
-  workbook: ExcelJS.Workbook,
-  state: MaterialProfileExportEditState,
-) {
-  applyCellEdits(workbook, state.cellEdits);
-}
-
 function filterPreviewRowsAndColumns(
   rows: string[][],
   sheetName: string,
@@ -692,27 +751,6 @@ function filterPreviewRowsAndColumns(
     rowNumbers,
     columnNumbers: visibleColumnNumbers,
   };
-}
-
-function applyDeletedRowsAndColumnsToWorkbook(
-  workbook: ExcelJS.Workbook,
-  state: MaterialProfileExportEditState,
-) {
-  for (const sheet of workbook.worksheets) {
-    const deletedColumns = [...(state.deletedColumns[sheet.name] ?? [])].sort(
-      (a, b) => b - a,
-    );
-    for (const colNumber of deletedColumns) {
-      sheet.spliceColumns(colNumber, 1);
-    }
-
-    const deletedRows = [...(state.deletedRows[sheet.name] ?? [])].sort(
-      (a, b) => b - a,
-    );
-    for (const rowNumber of deletedRows) {
-      sheet.spliceRows(rowNumber, 1);
-    }
-  }
 }
 
 function isMaterialRowDeleted(
@@ -865,6 +903,53 @@ async function requireWorkspace(db: AppDb, workspaceId: number) {
   return workspace;
 }
 
+/**
+ * A new upload or re-map changes row identity. Cancel active row-search jobs
+ * first so their old snapshots cannot later be presented as current results.
+ * The worker also rechecks this durable status immediately before promotion.
+ */
+async function invalidateActiveMaterialProfileSearchJobs(
+  db: AppDb,
+  workspaceId: number,
+  message = "Dữ liệu nguồn đã thay đổi; đã hủy job tìm kiếm cũ.",
+) {
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(materialProfileSearchJobs)
+      .set({
+        status: "cancelled",
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        message,
+        finishedAt: now,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileSearchJobs.workspaceId, workspaceId),
+          inArray(materialProfileSearchJobs.status, ["queued", "running"]),
+        ),
+      );
+    await tx
+      .update(materialProfileSearchRuns)
+      .set({
+        status: "cancelled",
+        errorMessage: message,
+        finishedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileSearchRuns.workspaceId, workspaceId),
+          inArray(materialProfileSearchRuns.status, ["queued", "running"]),
+        ),
+      );
+  });
+}
+
 async function sourceWorkbookPathReadable(filePath: string) {
   try {
     await access(filePath, constants.R_OK);
@@ -924,17 +1009,20 @@ async function parseWorkspaceWorkbook(workspace: Workspace) {
 
 export async function createMaterialProfileWorkspace(
   db: AppDb,
-  input: { noticeNumber: string },
+  input: { name?: string; noticeNumber?: string },
 ) {
-  const noticeNumber = input.noticeNumber.trim();
-  if (!noticeNumber) {
-    throw new MaterialProfileWorkspaceError("BAD_REQUEST", "Nhập Số TBMT.");
-  }
+  const noticeNumber = input.noticeNumber?.trim() ?? "";
+  const requestedName = input.name?.trim() ?? "";
+  const name = requestedName
+    ? requestedName
+    : noticeNumber
+      ? noticeNumber
+      : `Hồ sơ vật tư ${new Date().toLocaleDateString("vi-VN")}`;
   const now = new Date().toISOString();
   const [workspace] = await db
     .insert(excelWorkspaces)
     .values({
-      name: noticeNumber,
+      name,
       noticeNumber,
       status: "draft",
       createdAt: now,
@@ -957,7 +1045,6 @@ export async function listMaterialProfileWorkspaces(
   return db
     .select()
     .from(excelWorkspaces)
-    .where(isNotNull(excelWorkspaces.noticeNumber))
     .orderBy(desc(excelWorkspaces.updatedAt))
     .limit(input.limit ?? 50)
     .offset(input.offset ?? 0);
@@ -965,17 +1052,16 @@ export async function listMaterialProfileWorkspaces(
 
 export async function updateMaterialProfileWorkspace(
   db: AppDb,
-  input: { workspaceId: number; noticeNumber: string },
+  input: { workspaceId: number; name?: string; noticeNumber?: string | null },
 ) {
-  await requireWorkspace(db, input.workspaceId);
-  const noticeNumber = input.noticeNumber.trim();
-  if (!noticeNumber) {
-    throw new MaterialProfileWorkspaceError("BAD_REQUEST", "Nhập Số TBMT.");
-  }
+  const workspace = await requireWorkspace(db, input.workspaceId);
+  const noticeNumber = input.noticeNumber?.trim() ?? "";
+  const requestedName = input.name?.trim() ?? "";
+  const name = requestedName.length > 0 ? requestedName : workspace.name;
   const [updated] = await db
     .update(excelWorkspaces)
     .set({
-      name: noticeNumber,
+      name,
       noticeNumber,
       updatedAt: new Date().toISOString(),
     })
@@ -1018,11 +1104,25 @@ export async function getMaterialProfileWorkspace(
       materialProfileSearchRunSnapshot(run),
     ]),
   );
+  const materialIds = materialIdsFromItems(items);
+  const materialRows = await loadMaterialRows(db, materialIds);
+  const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+  const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
   const itemsWithCurrentSearch = items.map((item) => {
     const currentSearchRun = currentRunByItemId.get(item.id) ?? null;
+    const material =
+      item.materialId == null ? undefined : materialsById.get(item.materialId);
+    const profileResolution = materialProfileResolutionForItem(
+      item,
+      material,
+      item.materialId == null
+        ? []
+        : (docsByMaterial.get(item.materialId) ?? []),
+    ).resolution;
     return {
       ...item,
       currentSearchRun,
+      profileResolution,
       reviewDecisionJson: reviewDecisionJsonWithCurrentSearchRun(
         item.reviewDecisionJson,
         currentSearchRun,
@@ -1044,6 +1144,7 @@ export async function uploadMaterialProfileWorkbook(
   input: { workspaceId: number; fileName: string; workbookBase64: string },
 ) {
   const workspace = await requireWorkspace(db, input.workspaceId);
+  await invalidateActiveMaterialProfileSearchJobs(db, workspace.id);
   const buffer = decodeBase64(input.workbookBase64);
   const parsed = await parseWorkbookBase64(
     input.fileName,
@@ -1166,6 +1267,7 @@ export async function matchMaterialProfileWorkspace(
     mapping?: ColumnMapping;
   },
 ) {
+  await invalidateActiveMaterialProfileSearchJobs(db, input.workspaceId);
   const workspace = await updateMaterialProfileWorkspaceState(db, {
     workspaceId: input.workspaceId,
     sheetName: input.sheetName,
@@ -1190,108 +1292,301 @@ export async function matchMaterialProfileWorkspace(
       selectedMeta?.activeHeaderRowIndex ??
       baseSheet.activeHeaderRowIndex,
   );
-  const rows = extractRowFields(sheet, workspace.columnMappingJson);
-  const results = await matchRows(db, rows);
-  const rowByIndex = new Map(rows.map((row) => [row.originalRowIndex, row]));
+  const mapping = workspace.columnMappingJson;
+  const requiredMappings: Array<[keyof ColumnMapping, string]> = [
+    ["materialName", "Tên vật tư"],
+    ["unit", "ĐVT"],
+    ["specText", "Thông số kỹ thuật"],
+  ];
+  const missingMappings = requiredMappings.flatMap(([key, label]) =>
+    mapping[key] ? [] : [label],
+  );
+  if (missingMappings.length > 0) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      `Cần ánh xạ cột ${missingMappings.join(", ")} trước khi tự xử lý.`,
+    );
+  }
+
+  const rows = sheet.rows.map((row) => {
+    const valueOf = (key: string) => {
+      const column = mapping[key];
+      return column ? (row.values[column] ?? "") : "";
+    };
+    const fields: Partial<Record<FillableField, string>> = {
+      code: valueOf("code"),
+      unit: valueOf("unit"),
+      category: valueOf("category"),
+      specText: valueOf("specText"),
+      manufacturer: valueOf("vendorHint"),
+      originCountry: valueOf("originHint"),
+      defaultUnitPrice: valueOf("unitPrice"),
+      currency: "VND",
+      sourceUrl: valueOf("sourceUrl"),
+    };
+    const name = valueOf("materialName");
+    const inputValidation = validateMaterialProfileInput({
+      name,
+      unit: fields.unit ?? "",
+      specText: fields.specText ?? "",
+      rowIndex: row.originalRowIndex,
+      sourceValues: row.values,
+    });
+    return {
+      originalRowIndex: row.originalRowIndex,
+      name,
+      fields,
+      inputValidation,
+      sourceFingerprint: createMaterialProfileSourceFingerprint({
+        name,
+        unit: fields.unit ?? "",
+        specText: fields.specText ?? "",
+        rowIndex: row.originalRowIndex,
+      }),
+    };
+  });
+  const validRows = rows
+    .filter((row) => row.inputValidation.valid)
+    .map((row) => ({
+      originalRowIndex: row.originalRowIndex,
+      name: row.name.trim(),
+      fields: row.fields,
+    }));
+  const results = await matchRows(db, validRows);
+  const resultByRowIndex = new Map(
+    results.map((result) => [result.originalRowIndex, result]),
+  );
   const existingItems = await db
     .select()
     .from(excelWorkspaceItems)
     .where(eq(excelWorkspaceItems.workspaceId, workspace.id));
-  const currentRuns = await db
-    .select()
-    .from(materialProfileSearchRuns)
-    .where(
-      and(
-        eq(materialProfileSearchRuns.workspaceId, workspace.id),
-        eq(materialProfileSearchRuns.isCurrent, true),
-      ),
-    );
-  const currentRunByItemId = new Map(
-    currentRuns.map((run) => [
-      run.itemId,
-      materialProfileSearchRunSnapshot(run),
+  const materialIdsToVerify = Array.from(
+    new Set(
+      [
+        ...results.map((result) => result.topCandidate?.materialId ?? null),
+        ...existingItems.map((item) => item.materialId),
+      ].filter((id): id is number => id != null),
+    ),
+  );
+  const materialRowsToVerify = await loadMaterialRows(db, materialIdsToVerify);
+  const materialsToVerifyById = new Map(
+    materialRowsToVerify.map((material) => [material.id, material]),
+  );
+  const docsToVerifyByMaterial = await catalogDocumentsByMaterial(
+    db,
+    materialIdsToVerify,
+  );
+  const existingByFingerprint = new Map(
+    existingItems.map((item) => [
+      createMaterialProfileSourceFingerprint({
+        name: item.productName,
+        unit: item.unit,
+        specText: item.specText,
+        rowIndex: item.originalRowIndex,
+      }),
+      item,
     ]),
   );
-  const preservedByIdentity = new Map<
-    string,
-    {
-      materialId: number | null;
-      matchStatus: WorkspaceItem["matchStatus"];
-      reviewDecisionJson: Record<string, unknown>;
-    }
-  >();
-  for (const item of existingItems) {
-    preservedByIdentity.set(materialProfileReviewIdentity(item), {
-      materialId: item.materialId,
-      matchStatus: item.matchStatus,
-      reviewDecisionJson: jsonRecord(
-        reviewDecisionJsonWithCurrentSearchRun(
-          item.reviewDecisionJson,
-          currentRunByItemId.get(item.id) ?? null,
-        ),
-      ),
-    });
-  }
-
-  await db
-    .delete(excelWorkspaceItems)
-    .where(eq(excelWorkspaceItems.workspaceId, workspace.id));
-
   const now = new Date().toISOString();
-  if (results.length > 0) {
-    await db.insert(excelWorkspaceItems).values(
-      results.map((result, index) => {
-        const source = rowByIndex.get(result.originalRowIndex);
-        const productName = source?.name ?? `Dòng ${result.originalRowIndex}`;
-        const specText = source?.fields.specText ?? "";
-        const unit = source?.fields.unit ?? "";
-        const preserved = preservedByIdentity.get(
-          materialProfileReviewIdentity({
-            originalRowIndex: result.originalRowIndex,
-            productName,
-            specText,
-            unit,
-          }),
-        );
-        const autoMaterialId =
-          result.status === "auto" ? result.topCandidate?.materialId : null;
-        const matchStatus =
-          result.status === "auto"
-            ? ("matched" as const)
-            : result.status === "review"
-              ? ("candidates_found" as const)
-              : ("unmatched" as const);
-        return {
-          workspaceId: workspace.id,
-          materialId: preserved?.materialId ?? autoMaterialId ?? null,
-          originalRowIndex: result.originalRowIndex,
-          originalDataJson: source?.fields ?? {},
-          productName,
-          specText,
-          unit,
-          currency: "VND",
-          vendorHint: source?.fields.manufacturer ?? null,
-          originHint: source?.fields.originCountry ?? null,
-          unitPrice: source?.fields.defaultUnitPrice
-            ? Number(source.fields.defaultUnitPrice.replace(/[^\d.-]/g, ""))
-            : null,
-          sortOrder: index,
-          enrichedSnapshotJson: {
-            status: result.status,
-            score: result.topCandidate?.score ?? null,
-            topCandidate: result.topCandidate,
-            candidates: result.candidates,
-            fillPlan: result.fillPlan,
-            sheetFields: source?.fields ?? {},
-          },
-          reviewDecisionJson: preserved?.reviewDecisionJson ?? undefined,
-          matchStatus: preserved?.matchStatus ?? matchStatus,
+  const seenItemIds = new Set<number>();
+  await db.transaction(async (tx) => {
+    for (const [index, source] of rows.entries()) {
+      const existing = existingByFingerprint.get(source.sourceFingerprint);
+      const result = resultByRowIndex.get(source.originalRowIndex);
+      let localMaterial = result?.topCandidate
+        ? materialsToVerifyById.get(result.topCandidate.materialId)
+        : undefined;
+      let localResolution = localMaterial
+        ? materialProfileResolutionForItem(
+            {
+              productName:
+                source.name.trim().length > 0
+                  ? source.name.trim()
+                  : `Dòng ${source.originalRowIndex}`,
+              unit: source.fields.unit ?? "",
+              specText: source.fields.specText ?? "",
+              originalRowIndex: source.originalRowIndex,
+              originalDataJson: source.fields,
+              enrichedSnapshotJson: {
+                score: result?.topCandidate?.score ?? null,
+              },
+              matchStatus: "matched",
+            },
+            localMaterial,
+            docsToVerifyByMaterial.get(localMaterial.id) ?? [],
+          ).resolution
+        : null;
+      if (
+        result?.status === "auto" &&
+        localMaterial &&
+        localResolution?.promotable
+      ) {
+        const candidateCode = localResolution.candidate.code?.trim() ?? "";
+        const [codeOwner] =
+          !localMaterial.code?.trim() && candidateCode
+            ? await tx
+                .select({ id: materials.id })
+                .from(materials)
+                .where(
+                  and(
+                    eq(materials.code, candidateCode),
+                    isNull(materials.deletedAt),
+                    ne(materials.id, localMaterial.id),
+                  ),
+                )
+                .limit(1)
+            : [];
+        if (codeOwner) {
+          localResolution = {
+            ...localResolution,
+            promotable: false,
+            status: "needs_verification",
+            reasons: [
+              ...localResolution.reasons,
+              "Mã vật tư tự sinh đã thuộc về một vật tư khác; cần xác minh trước khi lưu.",
+            ],
+          };
+        } else {
+          const patch = buildMaterialProfileCanonicalBackfillPatch({
+            material: localMaterial,
+            resolution: localResolution,
+            category: source.fields.category,
+            resolvedAt: now,
+          });
+          const [saved] = await tx
+            .update(materials)
+            .set({ ...patch, updatedAt: now })
+            .where(eq(materials.id, localMaterial.id))
+            .returning();
+          if (saved) {
+            localMaterial = saved;
+            materialsToVerifyById.set(saved.id, saved);
+          }
+        }
+      }
+      const autoMaterialId =
+        result?.status === "auto" && localResolution?.promotable
+          ? (localMaterial?.id ?? null)
+          : null;
+      const existingMaterial =
+        existing?.materialId == null
+          ? undefined
+          : materialsToVerifyById.get(existing.materialId);
+      const existingResolution =
+        existing && existingMaterial
+          ? materialProfileResolutionForItem(
+              {
+                ...existing,
+                productName:
+                  source.name.trim().length > 0
+                    ? source.name.trim()
+                    : `Dòng ${source.originalRowIndex}`,
+                unit: source.fields.unit ?? "",
+                specText: source.fields.specText ?? "",
+                originalRowIndex: source.originalRowIndex,
+                originalDataJson: source.fields,
+              },
+              existingMaterial,
+              docsToVerifyByMaterial.get(existingMaterial.id) ?? [],
+            ).resolution
+          : null;
+      const inferredMatchStatus = !source.inputValidation.valid
+        ? ("unmatched" as const)
+        : autoMaterialId != null
+          ? ("matched" as const)
+          : result?.status === "review" || result?.status === "auto"
+            ? ("candidates_found" as const)
+            : ("unmatched" as const);
+      const preservedManualSelection =
+        (existing?.matchStatus === "manual" || existing?.materialId != null) &&
+        existingResolution?.promotable === true;
+      const nextSnapshot = {
+        ...jsonRecord(existing?.enrichedSnapshotJson),
+        stale: false,
+        sourceFingerprint: source.sourceFingerprint,
+        inputValidation: source.inputValidation,
+        status: source.inputValidation.valid
+          ? autoMaterialId != null
+            ? "auto"
+            : result?.status === "auto"
+              ? "review"
+              : (result?.status ?? "unmatched")
+          : "unmatched",
+        score: result?.topCandidate?.score ?? null,
+        localResolution: localResolution ?? undefined,
+        existingResolution: existingResolution ?? undefined,
+        topCandidate: result?.topCandidate ?? null,
+        candidates: result?.candidates ?? [],
+        fillPlan: result?.fillPlan ?? [],
+        sheetFields: source.fields,
+      };
+      const values = {
+        workspaceId: workspace.id,
+        sourceFingerprint: source.sourceFingerprint,
+        isStale: false,
+        materialId: preservedManualSelection
+          ? (existing?.materialId ?? null)
+          : (existing?.materialId ?? autoMaterialId ?? null),
+        originalRowIndex: source.originalRowIndex,
+        originalDataJson: source.fields,
+        productName:
+          source.name.trim().length > 0
+            ? source.name.trim()
+            : `Dòng ${source.originalRowIndex}`,
+        specText: source.fields.specText ?? "",
+        unit: source.fields.unit ?? "",
+        currency: "VND",
+        vendorHint: emptyToNull(source.fields.manufacturer),
+        originHint: emptyToNull(source.fields.originCountry),
+        quantity: null,
+        targetPrice: parseOptionalNumber(source.fields.defaultUnitPrice ?? ""),
+        unitPrice: parseOptionalNumber(source.fields.defaultUnitPrice ?? ""),
+        searchKeywords: [
+          source.name,
+          source.fields.unit,
+          source.fields.specText,
+        ]
+          .map((value) => value?.trim() ?? "")
+          .filter(Boolean),
+        sortOrder: index,
+        includedInExport: source.inputValidation.valid,
+        enrichedSnapshotJson: nextSnapshot,
+        matchStatus: preservedManualSelection
+          ? (existing?.matchStatus ?? inferredMatchStatus)
+          : inferredMatchStatus,
+        updatedAt: now,
+      };
+      if (existing) {
+        seenItemIds.add(existing.id);
+        await tx
+          .update(excelWorkspaceItems)
+          .set(values)
+          .where(eq(excelWorkspaceItems.id, existing.id));
+      } else {
+        await tx.insert(excelWorkspaceItems).values({
+          ...values,
+          reviewDecisionJson: {},
           createdAt: now,
+        });
+      }
+    }
+
+    for (const existing of existingItems) {
+      if (seenItemIds.has(existing.id)) continue;
+      await tx
+        .update(excelWorkspaceItems)
+        .set({
+          includedInExport: false,
+          isStale: true,
+          enrichedSnapshotJson: {
+            ...jsonRecord(existing.enrichedSnapshotJson),
+            stale: true,
+          },
           updatedAt: now,
-        };
-      }),
-    );
-  }
+        })
+        .where(eq(excelWorkspaceItems.id, existing.id));
+    }
+  });
 
   await db
     .update(excelWorkspaces)
@@ -1551,6 +1846,11 @@ export async function updateMaterialProfileItemEnrichmentDraft(
 
 function textField(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function emptyToNull(value: string | null | undefined) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
 }
 
 function enrichmentInputFromWorkspaceItem(item: WorkspaceItem) {
@@ -2057,6 +2357,93 @@ function catalogPreviewFilesByMaterial(
   return files;
 }
 
+function materialProfileConfidenceForItem(
+  item: Pick<WorkspaceItem, "enrichedSnapshotJson" | "matchStatus">,
+  material: MaterialRow,
+) {
+  const profileMetadata = jsonRecord(
+    jsonRecord(material.metadataJson).materialProfile,
+  );
+  if (
+    typeof profileMetadata.confidence === "number" &&
+    Number.isFinite(profileMetadata.confidence)
+  ) {
+    return profileMetadata.confidence;
+  }
+  const snapshot = jsonRecord(item.enrichedSnapshotJson);
+  if (typeof snapshot.score === "number" && Number.isFinite(snapshot.score)) {
+    return snapshot.score;
+  }
+  // A complete record explicitly selected/edited by an operator is a manual
+  // verification, not an unscored automatic match.
+  return item.matchStatus === "manual" ? 1 : 0;
+}
+
+/**
+ * The one canonical completeness gate for local matches and clean export.
+ * A materialId alone is never proof that the required profile output exists.
+ */
+function materialProfileResolutionForItem(
+  item: Pick<
+    WorkspaceItem,
+    | "productName"
+    | "unit"
+    | "specText"
+    | "originalRowIndex"
+    | "originalDataJson"
+    | "enrichedSnapshotJson"
+    | "matchStatus"
+  >,
+  material: MaterialRow | undefined,
+  docs: CatalogDocumentRow[] = [],
+) {
+  const profileMetadata = material
+    ? jsonRecord(jsonRecord(material.metadataJson).materialProfile)
+    : {};
+  const sourceUrl = material?.sourceUrl?.trim() ?? "";
+  const catalogUrl =
+    docs.map((doc) => doc.sourceUrl?.trim() ?? "").find(Boolean) ?? "";
+  const input = {
+    name: item.productName,
+    unit: item.unit,
+    specText: item.specText,
+    rowIndex: item.originalRowIndex,
+    sourceValues: jsonRecord(item.originalDataJson),
+  };
+  const candidate = {
+    code: material?.code,
+    name: material?.name,
+    unit: material?.unit,
+    specText: material?.specText,
+    manufacturer: material?.manufacturer,
+    originCountry: material?.originCountry,
+    unitPrice: material?.defaultUnitPrice,
+    source:
+      typeof profileMetadata.source === "string"
+        ? profileMetadata.source
+        : sourceUrl,
+    sourceUrl,
+    catalogUrl,
+    evidenceUrls: docs
+      .map((doc) => doc.sourceUrl?.trim() ?? "")
+      .filter(Boolean),
+    confidence: material ? materialProfileConfidenceForItem(item, material) : 0,
+    provenance:
+      typeof profileMetadata.provenance === "string"
+        ? profileMetadata.provenance
+        : undefined,
+    codeProvenance:
+      typeof profileMetadata.codeProvenance === "string"
+        ? profileMetadata.codeProvenance
+        : undefined,
+  };
+  return {
+    input,
+    candidate,
+    resolution: validateMaterialProfileResolution({ input, candidate }),
+  };
+}
+
 function materialProfileMatchCounts(
   items: WorkspaceItem[],
   docsByMaterial: Map<number, CatalogDocumentRow[]>,
@@ -2067,6 +2454,7 @@ function materialProfileMatchCounts(
   const exportItems = items.filter(
     (item) =>
       item.includedInExport &&
+      !item.isStale &&
       !isMaterialRowDeleted(item, materialSheetName, exportEditState),
   );
   return {
@@ -2100,6 +2488,7 @@ export async function previewMaterialProfileExportWorkbook(
   const materialRows = await loadMaterialRows(db, materialIds);
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
   const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+
   const catalogFilesByMaterial = catalogPreviewFilesByMaterial(docsByMaterial);
   const exportEditState = parseMaterialProfileExportEditState(
     workspace.exportEditStateJson,
@@ -2111,6 +2500,7 @@ export async function previewMaterialProfileExportWorkbook(
   const previewItems = items.filter(
     (item) =>
       item.includedInExport &&
+      !item.isStale &&
       !isMaterialRowDeleted(item, previewSheetName, exportEditState),
   );
   const reviewReadiness = summarizeMaterialProfileReviewReadiness(previewItems);
@@ -2190,6 +2580,71 @@ export async function previewMaterialProfileExportWorkbook(
         rows: visible.rows,
       };
     }),
+  };
+}
+
+/**
+ * Clean profile output is intentionally all current source rows. Legacy
+ * `includedInExport` remains available to the preserve-layout export, but must
+ * never silently omit an invalid profile row from the strict clean file.
+ */
+export function selectMaterialProfileCleanExportItems<
+  T extends { isStale: boolean },
+>(items: T[]) {
+  return items.filter((item) => !item.isStale);
+}
+
+/** Lightweight preview of the exact single-sheet format produced by export. */
+export async function previewMaterialProfileCleanExport(
+  db: AppDb,
+  workspaceId: number,
+) {
+  const workspace = await requireWorkspace(db, workspaceId);
+  const items = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
+    .orderBy(excelWorkspaceItems.sortOrder);
+  const exportItems = selectMaterialProfileCleanExportItems(items);
+  const materialIds = materialIdsFromItems(exportItems);
+  const materialRows = await loadMaterialRows(db, materialIds);
+  const materialsById = new Map(materialRows.map((row) => [row.id, row]));
+  const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+  const entries = exportItems.map((item) => {
+    const material =
+      item.materialId == null ? undefined : materialsById.get(item.materialId);
+    const docs =
+      item.materialId == null
+        ? []
+        : (docsByMaterial.get(item.materialId) ?? []);
+    const { input, candidate, resolution } = materialProfileResolutionForItem(
+      item,
+      material,
+      docs,
+    );
+    return {
+      item,
+      resolution,
+      row: toMaterialProfileCleanExportRow({ input, candidate, resolution }),
+    };
+  });
+  const incomplete = entries.filter((entry) => !entry.resolution.promotable);
+  return {
+    headers: [...CLEAN_MATERIAL_PROFILE_EXPORT_HEADERS],
+    rows: entries.map((entry) => entry.row),
+    totalRows: entries.length,
+    completeRows: entries.length - incomplete.length,
+    incompleteRows: incomplete.length,
+    canExport: entries.length > 0 && incomplete.length === 0,
+    emptyReason:
+      entries.length === 0
+        ? "Chưa có dòng vật tư hiện tại để xuất. Hãy map và tự xử lý workbook trước."
+        : null,
+    issues: incomplete.slice(0, 20).map((entry) => ({
+      originalRowIndex: entry.item.originalRowIndex,
+      name: entry.item.productName,
+      reasons: entry.resolution.reasons,
+    })),
   };
 }
 
@@ -2322,27 +2777,53 @@ async function markMaterialProfileWorkspaceExported(
 async function buildMaterialProfileExportBundle(
   db: AppDb,
   workspaceId: number,
+  options: { includeCatalogFiles?: boolean } = {},
 ): Promise<{ workspace: Workspace; bundle: MaterialProfileExportBundle }> {
+  const includeCatalogFiles = options.includeCatalogFiles ?? true;
   const workspace = await requireWorkspace(db, workspaceId);
   const items = await db
     .select()
     .from(excelWorkspaceItems)
     .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
     .orderBy(excelWorkspaceItems.sortOrder);
-  const exportEditState = parseMaterialProfileExportEditState(
-    workspace.exportEditStateJson,
-  );
-  const materialSheetName = workspace.sourceSheetName ?? "";
-  const exportItems = items.filter(
-    (item) =>
-      item.includedInExport &&
-      !isMaterialRowDeleted(item, materialSheetName, exportEditState),
-  );
+  const exportItems = selectMaterialProfileCleanExportItems(items);
+  if (exportItems.length === 0) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Chưa có dòng vật tư hiện tại để xuất danh mục chuẩn. Hãy map và tự xử lý workbook trước.",
+    );
+  }
   const reviewReadiness = summarizeMaterialProfileReviewReadiness(exportItems);
   const materialIds = materialIdsFromItems(exportItems);
   const materialRows = await loadMaterialRows(db, materialIds);
   const materialsById = new Map(materialRows.map((row) => [row.id, row]));
   const docsByMaterial = await catalogDocumentsByMaterial(db, materialIds);
+  const cleanExportRows = exportItems.map((item) => {
+    const material =
+      item.materialId == null ? undefined : materialsById.get(item.materialId);
+    const docs =
+      item.materialId == null
+        ? []
+        : (docsByMaterial.get(item.materialId) ?? []);
+    const resolved = materialProfileResolutionForItem(item, material, docs);
+    return { item, material, docs, ...resolved };
+  });
+  const incompleteRows = cleanExportRows.filter(
+    (entry) => !entry.resolution.promotable,
+  );
+  if (incompleteRows.length > 0) {
+    const examples = incompleteRows
+      .slice(0, 5)
+      .map(
+        (entry) =>
+          `dòng ${entry.item.originalRowIndex}: ${entry.resolution.reasons.join(" ")}`,
+      )
+      .join(" ");
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      `Chưa thể xuất danh mục chuẩn: ${incompleteRows.length.toLocaleString("vi-VN")} dòng chưa đủ dữ liệu bắt buộc. Hãy chạy «Tự tìm & điền» hoặc hoàn thiện dòng đó. ${examples}`,
+    );
+  }
 
   const noticeNumber = workspace.noticeNumber ?? workspace.name;
   const prefix = buildMaterialProfileOutputPrefix(noticeNumber);
@@ -2350,143 +2831,111 @@ async function buildMaterialProfileExportBundle(
   const copiedCatalogByDocKey = new Map<string, string>();
   const usedCatalogNames = new Set<string>();
   const catalogBuffersByFileName = new Map<string, Buffer>();
-  const catalogFilesByMaterial = new Map<number, string[]>();
   const missingRows: Array<Array<string | number | null>> = [];
   const warnings: string[] = [...reviewReadiness.warnings];
 
-  for (const item of exportItems) {
-    const materialId = item.materialId;
-    if (materialId == null) {
-      missingRows.push([
-        item.originalRowIndex,
-        item.productName,
-        "Chưa match vật tư",
-        "",
-      ]);
-      continue;
-    }
-    const material = materialsById.get(materialId);
-    if (!material) {
-      missingRows.push([
-        item.originalRowIndex,
-        item.productName,
-        "Vật tư đã bị xóa hoặc không tồn tại",
-        "",
-      ]);
-      continue;
-    }
-    const docs = docsByMaterial.get(materialId) ?? [];
-    if (docs.length === 0) {
-      missingRows.push([
-        item.originalRowIndex,
-        material.name,
-        "Vật tư chưa có catalog PDF",
-        material.sourceUrl ?? "",
-      ]);
-      continue;
-    }
+  if (includeCatalogFiles) {
+    for (const { item, material, docs } of cleanExportRows) {
+      if (!material) continue;
 
-    const fileNames: string[] = [];
-    for (const doc of docs) {
-      const docKey = doc.localFilePath
-        ? `local:${doc.localFilePath}`
-        : doc.sourceUrl
-          ? `url:${doc.sourceUrl}`
-          : `doc:${doc.id}`;
-      let fileName = copiedCatalogByDocKey.get(docKey);
-      if (!fileName) {
-        try {
-          const sourceFileName =
-            doc.fileName ??
-            (doc.sourceUrl
-              ? catalogPdfFileNameFromUrl(doc.sourceUrl)
-              : "catalog.pdf");
-          fileName = uniqueFileName(sourceFileName, usedCatalogNames);
-          const buffer = doc.localFilePath
-            ? await readCatalogPdfFile(doc.localFilePath)
-            : doc.sourceUrl
-              ? await downloadCatalogPdfFromUrl(doc.sourceUrl)
-              : null;
-          if (!buffer) {
-            throw new Error(
-              "Tài liệu catalog chưa có file local hoặc URL PDF.",
-            );
+      for (const doc of docs) {
+        const docKey = doc.localFilePath
+          ? `local:${doc.localFilePath}`
+          : doc.sourceUrl
+            ? `url:${doc.sourceUrl}`
+            : `doc:${doc.id}`;
+        let fileName = copiedCatalogByDocKey.get(docKey);
+        if (!fileName) {
+          try {
+            const sourceFileName =
+              doc.fileName ??
+              (doc.sourceUrl
+                ? catalogPdfFileNameFromUrl(doc.sourceUrl)
+                : "catalog.pdf");
+            fileName = uniqueFileName(sourceFileName, usedCatalogNames);
+            const buffer = doc.localFilePath
+              ? await readCatalogPdfFile(doc.localFilePath)
+              : doc.sourceUrl
+                ? await downloadCatalogPdfFromUrl(doc.sourceUrl)
+                : null;
+            if (!buffer) {
+              throw new Error(
+                "Tài liệu catalog chưa có file local hoặc URL PDF.",
+              );
+            }
+            catalogBuffersByFileName.set(fileName, buffer);
+            copiedCatalogByDocKey.set(docKey, fileName);
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "Không copy được catalog PDF.";
+            warnings.push(`${material.name}: ${message}`);
+            missingRows.push([
+              item.originalRowIndex,
+              material.name,
+              message,
+              doc.sourceUrl ?? doc.localFilePath ?? "",
+            ]);
+            continue;
           }
-          catalogBuffersByFileName.set(fileName, buffer);
-          copiedCatalogByDocKey.set(docKey, fileName);
-        } catch (error) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Không copy được catalog PDF.";
-          warnings.push(`${material.name}: ${message}`);
-          missingRows.push([
-            item.originalRowIndex,
-            material.name,
-            message,
-            doc.sourceUrl ?? doc.localFilePath ?? "",
-          ]);
-          continue;
         }
       }
-      fileNames.push(fileName);
     }
-    catalogFilesByMaterial.set(materialId, fileNames);
   }
 
   const workbook = new ExcelJS.Workbook();
-  const sourceBuffer = await readWorkspaceWorkbook(workspace);
-  await workbook.xlsx.load(
-    sourceBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0],
-  );
-  const maxColumnBySheet = originalColumnCountBySheet(workbook);
-  applyCellEdits(workbook, workspace.editStateJson, maxColumnBySheet);
+  workbook.creator = "BidTool v3";
+  workbook.created = new Date();
+  const targetSheet = workbook.addWorksheet("Danh mục vật tư");
+  targetSheet.views = [{ state: "frozen", ySplit: 1 }];
+  const headerRow = targetSheet.addRow(CLEAN_MATERIAL_PROFILE_EXPORT_HEADERS);
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  headerRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1D4ED8" },
+  };
+  headerRow.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+    wrapText: true,
+  };
+  targetSheet.columns = [
+    { width: 18 },
+    { width: 34 },
+    { width: 12 },
+    { width: 42 },
+    { width: 24 },
+    { width: 18 },
+    { width: 16 },
+    { width: 24 },
+    { width: 48 },
+    { width: 14 },
+    { width: 18 },
+  ];
 
-  const targetSheet =
-    workbook.getWorksheet(workspace.sourceSheetName ?? "") ??
-    workbook.worksheets[0];
-  if (!targetSheet) {
-    throw new MaterialProfileWorkspaceError(
-      "BAD_REQUEST",
-      "Không tìm thấy sheet để export.",
-    );
-  }
-  const selectedMeta = parseWorkbookJson(workspace.workbookJson).sheets.find(
-    (sheet) => sheet.name === targetSheet.name,
-  );
-  const headerRow = targetSheet.getRow(selectedMeta?.activeHeaderRowIndex ?? 1);
-  const startColumn =
-    (maxColumnBySheet.get(targetSheet.name) ?? targetSheet.columnCount) + 1;
-  MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
-    const colNumber = startColumn + index;
-    headerRow.getCell(colNumber).value = column.header;
-  });
-  headerRow.commit();
-
-  for (const item of exportItems) {
-    const material =
-      item.materialId == null ? undefined : materialsById.get(item.materialId);
-    const catalogFiles =
-      item.materialId == null
-        ? []
-        : (catalogFilesByMaterial.get(item.materialId) ?? []);
-    const row = targetSheet.getRow(item.originalRowIndex);
-    MATERIAL_PROFILE_EXPORT_COLUMNS.forEach((column, index) => {
-      const colNumber = startColumn + index;
-      row.getCell(colNumber).value = materialValue(
-        material,
-        column.key,
-        item,
-        catalogFiles,
-      );
+  for (const { input, candidate, resolution } of cleanExportRows) {
+    const exportRow = toMaterialProfileCleanExportRow({
+      input,
+      candidate,
+      resolution,
     });
-    row.commit();
+    const row = targetSheet.addRow(
+      CLEAN_MATERIAL_PROFILE_EXPORT_HEADERS.map((header) => exportRow[header]),
+    );
+    row.alignment = { vertical: "top", wrapText: true };
+    row.getCell(7).numFmt = "#,##0";
   }
+  targetSheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: {
+      row: Math.max(targetSheet.rowCount, 1),
+      column: CLEAN_MATERIAL_PROFILE_EXPORT_HEADERS.length,
+    },
+  };
 
-  applyExportCellEdits(workbook, exportEditState);
-  applyDeletedRowsAndColumnsToWorkbook(workbook, exportEditState);
-
-  const excelFileName = `${prefix}.xlsx`;
+  const excelFileName = `${prefix}-danh-muc-vat-tu.xlsx`;
   const excelBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
 
   return {
@@ -2511,7 +2960,9 @@ export async function exportMaterialProfileDownloadBundle(
   db: AppDb,
   workspaceId: number,
 ) {
-  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId);
+  const { bundle } = await buildMaterialProfileExportBundle(db, workspaceId, {
+    includeCatalogFiles: false,
+  });
   await markMaterialProfileWorkspaceExported(
     db,
     workspaceId,

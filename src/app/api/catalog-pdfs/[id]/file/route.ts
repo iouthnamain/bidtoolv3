@@ -1,8 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { env } from "~/env";
-import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { materialCatalogDocuments } from "~/server/db/schema";
 import {
@@ -26,15 +24,7 @@ export async function GET(
 }
 
 async function handleCatalogPdfFile(request: Request, rawId: string) {
-  // Auth guard (Phase 4). When auth is disabled this is a complete no-op and the
-  // route behaves exactly as before. When enabled, any authenticated user may
-  // download — catalog PDFs are GLOBAL/shared data, not tenant-scoped.
-  if (env.AUTH_ENABLED === "true") {
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  void request;
 
   const id = Number.parseInt(rawId, 10);
   if (!Number.isInteger(id) || id <= 0) {

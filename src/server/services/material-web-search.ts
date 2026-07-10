@@ -31,6 +31,8 @@ export type WebSearchResult = {
   url: string;
   domain: string;
   snippet: string;
+  /** PDF links discovered directly in fetched HTML, never model-generated. */
+  discoveredPdfUrls?: string[];
   query: string;
   rankScore: number;
   rankReasons?: string[];
@@ -439,6 +441,28 @@ async function searchSearxngQuery(
   }
 }
 
+function discoveredPdfUrlsFromHtml(html: string, baseUrl: string) {
+  const urls = new Set<string>();
+  const hrefPattern = /href\s*=\s*["']([^"']+)["']/gi;
+  for (const match of html.matchAll(hrefPattern)) {
+    const href = match[1]?.trim() ?? "";
+    if (!href) continue;
+    try {
+      const resolved = new URL(href, baseUrl);
+      if (
+        (resolved.protocol === "http:" || resolved.protocol === "https:") &&
+        /\.pdf$/i.test(resolved.pathname)
+      ) {
+        resolved.hash = "";
+        urls.add(resolved.toString());
+      }
+    } catch {
+      // Ignore malformed page links; the fetched page remains usable.
+    }
+  }
+  return [...urls];
+}
+
 async function _fetchUrlAsSearchResult(
   url: string,
   query = "known_source",
@@ -476,12 +500,17 @@ async function _fetchUrlAsSearchResult(
     const titleMatch = titlePattern.exec(body);
     const title = stripHtmlTags(titleMatch?.[1] ?? "") || trimmed;
     const snippet = extractEnrichmentPageText(body);
+    const discoveredPdfUrls = discoveredPdfUrlsFromHtml(
+      body,
+      response.url || trimmed,
+    );
 
     return {
       title,
       url: response.url || trimmed,
       domain: extractDomain(response.url || trimmed),
       snippet: snippet || stripHtmlTags(body).slice(0, 600),
+      discoveredPdfUrls,
       query,
       rankScore: 0.4,
       rankReasons: ["known_source"],
@@ -718,9 +747,32 @@ const SPEC_KEYWORDS = [
   "specification",
 ];
 
+// A listing can be purchasable without a public price. Keep the evidence
+// reasons separate so price extraction remains evidence-driven downstream.
+// Each signal adds +0.20, but never offsets a configured marketplace penalty.
+const PROFILE_PRODUCT_OR_SHOP_BOOST = 0.2;
+const PROFILE_PUBLIC_PRICE_BOOST = 0.2;
+const PROFILE_PRODUCT_OR_SHOP_PATTERN =
+  /\b(?:san[\s/_-]*pham|products?|cua[\s/_-]*hang|shop|dai[\s/_-]*ly|nha[\s/_-]*phan[\s/_-]*phoi|con[\s/_-]*hang|in[\s/_-]*stock|add[\s/_-]*to[\s/_-]*cart)\b/i;
+const PROFILE_PRICE_WITH_LABEL_PATTERN =
+  /\b(?:gia|price|bao[\s_-]*gia|bang[\s_-]*gia)\b[^0-9]{0,32}\b(?:\d{4,}|\d{1,3}(?:[.,\s]\d{3})+)\b/i;
+const PROFILE_PRICE_WITH_CURRENCY_PATTERN =
+  /\b\d{1,3}(?:[.,\s]\d{3})+\s*(?:vnd|vnđ|đ|dong|usd|\$|₫)/i;
+
 function textContainsSpecKeyword(text: string) {
   const normalized = text.toLowerCase();
   return SPEC_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function hasProfileProductOrShopSignal(text: string) {
+  return PROFILE_PRODUCT_OR_SHOP_PATTERN.test(normalizeSearchText(text));
+}
+
+function hasPublicPriceSignal(text: string) {
+  return (
+    PROFILE_PRICE_WITH_LABEL_PATTERN.test(normalizeSearchText(text)) ||
+    PROFILE_PRICE_WITH_CURRENCY_PATTERN.test(text)
+  );
 }
 
 const MATERIAL_FAMILIES = [
@@ -793,6 +845,7 @@ function _rankSearchResults(
     code?: string | null;
     specText?: string | null;
     sourceUrl?: string | null;
+    profileSearch?: boolean;
   },
   policy: SearchDomainPolicy = DEFAULT_DOMAIN_POLICY,
 ): WebSearchResult[] {
@@ -807,6 +860,7 @@ function _rankSearchResults(
     let score = result.rankScore || 0;
     const reasons: string[] = [...(result.rankReasons ?? [])];
     const domain = result.domain.toLowerCase();
+    const penaltyDomain = isPenaltyDomain(domain, policy);
     const title = result.title.toLowerCase();
     const snippet = result.snippet.toLowerCase();
     const resultText = `${title} ${snippet} ${result.url}`;
@@ -821,6 +875,22 @@ function _rankSearchResults(
       score += 0.35;
       reasons.push("manufacturer_domain");
     }
+    if (
+      input.profileSearch &&
+      !penaltyDomain &&
+      hasProfileProductOrShopSignal(resultText)
+    ) {
+      score += PROFILE_PRODUCT_OR_SHOP_BOOST;
+      reasons.push("profile_product_or_shop_signal");
+    }
+    if (
+      input.profileSearch &&
+      !penaltyDomain &&
+      hasPublicPriceSignal(resultText)
+    ) {
+      score += PROFILE_PUBLIC_PRICE_BOOST;
+      reasons.push("profile_public_price_signal");
+    }
     const isPdf = /\.pdf(?:$|[?#])/i.test(result.url);
     if (isPdf) {
       score += 0.3;
@@ -830,7 +900,7 @@ function _rankSearchResults(
         reasons.push("filetype_pdf_query");
       }
     }
-    if (domain.endsWith(".vn") && !isPenaltyDomain(domain, policy)) {
+    if (domain.endsWith(".vn") && !penaltyDomain) {
       score += 0.15;
       reasons.push("vn_domain");
     }
@@ -867,7 +937,7 @@ function _rankSearchResults(
       score -= 0.5;
       reasons.push(`${conflict}_family_mismatch`);
     }
-    if (isPenaltyDomain(domain, policy)) {
+    if (penaltyDomain) {
       score -= 0.35;
       reasons.push("penalty_domain");
     }
@@ -917,6 +987,8 @@ async function _enrichSearchResultsWithFetchedContent(
         title: fetched.title.trim() || result.title,
         snippet: fetched.snippet.trim() || result.snippet,
         domain: fetched.domain || result.domain,
+        discoveredPdfUrls:
+          fetched.discoveredPdfUrls ?? result.discoveredPdfUrls,
         rankScore: Math.max(result.rankScore, fetched.rankScore),
         rankReasons: [
           ...new Set([
