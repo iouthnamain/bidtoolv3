@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { ExternalLink, Save, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ExternalLink, ImageOff, Save, Trash2, X } from "lucide-react";
 
 import { Badge, Button } from "~/app/_components/ui";
 import { wideModalDialogClass } from "~/app/_components/ui/dialog-classes";
@@ -52,6 +52,7 @@ export function ScrapeProductDetailDialog({
   onDelete: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -65,6 +66,10 @@ export function ScrapeProductDetailDialog({
     }
   }, [open]);
 
+  useEffect(() => {
+    setImageFailed(false);
+  }, [product?.imageUrl]);
+
   if (!product) {
     return null;
   }
@@ -74,6 +79,7 @@ export function ScrapeProductDetailDialog({
       ? `Mới · ${shortJobId(job.id)}`
       : productDisplayId(job.id, productIndex);
   const missingLabels = productMissingLabels(product);
+  const imageUrl = product.imageUrl?.trim() ?? null;
 
   return (
     <dialog
@@ -109,14 +115,17 @@ export function ScrapeProductDetailDialog({
               <Badge tone="info">{displayId}</Badge>
               <Badge tone="neutral">Job {shortJobId(job.id)}</Badge>
               <Badge tone="neutral">{hostFromUrl(job.url)}</Badge>
-              <Badge tone={statusTone[job.status]}>{statusLabel[job.status]}</Badge>
+              <Badge tone={statusTone[job.status]}>
+                {statusLabel[job.status]}
+              </Badge>
             </div>
             <p
               id="scrape-product-detail-description"
               className="mt-2 text-xs text-slate-700"
             >
-              {scrapeModeLabel[job.scrapeMode]} · {scrapeMethodLabel[job.method]}{" "}
-              · {detailEnrichmentLabel[job.detailEnrichment]}
+              {scrapeModeLabel[job.scrapeMode]} ·{" "}
+              {scrapeMethodLabel[job.method]} ·{" "}
+              {detailEnrichmentLabel[job.detailEnrichment]}
             </p>
           </div>
           <button
@@ -150,13 +159,17 @@ export function ScrapeProductDetailDialog({
             ))
           )}
           {product.catalogPdfUrls.length > 0 ? (
-            <Badge tone="info">{product.catalogPdfUrls.length} catalog PDF</Badge>
+            <Badge tone="info">
+              {product.catalogPdfUrls.length} catalog PDF
+            </Badge>
           ) : null}
         </div>
 
         <div className="grid gap-1 md:grid-cols-2">
           <label className="grid gap-1 md:col-span-2">
-            <span className="text-xs font-bold text-slate-700">Tên sản phẩm</span>
+            <span className="text-xs font-bold text-slate-700">
+              Tên sản phẩm
+            </span>
             <input
               className={scrapeFieldClass}
               value={product.name}
@@ -317,6 +330,30 @@ export function ScrapeProductDetailDialog({
               }
             />
           </label>
+          <div className="md:col-span-2">
+            {imageUrl && !imageFailed ? (
+              <div className="flex min-h-48 items-center justify-center overflow-hidden rounded border border-slate-300 bg-slate-50 p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element -- supplier image hosts are arbitrary */}
+                <img
+                  src={imageUrl}
+                  alt={`Ảnh sản phẩm ${product.name || "chưa đặt tên"}`}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  className="max-h-72 w-full object-contain"
+                  onError={() => setImageFailed(true)}
+                />
+              </div>
+            ) : (
+              <div className="flex min-h-48 flex-col items-center justify-center gap-2 rounded border border-dashed border-slate-400 bg-slate-50 p-4 text-center text-sm text-slate-600">
+                <ImageOff className="h-8 w-8" aria-hidden />
+                <span>
+                  {imageFailed
+                    ? "Không tải được ảnh sản phẩm"
+                    : "Chưa có ảnh sản phẩm"}
+                </span>
+              </div>
+            )}
+          </div>
           <label className="grid gap-1 md:col-span-2">
             <span className="text-xs font-bold text-slate-700">Ảnh</span>
             <input
@@ -392,7 +429,12 @@ export function ScrapeProductDetailDialog({
               Xóa khỏi job
             </Button>
           ) : null}
-          <Button type="button" variant="ghost" disabled={isSaving || isDeleting} onClick={onClose}>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isSaving || isDeleting}
+            onClick={onClose}
+          >
             Đóng
           </Button>
           {canEdit ? (
@@ -401,7 +443,9 @@ export function ScrapeProductDetailDialog({
               variant="primary"
               leftIcon={<Save className="h-4 w-4" />}
               isLoading={isSaving}
-              disabled={isDeleting || !product.name.trim() || !product.sourceUrl.trim()}
+              disabled={
+                isDeleting || !product.name.trim() || !product.sourceUrl.trim()
+              }
               onClick={onSave}
             >
               {originalSourceUrl ? "Lưu thay đổi" : "Thêm sản phẩm"}

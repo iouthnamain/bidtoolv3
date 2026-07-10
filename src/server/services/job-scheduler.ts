@@ -604,6 +604,7 @@ async function runImportJob(job: ShopImportJobRow) {
     const result = await importScrapedProducts(db, products, {
       signal: controller.signal,
       scrapeJobId: job.scrapeJobId,
+      mode: job.productSourceUrls === null ? "create_all" : "match_existing",
       onProgress: (progress) => {
         progressWriter.queue(progress);
       },
@@ -1385,6 +1386,11 @@ export const runShopScrapeJobForTests = traceFn(
   log,
   "runShopScrapeJobForTests",
   runScrapeJob,
+);
+export const fillShopScrapeSlotsForTests = traceFn(
+  log,
+  "fillShopScrapeSlotsForTests",
+  fillScrapeSlots,
 );
 export const runJobSchedulerTickForTests = traceFn(
   log,

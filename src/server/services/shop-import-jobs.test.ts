@@ -1,22 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-const IMPORTABLE_SCRAPE_JOB_STATUSES = [
-  "completed",
-  "failed",
-  "cancelled",
-] as const;
-
-function canImportFromScrapeStatus(status: string) {
-  return IMPORTABLE_SCRAPE_JOB_STATUSES.includes(
-    status as (typeof IMPORTABLE_SCRAPE_JOB_STATUSES)[number],
-  );
-}
+import {
+  filterProductsBySourceUrls,
+  isImportableScrapeJobStatus,
+  normalizeProductSourceUrls,
+} from "~/server/services/shop-import-source";
+import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 
 describe("shop import eligibility", () => {
   it("allows import from completed, failed, and cancelled scrape jobs", () => {
-    expect(canImportFromScrapeStatus("completed")).toBe(true);
-    expect(canImportFromScrapeStatus("failed")).toBe(true);
-    expect(canImportFromScrapeStatus("cancelled")).toBe(true);
-    expect(canImportFromScrapeStatus("running")).toBe(false);
+    expect(isImportableScrapeJobStatus("completed")).toBe(true);
+    expect(isImportableScrapeJobStatus("failed")).toBe(true);
+    expect(isImportableScrapeJobStatus("cancelled")).toBe(true);
+    expect(isImportableScrapeJobStatus("running")).toBe(false);
+  });
+
+  it("keeps all mode distinct from every explicit selected URL array", () => {
+    expect(normalizeProductSourceUrls(undefined)).toBeNull();
+    expect(normalizeProductSourceUrls([])).toEqual([]);
+    expect(
+      normalizeProductSourceUrls([
+        " https://example.com/a ",
+        "",
+        "https://example.com/a",
+      ]),
+    ).toEqual(["https://example.com/a"]);
+
+    const products = [
+      { sourceUrl: "https://example.com/a" },
+      { sourceUrl: "https://example.com/b" },
+    ] as ScrapedShopProduct[];
+    expect(filterProductsBySourceUrls(products, undefined)).toEqual(products);
+    expect(filterProductsBySourceUrls(products, [])).toEqual([]);
   });
 });

@@ -269,6 +269,60 @@ export function scoreScrapedProductName(
   return sourceScore * 1000 + sanitized.length;
 }
 
+function normalizedNameTokens(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function containsTokenSequence(longer: string[], shorter: string[]) {
+  if (shorter.length === 0 || shorter.length > longer.length) {
+    return false;
+  }
+  return longer.some((_, start) =>
+    shorter.every((token, offset) => longer[start + offset] === token),
+  );
+}
+
+function canSafelyPreferShorter(shorter: string, longer: string) {
+  const shorterTokens = normalizedNameTokens(shorter);
+  const longerTokens = normalizedNameTokens(longer);
+  if (!containsTokenSequence(longerTokens, shorterTokens)) {
+    return false;
+  }
+  const shorterTokenSet = new Set(shorterTokens);
+  return longerTokens
+    .filter((token) => /\d/.test(token))
+    .every((token) => shorterTokenSet.has(token));
+}
+
+function preferredNameCandidate(
+  base: string,
+  incoming: string,
+  baseSource?: ScrapedProductNameSource,
+  incomingSource?: ScrapedProductNameSource,
+) {
+  const baseSourceScore = baseSource ? NAME_SOURCE_SCORES[baseSource] : 15;
+  const incomingSourceScore = incomingSource
+    ? NAME_SOURCE_SCORES[incomingSource]
+    : 15;
+  if (incomingSourceScore !== baseSourceScore) {
+    return incomingSourceScore > baseSourceScore ? "incoming" : "base";
+  }
+  if (incoming.length < base.length && canSafelyPreferShorter(incoming, base)) {
+    return "incoming";
+  }
+  if (base.length < incoming.length && canSafelyPreferShorter(base, incoming)) {
+    return "base";
+  }
+  return "base";
+}
+
 export function chooseScrapedProductName(
   baseName: string,
   incomingName: string,
@@ -286,12 +340,10 @@ export function chooseScrapedProductName(
   if (isShopPromoBadgeText(incomingName)) {
     return base;
   }
-  const baseScore = scoreScrapedProductName(base, baseSource);
-  const incomingScore = scoreScrapedProductName(incoming, incomingSource);
-  if (incomingScore === baseScore) {
-    return incoming.length > base.length ? incoming : base;
-  }
-  return incomingScore > baseScore ? incoming : base;
+  return preferredNameCandidate(base, incoming, baseSource, incomingSource) ===
+    "incoming"
+    ? incoming
+    : base;
 }
 
 /** Pick the best valid product name from DOM/card candidates. */
@@ -299,27 +351,39 @@ export function resolveProductNameFromCandidates(
   candidates: Array<ScrapedProductNameCandidate>,
   cardText?: string | null,
 ) {
-  const scored: Array<{ name: string; score: number }> = [];
+  let selected: { name: string; source?: ScrapedProductNameSource } | undefined;
   for (const candidate of candidates) {
     const value =
-      typeof candidate === "object" && candidate !== null && "value" in candidate
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "value" in candidate
         ? candidate.value
         : candidate;
     const source =
-      typeof candidate === "object" && candidate !== null && "value" in candidate
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "value" in candidate
         ? candidate.source
         : undefined;
     const sanitized = sanitizeScrapedProductName(value);
     if (sanitized) {
-      scored.push({
-        name: sanitized,
-        score: scoreScrapedProductName(sanitized, source),
-      });
+      if (!selected) {
+        selected = { name: sanitized, source };
+      } else if (
+        preferredNameCandidate(
+          selected.name,
+          sanitized,
+          selected.source,
+          source,
+        ) === "incoming"
+      ) {
+        selected = { name: sanitized, source };
+      }
     }
   }
 
-  if (scored.length > 0) {
-    return scored.sort((a, b) => b.score - a.score)[0]?.name ?? null;
+  if (selected) {
+    return selected.name;
   }
 
   if (cardText?.trim()) {
@@ -418,10 +482,12 @@ export function sanitizeScrapedProductList<T extends ScrapedProductNameFields>(
       ? sourceUrlIdentity(product.sourceUrl)
       : `${name}|`;
     const existing = byIdentity.get(identity);
-    if (
-      !existing ||
-      scoreScrapedProductName(name) > scoreScrapedProductName(existing.name)
-    ) {
+    if (!existing) {
+      byIdentity.set(identity, sanitized);
+      continue;
+    }
+    const preferredName = chooseScrapedProductName(existing.name, name);
+    if (preferredName === name && preferredName !== existing.name) {
       byIdentity.set(identity, sanitized);
     }
   }

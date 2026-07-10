@@ -1271,33 +1271,58 @@ function _collectShopPageSnapshot(
     }>,
     cardText: string,
   ) => {
-    const scored = candidates
-      .map((candidate) => {
-        const name = sanitizeNameCandidate(candidate.value);
-        if (!name) {
-          return null;
-        }
-        const sourceScore =
-          candidate.source === "title"
-            ? 40
-            : candidate.source === "anchor_title"
-              ? 30
-              : candidate.source === "anchor_text"
-                ? 20
-                : 10;
-        return { name, score: sourceScore * 1000 + name.length };
-      })
-      .filter((entry): entry is { name: string; score: number } =>
-        Boolean(entry),
-      )
-      .sort((a, b) => b.score - a.score);
-    if (scored[0]) {
-      const best = scored[0];
-      const source =
-        candidates.find(
-          (candidate) => sanitizeNameCandidate(candidate.value) === best.name,
-        )?.source ?? "card_text";
-      return { name: best.name, source };
+    const sourceScore = (source: ProductNameSource) =>
+      source === "title"
+        ? 40
+        : source === "anchor_title"
+          ? 30
+          : source === "anchor_text"
+            ? 20
+            : 10;
+    const nameTokens = (value: string) =>
+      value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    const safelyShortens = (shorter: string, longer: string) => {
+      const shortTokens = nameTokens(shorter);
+      const longTokens = nameTokens(longer);
+      const containsSequence = longTokens.some((_, start) =>
+        shortTokens.every(
+          (token, offset) => longTokens[start + offset] === token,
+        ),
+      );
+      const shortTokenSet = new Set(shortTokens);
+      return (
+        shortTokens.length > 0 &&
+        containsSequence &&
+        longTokens
+          .filter((token) => /\d/.test(token))
+          .every((token) => shortTokenSet.has(token))
+      );
+    };
+    let best: { name: string; source: ProductNameSource } | undefined;
+    for (const candidate of candidates) {
+      const name = sanitizeNameCandidate(candidate.value);
+      if (!name) {
+        continue;
+      }
+      if (
+        !best ||
+        sourceScore(candidate.source) > sourceScore(best.source) ||
+        (sourceScore(candidate.source) === sourceScore(best.source) &&
+          name.length < best.name.length &&
+          safelyShortens(name, best.name))
+      ) {
+        best = { name, source: candidate.source };
+      }
+    }
+    if (best) {
+      return best;
     }
     const fallback = sanitizeNameCandidate(
       stripTrailingPrice(cardText.replace(/\s+/g, " ").trim()),

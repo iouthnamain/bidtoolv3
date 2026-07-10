@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -14,8 +14,11 @@ import {
   Upload,
 } from "lucide-react";
 
-import { Badge, Button, EmptyState } from "~/app/_components/ui";
-import { stepNavReachableClass } from "~/app/_components/ui/button-classes";
+import { Badge, Button, EmptyState, PageSkeleton } from "~/app/_components/ui";
+import {
+  inlineSecondaryButtonClass,
+  stepNavReachableClass,
+} from "~/app/_components/ui/button-classes";
 import { useToast } from "~/app/_components/ui/toast";
 import { MaterialProfileReviewStep } from "~/app/_components/material-profiles/material-profile-review-step";
 import {
@@ -127,7 +130,7 @@ function MaterialProfileStepHeader({
       className="panel overflow-hidden rounded shadow-[var(--shadow-flat)]"
     >
       <div
-        className="h-1.5 w-full bg-slate-100"
+        className="bg-surface-2 h-1.5 w-full"
         role="progressbar"
         aria-label="Tiến độ hồ sơ vật tư"
         aria-valuemin={1}
@@ -135,7 +138,7 @@ function MaterialProfileStepHeader({
         aria-valuenow={current}
       >
         <div
-          className="brand-rule h-full transition-all duration-500 ease-out"
+          className="brand-rule h-full transition-all duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
@@ -153,12 +156,12 @@ function MaterialProfileStepHeader({
                 disabled={!isReachable}
                 onClick={() => isReachable && onJump(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
-                className={`inline-flex items-center gap-2 rounded px-2.5 py-1.5 text-xs font-extrabold transition-colors disabled:cursor-not-allowed ${
+                className={`focus-visible:ring-ring focus-visible:ring-offset-surface-1 inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-panel)] px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed motion-reduce:transition-none md:min-h-10 ${
                   isCurrent
-                    ? "bg-blue-700 text-white"
+                    ? "bg-brand text-white"
                     : isReachable
                       ? stepNavReachableClass
-                      : "text-slate-600"
+                      : "text-ink-3"
                 }`}
               >
                 <span
@@ -167,7 +170,7 @@ function MaterialProfileStepHeader({
                       ? "bg-white/20 text-white"
                       : isDone
                         ? "bg-emerald-600 text-white"
-                        : "bg-slate-200 text-slate-900"
+                        : "bg-surface-3 text-ink-1"
                   }`}
                 >
                   {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
@@ -178,7 +181,7 @@ function MaterialProfileStepHeader({
                 <span className="sr-only sm:hidden">{step.label}</span>
               </button>
               {index < materialProfileSteps.length - 1 ? (
-                <span className="h-px w-3 bg-slate-300 sm:w-6" aria-hidden />
+                <span className="bg-line h-px w-3 sm:w-6" aria-hidden />
               ) : null}
             </div>
           );
@@ -203,20 +206,33 @@ function WorkbookGrid({
   const maxColumns = Math.max(...rows.map((row) => row.length), 1);
   const headerRowIndex =
     "rawRows" in sheet ? sheet.activeHeaderRowIndex : sheet.headerRowIndex;
+  const headerRow = rows[headerRowIndex - 1];
 
   return (
     <div
-      className={`${maxHeight} overflow-auto rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)]`}
+      className={`${maxHeight} border-line-strong bg-surface-1 overflow-auto rounded-[var(--radius-panel)] border shadow-[var(--shadow-flat)]`}
     >
-      <table className="min-w-full border-separate border-spacing-0 text-xs">
+      <table
+        aria-label={`Bảng dữ liệu sheet ${sheet.name}`}
+        className="min-w-full border-separate border-spacing-0 text-xs"
+      >
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={`${sheet.name}-${rowIndex}`}>
-              <th className="sticky left-0 z-10 border-r border-b border-slate-400 bg-slate-100 px-2 py-1 text-right font-semibold text-slate-700 tabular-nums">
+              <th className="border-line bg-surface-2 text-ink-2 sticky left-0 z-10 border-r border-b px-2 py-1 text-right font-semibold tabular-nums">
                 {rowIndex + 1}
               </th>
               {Array.from({ length: maxColumns }).map((_, colIndex) => {
                 const isHeader = rowIndex + 1 === headerRowIndex;
+                const header = edits
+                  ? editedCellValue(
+                      sheet.name,
+                      headerRow?.[colIndex],
+                      edits,
+                      headerRowIndex - 1,
+                      colIndex,
+                    ).trim()
+                  : headerRow?.[colIndex]?.trim();
                 const value = edits
                   ? editedCellValue(
                       sheet.name,
@@ -229,17 +245,18 @@ function WorkbookGrid({
                 return (
                   <td
                     key={`${sheet.name}-${rowIndex}-${colIndex}`}
-                    className="min-w-36 border-r border-b border-slate-400"
+                    className="border-line min-w-36 border-r border-b"
                   >
                     <input
+                      aria-label={`Sheet ${sheet.name}, dòng ${rowIndex + 1}, ${header ? `cột ${header}` : `cột ${colIndex + 1}`}`}
                       value={value}
                       onChange={(event) =>
                         onEdit(rowIndex, colIndex, event.target.value)
                       }
-                      className={`h-8 w-full px-2 text-xs outline-none focus:bg-blue-50 ${
+                      className={`text-ink-2 focus-visible:bg-surface-2 focus-visible:ring-ring h-8 w-full px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset ${
                         isHeader
-                          ? "bg-slate-50 font-bold text-slate-900"
-                          : "bg-white text-slate-700"
+                          ? "bg-surface-2 text-ink-1 font-semibold"
+                          : "bg-surface-1"
                       }`}
                     />
                   </td>
@@ -267,8 +284,8 @@ function UploadStep({
   onContinue: () => void;
 }) {
   const checklist = [
-    { label: "Đã tạo work từ Số TBMT", done: Boolean(workspace.noticeNumber) },
-    { label: "Đã upload file Excel", done: Boolean(workspace.sourceFileName) },
+    { label: "Đã tạo hồ sơ từ Số TBMT", done: Boolean(workspace.noticeNumber) },
+    { label: "Đã tải file Excel", done: Boolean(workspace.sourceFileName) },
     {
       label: sheets.length > 0 ? `${sheets.length} sheet` : "Chưa đọc sheet",
       done: sheets.length > 0,
@@ -286,21 +303,21 @@ function UploadStep({
     <section className="grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="panel p-4">
         <p className="section-title">Tải file Excel</p>
-        <h2 className="mt-1 text-lg font-bold text-slate-950">
+        <h2 className="text-ink-1 mt-1 text-base font-semibold">
           Chọn workbook làm việc
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          File gốc được lưu lại để các bước sau có thể map vật tư, preview kết
-          quả và export giữ layout.
+        <p className="text-ink-2 mt-2 text-sm leading-6">
+          File gốc được lưu lại để các bước sau có thể ánh xạ vật tư, xem trước
+          kết quả và xuất file giữ nguyên bố cục.
         </p>
-        <label className="mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded border border-dashed border-blue-300 bg-blue-50 px-4 py-2 text-center text-blue-900 transition-colors hover:bg-blue-100">
+        <label className="border-brand bg-surface-2 text-brand hover:bg-surface-3 focus-within:ring-ring mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-panel)] border border-dashed px-4 py-2 text-center transition-colors focus-within:ring-2 motion-reduce:transition-none">
           {isUploading ? (
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
           ) : (
             <Upload className="h-6 w-6" aria-hidden />
           )}
           <span className="text-sm font-bold">Tải file Excel</span>
-          <span className="max-w-full truncate text-xs font-medium text-slate-600">
+          <span className="text-ink-2 max-w-full truncate text-xs font-medium">
             {workspace.sourceFileName ?? ".xlsx"}
           </span>
           <input
@@ -321,12 +338,12 @@ function UploadStep({
               className={`flex items-center gap-2 rounded border px-3 py-2 text-sm ${
                 item.done
                   ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : "border-slate-500 bg-white text-slate-900 shadow-sm"
+                  : "border-line-strong bg-surface-1 text-ink-1 shadow-[var(--shadow-flat)]"
               }`}
             >
               <span
                 className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                  item.done ? "bg-emerald-600 text-white" : "bg-slate-200"
+                  item.done ? "bg-emerald-600 text-white" : "bg-surface-3"
                 }`}
               >
                 {item.done ? <Check className="h-3 w-3" aria-hidden /> : null}
@@ -340,7 +357,7 @@ function UploadStep({
           disabled={sheets.length === 0}
           onClick={onContinue}
         >
-          Tiếp tục map sheet
+          Tiếp tục ánh xạ sheet
         </Button>
       </aside>
     </section>
@@ -395,15 +412,15 @@ function WorkbookMappingStep({
 
   return (
     <section className="panel overflow-hidden">
-      <div className="border-b border-slate-400 bg-white px-4 py-4">
-        <p className="section-title">Map & chỉnh workbook</p>
+      <div className="border-line bg-surface-1 border-b px-4 py-4">
+        <p className="section-title">Ánh xạ & chỉnh workbook</p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
           <div>
-            <h2 className="text-lg font-bold text-slate-950">
-              Map cột vật tư và chỉnh cell
+            <h2 className="text-ink-1 text-base font-semibold">
+              Ánh xạ cột vật tư và chỉnh ô
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Đã map{" "}
+            <p className="text-ink-2 mt-1 text-sm">
+              Đã ánh xạ{" "}
               {requiredFields.filter((field) => mapping[field.key]).length}/
               {requiredFields.length} cột bắt buộc và {optionalMapped} cột bổ
               sung.
@@ -416,7 +433,7 @@ function WorkbookMappingStep({
               isLoading={isSaving}
               leftIcon={<Check className="h-4 w-4" />}
             >
-              Lưu state
+              Lưu thay đổi
             </Button>
             <Button
               disabled={!hasRequiredColumns}
@@ -443,7 +460,7 @@ function WorkbookMappingStep({
             className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
             role="alert"
           >
-            Chưa thể tự xử lý: hãy map đủ <strong>Tên vật tư</strong>,
+            Chưa thể tự xử lý: hãy ánh xạ đủ <strong>Tên vật tư</strong>,
             <strong> ĐVT</strong> và <strong> Thông số kỹ thuật</strong>. Dòng
             thiếu giá trị ở các cột này sẽ được giữ lại để sửa, không bị gửi đi
             tìm kiếm.
@@ -451,13 +468,13 @@ function WorkbookMappingStep({
         ) : null}
         <div className="grid gap-1 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+            <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
               Sheet vật tư
             </span>
             <select
               value={selectedSheetName}
               onChange={(event) => onSheetChange(event.target.value)}
-              className="h-10 rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 shadow-[var(--shadow-flat)]"
+              className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-10 rounded-[var(--radius-panel)] border px-3 text-sm shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
             >
               {sheets.map((sheet) => (
                 <option key={sheet.name} value={sheet.name}>
@@ -467,8 +484,8 @@ function WorkbookMappingStep({
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Header row
+            <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
+              Dòng tiêu đề
             </span>
             <input
               type="number"
@@ -477,14 +494,14 @@ function WorkbookMappingStep({
               onChange={(event) =>
                 onHeaderRowChange(Math.max(1, Number(event.target.value)))
               }
-              className="h-10 rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 shadow-[var(--shadow-flat)]"
+              className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-10 rounded-[var(--radius-panel)] border px-3 text-sm shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
             />
           </label>
-          <div className="rounded border border-slate-400 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            <p className="font-bold text-slate-900">Điều kiện qua bước</p>
+          <div className="border-line bg-surface-2 text-ink-2 rounded-[var(--radius-panel)] border px-3 py-2 text-xs">
+            <p className="text-ink-1 font-semibold">Điều kiện qua bước</p>
             <p className="mt-1">
-              Cần map Tên vật tư, ĐVT, Thông số kỹ thuật, chạy kiểm tra rồi bấm
-              «Tiếp tục tự xử lý» để sang bước 3.
+              Cần ánh xạ Tên vật tư, ĐVT, Thông số kỹ thuật, chạy kiểm tra rồi
+              bấm «Tiếp tục tự xử lý» để sang bước 3.
             </p>
           </div>
         </div>
@@ -492,7 +509,7 @@ function WorkbookMappingStep({
         <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
           {mappingFields.map((field) => (
             <label key={field.key} className="flex flex-col gap-1">
-              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
+              <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
                 {field.label}
                 {"required" in field && field.required ? (
                   <span className="text-rose-500"> *</span>
@@ -503,9 +520,9 @@ function WorkbookMappingStep({
                 onChange={(event) =>
                   onMappingChange(field.key, event.target.value || null)
                 }
-                className="h-9 rounded border border-slate-500 bg-white px-2 text-xs text-slate-900 shadow-[var(--shadow-flat)]"
+                className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-9 rounded-[var(--radius-panel)] border px-2 text-xs shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
               >
-                <option value="">Không map</option>
+                <option value="">Không ánh xạ</option>
                 {activeSheet.headers.map((header) => (
                   <option key={`${field.key}-${header}`} value={header}>
                     {header}
@@ -546,10 +563,10 @@ function CleanExportStep({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="section-title">Danh mục chuẩn</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">
+            <h2 className="text-ink-1 mt-1 text-base font-semibold">
               Một sheet sạch, sẵn sàng gửi đi
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <p className="text-ink-2 mt-2 text-sm leading-6">
               File xuất chỉ có 11 cột chuẩn. Mỗi dòng phải có mã, tên, ĐVT,
               thông số, nhà sản xuất, xuất xứ, đơn giá, nguồn và URL catalog hợp
               lệ — không còn bản xem trước nào có thể làm lệch file tải về.
@@ -582,9 +599,9 @@ function CleanExportStep({
 
         {preview ? (
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <div className="rounded border border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <p className="font-bold text-slate-950">Dòng sẽ xuất</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-950 tabular-nums">
+            <div className="border-line bg-surface-2 text-ink-2 rounded-[var(--radius-panel)] border px-3 py-3 text-sm">
+              <p className="text-ink-1 font-semibold">Dòng sẽ xuất</p>
+              <p className="text-ink-1 mt-1 text-2xl font-bold tabular-nums">
                 {preview.totalRows.toLocaleString("vi-VN")}
               </p>
             </div>
@@ -598,7 +615,7 @@ function CleanExportStep({
               className={`rounded border px-3 py-3 text-sm ${
                 incompleteRows > 0
                   ? "border-amber-300 bg-amber-50 text-amber-950"
-                  : "border-slate-300 bg-slate-50 text-slate-700"
+                  : "border-line bg-surface-2 text-ink-2"
               }`}
             >
               <p className="font-bold">Cần hoàn thiện</p>
@@ -611,7 +628,7 @@ function CleanExportStep({
       </div>
 
       {isLoading && !preview ? (
-        <div className="panel p-4 text-sm text-slate-600" aria-live="polite">
+        <div className="panel text-ink-2 p-4 text-sm" aria-live="polite">
           Đang kiểm tra dữ liệu trước khi xuất…
         </div>
       ) : null}
@@ -649,23 +666,26 @@ function CleanExportStep({
 
       {preview ? (
         <div className="panel overflow-hidden">
-          <div className="border-b border-slate-300 bg-slate-50 px-4 py-3">
-            <p className="font-bold text-slate-950">
+          <div className="border-line bg-surface-2 border-b px-4 py-3">
+            <p className="text-ink-1 text-base font-semibold">
               Xem trước đúng file sẽ tải
             </p>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="text-ink-2 mt-1 text-xs">
               Các cột và giá trị dưới đây là định dạng chính thức của file
               Excel.
             </p>
           </div>
           <div className="max-h-[580px] overflow-auto">
-            <table className="min-w-full border-separate border-spacing-0 text-xs">
+            <table
+              aria-label="Bản xem trước danh mục vật tư sẽ xuất"
+              className="min-w-full border-separate border-spacing-0 text-xs"
+            >
               <thead>
                 <tr>
                   {preview.headers.map((header) => (
                     <th
                       key={header}
-                      className="sticky top-0 z-10 min-w-32 border-r border-b border-slate-300 bg-slate-100 px-3 py-2 text-left font-bold text-slate-800"
+                      className="border-line bg-surface-2 text-ink-1 sticky top-0 z-10 min-w-32 border-r border-b px-3 py-2 text-left font-semibold"
                     >
                       {header}
                     </th>
@@ -678,7 +698,7 @@ function CleanExportStep({
                     {preview.headers.map((header) => (
                       <td
                         key={header}
-                        className="max-w-72 border-r border-b border-slate-200 px-3 py-2 align-top text-slate-700"
+                        className="border-line text-ink-2 max-w-72 border-r border-b px-3 py-2 align-top"
                       >
                         {String(
                           (row as Record<string, string | number>)[header] ??
@@ -1087,6 +1107,7 @@ export function MaterialProfileDetailClient({
   const [headerRowIndex, setHeaderRowIndex] = useState(1);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [edits, setEdits] = useState<CellEdits>({});
+  const initializedWorkspaceId = useRef<number | null>(null);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -1111,7 +1132,7 @@ export function MaterialProfileDetailClient({
   const upload = api.materialProfile.uploadWorkbook.useMutation({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
-      toast.success("Đã upload và đọc workbook.");
+      toast.success("Đã tải lên và đọc workbook.");
       setStep(2);
       setMaxReached(2);
     },
@@ -1132,7 +1153,7 @@ export function MaterialProfileDetailClient({
       toast.error(
         profileActionError(
           error,
-          "Không thể lưu mapping. Kiểm tra các cột bắt buộc rồi thử lại.",
+          "Không thể lưu ánh xạ. Kiểm tra các cột bắt buộc rồi thử lại.",
         ),
       ),
   });
@@ -1146,7 +1167,7 @@ export function MaterialProfileDetailClient({
       toast.error(
         profileActionError(
           error,
-          "Không thể đối chiếu vật tư. Kiểm tra mapping rồi thử lại.",
+          "Không thể đối chiếu vật tư. Kiểm tra ánh xạ rồi thử lại.",
         ),
       ),
   });
@@ -1160,17 +1181,17 @@ export function MaterialProfileDetailClient({
         result.unresolvedReviewCount > 0
       ) {
         toast.warning(
-          `Đã export vào ${result.outputDirPath}, nhưng còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
+          `Đã xuất file vào ${result.outputDirPath}, nhưng còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
-        toast.success(`Đã export vào ${result.outputDirPath}`);
+        toast.success(`Đã xuất file vào ${result.outputDirPath}`);
       }
     },
     onError: (error) =>
       toast.error(
         profileActionError(
           error,
-          "Không thể export workbook. Chọn lại thư mục đích rồi thử lại.",
+          "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
         ),
       ),
   });
@@ -1200,7 +1221,7 @@ export function MaterialProfileDetailClient({
     );
 
   useEffect(() => {
-    if (!detail) return;
+    if (detail?.workspace.id !== workspaceId) return;
     const nextSheet =
       detail.workspace.sourceSheetName ?? detail.workbook.sheets[0]?.name ?? "";
     setSelectedSheetName((current) => current || nextSheet);
@@ -1210,13 +1231,23 @@ export function MaterialProfileDetailClient({
     setHeaderRowIndex(sheet?.activeHeaderRowIndex ?? 1);
     setMapping(detail.workspace.columnMappingJson);
     setEdits(detail.workspace.editStateJson);
-    let nextMax: MaterialProfileStep = 1;
-    if (detail.workbook.sheets.length > 0) nextMax = 2;
-    if (detail.items.length > 0) nextMax = 3;
-    if (detail.items.length > 0) nextMax = 4;
-    setMaxReached(nextMax);
-    setStep((current) => (current > nextMax ? nextMax : current));
-  }, [detail]);
+    const reachableStep: MaterialProfileStep =
+      detail.workbook.sheets.length === 0
+        ? 1
+        : detail.items.length === 0
+          ? 2
+          : 4;
+
+    if (initializedWorkspaceId.current !== workspaceId) {
+      initializedWorkspaceId.current = workspaceId;
+      setStep(reachableStep);
+      setMaxReached(reachableStep);
+      return;
+    }
+
+    setMaxReached(reachableStep);
+    setStep((current) => (current > reachableStep ? reachableStep : current));
+  }, [detail, workspaceId]);
 
   const saveState = async () => {
     await updateState.mutateAsync({
@@ -1321,7 +1352,7 @@ export function MaterialProfileDetailClient({
           `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
         );
       } else {
-        toast.success(`Đã lưu export: ${saved.label}`);
+        toast.success(`Đã lưu file xuất: ${saved.label}`);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -1330,7 +1361,7 @@ export function MaterialProfileDetailClient({
       toast.error(
         profileActionError(
           error,
-          "Không thể export workbook. Chọn lại thư mục đích rồi thử lại.",
+          "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
         ),
       );
     }
@@ -1341,7 +1372,7 @@ export function MaterialProfileDetailClient({
       <section className="panel p-4">
         <EmptyState
           title="Không tải được hồ sơ vật tư"
-          description="Kiểm tra kết nối rồi tải lại hồ sơ. Nếu lỗi vẫn lặp lại, quay lại danh sách và mở lại hồ sơ này."
+          description={`Kiểm tra kết nối rồi tải lại hồ sơ. Nếu lỗi vẫn lặp lại, quay lại danh sách và mở lại hồ sơ này. ${query.error.message}`}
           cta={
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="secondary" onClick={() => void query.refetch()}>
@@ -1349,7 +1380,7 @@ export function MaterialProfileDetailClient({
               </Button>
               <Link
                 href="/material-profiles"
-                className="inline-flex min-h-10 items-center rounded border border-slate-400 bg-white px-3 text-sm font-semibold text-slate-700 shadow-[var(--shadow-flat)] transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className={inlineSecondaryButtonClass}
               >
                 Quay lại danh sách
               </Link>
@@ -1361,9 +1392,7 @@ export function MaterialProfileDetailClient({
   }
 
   if (query.isLoading || !detail) {
-    return (
-      <div className="panel p-2 text-sm text-slate-600">Đang tải hồ sơ…</div>
-    );
+    return <PageSkeleton />;
   }
 
   const workspace = detail.workspace;
@@ -1373,12 +1402,19 @@ export function MaterialProfileDetailClient({
       <div className="flex flex-wrap items-center justify-between gap-1">
         <Link
           href="/material-profiles"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline"
+          className="text-brand focus-visible:ring-ring inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-panel)] px-1 text-sm font-semibold hover:underline focus-visible:ring-2 focus-visible:outline-none motion-reduce:transition-none sm:min-h-10"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Quay lại danh sách
         </Link>
-        <Badge tone="info">{workspace.noticeNumber ?? workspace.name}</Badge>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Badge tone="info">{workspace.name?.trim() || "Hồ sơ vật tư"}</Badge>
+          {workspace.noticeNumber ? (
+            <span className="text-ink-3 text-xs">
+              Số TBMT: {workspace.noticeNumber}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <MaterialProfileStepHeader
@@ -1430,7 +1466,7 @@ export function MaterialProfileDetailClient({
       {step === 2 && !activeSheet ? (
         <EmptyState
           title="Chưa có workbook"
-          description="Quay lại bước 1 để upload Excel."
+          description="Quay lại bước 1 để tải lên Excel."
           icon={<FileSpreadsheet className="h-6 w-6" aria-hidden />}
         />
       ) : null}

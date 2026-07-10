@@ -755,7 +755,9 @@ export function MaterialScrapeClient({
         toast.success("Đã thêm sản phẩm vào job scrape.");
       },
       onError: (error) => {
-        toast.error(scrapeActionError(error, "Không thể thêm sản phẩm scrape."));
+        toast.error(
+          scrapeActionError(error, "Không thể thêm sản phẩm scrape."),
+        );
       },
     });
 
@@ -997,7 +999,9 @@ export function MaterialScrapeClient({
         `Đã tải CSV preview (${result.count.toLocaleString("vi-VN")} sản phẩm).`,
       );
     } catch (error) {
-      toast.error(scrapeActionError(error, "Không thể xuất CSV preview scrape."));
+      toast.error(
+        scrapeActionError(error, "Không thể xuất CSV preview scrape."),
+      );
     }
   };
 
@@ -1151,7 +1155,11 @@ export function MaterialScrapeClient({
       <ConfirmDialog
         open={importPreviewOpen}
         title="Xác nhận nhập catalog"
-        description="Xem trước kết quả trước khi ghi vào catalog. Sản phẩm trùng catalog sẽ được ghép tự động."
+        description={
+          importPreviewTarget?.productSourceUrls === undefined
+            ? "Tất cả sản phẩm hợp lệ sẽ được tạo mới. Dữ liệu catalog hiện có sẽ không bị cập nhật."
+            : "Xem trước kết quả trước khi ghi vào catalog. Sản phẩm trùng catalog sẽ được ghép tự động."
+        }
         confirmLabel="Bắt đầu nhập"
         variant="primary"
         isLoading={startShopImportJob.isPending || importPreviewLoading}
