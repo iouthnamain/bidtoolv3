@@ -91,8 +91,8 @@ export const stopReasonLabel: Record<
   string
 > = {
   queue_empty: "Đã đọc hết queue",
-  page_limit: "Đạt giới hạn trang",
-  product_limit: "Đạt giới hạn sản phẩm",
+  page_limit: "Dừng an toàn",
+  product_limit: "Đủ sản phẩm",
   timeout: "Quá thời gian",
   cancelled: "Đã hủy",
   error: "Lỗi",

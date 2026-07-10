@@ -505,6 +505,16 @@ async function _fetchUrlAsSearchResult(
       response.url || trimmed,
     );
 
+    const hasProductOfferEvidence =
+      /["']@type["']\s*:\s*["'](?:Product|Offer|AggregateOffer)["']/i.test(
+        body,
+      ) ||
+      /itemtype=["'][^"']*schema\.org\/(?:Product|Offer)/i.test(body) ||
+      /property=["']product:price:amount["']/i.test(body) ||
+      /(?:property=["']og:type["'][^>]*content=["']product["']|content=["']product["'][^>]*property=["']og:type["'])/i.test(
+        body,
+      );
+
     return {
       title,
       url: response.url || trimmed,
@@ -513,7 +523,10 @@ async function _fetchUrlAsSearchResult(
       discoveredPdfUrls,
       query,
       rankScore: 0.4,
-      rankReasons: ["known_source"],
+      rankReasons: [
+        "known_source",
+        ...(hasProductOfferEvidence ? ["fetched_product_offer"] : []),
+      ],
       provider: "known_source",
     };
   } catch {
@@ -843,7 +856,12 @@ function _rankSearchResults(
     manufacturer?: string | null;
     name?: string | null;
     code?: string | null;
+    sku?: string | null;
+    model?: string | null;
     specText?: string | null;
+    unit?: string | null;
+    category?: string | null;
+    originCountry?: string | null;
     sourceUrl?: string | null;
     profileSearch?: boolean;
   },
@@ -851,8 +869,18 @@ function _rankSearchResults(
 ): WebSearchResult[] {
   const manufacturer = input.manufacturer?.trim() ?? "";
   const name = input.name?.trim().toLowerCase() ?? "";
-  const code = input.code?.trim() ?? "";
-  const specText = input.specText?.trim() ?? "";
+  const identifiers = [input.code, input.sku, input.model]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
+  const specText = [
+    input.specText,
+    input.category,
+    input.unit,
+    input.originCountry,
+  ]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ");
   const sourceDomain = input.sourceUrl ? extractDomain(input.sourceUrl) : "";
   const filtered = applyDomainPolicy(results, policy);
 
@@ -865,7 +893,7 @@ function _rankSearchResults(
     const snippet = result.snippet.toLowerCase();
     const resultText = `${title} ${snippet} ${result.url}`;
     const combined = `${resultText} ${result.query}`;
-    const conflict = materialFamilyConflict(name, resultText);
+    const conflict = materialFamilyConflict(`${name} ${specText}`, resultText);
 
     if (domainMatchesAny(domain, policy.boostDomains)) {
       score += 0.45;
@@ -882,6 +910,14 @@ function _rankSearchResults(
     ) {
       score += PROFILE_PRODUCT_OR_SHOP_BOOST;
       reasons.push("profile_product_or_shop_signal");
+    }
+    if (
+      input.profileSearch &&
+      !penaltyDomain &&
+      reasons.includes("fetched_product_offer")
+    ) {
+      score += 0.4;
+      reasons.push("profile_fetched_product_offer");
     }
     if (
       input.profileSearch &&
@@ -908,7 +944,9 @@ function _rankSearchResults(
       score += 0.25;
       reasons.push("source_domain_match");
     }
-    if (code && codeTokensMatch(code, combined)) {
+    if (
+      identifiers.some((identifier) => codeTokensMatch(identifier, combined))
+    ) {
       score += 0.25;
       reasons.push("code_match");
     }

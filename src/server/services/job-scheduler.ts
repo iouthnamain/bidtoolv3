@@ -53,7 +53,8 @@ const log = createLogger("job-scheduler");
 type ShopScrapeJobRow = typeof shopScrapeJobs.$inferSelect;
 type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 type MaterialEnrichmentJobRow = typeof materialEnrichmentJobs.$inferSelect;
-type MaterialProfileSearchJobRow = typeof materialProfileSearchJobs.$inferSelect;
+type MaterialProfileSearchJobRow =
+  typeof materialProfileSearchJobs.$inferSelect;
 type TimerHandle = ReturnType<typeof setInterval>;
 
 const SCHEDULER_POLL_MS = 1_000;
@@ -494,12 +495,17 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
-      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
+      await persistLatestScrapeProgressProducts(
+        job.id,
+        progressWriter.latest(),
+      );
       return;
     }
 
     const finishedAt = new Date().toISOString();
     const products = await replaceScrapeJobProducts(job.id, result.products);
+    const target = job.maxProducts ?? products.length;
+    const reachedTarget = products.length >= target;
     await db
       .update(shopScrapeJobs)
       .set({
@@ -512,7 +518,9 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
         queueLength: 0,
         durationMs: result.durationMs,
         stopReason: result.stopReason,
-        message: shopScrapeStopReasonMessage(result.stopReason),
+        message: reachedTarget
+          ? `Đã thu thập đủ ${products.length.toLocaleString("vi-VN")} sản phẩm.`
+          : `Thu thập ${products.length.toLocaleString("vi-VN")}/${target.toLocaleString("vi-VN")} sản phẩm. ${shopScrapeStopReasonMessage(result.stopReason)}`,
         error: null,
         finishedAt,
         lastProgressAt: finishedAt,
@@ -535,21 +543,35 @@ async function runScrapeJob(job: ShopScrapeJobRow) {
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("scrape", job.id))) {
-      await persistLatestScrapeProgressProducts(job.id, progressWriter.latest());
+      await persistLatestScrapeProgressProducts(
+        job.id,
+        progressWriter.latest(),
+      );
       return;
     }
 
     const finishedAt = new Date().toISOString();
-    const message = errorMessage(error, "Không thể scrape shop URL.");
+    const technicalMessage = errorMessage(error, "Không thể scrape shop URL.");
+    const collected =
+      (await persistLatestScrapeProgressProducts(
+        job.id,
+        progressWriter.latest(),
+      )) ??
+      progressWriter.latest()?.productCount ??
+      0;
+    const target = job.maxProducts ?? collected;
+    const message = `Đã dừng sau ${collected.toLocaleString("vi-VN")}/${target.toLocaleString("vi-VN")} sản phẩm. Kiểm tra URL shop rồi thử lại.`;
     log.warn("job_failed", { jobType: "scrape", jobId: job.id, error });
     await db
       .update(shopScrapeJobs)
       .set({
         status: "failed",
         currentUrls: [],
-        stopReason: isScrapeTimeoutMessage(message) ? "timeout" : "error",
+        stopReason: isScrapeTimeoutMessage(technicalMessage)
+          ? "timeout"
+          : "error",
         message,
-        error: message,
+        error: technicalMessage,
         finishedAt,
         lastProgressAt: finishedAt,
         expiresAt: await expiresAt(finishedAt),
@@ -868,7 +890,7 @@ async function persistLatestScrapeProgressProducts(
   progress: ShopScrapeProgress | null,
 ) {
   if (!progress?.products?.length) {
-    return;
+    return null;
   }
 
   const products = await replaceScrapeJobProducts(
@@ -884,6 +906,7 @@ async function persistLatestScrapeProgressProducts(
       updatedAt: now,
     })
     .where(eq(shopScrapeJobs.id, jobId));
+  return products.length;
 }
 
 function createImportProgressWriter(jobId: string) {
@@ -1315,19 +1338,56 @@ function shopScrapeStopReasonMessage(stopReason: string) {
     case "queue_empty":
       return "Đã đọc hết pagination/queue trong cùng domain.";
     case "page_limit":
-      return "Dừng vì đã đạt giới hạn trang đã chọn.";
+      return "Dừng ở ngưỡng an toàn của hệ thống.";
     case "product_limit":
-      return "Dừng vì đã đạt giới hạn sản phẩm đã chọn.";
+      return "Đã thu thập đủ số sản phẩm yêu cầu.";
     default:
       return "Job scrape đã hoàn tất.";
   }
 }
 
-export const startJobScheduler = traceFn(log, "startJobScheduler", _startJobScheduler);
-export const stopJobSchedulerForTests = traceFn(log, "stopJobSchedulerForTests", _stopJobSchedulerForTests);
-export const abortShopScrapeJob = traceFn(log, "abortShopScrapeJob", _abortShopScrapeJob);
-export const isShopScrapeJobActivelyRunning = traceFn(log, "isShopScrapeJobActivelyRunning", _isShopScrapeJobActivelyRunning);
-export const abortShopImportJob = traceFn(log, "abortShopImportJob", _abortShopImportJob);
-export const abortMaterialEnrichmentJob = traceFn(log, "abortMaterialEnrichmentJob", _abortMaterialEnrichmentJob);
-export const abortMaterialProfileSearchJob = traceFn(log, "abortMaterialProfileSearchJob", _abortMaterialProfileSearchJob);
-export const runJobSchedulerTickForTests = traceFn(log, "runJobSchedulerTickForTests", _runJobSchedulerTickForTests);
+export const startJobScheduler = traceFn(
+  log,
+  "startJobScheduler",
+  _startJobScheduler,
+);
+export const stopJobSchedulerForTests = traceFn(
+  log,
+  "stopJobSchedulerForTests",
+  _stopJobSchedulerForTests,
+);
+export const abortShopScrapeJob = traceFn(
+  log,
+  "abortShopScrapeJob",
+  _abortShopScrapeJob,
+);
+export const isShopScrapeJobActivelyRunning = traceFn(
+  log,
+  "isShopScrapeJobActivelyRunning",
+  _isShopScrapeJobActivelyRunning,
+);
+export const abortShopImportJob = traceFn(
+  log,
+  "abortShopImportJob",
+  _abortShopImportJob,
+);
+export const abortMaterialEnrichmentJob = traceFn(
+  log,
+  "abortMaterialEnrichmentJob",
+  _abortMaterialEnrichmentJob,
+);
+export const abortMaterialProfileSearchJob = traceFn(
+  log,
+  "abortMaterialProfileSearchJob",
+  _abortMaterialProfileSearchJob,
+);
+export const runShopScrapeJobForTests = traceFn(
+  log,
+  "runShopScrapeJobForTests",
+  runScrapeJob,
+);
+export const runJobSchedulerTickForTests = traceFn(
+  log,
+  "runJobSchedulerTickForTests",
+  _runJobSchedulerTickForTests,
+);

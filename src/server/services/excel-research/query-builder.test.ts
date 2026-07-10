@@ -247,4 +247,32 @@ describe("buildSearchQueries", () => {
 
     expect(queries).toHaveLength(4);
   });
+
+  it("keeps complete material context in profile seller queries", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Van bướm điều khiển điện",
+        manufacturer: "Kosaplus",
+        code: "KE-050",
+        specText: "DN50 PN16 220V",
+        category: "Van công nghiệp",
+        unit: "cái",
+        originCountry: "Hàn Quốc",
+        maxQueries: 6,
+      },
+      { context: "profile_search" },
+    );
+
+    const sellerQueries = queries.filter((query) =>
+      ["vn_product", "vn_supplier", "vn_price"].includes(query.intent),
+    );
+    expect(sellerQueries).toHaveLength(3);
+    for (const { query } of sellerQueries) {
+      expect(query).toContain("KE-050");
+      expect(query).toContain("DN50 PN16 220V");
+      expect(query).toContain("Van công nghiệp");
+      expect(query).toContain("cái");
+      expect(query).toContain("Hàn Quốc");
+    }
+  });
 });

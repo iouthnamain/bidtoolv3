@@ -32,14 +32,10 @@ import {
 } from "~/server/services/shop-scrape-jobs";
 
 const SHOP_SCRAPE_EXPORT_LIMIT = 10_000;
-const SHOP_SCRAPE_ALL_MAX_PAGES = 100;
-const SHOP_SCRAPE_ALL_MAX_PRODUCTS = 2_000;
-
 const shopScrapeInput = z
   .object({
     url: z.string().trim().min(1),
     scrapeMode: z.enum(["limited", "all"]).default("limited"),
-    maxPages: z.number().int().min(1).max(100).nullable().optional(),
     maxProducts: z.number().int().min(1).max(2000).nullable().optional(),
     method: z.enum(SHOP_SCRAPE_METHODS).default("auto"),
     detailEnrichment: z
@@ -48,14 +44,9 @@ const shopScrapeInput = z
   })
   .transform((input) => ({
     ...input,
-    maxPages:
-      input.scrapeMode === "all"
-        ? SHOP_SCRAPE_ALL_MAX_PAGES
-        : (input.maxPages ?? 25),
-    maxProducts:
-      input.scrapeMode === "all"
-        ? SHOP_SCRAPE_ALL_MAX_PRODUCTS
-        : (input.maxProducts ?? 500),
+    // New jobs are bounded by the internal timeout, never by a page goal.
+    maxPages: null,
+    maxProducts: input.maxProducts ?? 500,
   }));
 
 const shopScrapeJobInput = z.object({

@@ -1,7 +1,7 @@
 name = "tester"
 description = "Checks whether BidTool v3 acceptance criteria are proven by code, tests, or command output. Usually read-only."
 sandbox_mode = "read-only"
-model = "gpt-5.6-luna"
+model = "gpt-5.5"
 model_reasoning_effort = "medium"
 
 developer_instructions = """

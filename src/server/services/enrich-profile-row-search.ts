@@ -27,6 +27,7 @@ import {
 } from "~/server/services/enrich-web-row";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import {
+  enrichSearchResultsWithFetchedContent,
   fetchUrlAsSearchResult,
   rankSearchResults,
   searchWebForProduct,
@@ -226,16 +227,29 @@ async function _searchProfileRowWebLinks(
   });
   warnings.push(...searchResponse.warnings);
 
-  const ranked = rankSearchResults(
+  const rankingInput = {
+    manufacturer: input.manufacturer ?? null,
+    name: input.name,
+    code: input.code ?? null,
+    specText: input.specText ?? null,
+    unit: input.unit ?? null,
+    category: input.category ?? null,
+    originCountry: input.originCountry ?? null,
+    sourceUrl: null,
+    profileSearch: true,
+  };
+  const initialRanked = rankSearchResults(
     searchResponse.results,
-    {
-      manufacturer: input.manufacturer ?? null,
-      name: input.name,
-      code: input.code ?? null,
-      specText: input.specText ?? null,
-      sourceUrl: null,
-      profileSearch: true,
-    },
+    rankingInput,
+    searchResponse.domainPolicy ?? domainPolicy,
+  );
+  const fetchedRanked = await enrichSearchResultsWithFetchedContent(
+    initialRanked,
+    { fetchCount: PROFILE_FETCH_LINKS, signal },
+  );
+  const ranked = rankSearchResults(
+    fetchedRanked,
+    rankingInput,
     searchResponse.domainPolicy ?? domainPolicy,
   ).slice(0, PROFILE_TOP_LINKS);
 

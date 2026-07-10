@@ -6,5 +6,6 @@ describe("scrapeTimeoutMs", () => {
   it("raises the timeout floor for single-page scrapes", () => {
     expect(scrapeTimeoutMs(1)).toBeGreaterThanOrEqual(45_000);
     expect(scrapeTimeoutMs(5)).toBe(55_000);
+    expect(scrapeTimeoutMs(null)).toBe(20 * 60_000);
   });
 });

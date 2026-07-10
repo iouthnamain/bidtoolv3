@@ -160,7 +160,6 @@ type ExtractedProductCandidate = {
   score: number;
 };
 
-const DEFAULT_MAX_PAGES = 5;
 const DEFAULT_MAX_PRODUCTS = 100;
 const DEFAULT_CONCURRENT_PAGES = 2;
 const PAGE_GOTO_TIMEOUT_MS = 15_000;
@@ -176,7 +175,7 @@ type ShopScrapePageConfig = {
 
 async function _scrapeShopMaterialsFromUrl({
   url,
-  maxPages = DEFAULT_MAX_PAGES,
+  maxPages = null,
   maxProducts = DEFAULT_MAX_PRODUCTS,
   method = "auto",
   detailEnrichment = "none",
@@ -186,6 +185,7 @@ async function _scrapeShopMaterialsFromUrl({
 }: ShopScrapeOptions): Promise<ShopScrapeResult> {
   const startedAt = Date.now();
   const startUrl = await assertSafeScrapeUrl(url);
+  startUrl.href = normalizeTrackedUrl(startUrl.href);
   const expectedHostname = startUrl.hostname.toLowerCase();
   const browser = await getSharedBrowser();
   const context = await browser.newContext({
@@ -349,6 +349,7 @@ async function _scrapeShopMaterialsFromUrl({
                 href,
                 startUrl.hostname,
               );
+              nextUrl.href = normalizeTrackedUrl(nextUrl.href);
               if (
                 !completedPages.has(nextUrl.href) &&
                 !inProgressPages.has(nextUrl.href) &&
@@ -936,9 +937,9 @@ function shopScrapeStopReasonMessage(stopReason: ShopScrapeStopReason) {
     case "queue_empty":
       return "Đã đọc hết pagination/queue trong cùng domain.";
     case "page_limit":
-      return "Dừng vì đã đạt giới hạn trang đã chọn.";
+      return "Đã dừng ở ngưỡng an toàn của hệ thống.";
     case "product_limit":
-      return "Dừng vì đã đạt giới hạn sản phẩm đã chọn.";
+      return "Đã thu thập đủ số sản phẩm yêu cầu.";
   }
 }
 
@@ -1546,9 +1547,11 @@ function _collectShopPageSnapshot(
 
   const cards = Array.from(cardsByHref.values());
 
-  const paginationAnchors = new Set<HTMLAnchorElement>();
-  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
-    "a[rel='next'], a[aria-label*='next' i], a[aria-label*='sau' i], a[aria-label*='tiếp' i], a[href]",
+  const paginationAnchors = new Set<HTMLAnchorElement | HTMLLinkElement>();
+  for (const anchor of document.querySelectorAll<
+    HTMLAnchorElement | HTMLLinkElement
+  >(
+    "link[rel='next'][href], a[rel='next'], a[aria-label*='next' i], a[aria-label*='sau' i], a[aria-label*='tiếp' i], a[href]",
   )) {
     const label = `${anchor.textContent ?? ""} ${anchor.getAttribute("aria-label") ?? ""} ${anchor.getAttribute("rel") ?? ""}`;
     if (/\b(next|sau|tiếp|trang sau)\b|[›»>]/i.test(label)) {
@@ -1556,7 +1559,7 @@ function _collectShopPageSnapshot(
     }
   }
   for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
-    "nav[class*='pagination' i] a[href], [class*='pagination' i] a[href], a.page-numbers[href], a[href*='paged='], a[href*='/page/']",
+    "nav[class*='pagination' i] a[href], [class*='pagination' i] a[href], [class*='pager' i] a[href], a.page-numbers[href], a.next[href], a[href*='paged='], a[href*='page='], a[href*='product-page='], a[href*='/page/']",
   )) {
     paginationAnchors.add(anchor);
   }
@@ -1629,16 +1632,19 @@ function productsFromJsonLd(
     if (!name) {
       return;
     }
-    const offers = firstRecord(node.offers);
+    const offers = offerRecord(node.offers);
     const brand = firstRecord(node.brand);
     const manufacturer = firstRecord(node.manufacturer);
     // schema.org additionalProperty (a PropertyValue or array of them) is where
     // many VN shops stash NCC / Xuất xứ / SKU / model / category.
     const additionalLabels = extractLabelsFromAdditionalProperty(
       node.additionalProperty,
+      { includeUnmatchedSpec: true },
     );
     const rawPrice =
       stringValue(offers?.price) ??
+      stringValue(offers?.lowPrice) ??
+      stringValue(offers?.highPrice) ??
       stringValue(firstRecord(offers?.priceSpecification)?.price);
     const priceResult = rawPrice
       ? extractPriceFromText(
@@ -1646,21 +1652,40 @@ function productsFromJsonLd(
         )
       : extractPriceFromText(JSON.stringify(node).slice(0, 20_000));
     const sourceUrl =
-      absoluteUrl(stringValue(node.url) ?? stringValue(offers?.url), pageUrl) ??
-      pageUrl;
+      absoluteUrl(
+        schemaTextValue(node.url) ?? schemaTextValue(offers?.url),
+        pageUrl,
+      ) ?? pageUrl;
+    const quantityText = [
+      schemaTextValue(node.size),
+      schemaTextValue(node.weight),
+      schemaTextValue(node.height),
+      schemaTextValue(node.width),
+      schemaTextValue(node.depth),
+    ]
+      .filter(Boolean)
+      .join("; ");
+    const description = schemaTextValue(node.description) ?? "";
 
     results.push({
       name,
-      unit: detectUnit(`${name} ${stringValue(node.description) ?? ""}`),
-      category: stringValue(node.category) ?? additionalLabels.category,
-      specText: stringValue(node.description) ?? "",
+      unit:
+        schemaTextValue(node.unitText) ??
+        detectUnit(`${name} ${description} ${quantityText}`),
+      category: schemaTextValue(node.category) ?? additionalLabels.category,
+      specText: [description, additionalLabels.specText, quantityText]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .join("\n")
+        .slice(0, 1_000),
       manufacturer:
+        schemaTextValue(node.manufacturer) ??
         stringValue(manufacturer?.name) ??
+        schemaTextValue(node.brand) ??
         stringValue(brand?.name) ??
-        stringValue(node.brand) ??
         additionalLabels.manufacturer,
       originCountry:
-        stringValue(node.countryOfOrigin) ?? additionalLabels.originCountry,
+        schemaTextValue(node.countryOfOrigin) ?? additionalLabels.originCountry,
       price: priceResult.price,
       priceText: priceResult.priceText ?? rawPrice,
       currency:
@@ -1668,14 +1693,20 @@ function productsFromJsonLd(
         detectCurrency(priceResult.priceText) ??
         "VND",
       sourceUrl,
-      imageUrl: absoluteUrl(firstString(node.image), pageUrl),
-      sku: stringValue(node.sku) ?? additionalLabels.sku,
+      imageUrl: absoluteUrl(schemaImageUrl(node.image), pageUrl),
+      sku:
+        schemaTextValue(node.sku) ??
+        schemaTextValue(node.gtin) ??
+        schemaTextValue(node.gtin13) ??
+        schemaTextValue(node.gtin14) ??
+        schemaTextValue(node.productID) ??
+        additionalLabels.sku,
       model:
-        stringValue(node.model) ??
-        stringValue(node.mpn) ??
+        schemaTextValue(node.model) ??
+        schemaTextValue(node.mpn) ??
         additionalLabels.model,
-      availability: stringValue(offers?.availability),
-      shopCategory: stringValue(node.category) ?? additionalLabels.category,
+      availability: schemaTextValue(offers?.availability),
+      shopCategory: schemaTextValue(node.category) ?? additionalLabels.category,
       catalogPdfUrls: [],
     });
   };
@@ -2062,6 +2093,24 @@ function firstRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
 }
 
+function offerRecord(value: unknown): Record<string, unknown> | null {
+  const records = Array.isArray(value)
+    ? value.filter(isRecord)
+    : [firstRecord(value)].filter(isRecord);
+  for (const record of records) {
+    if (
+      stringValue(record.price) ??
+      stringValue(record.lowPrice) ??
+      stringValue(record.highPrice)
+    ) {
+      return record;
+    }
+    const nested = offerRecord(record.offers);
+    if (nested) return nested;
+  }
+  return records[0] ?? null;
+}
+
 function stringValue(value: unknown): string | null {
   if (typeof value === "string") {
     return value.trim() || null;
@@ -2077,6 +2126,32 @@ function firstString(value: unknown): string | null {
     return value.map(stringValue).find(Boolean) ?? null;
   }
   return stringValue(value);
+}
+
+function schemaTextValue(value: unknown): string | null {
+  const direct = firstString(value);
+  if (direct) return direct;
+  const record = firstRecord(value);
+  if (!record) return null;
+  const main =
+    firstString(record.name) ??
+    firstString(record.value) ??
+    firstString(record.contentUrl) ??
+    firstString(record.url);
+  if (!main) return null;
+  const unit = firstString(record.unitText) ?? firstString(record.unitCode);
+  return unit ? `${main} ${unit}` : main;
+}
+
+function schemaImageUrl(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = schemaImageUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+  return schemaTextValue(value);
 }
 
 function jsonLdTypeIncludes(record: Record<string, unknown>, typeName: string) {
@@ -2121,7 +2196,7 @@ function normalizeProductSourceUrl(
     if (!["http:", "https:"].includes(url.protocol)) {
       return null;
     }
-    url.hash = "";
+    url.href = normalizeTrackedUrl(url.href);
     url.username = "";
     url.password = "";
     return url.href;
@@ -2135,7 +2210,7 @@ function productSourceUrlIdentity(value: string | null | undefined) {
     return null;
   }
   try {
-    const url = new URL(value.trim());
+    const url = new URL(normalizeTrackedUrl(value.trim()));
     url.hash = "";
     url.username = "";
     url.password = "";
@@ -2150,6 +2225,20 @@ function productSourceUrlIdentity(value: string | null | undefined) {
     const normalized = normalizeKey(value);
     return normalized || null;
   }
+}
+
+const TRACKING_QUERY_PARAM = /^(?:utm_.+|fbclid|gclid|dclid|msclkid|mc_.+)$/i;
+
+function normalizeTrackedUrl(value: string) {
+  const url = new URL(value);
+  url.hash = "";
+  for (const key of [...url.searchParams.keys()]) {
+    if (TRACKING_QUERY_PARAM.test(key)) {
+      url.searchParams.delete(key);
+    }
+  }
+  url.searchParams.sort();
+  return url.href;
 }
 
 function sameCanonicalUrl(left: string, right: string) {
@@ -2536,6 +2625,7 @@ function extractLabelsFromPairs(
 // schema.org additionalProperty carries [{ name, value }] PropertyValue rows.
 function extractLabelsFromAdditionalProperty(
   value: unknown,
+  options?: { includeUnmatchedSpec?: boolean },
 ): ExtractedLabelFields {
   const records = Array.isArray(value)
     ? value.filter(isRecord)
@@ -2545,7 +2635,8 @@ function extractLabelsFromAdditionalProperty(
   const pairs: Array<{ label: string; value: string }> = [];
   for (const record of records) {
     let label = stringValue(record.name) ?? stringValue(record.propertyID);
-    const propValue = stringValue(record.value) ?? stringValue(record.unitText);
+    const propValue =
+      schemaTextValue(record.value) ?? stringValue(record.unitText);
     if (label) {
       const alias = normalizeAdditionalPropertyLabel(label);
       if (alias) {
@@ -2556,7 +2647,7 @@ function extractLabelsFromAdditionalProperty(
       pairs.push({ label, value: propValue });
     }
   }
-  return extractLabelsFromPairs(pairs);
+  return extractLabelsFromPairs(pairs, options);
 }
 
 const ADDITIONAL_PROPERTY_LABEL_ALIASES: Record<string, string> = {

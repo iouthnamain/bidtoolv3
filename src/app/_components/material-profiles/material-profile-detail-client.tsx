@@ -75,6 +75,14 @@ function fileToBase64(file: File) {
   });
 }
 
+function profileActionError(error: unknown, fallback: string) {
+  const detail = error instanceof Error ? error.message.trim() : "";
+  if (!detail || /^(?:INTERNAL_SERVER_ERROR|UNKNOWN_ERROR)$/i.test(detail)) {
+    return fallback;
+  }
+  return `${fallback} ${detail}`;
+}
+
 function cellKey(rowIndex: number, colIndex: number) {
   return `${rowIndex + 1}:${colIndex + 1}`;
 }
@@ -1107,23 +1115,40 @@ export function MaterialProfileDetailClient({
       setStep(2);
       setMaxReached(2);
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      toast.error(
+        profileActionError(
+          error,
+          "Không thể tải workbook. Kiểm tra file .xlsx rồi thử lại.",
+        ),
+      ),
   });
   const updateState = api.materialProfile.updateState.useMutation({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
       toast.success("Đã lưu trạng thái workbook.");
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      toast.error(
+        profileActionError(
+          error,
+          "Không thể lưu mapping. Kiểm tra các cột bắt buộc rồi thử lại.",
+        ),
+      ),
   });
   const match = api.materialProfile.match.useMutation({
     onSuccess: async () => {
       await utils.materialProfile.get.invalidate({ workspaceId });
-      toast.success(
-        "Đã match vật tư từ catalog. Bấm «Tiếp tục duyệt vật tư» để sang bước 3.",
-      );
+      reach(3);
+      toast.success("Đã đối chiếu vật tư. Bạn có thể rà soát kết quả ngay.");
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      toast.error(
+        profileActionError(
+          error,
+          "Không thể đối chiếu vật tư. Kiểm tra mapping rồi thử lại.",
+        ),
+      ),
   });
   const exportWorkspace = api.materialProfile.export.useMutation({
     onSuccess: async (result) => {
@@ -1141,11 +1166,23 @@ export function MaterialProfileDetailClient({
         toast.success(`Đã export vào ${result.outputDirPath}`);
       }
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) =>
+      toast.error(
+        profileActionError(
+          error,
+          "Không thể export workbook. Chọn lại thư mục đích rồi thử lại.",
+        ),
+      ),
   });
   const exportDownloadBundle =
     api.materialProfile.exportDownloadBundle.useMutation({
-      onError: (error) => toast.error(error.message),
+      onError: (error) =>
+        toast.error(
+          profileActionError(
+            error,
+            "Không thể tạo file tải xuống. Thử lại sau ít phút.",
+          ),
+        ),
     });
   const defaultExportDirQuery =
     api.materialProfile.getDefaultExportDir.useQuery(undefined, {
@@ -1214,7 +1251,10 @@ export function MaterialProfileDetailClient({
       upload.mutate({ workspaceId, fileName: file.name, workbookBase64 });
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Không đọc được file.",
+        profileActionError(
+          error,
+          "Không thể đọc file .xlsx. Chọn lại file rồi thử lại.",
+        ),
       );
     }
   };
@@ -1288,7 +1328,10 @@ export function MaterialProfileDetailClient({
         return;
       }
       toast.error(
-        error instanceof Error ? error.message : "Không export được.",
+        profileActionError(
+          error,
+          "Không thể export workbook. Chọn lại thư mục đích rồi thử lại.",
+        ),
       );
     }
   };
@@ -1298,7 +1341,7 @@ export function MaterialProfileDetailClient({
       <section className="panel p-4">
         <EmptyState
           title="Không tải được hồ sơ vật tư"
-          description={query.error.message}
+          description="Kiểm tra kết nối rồi tải lại hồ sơ. Nếu lỗi vẫn lặp lại, quay lại danh sách và mở lại hồ sơ này."
           cta={
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="secondary" onClick={() => void query.refetch()}>

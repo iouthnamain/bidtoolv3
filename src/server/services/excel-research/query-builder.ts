@@ -342,7 +342,23 @@ function _buildSearchQueries(
       );
     }
   };
-  const profileQueryBase = brand ? `${name} ${brand}` : name;
+  const profileQueryBase = [
+    name,
+    brand,
+    identifier,
+    category,
+    unit,
+    origin,
+    input.specText?.replace(/\s+/g, " ").trim().slice(0, 80),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .filter(
+      (value, index, values) =>
+        values.findIndex(
+          (candidate) => candidate.toLowerCase() === value.toLowerCase(),
+        ) === index,
+    )
+    .join(" ");
   const pushProfileDiscoveryQueries = () => {
     // The profile search budget is intentionally led by sources that can sell
     // the material, before catalog/PDF queries used for validation.

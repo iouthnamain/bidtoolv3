@@ -1327,4 +1327,56 @@ describe("sparse product extraction", () => {
     expect(products[0]?.specText).toContain("DN50");
     expect(products[0]?.manufacturer).toBe("Cadivi");
   });
+
+  it("deduplicates tracking URLs and reads common JSON-LD variants", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/category/van",
+      title: "Van",
+      jsonLdTexts: [
+        JSON.stringify([
+          {
+            "@type": "Product",
+            name: "Van bướm điện KE-050",
+            url: "/product/ke-050?utm_source=ads",
+            image: { "@type": "ImageObject", contentUrl: "/ke-050.jpg" },
+            manufacturer: "Kosaplus",
+            countryOfOrigin: { "@type": "Country", name: "Hàn Quốc" },
+            gtin13: "8801234567890",
+            weight: { value: 8, unitText: "kg" },
+            additionalProperty: [
+              { name: "Điện áp", value: "220V" },
+              { name: "Kích thước", value: "DN50" },
+            ],
+            offers: {
+              "@type": "AggregateOffer",
+              lowPrice: "2500000",
+              priceCurrency: "VND",
+              availability: "https://schema.org/InStock",
+            },
+          },
+          {
+            "@type": "Product",
+            name: "Van bướm điện KE-050",
+            url: "/product/ke-050?fbclid=duplicate",
+          },
+        ]),
+      ],
+      cards: [],
+      nextLinks: [],
+    });
+
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      manufacturer: "Kosaplus",
+      originCountry: "Hàn Quốc",
+      price: 2_500_000,
+      sku: "8801234567890",
+      imageUrl: "https://shop.example.com/ke-050.jpg",
+    });
+    expect(products[0]?.sourceUrl).toBe(
+      "https://shop.example.com/product/ke-050",
+    );
+    expect(products[0]?.specText).toContain("Điện áp: 220V");
+    expect(products[0]?.specText).toContain("8 kg");
+  });
 });

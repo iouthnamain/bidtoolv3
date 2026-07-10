@@ -279,6 +279,27 @@ describe("searchQueryWithFallback", () => {
     expect(result?.snippet).toContain("Thông số");
   });
 
+  it("does not classify a generic Open Graph page as a product offer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            '<html><head><meta property="og:type" content="website" /></head><title>Giới thiệu</title><body>Nội dung chung</body></html>',
+            {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            },
+          ),
+      ),
+    );
+
+    const { fetchUrlAsSearchResult } = await import("./material-web-search");
+    const result = await fetchUrlAsSearchResult("https://example.com/about");
+
+    expect(result?.rankReasons).not.toContain("fetched_product_offer");
+  });
+
   it("does not read PDF responses as text snippets", async () => {
     vi.stubGlobal(
       "fetch",
@@ -641,5 +662,43 @@ describe("searchQueryWithFallback", () => {
     expect(filtered.some((result) => result.domain === "shopee.vn")).toBe(
       false,
     );
+  });
+
+  it("ranks fetched Product/Offer shop evidence above generic information", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Thông tin kỹ thuật van DN50",
+          url: "https://info.example/van-dn50",
+          domain: "info.example",
+          snippet: "Van DN50 PN16 220V Kosaplus",
+          query: "van DN50",
+          rankScore: 0,
+        },
+        {
+          title: "Van Kosaplus KE-050",
+          url: "https://shop.example/san-pham/ke-050",
+          domain: "shop.example",
+          snippet: "Van DN50 PN16 220V còn hàng",
+          query: "van DN50",
+          rankScore: 0,
+          rankReasons: ["fetched_product_offer"],
+        },
+      ],
+      {
+        name: "Van bướm điều khiển điện",
+        manufacturer: "Kosaplus",
+        code: "KE-050",
+        specText: "DN50 PN16 220V",
+        category: "Van công nghiệp",
+        unit: "cái",
+        originCountry: "Hàn Quốc",
+        profileSearch: true,
+      },
+    );
+
+    expect(ranked[0]?.domain).toBe("shop.example");
+    expect(ranked[0]?.rankReasons).toContain("profile_fetched_product_offer");
   });
 });

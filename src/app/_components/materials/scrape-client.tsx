@@ -14,7 +14,6 @@ import {
   Loader2,
   Pencil,
   Plus,
-  RotateCcw,
   Search,
   Square,
   StopCircle,
@@ -31,7 +30,6 @@ import { ScrapeProductReviewCard } from "~/app/_components/materials/scrape-prod
 import {
   ACTIVE_CLOCK_MS,
   canImportJob,
-  DEFAULT_MAX_PAGES,
   DEFAULT_MAX_PRODUCTS,
   DEFAULT_PRODUCT_PAGE_SIZE,
   EMPTY_UUID,
@@ -42,7 +40,6 @@ import {
   isNotFoundTRPCError,
   IMPORT_POLL_MS,
   JOB_LIST_POLL_MS,
-  MAX_PAGE_LIMIT,
   MAX_PRODUCT_LIMIT,
   productKey,
   progressPercent,
@@ -53,11 +50,8 @@ import {
   SHOP_SCRAPE_FOCUSED_JOB_STORAGE_KEY,
   shortJobId,
   writeStoredJobId,
-  type DetailEnrichmentMode,
   type ImportJob,
   type ScrapeJob,
-  type ScrapeMethod,
-  type ScrapeMode,
   type ScrapedProduct,
 } from "~/app/_components/materials/scrape-job-utils";
 import { useToast } from "~/app/_components/ui/toast";
@@ -73,7 +67,6 @@ import {
   actionLabel,
   actionTone,
   clampNumber,
-  detailEnrichmentHelp,
   detailEnrichmentLabel,
   emptyScrapedProduct,
   formatDuration,
@@ -83,7 +76,6 @@ import {
   productDisplayId,
   productInfoSummary,
   productMissingLabels,
-  scrapeMethodHelp,
   scrapeMethodLabel,
   scrapeModeLabel,
   statusLabel,
@@ -94,13 +86,13 @@ import { api, type RouterOutputs } from "~/trpc/react";
 
 type PendingScrapeJob = {
   url: string;
-  scrapeMode: ScrapeMode;
-  maxPages: number | null;
   maxProducts: number | null;
-  method: ScrapeMethod;
-  detailEnrichment: DetailEnrichmentMode;
   startedAt: number;
 };
+
+function scrapeActionError(_error: unknown, fallback: string) {
+  return fallback;
+}
 
 function normalizeImportPreviewSummary(
   summary:
@@ -134,8 +126,16 @@ function ImportPreviewSummaryPanel({
   return (
     <div className="mt-4 space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <PreviewCountCard label="Tạo mới" value={normalized.create} tone="success" />
-        <PreviewCountCard label="Cập nhật" value={normalized.update} tone="info" />
+        <PreviewCountCard
+          label="Tạo mới"
+          value={normalized.create}
+          tone="success"
+        />
+        <PreviewCountCard
+          label="Cập nhật"
+          value={normalized.update}
+          tone="info"
+        />
         <PreviewCountCard
           label="Thiếu tên"
           value={normalized.skipNoName}
@@ -171,7 +171,7 @@ function PreviewCountCard({
 
   return (
     <div className={`rounded border px-3 py-2 ${toneClass}`}>
-      <p className="text-xs font-semibold uppercase tracking-wide opacity-80">
+      <p className="text-xs font-semibold tracking-wide uppercase opacity-80">
         {label}
       </p>
       <p className="mt-1 text-lg font-bold tabular-nums">
@@ -181,15 +181,12 @@ function PreviewCountCard({
   );
 }
 
-export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } = {}) {
+export function MaterialScrapeClient({
+  jobId: routeJobId,
+}: { jobId?: string } = {}) {
   const router = useRouter();
   const isJobPage = routeJobId != null;
   const [shopUrl, setShopUrl] = useState("");
-  const [scrapeMode, setScrapeMode] = useState<ScrapeMode>("limited");
-  const [scrapeMethod, setScrapeMethod] = useState<ScrapeMethod>("auto");
-  const [detailEnrichment, setDetailEnrichment] =
-    useState<DetailEnrichmentMode>("missing_fields");
-  const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
   const [maxProducts, setMaxProducts] = useState(DEFAULT_MAX_PRODUCTS);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(
     routeJobId ?? null,
@@ -234,8 +231,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const [importPreviewTarget, setImportPreviewTarget] = useState<{
     productSourceUrls?: string[];
   } | null>(null);
-  const [importPreviewData, setImportPreviewData] =
-    useState<RouterOutputs["material"]["previewShopImportJob"] | null>(null);
+  const [importPreviewData, setImportPreviewData] = useState<
+    RouterOutputs["material"]["previewShopImportJob"] | null
+  >(null);
   const [importPreviewLoading, setImportPreviewLoading] = useState(false);
   const [qualityFilter, setQualityFilter] =
     useState<ScrapeProductQualityFilter>("all");
@@ -270,16 +268,17 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const jobListQuery = api.material.listShopScrapeJobs.useQuery(
     { limit: SCRAPE_JOBS_LIST_CAP },
     {
-    refetchInterval: (query) => {
-      const jobs = query.state.data ?? [];
-      return jobs.some(isJobActive) || pendingScrapeJob
-        ? JOB_LIST_POLL_MS
-        : false;
+      refetchInterval: (query) => {
+        const jobs = query.state.data ?? [];
+        return jobs.some(isJobActive) || pendingScrapeJob
+          ? JOB_LIST_POLL_MS
+          : false;
+      },
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+      gcTime: SHOP_JOB_CACHE_MS,
     },
-    refetchOnWindowFocus: false,
-    staleTime: 0,
-    gcTime: SHOP_JOB_CACHE_MS,
-  });
+  );
 
   const focusedListJob =
     jobListQuery.data?.find((job) => job.id === focusedJobId) ?? null;
@@ -333,7 +332,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   );
   const importProgressSeedJob =
     (startedImportJob?.id === importJobId ? startedImportJob : null) ??
-    (importJobsQuery.data?.find((job) => job.id === importJobId) ?? null);
+    importJobsQuery.data?.find((job) => job.id === importJobId) ??
+    null;
   const listSaysPollImportProgress =
     importJobId !== null && isImportJobActive(importProgressSeedJob);
 
@@ -418,7 +418,8 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const isActive = isJobActive(activeJob);
   const isImportActive = isImportJobActive(activeImportJob);
   const isStartingScrape = !!pendingScrapeJob;
-  const canStart = shopUrl.trim().length > 0 && !isStartingScrape;
+  const canStart =
+    shopUrl.trim().length > 0 && maxProducts > 0 && !isStartingScrape;
   const selectedCount = selectedSourceUrls.size;
   const scrapeProducts = useMemo(
     () => sanitizeScrapedProductList(activeJob?.products ?? []),
@@ -474,10 +475,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       : -1;
   const scrapeJobPollingError =
     (jobProgressQuery.isError && !isNotFoundTRPCError(jobProgressQuery.error)
-      ? (jobProgressQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
+      ? "Kết nối bị gián đoạn. Hãy thử lại."
       : null) ??
     (jobQuery.isError && !isNotFoundTRPCError(jobQuery.error)
-      ? (jobQuery.error.message ?? "Không cập nhật được tiến độ scrape.")
+      ? "Kết nối bị gián đoạn. Hãy thử lại."
       : null);
   const isJobDetailLoading =
     isJobPage &&
@@ -488,12 +489,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
   const importJobPollingError =
     (importJobProgressQuery.isError &&
     !isNotFoundTRPCError(importJobProgressQuery.error)
-      ? (importJobProgressQuery.error.message ??
-        "Không cập nhật được tiến độ nhập catalog.")
+      ? "Kết nối bị gián đoạn. Hãy thử lại."
       : null) ??
     (importJobQuery.isError && !isNotFoundTRPCError(importJobQuery.error)
-      ? (importJobQuery.error.message ??
-        "Không cập nhật được tiến độ nhập catalog.")
+      ? "Kết nối bị gián đoạn. Hãy thử lại."
       : null);
 
   useEffect(() => {
@@ -606,7 +605,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       return;
     }
 
-    const message = job.error ?? "Job scrape đã hết hạn trên server.";
+    const message = job.message ?? "Job scrape đã hết hạn trên server.";
     if (isJobPage) {
       setMissingJobMessage(message);
       setFocusedJobId(null);
@@ -658,7 +657,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     },
     onError: (error) => {
       setPendingScrapeJob(null);
-      toast.error(error.message || "Không thể bắt đầu scrape shop.");
+      toast.error(scrapeActionError(error, "Không thể bắt đầu scrape shop."));
     },
   });
 
@@ -670,7 +669,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       toast.warning("Đã hủy job scrape shop.");
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể hủy job scrape shop.");
+      toast.error(scrapeActionError(error, "Không thể hủy job scrape shop."));
     },
   });
 
@@ -703,7 +702,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         toast.success("Đã lưu sản phẩm scrape.");
       },
       onError: (error) => {
-        toast.error(error.message || "Không thể lưu sản phẩm scrape.");
+        toast.error(scrapeActionError(error, "Không thể lưu sản phẩm scrape."));
       },
     });
 
@@ -726,7 +725,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         toast.success("Đã xóa sản phẩm khỏi job scrape.");
       },
       onError: (error) => {
-        toast.error(error.message || "Không thể xóa sản phẩm scrape.");
+        toast.error(scrapeActionError(error, "Không thể xóa sản phẩm scrape."));
       },
     });
 
@@ -742,22 +741,23 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         );
       },
       onError: (error) => {
-        toast.error(error.message || "Không thể xóa các sản phẩm đã chọn.");
+        toast.error(
+          scrapeActionError(error, "Không thể xóa các sản phẩm đã chọn."),
+        );
       },
     });
 
-  const addShopScrapeJobProduct = api.material.addShopScrapeJobProduct.useMutation(
-    {
+  const addShopScrapeJobProduct =
+    api.material.addShopScrapeJobProduct.useMutation({
       onSuccess: (job) => {
         syncFocusedScrapeJob(job);
         closeProductDetail();
         toast.success("Đã thêm sản phẩm vào job scrape.");
       },
       onError: (error) => {
-        toast.error(error.message || "Không thể thêm sản phẩm scrape.");
+        toast.error(scrapeActionError(error, "Không thể thêm sản phẩm scrape."));
       },
-    },
-  );
+    });
 
   const deleteShopScrapeJob = api.material.deleteShopScrapeJob.useMutation({
     onSuccess: (job) => {
@@ -772,7 +772,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       toast.success("Đã xóa job khỏi danh sách.");
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể xóa job scrape shop.");
+      toast.error(scrapeActionError(error, "Không thể xóa job scrape shop."));
     },
   });
 
@@ -786,7 +786,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       toast.success("Đã bắt đầu job nhập catalog.");
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể bắt đầu nhập catalog.");
+      toast.error(scrapeActionError(error, "Không thể bắt đầu nhập catalog."));
     },
   });
 
@@ -798,7 +798,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       toast.warning("Đã hủy job nhập catalog.");
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể hủy job nhập catalog.");
+      toast.error(scrapeActionError(error, "Không thể hủy job nhập catalog."));
     },
   });
 
@@ -822,7 +822,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         `Đã nhập ${job.created + job.updated} sản phẩm vào catalog.`,
       );
     } else if (job.status === "failed") {
-      toast.error(job.error ?? "Job nhập catalog đã lỗi.");
+      toast.error("Job nhập catalog bị lỗi. Hãy thử lại.");
     } else if (job.status === "cancelled") {
       toast.warning(
         `Đã dừng nhập catalog sau ${job.processed.toLocaleString(
@@ -846,12 +846,17 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
 
     setFinalizedScrapeJobId(job.id);
     if (job.status === "completed") {
-      toast.success(
+      const reachedTarget =
+        job.maxProducts == null || job.productCount >= job.maxProducts;
+      const message =
         job.message ??
-          `Đã scrape ${job.productCount.toLocaleString("vi-VN")} sản phẩm.`,
-      );
+        `Đã thu thập ${job.productCount.toLocaleString("vi-VN")} sản phẩm.`;
+      if (reachedTarget) toast.success(message);
+      else toast.warning(message);
     } else if (job.status === "failed") {
-      toast.error(job.error ?? "Job scrape shop đã lỗi.");
+      toast.error(
+        job.message ?? "Không thể tiếp tục scrape. Kiểm tra URL rồi thử lại.",
+      );
     } else if (job.status === "cancelled") {
       toast.warning(job.message ?? "Job scrape shop đã bị hủy.");
     }
@@ -868,11 +873,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     setFocusedJobId(null);
     setPendingScrapeJob({
       url: normalizedUrl,
-      scrapeMode,
-      maxPages: scrapeMode === "all" ? null : maxPages,
-      maxProducts: scrapeMode === "all" ? null : maxProducts,
-      method: scrapeMethod,
-      detailEnrichment,
+      maxProducts,
       startedAt: Date.now(),
     });
     setClockMs(Date.now());
@@ -883,11 +884,10 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     setSelectedSourceUrls(new Set());
     startShopScrapeJob.mutate({
       url: normalizedUrl,
-      scrapeMode,
-      maxPages: scrapeMode === "all" ? null : maxPages,
-      maxProducts: scrapeMode === "all" ? null : maxProducts,
-      method: scrapeMethod,
-      detailEnrichment,
+      scrapeMode: "limited",
+      maxProducts,
+      method: "auto",
+      detailEnrichment: "missing_fields",
     });
   };
 
@@ -997,11 +997,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
         `Đã tải CSV preview (${result.count.toLocaleString("vi-VN")} sản phẩm).`,
       );
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Không thể xuất CSV preview scrape.",
-      );
+      toast.error(scrapeActionError(error, "Không thể xuất CSV preview scrape."));
     }
   };
 
@@ -1011,10 +1007,6 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       startScrape();
     }
   };
-
-  const isScrapeAll = scrapeMode === "all";
-  const isAutoMethod = scrapeMethod === "auto";
-  const showLimitFields = !isScrapeAll;
 
   const toggleProduct = (product: ScrapedProduct) => {
     const key = productKey(product);
@@ -1077,9 +1069,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       setImportPreviewOpen(true);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Không thể xem trước kết quả nhập catalog.",
+        scrapeActionError(error, "Không thể xem trước kết quả nhập catalog."),
       );
     } finally {
       setImportPreviewLoading(false);
@@ -1099,28 +1089,6 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
     setImportPreviewData(null);
   };
 
-  const resetJob = () => {
-    if (isStartingScrape) {
-      return;
-    }
-    closeProductDetail();
-    if (isJobPage) {
-      router.push("/materials/scrape");
-      return;
-    }
-    setFocusedJobId(null);
-    setStartedJob(null);
-    setPendingScrapeJob(null);
-    setImportJobId(null);
-    setStartedImportJob(null);
-    setFinalizedImportJobId(null);
-    setFinalizedScrapeJobId(null);
-    setSelectedSourceUrls(new Set());
-  };
-
-  const pagePercent = activeJob
-    ? progressPercent(activeJob.pagesVisited.length, activeJob.maxPages)
-    : null;
   const productPercent = activeJob
     ? progressPercent(activeJob.productCount, activeJob.maxProducts)
     : null;
@@ -1210,149 +1178,47 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
       ) : null}
 
       {!isJobPage ? (
-      <>
-      <section className="panel overflow-hidden">
-        <div className="border-b border-slate-400 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-violet-700" aria-hidden />
-            <h2 className="text-sm font-bold text-slate-950">Cấu hình job scrape</h2>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-slate-700">
-            Job chạy nền trên server, theo pagination cùng domain và chỉ nhập
-            vào catalog sau khi bạn duyệt sản phẩm.
-          </p>
-        </div>
-
-        <form onSubmit={submitScrape} className="space-y-4 p-4">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-              Shop URL
-            </span>
-            <span className="relative">
-              <LinkIcon
-                className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
-                aria-hidden
-              />
-              <input
-                className="min-h-10 w-full rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] py-2 pr-3 pl-9 text-sm text-slate-900 placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                placeholder="https://shop.example.com/category"
-                spellCheck={false}
-                value={shopUrl}
-                disabled={isStartingScrape}
-                onChange={(event) => setShopUrl(event.target.value)}
-                aria-label="URL shop để scrape sản phẩm"
-              />
-            </span>
-          </label>
-
-          <div className="grid gap-2 lg:grid-cols-3">
-            <fieldset className="grid gap-1.5">
-              <legend className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                Phạm vi
-              </legend>
-              <div className="grid grid-cols-2 rounded border border-slate-400 bg-slate-50 p-0.5">
-                {(["limited", "all"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={
-                      scrapeMode === mode
-                        ? "min-h-10 rounded bg-white px-2 text-xs font-bold text-blue-800 shadow-sm"
-                        : "min-h-10 rounded px-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
-                    }
-                    disabled={isStartingScrape}
-                    onClick={() => setScrapeMode(mode)}
-                    aria-pressed={scrapeMode === mode}
-                  >
-                    {scrapeModeLabel[mode]}
-                  </button>
-                ))}
+        <>
+          <section className="panel overflow-hidden">
+            <div className="border-b border-slate-400 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-violet-700" aria-hidden />
+                <h2 className="text-sm font-bold text-slate-950">
+                  Scrape sản phẩm
+                </h2>
               </div>
-            </fieldset>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                Cách đọc
-              </span>
-              <select
-                className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                value={scrapeMethod}
-                disabled={isStartingScrape}
-                onChange={(event) =>
-                  setScrapeMethod(event.target.value as ScrapeMethod)
-                }
-                aria-label="Phương thức scrape sản phẩm"
-              >
-                {(["auto", "json_ld", "dom_cards"] as const).map((method) => (
-                  <option key={method} value={method}>
-                    {scrapeMethodLabel[method]}
-                  </option>
-                ))}
-              </select>
-              {!isAutoMethod ? (
-                <span className="text-xs text-slate-700">
-                  {scrapeMethodHelp[scrapeMethod]}
-                </span>
-              ) : null}
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                Bổ sung thông tin
-              </span>
-              <select
-                className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                value={detailEnrichment}
-                disabled={isStartingScrape}
-                onChange={(event) =>
-                  setDetailEnrichment(
-                    event.target.value as DetailEnrichmentMode,
-                  )
-                }
-                aria-label="Bổ sung dữ liệu từ trang chi tiết sản phẩm"
-              >
-                {(["none", "missing_fields"] as const).map((mode) => (
-                  <option key={mode} value={mode}>
-                    {detailEnrichmentLabel[mode]}
-                  </option>
-                ))}
-              </select>
-              <span className="text-xs text-slate-700">
-                {detailEnrichmentHelp[detailEnrichment]}
-              </span>
-            </label>
-          </div>
+              <p className="mt-1 text-xs leading-5 text-slate-700">
+                Nhập URL và số sản phẩm cần lấy. Hệ thống tự đọc thêm trang.
+              </p>
+            </div>
 
-          {showLimitFields ? (
-            <div className="grid gap-2 sm:max-w-md sm:grid-cols-2">
+            <form
+              onSubmit={submitScrape}
+              className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-end"
+            >
               <label className="grid gap-1.5">
                 <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                  Trang tối đa
+                  Shop URL
                 </span>
-                <input
-                  type="number"
-                  name="maxPages"
-                  min={1}
-                  max={MAX_PAGE_LIMIT}
-                  step={1}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
-                  value={maxPages}
-                  disabled={isStartingScrape}
-                  onChange={(event) =>
-                    setMaxPages(
-                      clampNumber(
-                        Number(event.target.value),
-                        1,
-                        MAX_PAGE_LIMIT,
-                      ),
-                    )
-                  }
-                  aria-label="Số trang tối đa cần scrape"
-                />
+                <span className="relative">
+                  <LinkIcon
+                    className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-600"
+                    aria-hidden
+                  />
+                  <input
+                    className="min-h-10 w-full rounded border border-slate-500 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 shadow-[var(--shadow-flat)] placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                    placeholder="https://shop.example.com/category"
+                    spellCheck={false}
+                    value={shopUrl}
+                    disabled={isStartingScrape}
+                    onChange={(event) => setShopUrl(event.target.value)}
+                    aria-label="URL shop để scrape sản phẩm"
+                  />
+                </span>
               </label>
               <label className="grid gap-1.5">
                 <span className="text-xs font-semibold tracking-[0.12em] text-slate-600 uppercase">
-                  Sản phẩm tối đa
+                  Số sản phẩm cần lấy
                 </span>
                 <input
                   type="number"
@@ -1362,7 +1228,7 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                   step={1}
                   inputMode="numeric"
                   autoComplete="off"
-                  className="min-h-11 rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                  className="min-h-11 rounded border border-slate-500 bg-white px-3 py-2 text-sm text-slate-900 shadow-[var(--shadow-flat)] focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:outline-none"
                   value={maxProducts}
                   disabled={isStartingScrape}
                   onChange={(event) =>
@@ -1374,14 +1240,9 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                       ),
                     )
                   }
-                  aria-label="Số sản phẩm tối đa cần scrape"
+                  aria-label="Số sản phẩm cần scrape"
                 />
               </label>
-            </div>
-          ) : null}
-
-          <div className="space-y-3 border-t border-slate-400 pt-4">
-            <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
                 variant="primary"
@@ -1389,1186 +1250,1184 @@ export function MaterialScrapeClient({ jobId: routeJobId }: { jobId?: string } =
                 isLoading={isStartingScrape}
                 leftIcon={<Search className="h-4 w-4" />}
               >
-                {isStartingScrape ? "Đang khởi động" : "Bắt đầu scrape"}
+                {isStartingScrape ? "Đang bắt đầu" : "Bắt đầu"}
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={!isActive || !activeJob}
-                isLoading={cancelShopScrapeJob.isPending}
-                leftIcon={<StopCircle className="h-4 w-4" />}
-                onClick={() => {
-                  if (activeJob) {
-                    stopScrapeJob(activeJob);
-                  }
-                }}
-              >
-                Dừng job
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={isStartingScrape}
-                leftIcon={<RotateCcw className="h-4 w-4" />}
-                onClick={resetJob}
-              >
-                Bỏ chọn job
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-1.5 rounded bg-slate-50 px-3 py-2">
-              <Badge tone="neutral">Theo pagination cùng domain</Badge>
-              <Badge tone="neutral">Chặn ảnh / font / media</Badge>
-              <Badge tone="neutral">Nhập sau khi duyệt</Badge>
-              {detailEnrichment === "none" ? (
-                <Badge tone="warning">NCC / xuất xứ có thể thiếu</Badge>
-              ) : null}
-              {isAutoMethod ? (
-                <Badge tone="info">Tự động: JSON-LD + DOM cards</Badge>
-              ) : null}
-              {isScrapeAll ? (
-                <Badge tone="info">
-                  Scrape hết — áp giới hạn an toàn 100 trang / 2.000 sản phẩm
-                </Badge>
-              ) : null}
-            </div>
-          </div>
-        </form>
-      </section>
+            </form>
+          </section>
 
-      <section className="panel p-4">
-        <div className="flex flex-wrap items-start justify-between gap-1">
-          <div>
-            <p className="section-title">Danh sách job</p>
-            <h2 className="mt-1 text-base font-bold text-slate-950">
-              Nhiều scrape chạy song song
-            </h2>
-            <p className="mt-1 text-xs text-slate-700">
-              Mỗi job giữ cấu hình scrape đã chọn, trạng thái chạy và preview
-              sản phẩm. Chọn một job để xem và nhập catalog.
-            </p>
-          </div>
-        </div>
+          <section className="panel p-4">
+            <div className="flex flex-wrap items-start justify-between gap-1">
+              <div>
+                <p className="section-title">Danh sách job</p>
+                <h2 className="mt-1 text-base font-bold text-slate-950">
+                  Nhiều scrape chạy song song
+                </h2>
+                <p className="mt-1 text-xs text-slate-700">
+                  Mỗi job giữ cấu hình scrape đã chọn, trạng thái chạy và
+                  preview sản phẩm. Chọn một job để xem và nhập catalog.
+                </p>
+              </div>
+            </div>
 
-        {jobRows.length > 0 ? (
-          <ScrapeJobsList
-            jobRows={jobRows}
-            focusedJobId={focusedJobId}
-            clockMs={clockMs}
-            isFetching={jobListQuery.isFetching}
-            onRefresh={() => void jobListQuery.refetch()}
-            onFocusJob={focusScrapeJob}
-            onStopJob={stopScrapeJob}
-            onDeleteJob={deleteScrapeJob}
-            stoppingJobId={
-              cancelShopScrapeJob.isPending
-                ? (cancelShopScrapeJob.variables?.jobId ?? null)
-                : null
-            }
-            isDeletingJob={deleteShopScrapeJob.isPending}
-          />
-        ) : (
-          <EmptyState
-            className="mt-4"
-            title="Chưa có job scrape."
-            description="Nhập URL shop để tạo job mới. Danh sách này được đọc lại từ Postgres."
-          />
-        )}
-      </section>
-      </>
+            {jobRows.length > 0 ? (
+              <ScrapeJobsList
+                jobRows={jobRows}
+                focusedJobId={focusedJobId}
+                clockMs={clockMs}
+                isFetching={jobListQuery.isFetching}
+                onRefresh={() => void jobListQuery.refetch()}
+                onFocusJob={focusScrapeJob}
+                onStopJob={stopScrapeJob}
+                onDeleteJob={deleteScrapeJob}
+                stoppingJobId={
+                  cancelShopScrapeJob.isPending
+                    ? (cancelShopScrapeJob.variables?.jobId ?? null)
+                    : null
+                }
+                isDeletingJob={deleteShopScrapeJob.isPending}
+              />
+            ) : (
+              <EmptyState
+                className="mt-4"
+                title="Chưa có job scrape."
+                description="Nhập URL shop để tạo job mới. Danh sách này được đọc lại từ Postgres."
+              />
+            )}
+          </section>
+        </>
       ) : null}
 
       {!isJobPage ? null : (
         <>
-      {scrapeJobPollingError ? (
-        <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <p>Không cập nhật được tiến độ scrape: {scrapeJobPollingError}</p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => void jobQuery.refetch()}
-            >
-              Thử lại
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      {importJobPollingError ? (
-        <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <p>
-              Không cập nhật được tiến độ nhập catalog: {importJobPollingError}
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => void importJobQuery.refetch()}
-            >
-              Thử lại
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      {missingJobMessage ? (
-        <section className="panel border-amber-200 bg-amber-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-1">
-            <div>
-              <p className="section-title text-amber-800">Không mở được job</p>
-              <h2 className="mt-1 text-base font-bold text-amber-950">
-                Job scrape không còn khả dụng
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-amber-900">
-                {missingJobMessage} Quay lại danh sách để chọn job khác hoặc tạo
-                job mới.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push("/materials/scrape")}
-            >
-              Quay lại danh sách
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      {isJobDetailLoading ? (
-        <section className="panel p-4" aria-live="polite">
-          <div className="flex items-start gap-1">
-            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-blue-600" aria-hidden />
-            <div>
-              <p className="section-title">Đang mở job scrape</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
-                Tải trạng thái và preview sản phẩm…
-              </h2>
-              <p className="mt-1 text-sm text-slate-700">
-                Trang sẽ tự cập nhật khi lấy được dữ liệu từ server.
-              </p>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {pendingScrapeJob && !activeJob ? (
-        <section className="panel p-4" aria-live="polite">
-          <div className="flex flex-wrap items-start justify-between gap-1">
-            <div>
-              <p className="section-title">Tiến độ job</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
-                {hostFromUrl(pendingScrapeJob.url)}
-              </h2>
-              <p className="mt-1 text-xs text-slate-700">
-                Đang tạo job nền trên server
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge tone="info">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                Đang khởi động
-              </Badge>
-              <Badge tone="neutral">
-                <Clock3 className="h-3 w-3" aria-hidden />
-                {formatDuration(pendingScrapeDurationMs)}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-1 lg:grid-cols-2">
-            <div className="rounded border border-blue-200 bg-blue-50 p-3">
-              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-700">
-                <span>Trang</span>
-                <span>{formatLimit(pendingScrapeJob.maxPages)}</span>
-              </div>
-              <ScrapeProgressBar
-                label="Tiến độ tạo job scrape theo trang"
-                percent={null}
-                active
-                tone="blue"
-              />
-            </div>
-            <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
-              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-700">
-                <span>Sản phẩm</span>
-                <span>{formatLimit(pendingScrapeJob.maxProducts)}</span>
-              </div>
-              <ScrapeProgressBar
-                label="Tiến độ tạo job scrape theo sản phẩm"
-                percent={null}
-                active
-                tone="emerald"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-4">
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">Phạm vi: </span>
-              {scrapeModeLabel[pendingScrapeJob.scrapeMode]}
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">Cách đọc: </span>
-              {scrapeMethodLabel[pendingScrapeJob.method]}
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">Bổ sung: </span>
-              {detailEnrichmentLabel[pendingScrapeJob.detailEnrichment]}
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">URL: </span>
-              <span className="break-all">{pendingScrapeJob.url}</span>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {activeJob ? (
-        <section className="panel p-4" aria-live="polite">
-          <div className="flex flex-wrap items-start justify-between gap-1">
-            <div>
-              <p className="section-title">Tiến độ job</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
-                {hostFromUrl(activeJob.url)}
-              </h2>
-              <p className="mt-1 text-xs text-slate-700">
-                Job ID: {activeJob.id}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge tone={statusTone[activeJob.status]}>
-                {isActive ? (
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                ) : null}
-                {statusLabel[activeJob.status]}
-              </Badge>
-              <Badge tone="info" count={activeJob.productCount}>
-                Sản phẩm
-              </Badge>
-              <Badge tone="neutral" count={activeJob.pagesVisited.length}>
-                Trang đã đọc
-              </Badge>
-              <Badge tone="neutral">
-                {scrapeMethodLabel[activeJob.method]}
-              </Badge>
-              <Badge
-                tone={
-                  activeJob.detailEnrichment === "missing_fields"
-                    ? "info"
-                    : "warning"
-                }
-              >
-                {detailEnrichmentLabel[activeJob.detailEnrichment]}
-              </Badge>
-              <Badge tone="neutral">
-                <Clock3 className="h-3 w-3" aria-hidden />
-                {formatDuration(activeJob.durationMs)}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-1 lg:grid-cols-2">
-            <div className="rounded border border-slate-400 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
-                <span>Trang đã đọc</span>
-                <span>
-                  {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-                  {formatLimit(activeJob.maxPages)}
-                </span>
-              </div>
-              <ScrapeProgressBar
-                label="Tiến độ đọc trang của job scrape"
-                percent={pagePercent}
-                active={isActive}
-                tone="blue"
-              />
-            </div>
-            <div className="rounded border border-slate-400 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
-                <span>Sản phẩm tìm thấy</span>
-                <span>
-                  {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
-                  {formatLimit(activeJob.maxProducts)}
-                </span>
-              </div>
-              <ScrapeProgressBar
-                label="Tiến độ tìm sản phẩm của job scrape"
-                percent={productPercent}
-                active={isActive}
-                tone="emerald"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">Đang đọc: </span>
-              <span className="break-all">
-                {activeJob.currentUrls.length > 0
-                  ? activeJob.currentUrls.join(", ")
-                  : "-"}
-              </span>
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">
-                Queue còn lại:{" "}
-              </span>
-              {activeJob.queueLength.toLocaleString("vi-VN")}
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">Phạm vi: </span>
-              {scrapeModeLabel[activeJob.scrapeMode]}
-            </div>
-            <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-2">
-              <span className="font-semibold text-slate-800">
-                Cập nhật cuối:{" "}
-              </span>
-              {activeJob.lastProgressAt
-                ? new Date(activeJob.lastProgressAt).toLocaleString("vi-VN")
-                : "-"}
-            </div>
-          </div>
-
-          {activeJobMessage ? (
-            <div
-              className={
-                activeJob.status === "failed"
-                  ? "mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900"
-                  : "mt-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900"
-              }
-            >
-              {activeJobStopReason ? (
-                <span className="font-semibold">{activeJobStopReason}: </span>
-              ) : null}
-              {activeJobMessage}
-            </div>
-          ) : null}
-
-          {isPartialImportableJob ? (
-            <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-              Job dừng sớm — vẫn có thể nhập{" "}
-              {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm đã thu
-              thập sau khi duyệt preview.
-            </div>
-          ) : null}
-
-          {activeJob.detailEnrichment === "none" ? (
-            <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-              Job này chỉ đọc trang danh mục. Nếu NCC, xuất xứ hoặc thông số bị
-              thiếu, chạy lại với chế độ “Bổ sung thiếu” để đọc trang chi tiết
-              sản phẩm.
-            </div>
-          ) : null}
-
-          {activeJob.failedPages.length > 0 ? (
-            <details className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-              <summary className="cursor-pointer font-semibold">
-                {activeJob.failedPages.length.toLocaleString("vi-VN")} trang không
-                đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
-              </summary>
-              <ul className="mt-2 space-y-2">
-                {activeJob.failedPages.slice(0, 10).map((page, index) => (
-                  <li
-                    key={`${page.url}-${index}`}
-                    className="rounded border border-amber-200 bg-white/80 px-2 py-1.5"
-                  >
-                    <a
-                      href={page.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="break-all font-semibold text-amber-950 hover:underline"
-                    >
-                      {page.url}
-                    </a>
-                    <p className="mt-1 break-words text-amber-800">
-                      {page.message}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-              {activeJob.failedPages.length > 10 ? (
-                <p className="mt-2 text-amber-800">
-                  Còn{" "}
-                  {(activeJob.failedPages.length - 10).toLocaleString("vi-VN")}{" "}
-                  trang lỗi khác.
+          {scrapeJobPollingError ? (
+            <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <p>
+                  Không cập nhật được tiến độ scrape: {scrapeJobPollingError}
                 </p>
-              ) : null}
-            </details>
-          ) : null}
-
-          {activeJob.maxPages != null &&
-          activeJob.pagesVisited.length >= activeJob.maxPages &&
-          activeJob.productCount === 0 ? (
-            <div className="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
-              Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")} /{" "}
-              {activeJob.maxPages.toLocaleString("vi-VN")} trang nhưng không
-              trích xuất được sản phẩm nào.
-              {activeJob.failedPages.length > 0
-                ? " Kiểm tra danh sách trang lỗi bên trên."
-                : " Thử tăng giới hạn trang, bật “Bổ sung thiếu”, hoặc kiểm tra URL shop."}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {activeJob ? (
-        <section id="material-scrape-products" className="panel p-4">
-          <ConfirmDialog
-            open={deleteProductTarget !== null}
-            title={`Xóa "${deleteProductTarget?.name ?? ""}" khỏi job scrape?`}
-            description="Sản phẩm sẽ bị gỡ khỏi danh sách preview và không được nhập vào catalog khi bạn chạy import."
-            confirmLabel="Xóa sản phẩm"
-            variant="danger"
-            isLoading={
-              deleteShopScrapeJobProduct.isPending ||
-              deleteShopScrapeJobProducts.isPending
-            }
-            onConfirm={() => {
-              if (!activeJob || !deleteProductTarget) {
-                return;
-              }
-              deleteShopScrapeJobProduct.mutate({
-                jobId: activeJob.id,
-                sourceUrl: deleteProductTarget.sourceUrl,
-              });
-            }}
-            onCancel={() => setDeleteProductTarget(null)}
-          />
-          <ConfirmDialog
-            open={bulkDeleteSelectedOpen}
-            title={`Xóa ${selectedCount.toLocaleString("vi-VN")} sản phẩm đã chọn?`}
-            description="Các sản phẩm đã chọn sẽ bị gỡ khỏi preview và không được nhập vào catalog."
-            confirmLabel="Xóa đã chọn"
-            variant="danger"
-            isLoading={deleteShopScrapeJobProducts.isPending}
-            onConfirm={() => {
-              if (!activeJob || selectedCount === 0) {
-                return;
-              }
-              deleteShopScrapeJobProducts.mutate({
-                jobId: activeJob.id,
-                sourceUrls: Array.from(selectedSourceUrls),
-              });
-            }}
-            onCancel={() => setBulkDeleteSelectedOpen(false)}
-          />
-          <ScrapeProductDetailDialog
-            open={detailDraft !== null}
-            job={activeJob}
-            product={detailDraft}
-            productIndex={isCreatingProduct ? null : detailProductIndex}
-            originalSourceUrl={detailOriginalSourceUrl}
-            canEdit={canEditScrapeProducts}
-            isSaving={
-              updateShopScrapeJobProduct.isPending ||
-              addShopScrapeJobProduct.isPending
-            }
-            isDeleting={deleteShopScrapeJobProduct.isPending}
-            onChange={setDetailDraft}
-            onClose={closeProductDetail}
-            onSave={saveProductDetail}
-            onDelete={() => {
-              if (detailDraft) {
-                setDeleteProductTarget(detailDraft);
-              }
-            }}
-          />
-
-          <MatchCompareDrawer
-            open={compareProducts.length > 0}
-            products={compareProducts}
-            index={compareIndex}
-            onNavigate={setCompareIndex}
-            onClose={() => {
-              setCompareProducts([]);
-              setCompareIndex(0);
-            }}
-          />
-
-          <div className="flex flex-wrap items-start justify-between gap-1">
-            <div>
-              <p className="section-title">Duyệt sản phẩm scrape</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
-                Job {shortJobId(activeJob.id)} · {hostFromUrl(activeJob.url)}
-              </h2>
-              <p className="mt-1 text-xs text-slate-700">
-                {scrapeProducts.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
-                {scrapeModeLabel[activeJob.scrapeMode]} ·{" "}
-                {scrapeMethodLabel[activeJob.method]} ·{" "}
-                {detailEnrichmentLabel[activeJob.detailEnrichment]}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge tone="neutral">ID {activeJob.id}</Badge>
-                <Badge tone={statusTone[activeJob.status]}>
-                  {statusLabel[activeJob.status]}
-                </Badge>
-                <Badge tone="info" count={activeJob.productCount}>
-                  Preview
-                </Badge>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void jobQuery.refetch()}
+                >
+                  Thử lại
+                </Button>
               </div>
-              <p className="mt-2 text-xs text-slate-700">
-                Bấm một dòng sản phẩm để xem chi tiết, chỉnh sửa hoặc xóa trước
-                khi nhập catalog. Mã SP theo job:{" "}
-                <span className="font-semibold text-slate-700">
-                  {shortJobId(activeJob.id)}-###
-                </span>
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={scrapeProducts.length === 0}
-                leftIcon={<Search className="h-3.5 w-3.5" />}
-                onClick={() => {
-                  const selected = scrapeProducts.filter((p) =>
-                    selectedSourceUrls.has(productKey(p)),
-                  );
-                  const list = selected.length > 0 ? selected : scrapeProducts;
-                  setCompareProducts(list);
-                  setCompareIndex(0);
-                }}
-              >
-                {selectedCount > 0
-                  ? `Đối chiếu đã chọn (${selectedCount.toLocaleString("vi-VN")})`
-                  : "Đối chiếu vật tư"}
-              </Button>
-              {canEditScrapeProducts ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<Plus className="h-3.5 w-3.5" />}
-                  onClick={openCreateProductDetail}
-                >
-                  Thêm sản phẩm
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={scrapeProducts.length === 0}
-                leftIcon={<Upload className="h-3.5 w-3.5" />}
-                onClick={() => void downloadScrapeCsv()}
-              >
-                Tải CSV preview
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={filteredScrapeProducts.length === 0 || isImportActive}
-                leftIcon={
-                  allSelected ? (
-                    <CheckSquare className="h-3.5 w-3.5" />
-                  ) : (
-                    <Square className="h-3.5 w-3.5" />
-                  )
-                }
-                onClick={selectAllProducts}
-              >
-                {allSelected ? "Bỏ chọn sau lọc" : "Chọn sau lọc"}
-              </Button>
-              {canEditScrapeProducts ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={!canDeleteSelected || deleteShopScrapeJobProducts.isPending}
-                  isLoading={deleteShopScrapeJobProducts.isPending}
-                  leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                  onClick={() => setBulkDeleteSelectedOpen(true)}
-                >
-                  Xóa đã chọn ({selectedCount.toLocaleString("vi-VN")})
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={!canImportSelected || importPreviewLoading}
-                isLoading={
-                  importPreviewLoading ||
-                  (startShopImportJob.isPending &&
-                    startShopImportJob.variables?.productSourceUrls !== undefined)
-                }
-                leftIcon={<Upload className="h-3.5 w-3.5" />}
-                onClick={importSelected}
-              >
-                Nhập đã chọn ({selectedCount.toLocaleString("vi-VN")})
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                disabled={!canImportAll || importPreviewLoading}
-                isLoading={
-                  importPreviewLoading ||
-                  (startShopImportJob.isPending &&
-                    startShopImportJob.variables?.productSourceUrls === undefined)
-                }
-                leftIcon={<Upload className="h-3.5 w-3.5" />}
-                onClick={importAll}
-              >
-                Nhập tất cả
-              </Button>
-            </div>
-          </div>
+            </section>
+          ) : null}
 
-          <div className="mt-4">
-            <div
-              className={
-                isImportActive
-                  ? "rounded border border-blue-200 bg-blue-50 p-3"
-                  : "rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-3"
-              }
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
+          {importJobPollingError ? (
+            <section className="panel border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <p>
+                  Không cập nhật được tiến độ nhập catalog:{" "}
+                  {importJobPollingError}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void importJobQuery.refetch()}
+                >
+                  Thử lại
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {missingJobMessage ? (
+            <section className="panel border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-1">
                 <div>
-                  <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
-                    Quá trình nhập catalog
+                  <p className="section-title text-amber-800">
+                    Không mở được job
                   </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {activeImportJob
-                      ? `${activeImportJob.processed.toLocaleString(
-                          "vi-VN",
-                        )} / ${activeImportJob.total.toLocaleString("vi-VN")}`
-                      : `${selectedCount.toLocaleString(
-                          "vi-VN",
-                        )} đã chọn / ${scrapeProducts.length.toLocaleString(
-                          "vi-VN",
-                        )} có thể nhập`}
+                  <h2 className="mt-1 text-base font-bold text-amber-950">
+                    Job scrape không còn khả dụng
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-amber-900">
+                    {missingJobMessage} Quay lại danh sách để chọn job khác hoặc
+                    tạo job mới.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeImportJob ? (
-                    <Badge tone={importStatusTone[activeImportJob.status]}>
-                      {isImportActive ? (
-                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                      ) : null}
-                      {importStatusLabel[activeImportJob.status]}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => router.push("/materials/scrape")}
+                >
+                  Quay lại danh sách
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          {isJobDetailLoading ? (
+            <section className="panel p-4" aria-live="polite">
+              <div className="flex items-start gap-1">
+                <Loader2
+                  className="mt-0.5 h-5 w-5 animate-spin text-blue-600"
+                  aria-hidden
+                />
+                <div>
+                  <p className="section-title">Đang mở job scrape</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                    Tải trạng thái và preview sản phẩm…
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-700">
+                    Trang sẽ tự cập nhật khi lấy được dữ liệu từ server.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {pendingScrapeJob && !activeJob ? (
+            <section className="panel p-4" aria-live="polite">
+              <div className="flex flex-wrap items-start justify-between gap-1">
+                <div>
+                  <p className="section-title">Tiến độ job</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                    {hostFromUrl(pendingScrapeJob.url)}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-700">
+                    Đang tạo job nền trên server
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge tone="info">
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                    Đang khởi động
+                  </Badge>
+                  <Badge tone="neutral">
+                    <Clock3 className="h-3 w-3" aria-hidden />
+                    {formatDuration(pendingScrapeDurationMs)}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-700">
+                    <span>Mục tiêu sản phẩm</span>
+                    <span>{formatLimit(pendingScrapeJob.maxProducts)}</span>
+                  </div>
+                  <ScrapeProgressBar
+                    label="Tiến độ tạo job scrape theo sản phẩm"
+                    percent={null}
+                    active
+                    tone="emerald"
+                  />
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeJob ? (
+            <section className="panel p-4" aria-live="polite">
+              <div className="flex flex-wrap items-start justify-between gap-1">
+                <div>
+                  <p className="section-title">Tiến độ job</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                    {hostFromUrl(activeJob.url)}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-700">
+                    Job ID: {activeJob.id}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge tone={statusTone[activeJob.status]}>
+                    {isActive ? (
+                      <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                    ) : null}
+                    {statusLabel[activeJob.status]}
+                  </Badge>
+                  <Badge tone="info" count={activeJob.productCount}>
+                    Sản phẩm
+                  </Badge>
+                  <Badge tone="neutral" count={activeJob.pagesVisited.length}>
+                    Trang đã đọc
+                  </Badge>
+                  <Badge tone="neutral">
+                    {scrapeMethodLabel[activeJob.method]}
+                  </Badge>
+                  <Badge
+                    tone={
+                      activeJob.detailEnrichment === "missing_fields"
+                        ? "info"
+                        : "warning"
+                    }
+                  >
+                    {detailEnrichmentLabel[activeJob.detailEnrichment]}
+                  </Badge>
+                  <Badge tone="neutral">
+                    <Clock3 className="h-3 w-3" aria-hidden />
+                    {formatDuration(activeJob.durationMs)}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="rounded border border-slate-400 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
+                    <span>Sản phẩm đã lấy / mục tiêu</span>
+                    <span>
+                      {activeJob.productCount.toLocaleString("vi-VN")} /{" "}
+                      {formatLimit(activeJob.maxProducts)}
+                    </span>
+                  </div>
+                  <ScrapeProgressBar
+                    label="Tiến độ tìm sản phẩm của job scrape"
+                    percent={productPercent}
+                    active={isActive}
+                    tone="emerald"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2 text-xs text-slate-600 lg:grid-cols-2">
+                <div className="rounded border border-slate-500 bg-white px-3 py-2 shadow-[var(--shadow-flat)]">
+                  <span className="font-semibold text-slate-800">
+                    Đang đọc:{" "}
+                  </span>
+                  <span className="break-all">
+                    {activeJob.currentUrls.length > 0
+                      ? activeJob.currentUrls.join(", ")
+                      : "-"}
+                  </span>
+                </div>
+                <div className="rounded border border-slate-500 bg-white px-3 py-2 shadow-[var(--shadow-flat)]">
+                  <span className="font-semibold text-slate-800">
+                    Queue còn lại:{" "}
+                  </span>
+                  {activeJob.queueLength.toLocaleString("vi-VN")}
+                </div>
+                <div className="rounded border border-slate-500 bg-white px-3 py-2 shadow-[var(--shadow-flat)]">
+                  <span className="font-semibold text-slate-800">
+                    Phạm vi:{" "}
+                  </span>
+                  {scrapeModeLabel[activeJob.scrapeMode]}
+                </div>
+                <div className="rounded border border-slate-500 bg-white px-3 py-2 shadow-[var(--shadow-flat)]">
+                  <span className="font-semibold text-slate-800">
+                    Cập nhật cuối:{" "}
+                  </span>
+                  {activeJob.lastProgressAt
+                    ? new Date(activeJob.lastProgressAt).toLocaleString("vi-VN")
+                    : "-"}
+                </div>
+              </div>
+
+              {activeJobMessage ? (
+                <div
+                  className={
+                    activeJob.status === "failed"
+                      ? "mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900"
+                      : "mt-4 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900"
+                  }
+                >
+                  {activeJobStopReason ? (
+                    <span className="font-semibold">
+                      {activeJobStopReason}:{" "}
+                    </span>
+                  ) : null}
+                  {activeJobMessage}
+                </div>
+              ) : null}
+
+              {isPartialImportableJob ? (
+                <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                  Job dừng sớm — vẫn có thể nhập{" "}
+                  {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm đã
+                  thu thập sau khi duyệt preview.
+                </div>
+              ) : null}
+
+              {activeJob.detailEnrichment === "none" ? (
+                <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                  Job này chỉ đọc trang danh mục. Nếu NCC, xuất xứ hoặc thông số
+                  bị thiếu, chạy lại với chế độ “Bổ sung thiếu” để đọc trang chi
+                  tiết sản phẩm.
+                </div>
+              ) : null}
+
+              {activeJob.failedPages.length > 0 ? (
+                <details className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                  <summary className="cursor-pointer font-semibold">
+                    {activeJob.failedPages.length.toLocaleString("vi-VN")} trang
+                    không đọc được. Job vẫn giữ các sản phẩm đã tìm thấy.
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {activeJob.failedPages.slice(0, 10).map((page, index) => (
+                      <li
+                        key={`${page.url}-${index}`}
+                        className="rounded border border-amber-200 bg-white/80 px-2 py-1.5"
+                      >
+                        <a
+                          href={page.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold break-all text-amber-950 hover:underline"
+                        >
+                          {page.url}
+                        </a>
+                        <p className="mt-1 break-words text-amber-800">
+                          {page.message}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                  {activeJob.failedPages.length > 10 ? (
+                    <p className="mt-2 text-amber-800">
+                      Còn{" "}
+                      {(activeJob.failedPages.length - 10).toLocaleString(
+                        "vi-VN",
+                      )}{" "}
+                      trang lỗi khác.
+                    </p>
+                  ) : null}
+                </details>
+              ) : null}
+
+              {activeJob.maxPages != null &&
+              activeJob.pagesVisited.length >= activeJob.maxPages &&
+              activeJob.productCount === 0 ? (
+                <div className="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-900">
+                  Đã đọc {activeJob.pagesVisited.length.toLocaleString("vi-VN")}{" "}
+                  trang nhưng không trích xuất được sản phẩm nào.
+                  {activeJob.failedPages.length > 0
+                    ? " Kiểm tra danh sách trang lỗi bên trên."
+                    : " Kiểm tra URL shop rồi thử lại."}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeJob ? (
+            <section id="material-scrape-products" className="panel p-4">
+              <ConfirmDialog
+                open={deleteProductTarget !== null}
+                title={`Xóa "${deleteProductTarget?.name ?? ""}" khỏi job scrape?`}
+                description="Sản phẩm sẽ bị gỡ khỏi danh sách preview và không được nhập vào catalog khi bạn chạy import."
+                confirmLabel="Xóa sản phẩm"
+                variant="danger"
+                isLoading={
+                  deleteShopScrapeJobProduct.isPending ||
+                  deleteShopScrapeJobProducts.isPending
+                }
+                onConfirm={() => {
+                  if (!activeJob || !deleteProductTarget) {
+                    return;
+                  }
+                  deleteShopScrapeJobProduct.mutate({
+                    jobId: activeJob.id,
+                    sourceUrl: deleteProductTarget.sourceUrl,
+                  });
+                }}
+                onCancel={() => setDeleteProductTarget(null)}
+              />
+              <ConfirmDialog
+                open={bulkDeleteSelectedOpen}
+                title={`Xóa ${selectedCount.toLocaleString("vi-VN")} sản phẩm đã chọn?`}
+                description="Các sản phẩm đã chọn sẽ bị gỡ khỏi preview và không được nhập vào catalog."
+                confirmLabel="Xóa đã chọn"
+                variant="danger"
+                isLoading={deleteShopScrapeJobProducts.isPending}
+                onConfirm={() => {
+                  if (!activeJob || selectedCount === 0) {
+                    return;
+                  }
+                  deleteShopScrapeJobProducts.mutate({
+                    jobId: activeJob.id,
+                    sourceUrls: Array.from(selectedSourceUrls),
+                  });
+                }}
+                onCancel={() => setBulkDeleteSelectedOpen(false)}
+              />
+              <ScrapeProductDetailDialog
+                open={detailDraft !== null}
+                job={activeJob}
+                product={detailDraft}
+                productIndex={isCreatingProduct ? null : detailProductIndex}
+                originalSourceUrl={detailOriginalSourceUrl}
+                canEdit={canEditScrapeProducts}
+                isSaving={
+                  updateShopScrapeJobProduct.isPending ||
+                  addShopScrapeJobProduct.isPending
+                }
+                isDeleting={deleteShopScrapeJobProduct.isPending}
+                onChange={setDetailDraft}
+                onClose={closeProductDetail}
+                onSave={saveProductDetail}
+                onDelete={() => {
+                  if (detailDraft) {
+                    setDeleteProductTarget(detailDraft);
+                  }
+                }}
+              />
+
+              <MatchCompareDrawer
+                open={compareProducts.length > 0}
+                products={compareProducts}
+                index={compareIndex}
+                onNavigate={setCompareIndex}
+                onClose={() => {
+                  setCompareProducts([]);
+                  setCompareIndex(0);
+                }}
+              />
+
+              <div className="flex flex-wrap items-start justify-between gap-1">
+                <div>
+                  <p className="section-title">Duyệt sản phẩm scrape</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                    Job {shortJobId(activeJob.id)} ·{" "}
+                    {hostFromUrl(activeJob.url)}
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-700">
+                    {scrapeProducts.length.toLocaleString("vi-VN")} sản phẩm ·{" "}
+                    {scrapeModeLabel[activeJob.scrapeMode]} ·{" "}
+                    {scrapeMethodLabel[activeJob.method]} ·{" "}
+                    {detailEnrichmentLabel[activeJob.detailEnrichment]}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge tone="neutral">ID {activeJob.id}</Badge>
+                    <Badge tone={statusTone[activeJob.status]}>
+                      {statusLabel[activeJob.status]}
                     </Badge>
-                  ) : (
-                    <Badge tone="neutral">Chưa chạy</Badge>
-                  )}
-                  {isImportActive && activeImportJob ? (
+                    <Badge tone="info" count={activeJob.productCount}>
+                      Preview
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-700">
+                    Bấm một dòng sản phẩm để xem chi tiết, chỉnh sửa hoặc xóa
+                    trước khi nhập catalog. Mã SP theo job:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {shortJobId(activeJob.id)}-###
+                    </span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={scrapeProducts.length === 0}
+                    leftIcon={<Search className="h-3.5 w-3.5" />}
+                    onClick={() => {
+                      const selected = scrapeProducts.filter((p) =>
+                        selectedSourceUrls.has(productKey(p)),
+                      );
+                      const list =
+                        selected.length > 0 ? selected : scrapeProducts;
+                      setCompareProducts(list);
+                      setCompareIndex(0);
+                    }}
+                  >
+                    {selectedCount > 0
+                      ? `Đối chiếu đã chọn (${selectedCount.toLocaleString("vi-VN")})`
+                      : "Đối chiếu vật tư"}
+                  </Button>
+                  {canEditScrapeProducts ? (
                     <Button
                       type="button"
                       variant="secondary"
                       size="sm"
-                      isLoading={cancelShopImportJob.isPending}
-                      leftIcon={<StopCircle className="h-3.5 w-3.5" />}
-                      onClick={() => setCancelImportOpen(true)}
+                      leftIcon={<Plus className="h-3.5 w-3.5" />}
+                      onClick={openCreateProductDetail}
                     >
-                      Hủy nhập
+                      Thêm sản phẩm
                     </Button>
                   ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={scrapeProducts.length === 0}
+                    leftIcon={<Upload className="h-3.5 w-3.5" />}
+                    onClick={() => void downloadScrapeCsv()}
+                  >
+                    Tải CSV preview
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={
+                      filteredScrapeProducts.length === 0 || isImportActive
+                    }
+                    leftIcon={
+                      allSelected ? (
+                        <CheckSquare className="h-3.5 w-3.5" />
+                      ) : (
+                        <Square className="h-3.5 w-3.5" />
+                      )
+                    }
+                    onClick={selectAllProducts}
+                  >
+                    {allSelected ? "Bỏ chọn sau lọc" : "Chọn sau lọc"}
+                  </Button>
+                  {canEditScrapeProducts ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={
+                        !canDeleteSelected ||
+                        deleteShopScrapeJobProducts.isPending
+                      }
+                      isLoading={deleteShopScrapeJobProducts.isPending}
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => setBulkDeleteSelectedOpen(true)}
+                    >
+                      Xóa đã chọn ({selectedCount.toLocaleString("vi-VN")})
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!canImportSelected || importPreviewLoading}
+                    isLoading={
+                      importPreviewLoading ||
+                      (startShopImportJob.isPending &&
+                        startShopImportJob.variables?.productSourceUrls !==
+                          undefined)
+                    }
+                    leftIcon={<Upload className="h-3.5 w-3.5" />}
+                    onClick={importSelected}
+                  >
+                    Nhập đã chọn ({selectedCount.toLocaleString("vi-VN")})
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={!canImportAll || importPreviewLoading}
+                    isLoading={
+                      importPreviewLoading ||
+                      (startShopImportJob.isPending &&
+                        startShopImportJob.variables?.productSourceUrls ===
+                          undefined)
+                    }
+                    leftIcon={<Upload className="h-3.5 w-3.5" />}
+                    onClick={importAll}
+                  >
+                    Nhập tất cả
+                  </Button>
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
-                <span>Tiến độ ghi DB</span>
-                <span>{activeImportJob ? `${importPercent ?? 0}%` : "0%"}</span>
-              </div>
-              <ScrapeProgressBar
-                label="Tiến độ nhập catalog"
-                percent={importPercent}
-                active={isImportActive}
-                tone="blue"
-              />
-
-              {activeImportJob ? (
-                <>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge tone="success" count={activeImportJob.created}>
-                      Tạo mới
-                    </Badge>
-                    <Badge tone="info" count={activeImportJob.updated}>
-                      Cập nhật
-                    </Badge>
-                    <Badge tone="neutral" count={activeImportJob.skipped}>
-                      Bỏ qua
-                    </Badge>
-                    <Badge
-                      tone={activeImportJob.failed > 0 ? "critical" : "neutral"}
-                      count={activeImportJob.failed}
-                    >
-                      Lỗi
-                    </Badge>
-                    <Badge tone="neutral">
-                      <Clock3 className="h-3 w-3" aria-hidden />
-                      {formatDuration(activeImportJob.durationMs)}
-                    </Badge>
+              <div className="mt-4">
+                <div
+                  className={
+                    isImportActive
+                      ? "rounded border border-blue-200 bg-blue-50 p-3"
+                      : "rounded border border-slate-500 bg-white p-3 shadow-[var(--shadow-flat)]"
+                  }
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold tracking-wide text-slate-700 uppercase">
+                        Quá trình nhập catalog
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {activeImportJob
+                          ? `${activeImportJob.processed.toLocaleString(
+                              "vi-VN",
+                            )} / ${activeImportJob.total.toLocaleString("vi-VN")}`
+                          : `${selectedCount.toLocaleString(
+                              "vi-VN",
+                            )} đã chọn / ${scrapeProducts.length.toLocaleString(
+                              "vi-VN",
+                            )} có thể nhập`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {activeImportJob ? (
+                        <Badge tone={importStatusTone[activeImportJob.status]}>
+                          {isImportActive ? (
+                            <Loader2
+                              className="h-3 w-3 animate-spin"
+                              aria-hidden
+                            />
+                          ) : null}
+                          {importStatusLabel[activeImportJob.status]}
+                        </Badge>
+                      ) : (
+                        <Badge tone="neutral">Chưa chạy</Badge>
+                      )}
+                      {isImportActive && activeImportJob ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          isLoading={cancelShopImportJob.isPending}
+                          leftIcon={<StopCircle className="h-3.5 w-3.5" />}
+                          onClick={() => setCancelImportOpen(true)}
+                        >
+                          Hủy nhập
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                  <p className="mt-2 truncate text-xs text-slate-600">
-                    Mục hiện tại: {activeImportJob.currentProductName ?? "-"}
-                  </p>
-                  {activeImportJob.error ? (
-                    <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
-                      {activeImportJob.error}
+
+                  <div className="mt-3 flex items-center justify-between gap-1 text-xs font-semibold text-slate-600">
+                    <span>Tiến độ ghi DB</span>
+                    <span>
+                      {activeImportJob ? `${importPercent ?? 0}%` : "0%"}
+                    </span>
+                  </div>
+                  <ScrapeProgressBar
+                    label="Tiến độ nhập catalog"
+                    percent={importPercent}
+                    active={isImportActive}
+                    tone="blue"
+                  />
+
+                  {activeImportJob ? (
+                    <>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge tone="success" count={activeImportJob.created}>
+                          Tạo mới
+                        </Badge>
+                        <Badge tone="info" count={activeImportJob.updated}>
+                          Cập nhật
+                        </Badge>
+                        <Badge tone="neutral" count={activeImportJob.skipped}>
+                          Bỏ qua
+                        </Badge>
+                        <Badge
+                          tone={
+                            activeImportJob.failed > 0 ? "critical" : "neutral"
+                          }
+                          count={activeImportJob.failed}
+                        >
+                          Lỗi
+                        </Badge>
+                        <Badge tone="neutral">
+                          <Clock3 className="h-3 w-3" aria-hidden />
+                          {formatDuration(activeImportJob.durationMs)}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 truncate text-xs text-slate-600">
+                        Mục hiện tại:{" "}
+                        {activeImportJob.currentProductName ?? "-"}
+                      </p>
+                      {activeImportJob.error ? (
+                        <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-900">
+                          {activeImportJob.error}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-700">
+                      Sẵn sàng ghi catalog sau khi chọn sản phẩm.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {scrapeProducts.length > 0 || activeJob.productCount > 0 ? (
+                <>
+                  <div className="mt-4 flex flex-wrap items-end justify-between gap-1 rounded border border-slate-400 bg-slate-50 p-3">
+                    <div className="flex flex-wrap gap-2">
+                      {SCRAPE_QUALITY_FILTER_OPTIONS.map((filter) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          className={
+                            qualityFilter === filter
+                              ? "rounded-full border border-blue-400 bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900"
+                              : "rounded-full border border-slate-500 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-[var(--shadow-flat)] hover:border-blue-200"
+                          }
+                          onClick={() =>
+                            setQualityFilter((current) =>
+                              current === filter ? "all" : filter,
+                            )
+                          }
+                          aria-pressed={qualityFilter === filter}
+                        >
+                          {SCRAPE_QUALITY_FLAG_LABELS[filter]}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-400 accent-blue-600"
+                        checked={hideMissingNameProducts}
+                        onChange={(event) =>
+                          setHideMissingNameProducts(event.target.checked)
+                        }
+                      />
+                      Ẩn sản phẩm thiếu tên
+                    </label>
+                  </div>
+
+                  {isActive &&
+                  scrapeProducts.length === 0 &&
+                  activeJob.productCount > 0 ? (
+                    <p className="mt-3 text-xs text-slate-700">
+                      Đang thu thập{" "}
+                      {activeJob.productCount.toLocaleString("vi-VN")} sản phẩm
+                      — bảng preview sẽ hiện đầy đủ khi job dừng.
                     </p>
                   ) : null}
+
+                  {scrapeProducts.length > 0 ? (
+                    <>
+                      <div className="mt-4 grid gap-1 lg:hidden">
+                        {pagedScrapeProducts.map((item, index) => {
+                          const key = productKey(item);
+                          const selected = selectedSourceUrls.has(key);
+                          const missingLabels = productMissingLabels(item);
+                          const rowQualityFlags = qualityFlags(item);
+                          const infoSummary = productInfoSummary(item);
+                          const globalIndex =
+                            productPageIndex * productPageSize + index;
+
+                          return (
+                            <ScrapeProductReviewCard
+                              key={`${key}-${index}-card`}
+                              name={item.name}
+                              displayId={productDisplayId(
+                                activeJob.id,
+                                globalIndex,
+                              )}
+                              selected={selected}
+                              disabled={isImportActive}
+                              infoSummary={infoSummary}
+                              priceText={formatMoney(item.price, item.currency)}
+                              unit={item.unit ?? "-"}
+                              manufacturer={item.manufacturer ?? "-"}
+                              originCountry={item.originCountry ?? "-"}
+                              missingLabels={missingLabels}
+                              suspiciousName={rowQualityFlags.includes(
+                                "suspiciousName",
+                              )}
+                              missingPrice={rowQualityFlags.includes(
+                                "missingPrice",
+                              )}
+                              catalogPdfCount={item.catalogPdfUrls.length}
+                              sourceUrl={item.sourceUrl}
+                              canEdit={canEditScrapeProducts}
+                              isDeleting={deleteShopScrapeJobProduct.isPending}
+                              onToggle={() => toggleProduct(item)}
+                              onOpen={() => openProductDetail(item)}
+                              onDelete={() => setDeleteProductTarget(item)}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-4 hidden overflow-x-auto rounded border border-slate-400 lg:block">
+                        <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
+                          <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
+                            <tr>
+                              <th className="w-10 px-3 py-2"> </th>
+                              <th className="px-3 py-2">Mã SP</th>
+                              <th className="px-3 py-2">Sản phẩm</th>
+                              <th className="px-3 py-2">Đơn giá</th>
+                              <th className="px-3 py-2">Đơn vị</th>
+                              <th className="px-3 py-2">Nhóm</th>
+                              <th className="px-3 py-2">NCC</th>
+                              <th className="px-3 py-2">Xuất xứ</th>
+                              <th className="px-3 py-2">Thông số</th>
+                              <th className="px-3 py-2">Độ đầy đủ</th>
+                              <th className="px-3 py-2">Nguồn</th>
+                              <th className="px-3 py-2 text-right">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {pagedScrapeProducts.map((item, index) => {
+                              const key = productKey(item);
+                              const selected = selectedSourceUrls.has(key);
+                              const missingLabels = productMissingLabels(item);
+                              const infoSummary = productInfoSummary(item);
+                              const rowQualityFlags = qualityFlags(item);
+                              const globalIndex =
+                                productPageIndex * productPageSize + index;
+
+                              const isDetailOpen = detailProductKey === key;
+
+                              return (
+                                <tr
+                                  key={`${key}-${index}`}
+                                  tabIndex={0}
+                                  aria-selected={isDetailOpen}
+                                  className={`cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none focus-visible:ring-inset ${
+                                    isDetailOpen
+                                      ? "bg-blue-100/80"
+                                      : selected
+                                        ? "bg-blue-50/70 hover:bg-blue-50"
+                                        : "hover:bg-slate-100"
+                                  }`}
+                                  onClick={() => openProductDetail(item)}
+                                  onKeyDown={(event) => {
+                                    if (event.currentTarget !== event.target) {
+                                      return;
+                                    }
+                                    if (
+                                      event.key === "Enter" ||
+                                      event.key === " "
+                                    ) {
+                                      event.preventDefault();
+                                      openProductDetail(item);
+                                    }
+                                  }}
+                                >
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600"
+                                      checked={selected}
+                                      disabled={isImportActive}
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                      onChange={() => toggleProduct(item)}
+                                      aria-label={`Chọn ${item.name}`}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span className="font-mono text-xs font-bold text-slate-700">
+                                      {productDisplayId(
+                                        activeJob.id,
+                                        globalIndex,
+                                      )}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
+                                    <span className="line-clamp-2">
+                                      {item.name}
+                                    </span>
+                                    <span className="mt-1 block text-xs font-medium text-slate-700">
+                                      {infoSummary ||
+                                        "Không có SKU / model / trạng thái"}
+                                    </span>
+                                    <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                                      <Eye className="h-3 w-3" aria-hidden />
+                                      Xem chi tiết
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
+                                    {formatMoney(item.price, item.currency)}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-600">
+                                    {item.unit ?? "unknown"}
+                                  </td>
+                                  <td className="max-w-44 px-3 py-2 text-slate-600">
+                                    <span className="line-clamp-2">
+                                      {item.category ??
+                                        item.shopCategory ??
+                                        "-"}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-44 px-3 py-2 text-slate-600">
+                                    <span className="line-clamp-2">
+                                      {item.manufacturer ?? "-"}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-36 px-3 py-2 text-slate-600">
+                                    <span className="line-clamp-2">
+                                      {item.originCountry ?? "-"}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-md px-3 py-2 text-slate-600">
+                                    <span className="line-clamp-3">
+                                      {item.specText || "-"}
+                                    </span>
+                                  </td>
+                                  <td className="max-w-56 px-3 py-2">
+                                    <div className="flex flex-wrap gap-1">
+                                      {missingLabels.length === 0 &&
+                                      rowQualityFlags.length === 0 ? (
+                                        <Badge tone="success">
+                                          Đủ thông tin
+                                        </Badge>
+                                      ) : (
+                                        <>
+                                          {missingLabels.map((label) => (
+                                            <Badge key={label} tone="warning">
+                                              {label}
+                                            </Badge>
+                                          ))}
+                                          {rowQualityFlags.includes(
+                                            "suspiciousName",
+                                          ) ? (
+                                            <Badge tone="critical">
+                                              Tên nghi vấn
+                                            </Badge>
+                                          ) : null}
+                                          {rowQualityFlags.includes(
+                                            "missingPrice",
+                                          ) ? (
+                                            <Badge tone="warning">
+                                              Thiếu giá
+                                            </Badge>
+                                          ) : null}
+                                        </>
+                                      )}
+                                      {item.catalogPdfUrls.length > 0 ? (
+                                        <Badge tone="info">
+                                          {item.catalogPdfUrls.length} catalog
+                                          PDF
+                                        </Badge>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-slate-600">
+                                    <a
+                                      href={item.sourceUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] transition-colors hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                      aria-label={`Mở trang nguồn của ${item.name}`}
+                                      title={item.sourceUrl}
+                                    >
+                                      <ExternalLink
+                                        className="h-3.5 w-3.5 shrink-0"
+                                        aria-hidden
+                                      />
+                                    </a>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <div className="inline-flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-700 shadow-[var(--shadow-flat)] transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          openProductDetail(item);
+                                        }}
+                                        aria-label={`Xem chi tiết ${item.name}`}
+                                        title="Xem chi tiết"
+                                      >
+                                        <Eye
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden
+                                        />
+                                      </button>
+                                      {canEditScrapeProducts ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-amber-200 bg-white text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              openProductDetail(item);
+                                            }}
+                                            aria-label={`Sửa ${item.name}`}
+                                            title="Sửa sản phẩm"
+                                          >
+                                            <Pencil
+                                              className="h-3.5 w-3.5"
+                                              aria-hidden
+                                            />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-200 bg-white text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
+                                            disabled={
+                                              deleteShopScrapeJobProduct.isPending
+                                            }
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              setDeleteProductTarget(item);
+                                            }}
+                                            aria-label={`Xóa ${item.name} khỏi job`}
+                                            title="Xóa khỏi preview — không nhập DB"
+                                          >
+                                            <Trash2
+                                              className="h-3.5 w-3.5"
+                                              aria-hidden
+                                            />
+                                          </button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {filteredScrapeProducts.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-1 text-xs text-slate-600">
+                      <p>
+                        Hiển thị{" "}
+                        {(
+                          productPageIndex * productPageSize +
+                          1
+                        ).toLocaleString("vi-VN")}
+                        –
+                        {Math.min(
+                          (productPageIndex + 1) * productPageSize,
+                          filteredScrapeProducts.length,
+                        ).toLocaleString("vi-VN")}{" "}
+                        /{" "}
+                        {filteredScrapeProducts.length.toLocaleString("vi-VN")}{" "}
+                        sau lọc
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-2">
+                          <span>Dòng/trang</span>
+                          <select
+                            className="rounded border border-slate-500 bg-white px-2 py-1 shadow-[var(--shadow-flat)]"
+                            value={productPageSize}
+                            aria-label="Số sản phẩm mỗi trang"
+                            onChange={(event) => {
+                              setProductPageSize(Number(event.target.value));
+                              setProductPageIndex(0);
+                            }}
+                          >
+                            {[25, 50, 100].map((size) => (
+                              <option key={size} value={size}>
+                                {size}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={productPageIndex === 0}
+                          onClick={() =>
+                            setProductPageIndex((current) =>
+                              Math.max(0, current - 1),
+                            )
+                          }
+                        >
+                          Trang trước
+                        </Button>
+                        <span>
+                          Trang {productPageIndex + 1} / {productPageCount}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={productPageIndex + 1 >= productPageCount}
+                          onClick={() =>
+                            setProductPageIndex((current) =>
+                              Math.min(productPageCount - 1, current + 1),
+                            )
+                          }
+                        >
+                          Trang sau
+                        </Button>
+                      </div>
+                    </div>
+                  ) : scrapeProducts.length > 0 ? (
+                    <EmptyState
+                      className="mt-4"
+                      title="Không có sản phẩm khớp bộ lọc."
+                      description="Thử bỏ bộ lọc chất lượng hoặc tắt ẩn sản phẩm thiếu tên."
+                    />
+                  ) : null}
                 </>
-              ) : (
-                <p className="mt-2 text-xs text-slate-700">
-                  Sẵn sàng ghi catalog sau khi chọn sản phẩm.
-                </p>
-              )}
-            </div>
-          </div>
+              ) : null}
+            </section>
+          ) : null}
 
-          {scrapeProducts.length > 0 || activeJob.productCount > 0 ? (
-            <>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-1 rounded border border-slate-400 bg-slate-50 p-3">
-              <div className="flex flex-wrap gap-2">
-                {SCRAPE_QUALITY_FILTER_OPTIONS.map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    className={
-                      qualityFilter === filter
-                        ? "rounded-full border border-blue-400 bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-900"
-                        : "rounded-full border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-3 py-1 text-xs font-semibold text-slate-600 hover:border-blue-200"
-                    }
-                    onClick={() =>
-                      setQualityFilter((current) =>
-                        current === filter ? "all" : filter,
-                      )
-                    }
-                    aria-pressed={qualityFilter === filter}
+          {importResult ? (
+            <section className="panel p-4">
+              <div className="flex flex-wrap items-start justify-between gap-1">
+                <div>
+                  <p className="section-title">Kết quả nhập</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                    Đã ghi vào catalog vật tư
+                  </h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge tone="success" count={importResult.created}>
+                    Tạo mới
+                  </Badge>
+                  <Badge tone="info" count={importResult.updated}>
+                    Cập nhật
+                  </Badge>
+                  <Badge tone="neutral" count={importResult.skipped}>
+                    Bỏ qua
+                  </Badge>
+                  <Badge
+                    tone={importResult.failed > 0 ? "critical" : "neutral"}
+                    count={importResult.failed}
                   >
-                    {SCRAPE_QUALITY_FLAG_LABELS[filter]}
-                  </button>
-                ))}
+                    Lỗi
+                  </Badge>
+                  <Badge tone="neutral">
+                    <Clock3 className="h-3 w-3" aria-hidden />
+                    {formatDuration(importResult.durationMs)}
+                  </Badge>
+                </div>
               </div>
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-400 accent-blue-600"
-                  checked={hideMissingNameProducts}
-                  onChange={(event) =>
-                    setHideMissingNameProducts(event.target.checked)
-                  }
-                />
-                Ẩn sản phẩm thiếu tên
-              </label>
-            </div>
 
-            {isActive && scrapeProducts.length === 0 && activeJob.productCount > 0 ? (
-              <p className="mt-3 text-xs text-slate-700">
-                Đang thu thập {activeJob.productCount.toLocaleString("vi-VN")}{" "}
-                sản phẩm — bảng preview sẽ hiện đầy đủ khi job dừng.
-              </p>
-            ) : null}
-
-          {scrapeProducts.length > 0 ? (
-            <>
-            <div className="mt-4 grid gap-1 lg:hidden">
-              {pagedScrapeProducts.map((item, index) => {
-                const key = productKey(item);
-                const selected = selectedSourceUrls.has(key);
-                const missingLabels = productMissingLabels(item);
-                const rowQualityFlags = qualityFlags(item);
-                const infoSummary = productInfoSummary(item);
-                const globalIndex = productPageIndex * productPageSize + index;
-
-                return (
-                  <ScrapeProductReviewCard
-                    key={`${key}-${index}-card`}
-                    name={item.name}
-                    displayId={productDisplayId(activeJob.id, globalIndex)}
-                    selected={selected}
-                    disabled={isImportActive}
-                    infoSummary={infoSummary}
-                    priceText={formatMoney(item.price, item.currency)}
-                    unit={item.unit ?? "-"}
-                    manufacturer={item.manufacturer ?? "-"}
-                    originCountry={item.originCountry ?? "-"}
-                    missingLabels={missingLabels}
-                    suspiciousName={rowQualityFlags.includes("suspiciousName")}
-                    missingPrice={rowQualityFlags.includes("missingPrice")}
-                    catalogPdfCount={item.catalogPdfUrls.length}
-                    sourceUrl={item.sourceUrl}
-                    canEdit={canEditScrapeProducts}
-                    isDeleting={deleteShopScrapeJobProduct.isPending}
-                    onToggle={() => toggleProduct(item)}
-                    onOpen={() => openProductDetail(item)}
-                    onDelete={() => setDeleteProductTarget(item)}
-                  />
-                );
-              })}
-            </div>
-
-            <div className="mt-4 hidden overflow-x-auto rounded border border-slate-400 lg:block">
-              <table className="w-full min-w-[60rem] table-fixed divide-y divide-slate-200 text-sm break-words">
-                <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
-                  <tr>
-                    <th className="w-10 px-3 py-2"> </th>
-                    <th className="px-3 py-2">Mã SP</th>
-                    <th className="px-3 py-2">Sản phẩm</th>
-                    <th className="px-3 py-2">Đơn giá</th>
-                    <th className="px-3 py-2">Đơn vị</th>
-                    <th className="px-3 py-2">Nhóm</th>
-                    <th className="px-3 py-2">NCC</th>
-                    <th className="px-3 py-2">Xuất xứ</th>
-                    <th className="px-3 py-2">Thông số</th>
-                    <th className="px-3 py-2">Độ đầy đủ</th>
-                    <th className="px-3 py-2">Nguồn</th>
-                    <th className="px-3 py-2 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {pagedScrapeProducts.map((item, index) => {
-                    const key = productKey(item);
-                    const selected = selectedSourceUrls.has(key);
-                    const missingLabels = productMissingLabels(item);
-                    const infoSummary = productInfoSummary(item);
-                    const rowQualityFlags = qualityFlags(item);
-                    const globalIndex = productPageIndex * productPageSize + index;
-
-                    const isDetailOpen = detailProductKey === key;
-
-                    return (
-                      <tr
-                        key={`${key}-${index}`}
-                        tabIndex={0}
-                        aria-selected={isDetailOpen}
-                        className={`cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none focus-visible:ring-inset ${
-                          isDetailOpen
-                            ? "bg-blue-100/80"
-                            : selected
-                              ? "bg-blue-50/70 hover:bg-blue-50"
-                              : "hover:bg-slate-100"
-                        }`}
-                        onClick={() => openProductDetail(item)}
-                        onKeyDown={(event) => {
-                          if (event.currentTarget !== event.target) {
-                            return;
-                          }
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openProductDetail(item);
-                          }
-                        }}
-                      >
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 cursor-pointer rounded border-slate-400 accent-blue-600"
-                            checked={selected}
-                            disabled={isImportActive}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={() => toggleProduct(item)}
-                            aria-label={`Chọn ${item.name}`}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className="font-mono text-xs font-bold text-slate-700">
-                            {productDisplayId(activeJob.id, globalIndex)}
-                          </span>
-                        </td>
+              <div className="mt-4 overflow-x-auto rounded border border-slate-400">
+                <table className="w-full min-w-[34rem] table-fixed divide-y divide-slate-200 text-sm break-words">
+                  <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
+                    <tr>
+                      <th className="px-3 py-2">Sản phẩm</th>
+                      <th className="px-3 py-2">Trạng thái</th>
+                      <th className="px-3 py-2">Nguồn</th>
+                      <th className="px-3 py-2 text-right">Mở</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {importResult.items.map((item, index) => (
+                      <tr key={`${item.sourceUrl}-${item.name}-${index}`}>
                         <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
                           <span className="line-clamp-2">{item.name}</span>
-                          <span className="mt-1 block text-xs font-medium text-slate-700">
-                            {infoSummary || "Không có SKU / model / trạng thái"}
-                          </span>
-                          <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
-                            <Eye className="h-3 w-3" aria-hidden />
-                            Xem chi tiết
-                          </span>
+                          {item.message ? (
+                            <span className="mt-1 block text-xs font-medium text-slate-700">
+                              {item.message}
+                            </span>
+                          ) : null}
                         </td>
-                        <td className="px-3 py-2 font-semibold text-slate-900 tabular-nums">
-                          {formatMoney(item.price, item.currency)}
+                        <td className="px-3 py-2">
+                          <Badge tone={actionTone[item.action]}>
+                            {actionLabel[item.action]}
+                          </Badge>
                         </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {item.unit ?? "unknown"}
-                        </td>
-                        <td className="max-w-44 px-3 py-2 text-slate-600">
-                          <span className="line-clamp-2">
-                            {item.category ?? item.shopCategory ?? "-"}
-                          </span>
-                        </td>
-                        <td className="max-w-44 px-3 py-2 text-slate-600">
-                          <span className="line-clamp-2">
-                            {item.manufacturer ?? "-"}
-                          </span>
-                        </td>
-                        <td className="max-w-36 px-3 py-2 text-slate-600">
-                          <span className="line-clamp-2">
-                            {item.originCountry ?? "-"}
-                          </span>
-                        </td>
-                        <td className="max-w-md px-3 py-2 text-slate-600">
-                          <span className="line-clamp-3">
-                            {item.specText || "-"}
-                          </span>
-                        </td>
-                        <td className="max-w-56 px-3 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {missingLabels.length === 0 &&
-                            rowQualityFlags.length === 0 ? (
-                              <Badge tone="success">Đủ thông tin</Badge>
-                            ) : (
-                              <>
-                                {missingLabels.map((label) => (
-                                  <Badge key={label} tone="warning">
-                                    {label}
-                                  </Badge>
-                                ))}
-                                {rowQualityFlags.includes("suspiciousName") ? (
-                                  <Badge tone="critical">Tên nghi vấn</Badge>
-                                ) : null}
-                                {rowQualityFlags.includes("missingPrice") ? (
-                                  <Badge tone="warning">Thiếu giá</Badge>
-                                ) : null}
-                              </>
-                            )}
-                            {item.catalogPdfUrls.length > 0 ? (
-                              <Badge tone="info">
-                                {item.catalogPdfUrls.length} catalog PDF
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-slate-600">
+                        <td className="max-w-xs px-3 py-2 text-xs text-slate-600">
                           <a
                             href={item.sourceUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                            onClick={(event) => event.stopPropagation()}
-                            aria-label={`Mở trang nguồn của ${item.name}`}
-                            title={item.sourceUrl}
+                            className="line-clamp-2 hover:text-blue-700 hover:underline"
                           >
-                            <ExternalLink
-                              className="h-3.5 w-3.5 shrink-0"
-                              aria-hidden
-                            />
+                            {item.sourceUrl}
                           </a>
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-700 transition-colors hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openProductDetail(item);
-                              }}
-                              aria-label={`Xem chi tiết ${item.name}`}
-                              title="Xem chi tiết"
+                          {item.materialId ? (
+                            <Link
+                              href={`/materials/${item.materialId}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-blue-700"
+                              aria-label={`Mở vật tư ${item.name}`}
                             >
-                              <Eye className="h-3.5 w-3.5" aria-hidden />
-                            </button>
-                            {canEditScrapeProducts ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-amber-200 bg-white text-amber-800 transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openProductDetail(item);
-                                  }}
-                                  aria-label={`Sửa ${item.name}`}
-                                  title="Sửa sản phẩm"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" aria-hidden />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-200 bg-white text-rose-700 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none disabled:opacity-60"
-                                  disabled={deleteShopScrapeJobProduct.isPending}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setDeleteProductTarget(item);
-                                  }}
-                                  aria-label={`Xóa ${item.name} khỏi job`}
-                                  title="Xóa khỏi preview — không nhập DB"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
+                              <ArrowUpRight className="h-4 w-4" aria-hidden />
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-slate-600">-</span>
+                          )}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            </>
-          ) : null}
-
-            {filteredScrapeProducts.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-1 text-xs text-slate-600">
-                <p>
-                  Hiển thị{" "}
-                  {(productPageIndex * productPageSize + 1).toLocaleString(
-                    "vi-VN",
-                  )}
-                  –
-                  {Math.min(
-                    (productPageIndex + 1) * productPageSize,
-                    filteredScrapeProducts.length,
-                  ).toLocaleString("vi-VN")}{" "}
-                  / {filteredScrapeProducts.length.toLocaleString("vi-VN")} sau
-                  lọc
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex items-center gap-2">
-                    <span>Dòng/trang</span>
-                    <select
-                      className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-2 py-1"
-                      value={productPageSize}
-                      aria-label="Số sản phẩm mỗi trang"
-                      onChange={(event) => {
-                        setProductPageSize(Number(event.target.value));
-                        setProductPageIndex(0);
-                      }}
-                    >
-                      {[25, 50, 100].map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={productPageIndex === 0}
-                    onClick={() =>
-                      setProductPageIndex((current) => Math.max(0, current - 1))
-                    }
-                  >
-                    Trang trước
-                  </Button>
-                  <span>
-                    Trang {productPageIndex + 1} / {productPageCount}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={productPageIndex + 1 >= productPageCount}
-                    onClick={() =>
-                      setProductPageIndex((current) =>
-                        Math.min(productPageCount - 1, current + 1),
-                      )
-                    }
-                  >
-                    Trang sau
-                  </Button>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ) : scrapeProducts.length > 0 ? (
-              <EmptyState
-                className="mt-4"
-                title="Không có sản phẩm khớp bộ lọc."
-                description="Thử bỏ bộ lọc chất lượng hoặc tắt ẩn sản phẩm thiếu tên."
-              />
-            ) : null}
-            </>
+            </section>
           ) : null}
-        </section>
-      ) : null}
-
-      {importResult ? (
-        <section className="panel p-4">
-          <div className="flex flex-wrap items-start justify-between gap-1">
-            <div>
-              <p className="section-title">Kết quả nhập</p>
-              <h2 className="mt-1 text-base font-bold text-slate-950">
-                Đã ghi vào catalog vật tư
-              </h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge tone="success" count={importResult.created}>
-                Tạo mới
-              </Badge>
-              <Badge tone="info" count={importResult.updated}>
-                Cập nhật
-              </Badge>
-              <Badge tone="neutral" count={importResult.skipped}>
-                Bỏ qua
-              </Badge>
-              <Badge
-                tone={importResult.failed > 0 ? "critical" : "neutral"}
-                count={importResult.failed}
-              >
-                Lỗi
-              </Badge>
-              <Badge tone="neutral">
-                <Clock3 className="h-3 w-3" aria-hidden />
-                {formatDuration(importResult.durationMs)}
-              </Badge>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto rounded border border-slate-400">
-            <table className="w-full min-w-[34rem] table-fixed divide-y divide-slate-200 text-sm break-words">
-              <thead className="bg-slate-50 text-left text-xs font-bold text-slate-700 uppercase">
-                <tr>
-                  <th className="px-3 py-2">Sản phẩm</th>
-                  <th className="px-3 py-2">Trạng thái</th>
-                  <th className="px-3 py-2">Nguồn</th>
-                  <th className="px-3 py-2 text-right">Mở</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {importResult.items.map((item, index) => (
-                  <tr key={`${item.sourceUrl}-${item.name}-${index}`}>
-                    <td className="max-w-sm px-3 py-2 font-semibold text-slate-950">
-                      <span className="line-clamp-2">{item.name}</span>
-                      {item.message ? (
-                        <span className="mt-1 block text-xs font-medium text-slate-700">
-                          {item.message}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Badge tone={actionTone[item.action]}>
-                        {actionLabel[item.action]}
-                      </Badge>
-                    </td>
-                    <td className="max-w-xs px-3 py-2 text-xs text-slate-600">
-                      <a
-                        href={item.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="line-clamp-2 hover:text-blue-700 hover:underline"
-                      >
-                        {item.sourceUrl}
-                      </a>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {item.materialId ? (
-                        <Link
-                          href={`/materials/${item.materialId}`}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] hover:border-slate-600 hover:bg-slate-100 hover:text-blue-700"
-                          aria-label={`Mở vật tư ${item.name}`}
-                        >
-                          <ArrowUpRight className="h-4 w-4" aria-hidden />
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-slate-600">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
         </>
       )}
     </div>
