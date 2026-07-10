@@ -123,6 +123,42 @@ describe("shop promo badge helpers", () => {
     ).toBe("Mạch Giảm Áp DC-DC Mini560 5A");
   });
 
+  it("prefers a safely shorter name within the same source tier", () => {
+    expect(
+      resolveProductNameFromCandidates([
+        {
+          value: "Đồng hồ Selec VAF36A 96x96mm chính hãng giao hàng toàn quốc",
+          source: "title",
+        },
+        {
+          value: "Đồng hồ Selec VAF36A 96x96mm",
+          source: "title",
+        },
+      ]),
+    ).toBe("Đồng hồ Selec VAF36A 96x96mm");
+  });
+
+  it("keeps the base name when shortening drops model or spec tokens", () => {
+    const fullName = "Đồng hồ Selec VAF36A 96x96mm chính hãng";
+
+    expect(
+      chooseScrapedProductName(
+        fullName,
+        "Đồng hồ Selec 96x96mm",
+        "title",
+        "title",
+      ),
+    ).toBe(fullName);
+    expect(
+      chooseScrapedProductName(
+        fullName,
+        "Đồng hồ Selec VAF36A",
+        "title",
+        "title",
+      ),
+    ).toBe(fullName);
+  });
+
   it("strips KH and Khấu hao noise from spec text", () => {
     expect(
       stripKhauHaoFromSpecText(

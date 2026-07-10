@@ -1,7 +1,5 @@
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { count, desc, eq, isNull, sql } from "drizzle-orm";
 
-import { env } from "~/env";
-import type { Role } from "~/lib/permissions";
 import { db } from "~/server/db";
 import {
   excelResearchJobs,
@@ -12,9 +10,7 @@ import {
   notifications,
   shopImportJobs,
   shopScrapeJobs,
-  tenant,
   tenderPackages,
-  user,
   workflowRuns,
   workflows,
 } from "~/server/db/schema";
@@ -37,14 +33,6 @@ export type DashboardQueueItem = {
   tone?: "neutral" | "success" | "warning" | "critical" | "info";
 };
 
-export type GovernanceMetrics = {
-  totalUsers: number;
-  usersByRole: Record<Role, number>;
-  bannedUsers: number;
-  tenantlessCustomers: number;
-  totalTenants: number;
-};
-
 export type OperationsMetrics = {
   totalPackages: number;
   totalMaterials: number;
@@ -61,26 +49,16 @@ export type OperationsMetrics = {
 };
 
 export type RoleDashboardSnapshot = {
-  authEnabled: boolean;
   version: {
     current: string;
     latest: string | null;
     surface: string;
     updateAvailable: boolean;
   } | null;
-  governance: GovernanceMetrics;
   operations: OperationsMetrics;
   attentionQueue: DashboardQueueItem[];
   recentAlerts: DashboardQueueItem[];
   isDegraded: boolean;
-};
-
-const emptyGovernance: GovernanceMetrics = {
-  totalUsers: 0,
-  usersByRole: { admin: 0, manager: 0, staff: 0, customer: 0 },
-  bannedUsers: 0,
-  tenantlessCustomers: 0,
-  totalTenants: 0,
 };
 
 const emptyOperations: OperationsMetrics = {
@@ -110,43 +88,6 @@ async function safe<T, F>(task: Promise<T>, fallback: F): Promise<T | F> {
   }
 }
 
-async function getGovernanceMetrics(): Promise<GovernanceMetrics> {
-  const [roleRows, bannedRows, tenantlessRows, tenantRows] = await Promise.all([
-    db
-      .select({ role: user.role, value: sql<number>`count(*)::int`.as("value") })
-      .from(user)
-      .groupBy(user.role),
-    db
-      .select({ value: sql<number>`count(*)::int`.as("value") })
-      .from(user)
-      .where(eq(user.banned, true)),
-    db
-      .select({ value: sql<number>`count(*)::int`.as("value") })
-      .from(user)
-      .where(and(eq(user.role, "customer"), isNull(user.tenantId))),
-    db.select({ value: count() }).from(tenant),
-  ]);
-
-  const usersByRole: GovernanceMetrics["usersByRole"] = {
-    admin: 0,
-    manager: 0,
-    staff: 0,
-    customer: 0,
-  };
-
-  for (const row of roleRows) {
-    usersByRole[row.role] = Number(row.value ?? 0);
-  }
-
-  return {
-    totalUsers: Object.values(usersByRole).reduce((sum, value) => sum + value, 0),
-    usersByRole,
-    bannedUsers: numberValue(bannedRows),
-    tenantlessCustomers: numberValue(tenantlessRows),
-    totalTenants: Number(tenantRows[0]?.value ?? 0),
-  };
-}
-
 async function getOperationsMetrics(): Promise<OperationsMetrics> {
   const [
     packageRows,
@@ -169,8 +110,7 @@ async function getOperationsMetrics(): Promise<OperationsMetrics> {
     db
       .select({
         total: sql<number>`count(*)::int`,
-        priced:
-          sql<number>`count(*) filter (where ${materials.defaultUnitPrice} is not null)::int`,
+        priced: sql<number>`count(*) filter (where ${materials.defaultUnitPrice} is not null)::int`,
       })
       .from(materials)
       .where(isNull(materials.deletedAt)),
@@ -185,16 +125,14 @@ async function getOperationsMetrics(): Promise<OperationsMetrics> {
     db
       .select({
         total: sql<number>`count(*)::int`,
-        local:
-          sql<number>`count(*) filter (where ${materialCatalogDocuments.localFilePath} is not null)::int`,
+        local: sql<number>`count(*) filter (where ${materialCatalogDocuments.localFilePath} is not null)::int`,
       })
       .from(materialCatalogDocuments)
       .where(isNull(materialCatalogDocuments.deletedAt)),
     db
       .select({
         total: sql<number>`count(*)::int`,
-        active:
-          sql<number>`count(*) filter (where ${workflows.isActive} = true)::int`,
+        active: sql<number>`count(*) filter (where ${workflows.isActive} = true)::int`,
       })
       .from(workflows),
     db
@@ -224,7 +162,9 @@ async function getOperationsMetrics(): Promise<OperationsMetrics> {
     db
       .select({ value: sql<number>`count(*)::int`.as("value") })
       .from(excelResearchJobs)
-      .where(sql`${excelResearchJobs.status} in ('queued', 'running', 'paused')`),
+      .where(
+        sql`${excelResearchJobs.status} in ('queued', 'running', 'paused')`,
+      ),
     db
       .select({ value: sql<number>`count(*)::int`.as("value") })
       .from(excelResearchJobs)
@@ -267,7 +207,7 @@ async function getOperationsMetrics(): Promise<OperationsMetrics> {
 }
 
 async function getAttentionQueue(): Promise<DashboardQueueItem[]> {
-  const [failedRuns, tenantlessRows, alerts] = await Promise.all([
+  const [failedRuns, alerts] = await Promise.all([
     db
       .select({
         id: workflowRuns.id,
@@ -283,15 +223,6 @@ async function getAttentionQueue(): Promise<DashboardQueueItem[]> {
       .limit(4),
     db
       .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      })
-      .from(user)
-      .where(and(eq(user.role, "customer"), isNull(user.tenantId)))
-      .limit(3),
-    db
-      .select({
         id: notifications.id,
         title: notifications.title,
         severity: notifications.severity,
@@ -304,27 +235,24 @@ async function getAttentionQueue(): Promise<DashboardQueueItem[]> {
   ]);
 
   return [
-    ...failedRuns.map((run): DashboardQueueItem => ({
-      id: `workflow-${run.id}`,
-      title: run.name,
-      meta: run.message || `Workflow lỗi lúc ${run.startedAt}`,
-      href: "/notifications",
-      tone: "critical",
-    })),
-    ...tenantlessRows.map((row): DashboardQueueItem => ({
-      id: `tenantless-${row.id}`,
-      title: row.name || row.email,
-      meta: "Customer chưa được gán tenant",
-      href: "/settings/users",
-      tone: "warning",
-    })),
-    ...alerts.map((alert): DashboardQueueItem => ({
-      id: `alert-${alert.id}`,
-      title: alert.title,
-      meta: `Thông báo ${alert.severity} · ${alert.createdAt}`,
-      href: "/notifications",
-      tone: alert.severity === "high" ? "critical" : "info",
-    })),
+    ...failedRuns.map(
+      (run): DashboardQueueItem => ({
+        id: `workflow-${run.id}`,
+        title: run.name,
+        meta: run.message || `Workflow lỗi lúc ${run.startedAt}`,
+        href: "/notifications",
+        tone: "critical",
+      }),
+    ),
+    ...alerts.map(
+      (alert): DashboardQueueItem => ({
+        id: `alert-${alert.id}`,
+        title: alert.title,
+        meta: `Thông báo ${alert.severity} · ${alert.createdAt}`,
+        href: "/notifications",
+        tone: alert.severity === "high" ? "critical" : "info",
+      }),
+    ),
   ].slice(0, 8);
 }
 
@@ -351,17 +279,16 @@ async function getRecentAlerts(): Promise<DashboardQueueItem[]> {
 }
 
 export async function getRoleDashboardSnapshot(): Promise<RoleDashboardSnapshot> {
-  const [version, governance, operations, attentionQueue, recentAlerts] =
-    await Promise.all([
+  const [version, operations, attentionQueue, recentAlerts] = await Promise.all(
+    [
       safe(getVersionStatus(), null),
-      safe(getGovernanceMetrics(), emptyGovernance),
       safe(getOperationsMetrics(), emptyOperations),
       safe(getAttentionQueue(), []),
       safe(getRecentAlerts(), []),
-    ]);
+    ],
+  );
 
   return {
-    authEnabled: env.AUTH_ENABLED === "true",
     version: version
       ? {
           current: version.current,
@@ -370,7 +297,6 @@ export async function getRoleDashboardSnapshot(): Promise<RoleDashboardSnapshot>
           updateAvailable: version.updateAvailable,
         }
       : null,
-    governance,
     operations,
     attentionQueue,
     recentAlerts,

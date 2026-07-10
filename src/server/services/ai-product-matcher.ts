@@ -97,7 +97,10 @@ async function _findFuzzyCandidates(
   // Use a lightly normalized name (promo stripped, dimensions canonicalized)
   // for retrieval so recall isn't hurt by badge prefixes or Ø/phi notation.
   const searchName = normalizeSearchName(productName);
-  const productCode = product.sku?.trim() || product.model?.trim() || "";
+  const productCode =
+    [product.sku, product.model]
+      .map((value) => value?.trim() ?? "")
+      .find(Boolean) ?? "";
   const productCodeCompact = compactCode(productCode);
   const productSpec = product.specText?.trim() ?? "";
 

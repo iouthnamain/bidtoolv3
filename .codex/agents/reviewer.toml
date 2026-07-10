@@ -1,7 +1,8 @@
 name = "reviewer"
 description = "Independent read-only reviewer for BidTool v3 correctness, security, regressions, and missing tests."
 sandbox_mode = "read-only"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
 nickname_candidates = ["Atlas", "Delta", "Echo"]
 
 developer_instructions = """

@@ -21,31 +21,31 @@
   --color-good: var(--good);
   --color-ring: var(--ring);
 
-  --radius-panel: 4px;
+  --radius-panel: 8px;
 }
 
 :root {
-  --surface-canvas: #f1f5f9;
+  --surface-canvas: #f3f7f8;
   --surface-1: #ffffff;
-  --surface-2: #f8fafc;
-  --surface-3: #e2e8f0;
-  --surface-4: #cbd5e1;
-  --line-soft: #94a3b8;
-  --line-strong: #64748b;
-  --ink-1: #0f172a;
-  --ink-2: #1e293b;
-  --ink-3: #475569;
-  --brand-1: #1d4ed8;
-  --brand-2: #2563eb;
+  --surface-2: #f7fafb;
+  --surface-3: #eaf1f3;
+  --surface-4: #d8e4e8;
+  --line-soft: #d5e1e5;
+  --line-strong: #a8bdc5;
+  --ink-1: #102a38;
+  --ink-2: #294654;
+  --ink-3: #58707c;
+  --brand-1: #0f766e;
+  --brand-2: #0369a1;
   --critical: #be123c;
   --warning: #b45309;
   --good: #047857;
-  --ring: #3b82f6;
+  --ring: #0284c7;
   --ring-offset: 2px;
 
-  --shadow-flat: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-raised: 0 1px 3px rgba(15, 23, 42, 0.08);
-  --shadow-overlay: 0 4px 16px rgba(15, 23, 42, 0.12);
+  --shadow-flat: 0 1px 2px rgba(16, 42, 56, 0.05);
+  --shadow-raised: 0 2px 6px rgba(16, 42, 56, 0.08);
+  --shadow-overlay: 0 8px 24px rgba(16, 42, 56, 0.14);
 }
 
 dialog {
@@ -73,7 +73,6 @@ html {
 
 body {
   min-height: 100vh;
-  overflow-x: hidden;
   background: var(--surface-canvas);
   color: var(--ink-1);
   font-size: 1rem;
@@ -86,11 +85,114 @@ input,
 select,
 textarea {
   touch-action: manipulation;
-  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.16);
+  -webkit-tap-highlight-color: rgba(15, 118, 110, 0.16);
 }
 
 .app-bg {
   background: var(--surface-canvas);
+}
+
+.dashboard-content {
+  width: 100%;
+  max-width: 1680px;
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 2vw, 32px);
+}
+
+/* Material profile review is sized by its actual workspace, not the viewport. */
+.profile-review-editor {
+  container-name: profile-editor;
+  container-type: inline-size;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-evidence {
+  container-name: profile-evidence;
+  container-type: inline-size;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-candidate-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profile-decision-ledger {
+  min-width: 0;
+  max-width: 100%;
+  overflow: clip;
+  border: 1px solid var(--line-soft);
+  border-top: 3px solid var(--brand-1);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-raised);
+}
+
+.profile-decision-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.profile-decision-check-column {
+  width: 6%;
+}
+
+.profile-decision-field-column {
+  width: 22%;
+}
+
+.profile-decision-before-column {
+  width: 30%;
+}
+
+.profile-decision-after-column {
+  width: 42%;
+}
+
+@container profile-evidence (min-width: 48rem) {
+  .profile-candidate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container profile-editor (min-width: 68rem) {
+  .profile-review-layout {
+    grid-template-columns:
+      minmax(0, 1fr)
+      clamp(28rem, 30cqi, 30rem);
+  }
+
+  .profile-decision-ledger {
+    position: sticky;
+    top: 1rem;
+    width: clamp(28rem, 30cqi, 30rem);
+  }
+
+  .profile-decision-field-column {
+    width: 20%;
+  }
+
+  .profile-decision-before-column {
+    width: 31%;
+  }
+
+  .profile-decision-after-column {
+    width: 43%;
+  }
 }
 
 .panel {
@@ -125,8 +227,8 @@ textarea {
 
 .chip {
   border-radius: var(--radius-panel);
-  border: 1px solid var(--line-strong);
-  background: white;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-1);
   padding: 0.125rem 0.375rem;
   font-size: 0.75rem;
   line-height: 1.2;
@@ -180,10 +282,6 @@ textarea {
     0 0 0 calc(var(--ring-offset) + 2px) var(--ring);
 }
 
-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.45);
-}
-
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
@@ -193,5 +291,14 @@ dialog::backdrop {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

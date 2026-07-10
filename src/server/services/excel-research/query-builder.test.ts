@@ -152,6 +152,68 @@ describe("buildSearchQueries", () => {
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
+  it("leads profile search with product, seller, and public-price discovery", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Ống PVC D90",
+        manufacturer: "Bình Minh",
+        code: "PVC-D90",
+        maxQueries: 6,
+      },
+      {
+        context: "profile_search",
+        queryControls: {
+          enableSiteVnVariants: true,
+          enableNegativeMarketplaceVariants: true,
+          materialJobMaxQueries: 4,
+          excelResearchMaxQueries: 8,
+          interactiveMaxQueries: 6,
+        },
+        domainPolicy: {
+          boostDomains: ["binhminhplastic.com.vn"],
+          penaltyDomains: ["shopee.vn", "lazada.vn"],
+          blockDomains: [],
+        },
+      },
+    );
+
+    expect(queries.slice(0, 3).map((query) => query.intent)).toEqual([
+      "vn_product",
+      "vn_supplier",
+      "vn_price",
+    ]);
+    expect(queries[0]?.query).toContain("sản phẩm");
+    expect(queries[1]?.query).toContain("đại lý nhà phân phối");
+    expect(queries[2]?.query).toContain("giá bán");
+    expect(
+      queries
+        .slice(0, 3)
+        .every((query) => !/catalog|pdf|thông số/i.test(query.query)),
+    ).toBe(true);
+    expect(
+      queries
+        .slice(0, 6)
+        .some((query) =>
+          ["pdf", "vn_pdf", "datasheet", "vn_spec"].includes(query.intent),
+        ),
+    ).toBe(true);
+  });
+
+  it("keeps non-profile query ordering unchanged", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Ống PVC D90",
+        manufacturer: "Bình Minh",
+        code: "PVC-D90",
+        maxQueries: 6,
+      },
+      { context: "interactive" },
+    );
+
+    expect(queries[0]?.intent).toBe("pdf");
+    expect(queries.some((query) => query.intent === "vn_product")).toBe(false);
+  });
+
   it("builds official-domain probes for material search tests", () => {
     const queries = buildSearchProbeQueries(
       "Ống nhựa Bình Minh D90 thông số kỹ thuật",
@@ -184,5 +246,33 @@ describe("buildSearchQueries", () => {
     );
 
     expect(queries).toHaveLength(4);
+  });
+
+  it("keeps complete material context in profile seller queries", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Van bướm điều khiển điện",
+        manufacturer: "Kosaplus",
+        code: "KE-050",
+        specText: "DN50 PN16 220V",
+        category: "Van công nghiệp",
+        unit: "cái",
+        originCountry: "Hàn Quốc",
+        maxQueries: 6,
+      },
+      { context: "profile_search" },
+    );
+
+    const sellerQueries = queries.filter((query) =>
+      ["vn_product", "vn_supplier", "vn_price"].includes(query.intent),
+    );
+    expect(sellerQueries).toHaveLength(3);
+    for (const { query } of sellerQueries) {
+      expect(query).toContain("KE-050");
+      expect(query).toContain("DN50 PN16 220V");
+      expect(query).toContain("Van công nghiệp");
+      expect(query).toContain("cái");
+      expect(query).toContain("Hàn Quốc");
+    }
   });
 });

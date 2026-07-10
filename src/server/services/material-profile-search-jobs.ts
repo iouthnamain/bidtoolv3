@@ -2,7 +2,18 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import type {
   AiSearchStoredResult,
@@ -14,16 +25,31 @@ import {
 } from "~/lib/materials/review-decision";
 import {
   RELIABLE_SEARCH_MATCH_THRESHOLD,
-  scoreAiCandidateCompletion,
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
+import {
+  autoProfileIdentityMismatchReasons,
+  autoProfileSourceLabel,
+  evaluateAutoProfileCandidate,
+} from "~/lib/materials/profile-auto-gate";
+import {
+  createMaterialProfileSourceFingerprint,
+  validateMaterialProfileInput,
+  validateMaterialProfileResolution,
+} from "~/lib/materials/profile-input-contract";
 import { db } from "~/server/db";
 import {
   excelWorkspaceItems,
   excelWorkspaces,
+  materialCatalogDocumentLinks,
+  materials,
+  materialProfilePromotionLedger,
+  materialProfileSearchCache,
   materialProfileSearchJobs,
   materialProfileSearchRuns,
 } from "~/server/db/schema";
+import { getOrCreateCatalogDocumentByUrl } from "~/server/services/catalog-documents";
+import { parseOptionalNumber } from "~/server/services/excel-workbook";
 import type { EnrichWebRowInput } from "~/server/services/enrich-web-row";
 import { runWithConcurrency } from "~/server/services/concurrency";
 import {
@@ -35,7 +61,7 @@ import { createLogger, traceFn } from "~/server/lib/logger";
 
 const log = createLogger("services-material-profile-search-jobs");
 
-export type MaterialProfileSearchMode = "web" | "ai";
+export type MaterialProfileSearchMode = "web" | "ai" | "auto";
 export type MaterialProfileSearchJobStatus =
   | "queued"
   | "running"
@@ -126,6 +152,14 @@ export class MaterialProfileSearchJobError extends Error {
   }
 }
 
+/** Internal control-flow signal: a cancelled job must never write a later result. */
+class MaterialProfileSearchCancelledError extends Error {
+  constructor() {
+    super("Job tìm kiếm đã bị hủy.");
+    this.name = "MaterialProfileSearchCancelledError";
+  }
+}
+
 type JobRow = typeof materialProfileSearchJobs.$inferSelect;
 type RunRow = typeof materialProfileSearchRuns.$inferSelect;
 type WorkspaceItemRow = typeof excelWorkspaceItems.$inferSelect;
@@ -137,7 +171,9 @@ type JobCounterDelta = {
   skipped: number;
 };
 
-const MAX_JOB_ITEMS = 500;
+const MAX_INTERACTIVE_JOB_ITEMS = 500;
+export const MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS = 5_000;
+const MAX_SEARCH_RUN_LIST_LIMIT = 500;
 const ROW_CONCURRENCY = 3;
 const MAX_STORED_TEXT_LENGTH = 4_000;
 const ACTIVE_JOB_STATUSES: MaterialProfileSearchJobStatus[] = [
@@ -153,7 +189,7 @@ const DONE_RUN_STATUSES = new Set<MaterialProfileSearchRunStatus>([
 ]);
 
 function isMode(value: string): value is MaterialProfileSearchMode {
-  return value === "web" || value === "ai";
+  return value === "web" || value === "ai" || value === "auto";
 }
 
 function toMode(value: string): MaterialProfileSearchMode {
@@ -319,12 +355,85 @@ function toJobSnapshot(row: JobRow): MaterialProfileSearchJobSnapshot {
 
 function throwIfAborted(signal: AbortSignal | undefined) {
   if (signal?.aborted) {
-    throw new Error("Job tìm kiếm hồ sơ vật tư đã bị hủy.");
+    throw new MaterialProfileSearchCancelledError();
   }
+}
+
+async function assertJobIsNotCancelled(jobId: string) {
+  const [job] = await db
+    .select({ status: materialProfileSearchJobs.status })
+    .from(materialProfileSearchJobs)
+    .where(eq(materialProfileSearchJobs.id, jobId))
+    .limit(1);
+  if (!job || job.status === "cancelled") {
+    throw new MaterialProfileSearchCancelledError();
+  }
+}
+
+type AutoRunEligibility =
+  | { current: true }
+  | { current: false; message: string };
+
+/**
+ * A search run captures a row snapshot. Re-mapping/uploading can replace that
+ * row while a network/AI request is still in flight, so automatic persistence
+ * must only touch the still-current row with the same source fingerprint.
+ */
+async function getAutoRunEligibility(
+  run: RunRow,
+  signal?: AbortSignal,
+): Promise<AutoRunEligibility> {
+  throwIfAborted(signal);
+  await assertJobIsNotCancelled(run.jobId);
+
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.id, run.itemId),
+        eq(excelWorkspaceItems.workspaceId, run.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!item || item.isStale) {
+    return {
+      current: false,
+      message: "Dòng nguồn đã được thay đổi hoặc thay thế; bỏ qua kết quả cũ.",
+    };
+  }
+
+  const snapshot = asRecord(run.inputSnapshotJson);
+  const expectedFingerprint = createMaterialProfileSourceFingerprint({
+    name: textField(snapshot.name),
+    unit: textField(snapshot.unit),
+    specText: textField(snapshot.specText),
+    rowIndex: run.originalRowIndex,
+  });
+  const actualFingerprint =
+    item.sourceFingerprint ||
+    createMaterialProfileSourceFingerprint({
+      name: item.productName,
+      unit: item.unit,
+      specText: item.specText,
+      rowIndex: item.originalRowIndex,
+    });
+  if (actualFingerprint !== expectedFingerprint) {
+    return {
+      current: false,
+      message: "Dòng nguồn đã thay đổi dữ liệu; bỏ qua kết quả cũ.",
+    };
+  }
+
+  return { current: true };
 }
 
 function textField(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function firstNonEmptyText(...values: Array<string | null | undefined>) {
+  return values.map((value) => value?.trim() ?? "").find(Boolean) ?? "";
 }
 
 function inputFromWorkspaceItem(item: WorkspaceItemRow): EnrichWebRowInput {
@@ -379,18 +488,41 @@ function sheetFieldsFromSnapshot(snapshot: Record<string, unknown>) {
 function runHasReliableResult(
   run: Pick<
     RunRow,
+    | "mode"
     | "inputSnapshotJson"
     | "webLinkResultsJson"
     | "aiSearchCandidatesJson"
     | "recommendedCandidateKey"
   >,
 ) {
-  if (run.recommendedCandidateKey) return true;
-
   const snapshot = asRecord(run.inputSnapshotJson);
   const rowName = textField(snapshot.name);
   const sheetFields = sheetFieldsFromSnapshot(snapshot);
   const decision = parseRunDecision(run as RunRow);
+
+  // The unattended path has a stronger truth condition than the review UI: a
+  // model recommendation is not reliable unless every automatic-evidence gate
+  // passes. This keeps progress counters from describing an unsafe result as
+  // found/saved.
+  if (run.mode === "auto") {
+    return (decision?.aiSearchCandidates ?? []).some(
+      (candidate) =>
+        evaluateAutoProfileCandidate({
+          row: {
+            name: rowName,
+            code: sheetFields.code,
+            unit: sheetFields.unit,
+            specText: sheetFields.specText,
+            manufacturer: sheetFields.manufacturer,
+            category: sheetFields.category,
+            originCountry: sheetFields.originCountry,
+          },
+          candidate,
+        }).allowed,
+    );
+  }
+
+  if (run.recommendedCandidateKey) return true;
 
   const webReliable = (decision?.webLinkResults ?? []).some(
     (link) =>
@@ -401,8 +533,18 @@ function runHasReliableResult(
 
   return (decision?.aiSearchCandidates ?? []).some(
     (candidate) =>
-      scoreAiCandidateCompletion(candidate, sheetFields, rowName) >=
-      RELIABLE_SEARCH_MATCH_THRESHOLD,
+      evaluateAutoProfileCandidate({
+        row: {
+          name: rowName,
+          code: sheetFields.code,
+          unit: sheetFields.unit,
+          specText: sheetFields.specText,
+          manufacturer: sheetFields.manufacturer,
+          category: sheetFields.category,
+          originCountry: sheetFields.originCountry,
+        },
+        candidate,
+      }).score >= RELIABLE_SEARCH_MATCH_THRESHOLD,
   );
 }
 
@@ -424,6 +566,7 @@ function deltaForRunResult(input: {
   if (input.status === "skipped") delta.skipped = 1;
   if (
     runHasReliableResult({
+      mode: input.run.mode,
       inputSnapshotJson: input.run.inputSnapshotJson,
       webLinkResultsJson: input.webLinkResults as unknown as Record<
         string,
@@ -487,6 +630,7 @@ async function refreshJobCounters(jobId: string) {
   const runs = await db
     .select({
       status: materialProfileSearchRuns.status,
+      mode: materialProfileSearchRuns.mode,
       inputSnapshotJson: materialProfileSearchRuns.inputSnapshotJson,
       webLinkResultsJson: materialProfileSearchRuns.webLinkResultsJson,
       aiSearchCandidatesJson: materialProfileSearchRuns.aiSearchCandidatesJson,
@@ -576,10 +720,14 @@ async function _startMaterialProfileSearchJob(input: {
       "Chọn ít nhất một dòng để tìm kiếm.",
     );
   }
-  if (itemIds.length > MAX_JOB_ITEMS) {
+  const jobItemLimit =
+    input.mode === "auto"
+      ? MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS
+      : MAX_INTERACTIVE_JOB_ITEMS;
+  if (itemIds.length > jobItemLimit) {
     throw new MaterialProfileSearchJobError(
       "BAD_REQUEST",
-      `Tối đa ${MAX_JOB_ITEMS} dòng mỗi job tìm kiếm.`,
+      `Tối đa ${jobItemLimit.toLocaleString("vi-VN")} dòng mỗi job tìm kiếm.`,
     );
   }
 
@@ -627,6 +775,25 @@ async function _startMaterialProfileSearchJob(input: {
       "Không có dòng hợp lệ để tìm kiếm.",
     );
   }
+  const eligibleItems =
+    input.mode === "auto"
+      ? items.filter(
+          (item) =>
+            !item.isStale &&
+            validateMaterialProfileInput({
+              name: item.productName,
+              unit: item.unit,
+              specText: item.specText,
+              rowIndex: item.originalRowIndex,
+            }).valid,
+        )
+      : items;
+  if (eligibleItems.length === 0) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      "Chưa có dòng đủ Tên vật tư, ĐVT và Thông số kỹ thuật để tự xử lý.",
+    );
+  }
 
   const now = new Date().toISOString();
   const jobId = randomUUID();
@@ -638,12 +805,14 @@ async function _startMaterialProfileSearchJob(input: {
         workspaceId: input.workspaceId,
         status: "queued",
         mode: input.mode,
-        requestedItemIds: items.map((item) => item.id),
-        total: items.length,
+        requestedItemIds: eligibleItems.map((item) => item.id),
+        total: eligibleItems.length,
         message:
           input.mode === "web"
             ? "Đang xếp hàng tìm web."
-            : "Đang xếp hàng tìm AI.",
+            : input.mode === "auto"
+              ? "Đang xếp hàng tự xử lý."
+              : "Đang xếp hàng tìm AI.",
         startedAt: now,
         lastProgressAt: now,
         createdAt: now,
@@ -652,7 +821,7 @@ async function _startMaterialProfileSearchJob(input: {
       .returning();
 
     await tx.insert(materialProfileSearchRuns).values(
-      items.map((item, index) => ({
+      eligibleItems.map((item, index) => ({
         jobId,
         workspaceId: item.workspaceId,
         itemId: item.id,
@@ -720,7 +889,7 @@ async function _listMaterialProfileSearchRuns(input: {
     .from(materialProfileSearchRuns)
     .where(and(...conditions))
     .orderBy(desc(materialProfileSearchRuns.updatedAt))
-    .limit(Math.min(Math.max(input.limit ?? 10, 1), MAX_JOB_ITEMS));
+    .limit(Math.min(Math.max(input.limit ?? 10, 1), MAX_SEARCH_RUN_LIST_LIMIT));
   return rows.map(toRunSnapshot);
 }
 
@@ -811,6 +980,7 @@ async function updateRunWithResult(input: {
   errorMessage?: string | null;
   sourceWebRunId?: number | null;
 }): Promise<JobCounterDelta> {
+  await assertJobIsNotCancelled(input.run.jobId);
   const now = new Date().toISOString();
   const webLinkResults = sanitizeStoredJson(
     input.webLinkResults,
@@ -864,6 +1034,497 @@ async function updateRunWithResult(input: {
   });
 }
 
+type AutoProfileSearchCachePayload = {
+  queries: string[];
+  warnings: string[];
+  webLinkResults: WebLinkResult[];
+  aiSearchCandidates: AiSearchStoredResult[];
+  recommendedCandidateKey: string | null;
+};
+
+function autoProfileSearchCacheKey(input: EnrichWebRowInput) {
+  return `profile-auto:v1:${createMaterialProfileSourceFingerprint({
+    name: input.name ?? "",
+    unit: input.unit ?? "",
+    specText: input.specText ?? "",
+  })}`;
+}
+
+function autoProfileSearchCachePayload(
+  value: unknown,
+): AutoProfileSearchCachePayload | null {
+  const record = asRecord(value);
+  if (!record || Object.keys(record).length === 0) return null;
+  return {
+    queries: parseStringArray(record.queries),
+    warnings: parseStringArray(record.warnings),
+    webLinkResults: Array.isArray(record.webLinkResults)
+      ? (record.webLinkResults as WebLinkResult[])
+      : [],
+    aiSearchCandidates: Array.isArray(record.aiSearchCandidates)
+      ? (record.aiSearchCandidates as AiSearchStoredResult[])
+      : [],
+    recommendedCandidateKey:
+      typeof record.recommendedCandidateKey === "string"
+        ? record.recommendedCandidateKey
+        : null,
+  };
+}
+
+async function readAutoProfileSearchCache(input: EnrichWebRowInput) {
+  const [row] = await db
+    .select({ payloadJson: materialProfileSearchCache.payloadJson })
+    .from(materialProfileSearchCache)
+    .where(
+      and(
+        eq(
+          materialProfileSearchCache.cacheKey,
+          autoProfileSearchCacheKey(input),
+        ),
+        gt(materialProfileSearchCache.expiresAt, new Date().toISOString()),
+      ),
+    )
+    .limit(1);
+  return row ? autoProfileSearchCachePayload(row.payloadJson) : null;
+}
+
+async function writeAutoProfileSearchCache(
+  input: EnrichWebRowInput,
+  payload: AutoProfileSearchCachePayload,
+) {
+  const now = new Date().toISOString();
+  const expiresAt = new Date(
+    Date.now() + 7 * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  await db
+    .insert(materialProfileSearchCache)
+    .values({
+      cacheKey: autoProfileSearchCacheKey(input),
+      payloadJson: sanitizeStoredJson(payload) as Record<string, unknown>,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: materialProfileSearchCache.cacheKey,
+      set: {
+        payloadJson: sanitizeStoredJson(payload) as Record<string, unknown>,
+        expiresAt,
+        updatedAt: now,
+      },
+    });
+}
+
+async function recordAutoProfilePromotion(input: {
+  run: RunRow;
+  status: "saved" | "needs_verification";
+  materialId: number | null;
+  resolution: Record<string, unknown>;
+}) {
+  const now = new Date().toISOString();
+  const sourceFingerprint = createMaterialProfileSourceFingerprint({
+    name: textField(
+      input.run.inputSnapshotJson && asRecord(input.run.inputSnapshotJson).name,
+    ),
+    unit: textField(asRecord(input.run.inputSnapshotJson).unit),
+    specText: textField(asRecord(input.run.inputSnapshotJson).specText),
+    rowIndex: input.run.originalRowIndex,
+  });
+  await db
+    .insert(materialProfilePromotionLedger)
+    .values({
+      workspaceId: input.run.workspaceId,
+      itemId: input.run.itemId,
+      sourceFingerprint,
+      materialId: input.materialId,
+      status: input.status,
+      resolutionJson: sanitizeStoredJson(input.resolution) as Record<
+        string,
+        unknown
+      >,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        materialProfilePromotionLedger.workspaceId,
+        materialProfilePromotionLedger.itemId,
+        materialProfilePromotionLedger.sourceFingerprint,
+      ],
+      set: {
+        materialId: input.materialId,
+        status: input.status,
+        resolutionJson: sanitizeStoredJson(input.resolution) as Record<
+          string,
+          unknown
+        >,
+        updatedAt: now,
+      },
+    });
+}
+
+function autoProfileRowIdentity(row: EnrichWebRowInput) {
+  return {
+    name: row.name ?? "",
+    code: row.code,
+    unit: row.unit ?? "",
+    specText: row.specText ?? "",
+    manufacturer: row.manufacturer,
+    category: row.category,
+    originCountry: row.originCountry,
+  };
+}
+
+function blockAutoProfileResolution(
+  resolution: ReturnType<typeof validateMaterialProfileResolution>,
+  reasons: string[],
+) {
+  if (reasons.length === 0) return resolution;
+  return {
+    ...resolution,
+    promotable: false,
+    status: "needs_verification" as const,
+    reasons: Array.from(new Set([...resolution.reasons, ...reasons])),
+  };
+}
+
+async function persistAutoProfileNeedsVerification(input: {
+  run: RunRow;
+  resolution: ReturnType<typeof validateMaterialProfileResolution>;
+}) {
+  const eligibility = await getAutoRunEligibility(input.run);
+  if (!eligibility.current) return;
+
+  const now = new Date().toISOString();
+  await db
+    .update(excelWorkspaceItems)
+    .set({
+      enrichedSnapshotJson: sql`coalesce(${excelWorkspaceItems.enrichedSnapshotJson}, '{}'::jsonb) || ${JSON.stringify(
+        { autoResolution: input.resolution },
+      )}::jsonb`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(excelWorkspaceItems.id, input.run.itemId),
+        eq(excelWorkspaceItems.isStale, false),
+      ),
+    );
+  await recordAutoProfilePromotion({
+    run: input.run,
+    status: "needs_verification",
+    materialId: null,
+    resolution: input.resolution as unknown as Record<string, unknown>,
+  });
+}
+
+/**
+ * Persist only evidence-backed automatic candidates. The manual review flow is
+ * intentionally separate, but this path never lets inherited row values or a
+ * model-only claim become a canonical material.
+ */
+async function promoteAutoProfileCandidate(input: {
+  run: RunRow;
+  row: EnrichWebRowInput;
+  candidate: AiSearchStoredResult;
+}) {
+  const eligibility = await getAutoRunEligibility(input.run);
+  if (!eligibility.current) {
+    return { promoted: false, skipped: true, reason: eligibility.message };
+  }
+
+  const autoGate = evaluateAutoProfileCandidate({
+    row: autoProfileRowIdentity(input.row),
+    candidate: input.candidate,
+  });
+  const fields = input.candidate.fields;
+  const candidate = {
+    code: fields.code,
+    name: input.candidate.title?.trim() ?? "",
+    unit: fields.unit,
+    specText: fields.specText,
+    manufacturer: fields.manufacturer,
+    originCountry: fields.originCountry,
+    unitPrice: parseOptionalNumber(fields.defaultUnitPrice ?? ""),
+    source: autoGate.sourceUrl
+      ? autoProfileSourceLabel(autoGate.sourceUrl)
+      : "",
+    sourceUrl: autoGate.sourceUrl ?? "",
+    catalogUrl: autoGate.catalogUrl ?? "",
+    evidenceUrls: autoGate.evidenceUrls,
+    confidence: autoGate.confidence,
+    provenance: "ai",
+  };
+  let resolution = validateMaterialProfileResolution({
+    input: {
+      name: input.row.name ?? "",
+      unit: input.row.unit ?? "",
+      specText: input.row.specText ?? "",
+      rowIndex: input.run.originalRowIndex,
+    },
+    candidate,
+  });
+  resolution = blockAutoProfileResolution(resolution, autoGate.reasons);
+
+  if (!resolution.promotable) {
+    await persistAutoProfileNeedsVerification({ run: input.run, resolution });
+    return { promoted: false, resolution };
+  }
+
+  const normalized = resolution.candidate;
+  const resolvedName = normalized.name ?? input.row.name ?? "";
+  const resolvedUnit = normalized.unit ?? input.row.unit ?? "";
+  const resolvedSpecText = normalized.specText ?? input.row.specText ?? "";
+  const catalogUrl = normalized.catalogUrl;
+  if (!catalogUrl) {
+    const blocked = blockAutoProfileResolution(resolution, [
+      "Chưa có URL catalog đủ điều kiện để lưu.",
+    ]);
+    await persistAutoProfileNeedsVerification({
+      run: input.run,
+      resolution: blocked,
+    });
+    return { promoted: false, resolution: blocked };
+  }
+
+  // Catalog-document creation happens before the material transaction. If it
+  // fails, no canonical material or matched row is written. The transaction
+  // below links this verified document atomically with the material/item state.
+  let catalogDocument: Awaited<
+    ReturnType<typeof getOrCreateCatalogDocumentByUrl>
+  >;
+  try {
+    catalogDocument = await getOrCreateCatalogDocumentByUrl(db, catalogUrl, {
+      sourceType: "detected",
+      title: resolvedName,
+      supplier: normalized.manufacturer ?? null,
+    });
+  } catch (error) {
+    const blocked = blockAutoProfileResolution(resolution, [
+      `Không thể tạo liên kết catalog đã xác minh: ${error instanceof Error ? error.message : "lỗi không xác định"}.`,
+    ]);
+    await persistAutoProfileNeedsVerification({
+      run: input.run,
+      resolution: blocked,
+    });
+    return { promoted: false, resolution: blocked };
+  }
+
+  const now = new Date().toISOString();
+  const snapshot = asRecord(input.run.inputSnapshotJson);
+  const expectedFingerprint = createMaterialProfileSourceFingerprint({
+    name: textField(snapshot.name),
+    unit: textField(snapshot.unit),
+    specText: textField(snapshot.specText),
+    rowIndex: input.run.originalRowIndex,
+  });
+
+  const promotion = await db.transaction(async (tx) => {
+    // Lock the source row before creating/updating a canonical material. A
+    // re-map waits for this short transaction, then marks the old row stale;
+    // conversely a stale or cancelled run returns without writing anything.
+    const [currentJob] = await tx
+      .select({ status: materialProfileSearchJobs.status })
+      .from(materialProfileSearchJobs)
+      .where(eq(materialProfileSearchJobs.id, input.run.jobId))
+      .limit(1)
+      .for("update");
+    if (!currentJob || currentJob.status === "cancelled") {
+      throw new MaterialProfileSearchCancelledError();
+    }
+    const [currentItem] = await tx
+      .select()
+      .from(excelWorkspaceItems)
+      .where(
+        and(
+          eq(excelWorkspaceItems.id, input.run.itemId),
+          eq(excelWorkspaceItems.workspaceId, input.run.workspaceId),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    const currentFingerprint = currentItem
+      ? currentItem.sourceFingerprint ||
+        createMaterialProfileSourceFingerprint({
+          name: currentItem.productName,
+          unit: currentItem.unit,
+          specText: currentItem.specText,
+          rowIndex: currentItem.originalRowIndex,
+        })
+      : "";
+    if (
+      !currentItem ||
+      currentItem.isStale ||
+      currentFingerprint !== expectedFingerprint
+    ) {
+      return { material: null, collisionReasons: [] as string[] };
+    }
+
+    const [existing] = await tx
+      .select()
+      .from(materials)
+      .where(
+        and(
+          isNull(materials.deletedAt),
+          normalized.code
+            ? eq(materials.code, normalized.code)
+            : and(
+                eq(materials.name, resolvedName),
+                eq(materials.unit, resolvedUnit),
+                eq(materials.specText, resolvedSpecText),
+              ),
+        ),
+      )
+      .limit(1);
+    const collisionReasons = existing
+      ? autoProfileIdentityMismatchReasons(
+          {
+            name: input.row.name ?? "",
+            unit: input.row.unit ?? "",
+            specText: input.row.specText ?? "",
+          },
+          {
+            name: existing.name,
+            unit: existing.unit,
+            specText: existing.specText,
+          },
+        )
+      : [];
+    if (collisionReasons.length > 0) {
+      return { material: null, collisionReasons };
+    }
+
+    const metadata = {
+      ...(existing?.metadataJson ?? {}),
+      materialProfile: {
+        confidence: normalized.confidence,
+        source: normalized.source,
+        sourceUrl: normalized.sourceUrl,
+        catalogUrl: normalized.catalogUrl,
+        provenance: normalized.provenance,
+        codeProvenance: normalized.codeProvenance,
+        resolvedAt: now,
+      },
+    };
+    const values = {
+      code: firstNonEmptyText(existing?.code, normalized.code) || null,
+      name: firstNonEmptyText(existing?.name, resolvedName),
+      unit: firstNonEmptyText(existing?.unit, resolvedUnit),
+      category:
+        firstNonEmptyText(existing?.category, input.row.category) || null,
+      specText: firstNonEmptyText(existing?.specText, resolvedSpecText),
+      manufacturer:
+        firstNonEmptyText(existing?.manufacturer, normalized.manufacturer) ||
+        null,
+      originCountry:
+        firstNonEmptyText(existing?.originCountry, normalized.originCountry) ||
+        null,
+      defaultUnitPrice:
+        existing?.defaultUnitPrice ?? normalized.unitPrice ?? null,
+      currency: existing?.currency ?? "VND",
+      sourceUrl:
+        firstNonEmptyText(existing?.sourceUrl, normalized.sourceUrl) || null,
+      metadataJson: metadata,
+      updatedAt: now,
+    };
+    const [saved] = existing
+      ? await tx
+          .update(materials)
+          .set(values)
+          .where(eq(materials.id, existing.id))
+          .returning()
+      : await tx
+          .insert(materials)
+          .values({ ...values, createdAt: now })
+          .returning();
+    if (!saved) {
+      throw new Error("Không thể lưu vật tư đã tự xử lý.");
+    }
+
+    await tx
+      .insert(materialCatalogDocumentLinks)
+      .values({
+        documentId: catalogDocument.document.id,
+        materialId: saved.id,
+        linkSource: "scrape",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing();
+    await tx
+      .update(excelWorkspaceItems)
+      .set({
+        materialId: saved.id,
+        matchStatus: "matched",
+        enrichedSnapshotJson: sql`coalesce(${excelWorkspaceItems.enrichedSnapshotJson}, '{}'::jsonb) || ${JSON.stringify(
+          {
+            autoResolution: resolution,
+            autoPromotedMaterialId: saved.id,
+          },
+        )}::jsonb`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(excelWorkspaceItems.id, input.run.itemId),
+          eq(excelWorkspaceItems.isStale, false),
+          eq(excelWorkspaceItems.sourceFingerprint, expectedFingerprint),
+        ),
+      );
+    return { material: saved, collisionReasons: [] as string[] };
+  });
+
+  if (!promotion.material) {
+    if (promotion.collisionReasons.length > 0) {
+      const blocked = blockAutoProfileResolution(
+        resolution,
+        promotion.collisionReasons,
+      );
+      await persistAutoProfileNeedsVerification({
+        run: input.run,
+        resolution: blocked,
+      });
+      return { promoted: false, resolution: blocked };
+    }
+    return {
+      promoted: false,
+      skipped: true,
+      reason: "Dòng nguồn đã thay đổi trước khi lưu kết quả tự động.",
+      resolution,
+    };
+  }
+
+  await recordAutoProfilePromotion({
+    run: input.run,
+    status: "saved",
+    materialId: promotion.material.id,
+    resolution: resolution as unknown as Record<string, unknown>,
+  });
+  return {
+    promoted: true,
+    materialId: promotion.material.id,
+    resolution,
+  };
+}
+
+async function promoteFirstAutoProfileCandidate(input: {
+  run: RunRow;
+  row: EnrichWebRowInput;
+  candidates: AiSearchStoredResult[];
+}) {
+  const selected =
+    input.candidates.find(
+      (candidate) =>
+        evaluateAutoProfileCandidate({
+          row: autoProfileRowIdentity(input.row),
+          candidate,
+        }).allowed,
+    ) ?? input.candidates[0];
+  return selected
+    ? promoteAutoProfileCandidate({ ...input, candidate: selected })
+    : null;
+}
+
 async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
   throwIfAborted(signal);
   const now = new Date().toISOString();
@@ -878,7 +1539,9 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       message:
         job.mode === "web"
           ? "Đang tìm liên kết web."
-          : "Đang trích xuất AI từ nguồn web.",
+          : job.mode === "auto"
+            ? "Đang tự tìm và điền dữ liệu vật tư."
+            : "Đang trích xuất AI từ nguồn web.",
       lastProgressAt: now,
       updatedAt: now,
     })
@@ -888,6 +1551,23 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     .update(materialProfileSearchRuns)
     .set({ status: "running", startedAt: now, updatedAt: now })
     .where(eq(materialProfileSearchRuns.id, run.id));
+
+  if (job.mode === "auto") {
+    const eligibility = await getAutoRunEligibility(run, signal);
+    if (!eligibility.current) {
+      return updateRunWithResult({
+        run,
+        status: "skipped",
+        webLinksStatus: "idle",
+        aiSearchStatus: "idle",
+        webLinkResults: [],
+        aiSearchCandidates: [],
+        queries: [],
+        warnings: [eligibility.message],
+        errorMessage: eligibility.message,
+      });
+    }
+  }
 
   if (!input.name.trim()) {
     return updateRunWithResult({
@@ -923,6 +1603,57 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
               "Không tìm thấy liên kết web.")
             : null,
       });
+    }
+
+    if (job.mode === "auto") {
+      const cached = await readAutoProfileSearchCache(input);
+      if (cached) {
+        const cachedStatus: MaterialProfileSearchRunStatus =
+          cached.aiSearchCandidates.length > 0
+            ? "completed"
+            : cached.webLinkResults.length > 0
+              ? "partial"
+              : "failed";
+        const delta = await updateRunWithResult({
+          run,
+          status: cachedStatus,
+          webLinksStatus: cached.webLinkResults.length > 0 ? "done" : "error",
+          aiSearchStatus:
+            cached.aiSearchCandidates.length > 0 ? "done" : "error",
+          webLinkResults: cached.webLinkResults,
+          aiSearchCandidates: cached.aiSearchCandidates,
+          queries: cached.queries,
+          recommendedCandidateKey: cached.recommendedCandidateKey ?? undefined,
+          warnings: [
+            ...cached.warnings,
+            "Dùng kết quả đã lưu trong bộ nhớ đệm.",
+          ],
+          errorMessage:
+            cachedStatus === "failed"
+              ? "Không có kết quả đã lưu phù hợp."
+              : null,
+        });
+        if (cached.aiSearchCandidates.length > 0) {
+          try {
+            throwIfAborted(signal);
+            await promoteFirstAutoProfileCandidate({
+              run,
+              row: input,
+              candidates: cached.aiSearchCandidates,
+            });
+          } catch (error) {
+            if (error instanceof MaterialProfileSearchCancelledError) {
+              throw error;
+            }
+            log.warn("auto_profile_cached_promotion_failed", {
+              runId: run.id,
+              itemId: run.itemId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        return delta;
+      }
     }
 
     const currentRun = await loadCurrentRunForItem(run.itemId);
@@ -965,7 +1696,16 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       );
       warnings.push(...ai.warnings);
       const hasCandidates = ai.aiSearchCandidates.length > 0;
-      return updateRunWithResult({
+      if (job.mode === "auto") {
+        await writeAutoProfileSearchCache(input, {
+          queries,
+          warnings,
+          webLinkResults,
+          aiSearchCandidates: ai.aiSearchCandidates,
+          recommendedCandidateKey: ai.recommendedCandidateKey ?? null,
+        });
+      }
+      const delta = await updateRunWithResult({
         run,
         status: hasCandidates ? "completed" : "partial",
         webLinksStatus: "done",
@@ -980,12 +1720,41 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
           : "AI không trích xuất được ứng viên nào.",
         sourceWebRunId,
       });
+      if (job.mode === "auto" && ai.aiSearchCandidates.length > 0) {
+        try {
+          throwIfAborted(signal);
+          await promoteFirstAutoProfileCandidate({
+            run,
+            row: input,
+            candidates: ai.aiSearchCandidates,
+          });
+        } catch (error) {
+          if (error instanceof MaterialProfileSearchCancelledError) {
+            throw error;
+          }
+          log.warn("auto_profile_promotion_failed", {
+            runId: run.id,
+            itemId: run.itemId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return delta;
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "Không cấu hình AI enrichment.";
       warnings.push(message);
+      if (job.mode === "auto") {
+        await writeAutoProfileSearchCache(input, {
+          queries,
+          warnings,
+          webLinkResults,
+          aiSearchCandidates: [],
+          recommendedCandidateKey: null,
+        });
+      }
       return updateRunWithResult({
         run,
         status: "partial",
@@ -1000,6 +1769,9 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       });
     }
   } catch (error) {
+    if (error instanceof MaterialProfileSearchCancelledError) {
+      return zeroJobCounterDelta();
+    }
     if (
       signal?.aborted === true ||
       (error instanceof Error && error.name === "AbortError")
@@ -1056,7 +1828,9 @@ async function _processMaterialProfileSearchJob(
       message:
         job.mode === "web"
           ? "Đang tìm web cho hồ sơ vật tư."
-          : "Đang tìm AI cho hồ sơ vật tư.",
+          : job.mode === "auto"
+            ? "Đang tự xử lý hồ sơ vật tư."
+            : "Đang tìm AI cho hồ sơ vật tư.",
       lastProgressAt: now,
       updatedAt: now,
     })

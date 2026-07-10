@@ -13,7 +13,7 @@ import type { RouterOutputs } from "~/trpc/react";
 export type EnrichCandidate =
   RouterOutputs["material"]["enrichMatchRows"]["results"][number]["candidates"][number];
 
-function confidenceTone(band: MatchBand): {
+function confidenceTone(band: MatchBand | null): {
   badge: string;
 } {
   if (band === "high") {
@@ -29,6 +29,7 @@ export function ProductCandidateCard({
   fillCount,
   onChoose,
   hotkeyIndex,
+  priceStatus,
 }: {
   candidate: EnrichCandidate;
   isSelected: boolean;
@@ -38,6 +39,8 @@ export function ProductCandidateCard({
   onChoose: () => void;
   /** 1-based index for the keyboard hint shown on the card (1–9). */
   hotkeyIndex?: number;
+  /** Allows callers with external price extraction to distinguish unchecked data. */
+  priceStatus?: "available" | "not_found" | "unchecked";
 }) {
   const assessment = assessCatalogCandidate({
     score: candidate.score,
@@ -45,46 +48,48 @@ export function ProductCandidateCard({
     fillCount,
   });
   const pct = matchScorePercent(assessment.score);
-  const tone = assessment.band ? confidenceTone(assessment.band) : null;
+  const tone = confidenceTone(assessment.band);
   const chips = assessment.reasons;
-  const hasConfidence = assessment.band != null;
+  const hasPrice = candidate.defaultUnitPrice != null;
+  const resolvedPriceStatus =
+    priceStatus ?? (hasPrice ? "available" : "not_found");
+  const priceLabel = hasPrice
+    ? `Giá: ${formatMoney(candidate.defaultUnitPrice, candidate.currency)}`
+    : resolvedPriceStatus === "unchecked"
+      ? "Giá: Chưa kiểm tra"
+      : "Giá: Chưa thấy giá công khai";
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onChoose}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onChoose();
-        }
-      }}
-      aria-pressed={isSelected}
-      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors ${
         isSelected
           ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
           : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
       }`}
     >
-      {isRecommended && hasConfidence ? (
+      <button
+        type="button"
+        aria-label={`Chọn sản phẩm ${candidate.name}`}
+        aria-pressed={isSelected}
+        onClick={onChoose}
+        className="absolute inset-0 z-10 cursor-pointer rounded focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none"
+      />
+      {isRecommended && assessment.band != null ? (
         <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
           <Sparkles className="h-3 w-3" aria-hidden />
           Gợi ý tốt nhất
         </span>
       ) : null}
       <div className="absolute top-2 right-2 flex items-center gap-1">
-        {hasConfidence && tone ? (
-          <span
-            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
-            aria-label={`Độ tin cậy ${assessment.label} ${pct}%`}
-          >
-            {assessment.label} {pct}%
-          </span>
-        ) : null}
+        <span
+          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
+          aria-label={`Độ tin cậy ${pct}%`}
+        >
+          Độ tin cậy {pct}%
+        </span>
         {hotkeyIndex && hotkeyIndex <= 9 ? (
           <span
-            className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-xs font-bold text-slate-700 tabular-nums"
+            className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white text-xs font-bold text-slate-700 tabular-nums shadow-[var(--shadow-flat)]"
             aria-hidden
           >
             {hotkeyIndex}
@@ -99,6 +104,8 @@ export function ProductCandidateCard({
             <img
               src={candidate.imageUrl}
               alt=""
+              width={64}
+              height={64}
               className="h-full w-full object-cover"
               loading="lazy"
             />
@@ -109,11 +116,7 @@ export function ProductCandidateCard({
           )}
         </div>
 
-        <div
-          className={`min-w-0 flex-1 ${
-            hasConfidence || (hotkeyIndex && hotkeyIndex <= 9) ? "pr-24" : ""
-          }`}
-        >
+        <div className="min-w-0 flex-1 pr-36">
           <p className="line-clamp-2 text-sm font-bold text-slate-900">
             {candidate.name}
           </p>
@@ -124,22 +127,24 @@ export function ProductCandidateCard({
           </p>
           <p className="mt-0.5 text-xs tabular-nums">
             {candidate.unit ? (
-              <span className="font-semibold text-slate-700">{candidate.unit} · </span>
+              <span className="font-semibold text-slate-700">
+                {candidate.unit} ·{" "}
+              </span>
             ) : null}
             <span
               className={
-                candidate.defaultUnitPrice != null
+                hasPrice
                   ? "font-bold text-amber-800"
                   : "font-medium text-slate-500 italic"
               }
             >
-              {formatMoney(candidate.defaultUnitPrice, candidate.currency, "Chưa có giá")}
+              {priceLabel}
             </span>
           </p>
         </div>
       </div>
 
-      {hasConfidence && chips.length > 0 ? (
+      {chips.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {chips.map((chip) => (
             <span
@@ -163,9 +168,7 @@ export function ProductCandidateCard({
             href={candidate.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+            className="relative z-20 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
           >
             <ExternalLink className="h-3 w-3" aria-hidden />
             Nguồn

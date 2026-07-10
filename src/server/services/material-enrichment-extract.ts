@@ -146,6 +146,18 @@ function asConfidence(value: unknown) {
   return Math.max(0, Math.min(1, value));
 }
 
+function isCatalogPdfUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      /\.pdf$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseEvidenceList(value: unknown): MaterialEnrichmentEvidence[] {
   if (!Array.isArray(value)) {
     return [];
@@ -181,7 +193,10 @@ function parseFieldResult(
   const evidence = parseEvidenceList(record.evidence).filter(
     (item) => item.field === field,
   );
-  if (!normalizedValue && evidence.length === 0) {
+  // A non-null model value without supporting source text is not an extracted
+  // fact. Retain the field shape for callers, but make it unavailable for any
+  // fill or automatic-promotion path.
+  if (!normalizedValue || evidence.length === 0) {
     return {
       value: null,
       confidence: 0,
@@ -214,9 +229,7 @@ function _parseExtractionResponse(content: string): ExtractedProductFields {
   }
 
   const catalogPdfUrls = Array.isArray(parsed.catalogPdfUrls)
-    ? parsed.catalogPdfUrls
-        .map((url) => asString(url))
-        .filter((url) => url.length > 0 && /\.pdf(?:$|[?#])/i.test(url))
+    ? parsed.catalogPdfUrls.map((url) => asString(url)).filter(isCatalogPdfUrl)
     : [];
 
   fields.catalogPdfUrls = [...new Set(catalogPdfUrls)];

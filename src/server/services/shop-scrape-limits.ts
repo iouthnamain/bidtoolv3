@@ -21,4 +21,8 @@ function _scrapeTimeoutMs(maxPages: number | null) {
   return calculated;
 }
 
-export const scrapeTimeoutMs = traceFn(log, "scrapeTimeoutMs", _scrapeTimeoutMs);
+export const scrapeTimeoutMs = traceFn(
+  log,
+  "scrapeTimeoutMs",
+  _scrapeTimeoutMs,
+);

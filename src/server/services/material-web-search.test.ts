@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("~/server/services/search-audit", () => ({
+  recordSearchAuditLog: vi.fn(),
+}));
+
 function requestUrl(input: RequestInfo | URL) {
   if (typeof input === "string") {
     return input;
@@ -279,6 +283,27 @@ describe("searchQueryWithFallback", () => {
     expect(result?.snippet).toContain("Thông số");
   });
 
+  it("does not classify a generic Open Graph page as a product offer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            '<html><head><meta property="og:type" content="website" /></head><title>Giới thiệu</title><body>Nội dung chung</body></html>',
+            {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            },
+          ),
+      ),
+    );
+
+    const { fetchUrlAsSearchResult } = await import("./material-web-search");
+    const result = await fetchUrlAsSearchResult("https://example.com/about");
+
+    expect(result?.rankReasons).not.toContain("fetched_product_offer");
+  });
+
   it("does not read PDF responses as text snippets", async () => {
     vi.stubGlobal(
       "fetch",
@@ -463,6 +488,123 @@ describe("searchQueryWithFallback", () => {
     expect(ranked[0]?.rankReasons ?? []).toContain("spec_overlap");
   });
 
+  it("boosts profile shop/product and public-price evidence separately", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const results = [
+      {
+        title: "Ống PVC D90 tại cửa hàng vật tư",
+        url: "https://vatlieu.example/san-pham/ong-pvc-d90",
+        domain: "vatlieu.example",
+        snippet: "Sản phẩm còn hàng.",
+        query: "Ống PVC D90 sản phẩm",
+        rankScore: 0,
+      },
+      {
+        title: "Ống PVC D90 tại cửa hàng vật tư",
+        url: "https://vatlieu.example/san-pham/ong-pvc-d90-gia",
+        domain: "vatlieu.example",
+        snippet: "Sản phẩm còn hàng. Giá bán: 125.000 ₫/m.",
+        query: "Ống PVC D90 giá bán",
+        rankScore: 0,
+      },
+    ];
+
+    const ranked = rankSearchResults(
+      results,
+      { name: "Ống PVC D90", profileSearch: true },
+      { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    );
+    const shopOnly = ranked.find((result) => result.url.endsWith("d90"));
+    const priced = ranked.find((result) => result.url.endsWith("d90-gia"));
+
+    expect(ranked[0]?.url).toBe(
+      "https://vatlieu.example/san-pham/ong-pvc-d90-gia",
+    );
+    expect(shopOnly?.rankReasons).toContain("profile_product_or_shop_signal");
+    expect(shopOnly?.rankReasons).not.toContain("profile_public_price_signal");
+    expect(priced?.rankReasons).toContain("profile_product_or_shop_signal");
+    expect(priced?.rankReasons).toContain("profile_public_price_signal");
+    expect(priced?.rankScore ?? 0).toBeGreaterThan(shopOnly?.rankScore ?? 0);
+  });
+
+  it("does not mistake a product size after a price label for public-price evidence", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const [result] = rankSearchResults(
+      [
+        {
+          title: "Bảng giá bán ống PVC D20",
+          url: "https://vatlieu.example/san-pham/ong-pvc-d20",
+          domain: "vatlieu.example",
+          snippet: "Sản phẩm ống PVC kích thước D20 còn hàng.",
+          query: "Ống PVC D20 giá bán",
+          rankScore: 0,
+        },
+      ],
+      { name: "Ống PVC D20", profileSearch: true },
+      { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    );
+
+    expect(result?.rankReasons).toContain("profile_product_or_shop_signal");
+    expect(result?.rankReasons).not.toContain("profile_public_price_signal");
+  });
+
+  it("does not apply profile evidence boosts outside profile search", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const [result] = rankSearchResults(
+      [
+        {
+          title: "Ống PVC D90 tại cửa hàng",
+          url: "https://vatlieu.example/san-pham/ong-pvc-d90",
+          domain: "vatlieu.example",
+          snippet: "Giá bán: 125.000 ₫/m.",
+          query: "Ống PVC D90 giá bán",
+          rankScore: 0,
+        },
+      ],
+      { name: "Ống PVC D90" },
+      { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    );
+
+    expect(result?.rankReasons).not.toContain("profile_product_or_shop_signal");
+    expect(result?.rankReasons).not.toContain("profile_public_price_signal");
+  });
+
+  it("keeps marketplace penalties ahead of profile shop and price boosts", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Ống PVC D90 - Sản phẩm cửa hàng",
+          url: "https://shopee.vn/ong-pvc-d90",
+          domain: "shopee.vn",
+          snippet: "Giá bán: 125.000 ₫/m.",
+          query: "Ống PVC D90 giá bán",
+          rankScore: 0,
+        },
+        {
+          title: "Ống PVC D90 - Sản phẩm cửa hàng",
+          url: "https://vatlieu.example/san-pham/ong-pvc-d90",
+          domain: "vatlieu.example",
+          snippet: "Giá bán: 125.000 ₫/m.",
+          query: "Ống PVC D90 giá bán",
+          rankScore: 0,
+        },
+      ],
+      { name: "Ống PVC D90", profileSearch: true },
+      { boostDomains: [], penaltyDomains: ["shopee.vn"], blockDomains: [] },
+    );
+
+    const marketplace = ranked.find((result) => result.domain === "shopee.vn");
+    expect(ranked[0]?.domain).toBe("vatlieu.example");
+    expect(marketplace?.rankReasons).toContain("penalty_domain");
+    expect(marketplace?.rankReasons).not.toContain(
+      "profile_product_or_shop_signal",
+    );
+    expect(marketplace?.rankReasons).not.toContain(
+      "profile_public_price_signal",
+    );
+  });
+
   it("builds SearXNG URL with configured engines, language, safesearch and time range", async () => {
     const { buildSearxngUrl } = await import("./material-web-search");
     const url = buildSearxngUrl(
@@ -524,5 +666,43 @@ describe("searchQueryWithFallback", () => {
     expect(filtered.some((result) => result.domain === "shopee.vn")).toBe(
       false,
     );
+  });
+
+  it("ranks fetched Product/Offer shop evidence above generic information", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const ranked = rankSearchResults(
+      [
+        {
+          title: "Thông tin kỹ thuật van DN50",
+          url: "https://info.example/van-dn50",
+          domain: "info.example",
+          snippet: "Van DN50 PN16 220V Kosaplus",
+          query: "van DN50",
+          rankScore: 0,
+        },
+        {
+          title: "Van Kosaplus KE-050",
+          url: "https://shop.example/san-pham/ke-050",
+          domain: "shop.example",
+          snippet: "Van DN50 PN16 220V còn hàng",
+          query: "van DN50",
+          rankScore: 0,
+          rankReasons: ["fetched_product_offer"],
+        },
+      ],
+      {
+        name: "Van bướm điều khiển điện",
+        manufacturer: "Kosaplus",
+        code: "KE-050",
+        specText: "DN50 PN16 220V",
+        category: "Van công nghiệp",
+        unit: "cái",
+        originCountry: "Hàn Quốc",
+        profileSearch: true,
+      },
+    );
+
+    expect(ranked[0]?.domain).toBe("shop.example");
+    expect(ranked[0]?.rankReasons).toContain("profile_fetched_product_offer");
   });
 });

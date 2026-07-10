@@ -15,36 +15,36 @@ BidTool v3 is a **single-user local dashboard** (browser, on-prem Docker, or Ele
 
 **In scope for MVP**
 
-| Area | Routes | Notes |
-|------|--------|-------|
-| Dashboard | `/dashboard` | KPIs, recent jobs, quick actions |
-| Tender search | `/search/*`, detail pages | Packages, location, area, KHLCNT, projects |
-| Saved filters & watchlist | `/saved-items/*` | Smart Views, Watchlist |
-| Workflows & alerts | `/workflows/*`, `/notifications` | Create from Smart View, run now, in-app notifications |
-| Material catalog | `/materials/*` | CRUD, list, import Excel/CSV |
-| Shop scrape → import | `/materials/scrape` | Playwright job, review, import to catalog |
-| Catalog web enrichment | `/materials/enrich` | Background job, review, commit |
-| Excel enrich | `/enrich`, `/enrich/jobs` | 4-step wizard + optional web research jobs |
-| Catalog PDF library | `/catalog-pdfs/*` | Upload/link PDFs to materials |
-| Unified jobs | `/jobs` | All background job families in one list |
-| Settings | `/settings/*` | AI providers, app config, version |
-| Help | `/help/*` | Operational guides |
+| Area                      | Routes                           | Notes                                                 |
+| ------------------------- | -------------------------------- | ----------------------------------------------------- |
+| Dashboard                 | `/dashboard`                     | KPIs, recent jobs, quick actions                      |
+| Tender search             | `/search/*`, detail pages        | Packages, location, area, KHLCNT, projects            |
+| Saved filters & watchlist | `/saved-items/*`                 | Smart Views, Watchlist                                |
+| Workflows & alerts        | `/workflows/*`, `/notifications` | Create from Smart View, run now, in-app notifications |
+| Material catalog          | `/materials/*`                   | CRUD, list, import Excel/CSV                          |
+| Shop scrape → import      | `/materials/scrape`              | Playwright job, review, import to catalog             |
+| Catalog web enrichment    | `/materials/enrich`              | Background job, review, commit                        |
+| Excel enrich              | `/enrich`, `/enrich/jobs`        | 4-step wizard + optional web research jobs            |
+| Catalog PDF library       | `/catalog-pdfs/*`                | Upload/link PDFs to materials                         |
+| Unified jobs              | `/jobs`                          | All background job families in one list               |
+| Settings                  | `/settings/*`                    | AI providers, app config, version                     |
+| Help                      | `/help/*`                        | Operational guides                                    |
 
 **Out of scope for MVP** (schema or notes exist; not required to demo core value)
 
-- Multi-tenant auth as default (`AUTH_ENABLED` optional, not the primary demo path)
+- Multi-user tenancy and authentication
 - Gói thầu Excel workspace (`excel_workspaces` tables — no UI yet)
 - Full BidWinner re-query on every workflow run (workflows today = metadata + notification)
 - n8n / worker split (future architecture in `docs/architecture-option-b/`)
 
 **Persona**
 
-| | |
-|--|--|
-| **Who** | One estimator / procurement staff at a construction or MEP contractor in Vietnam |
-| **Goal** | Find relevant tenders early, maintain a clean material catalog, and turn incomplete BOQ Excel into filled sheets |
-| **Environment** | Local Postgres + app at `http://localhost:3000`, or on-prem / desktop pointing at same stack |
-| **Language** | UI copy Vietnamese (`vi-VN`) |
+|                 |                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Who**         | One estimator / procurement staff at a construction or MEP contractor in Vietnam                                 |
+| **Goal**        | Find relevant tenders early, maintain a clean material catalog, and turn incomplete BOQ Excel into filled sheets |
+| **Environment** | Local Postgres + app at `http://localhost:3000`, or on-prem / desktop pointing at same stack                     |
+| **Language**    | UI copy Vietnamese (`vi-VN`)                                                                                     |
 
 ---
 
@@ -52,16 +52,16 @@ BidTool v3 is a **single-user local dashboard** (browser, on-prem Docker, or Ele
 
 Before running scenarios, prepare:
 
-| Item | How |
-|------|-----|
-| App running | `bun run dev:run` → open `http://localhost:3000` |
-| Database | Postgres via Docker; migrations applied |
-| Demo catalog (optional) | `ENABLE_DEMO_SEED="true"` in `.env`, then `bun run db:seed` |
-| AI / web research | OpenRouter API key in Settings → AI providers (for enrich research scenarios) |
-| Sample Excel BOQ | One `.xlsx` with columns like Tên vật tư, ĐVT, Thông số — many cells intentionally blank |
-| Sample catalog import | One `.xlsx` or `.csv` with material rows (name, unit, price, manufacturer) |
-| Shop URL | One e-commerce shop URL supported by scrape profiles (for scrape scenario) |
-| BidWinner access | Network access to BidWinner public pages (search scenarios) |
+| Item                    | How                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| App running             | `bun run dev:run` → open `http://localhost:3000`                                         |
+| Database                | Postgres via Docker; migrations applied                                                  |
+| Demo catalog (optional) | `ENABLE_DEMO_SEED="true"` in `.env`, then `bun run db:seed`                              |
+| AI / web research       | OpenRouter API key in Settings → AI providers (for enrich research scenarios)            |
+| Sample Excel BOQ        | One `.xlsx` with columns like Tên vật tư, ĐVT, Thông số — many cells intentionally blank |
+| Sample catalog import   | One `.xlsx` or `.csv` with material rows (name, unit, price, manufacturer)               |
+| Shop URL                | One e-commerce shop URL supported by scrape profiles (for scrape scenario)               |
+| BidWinner access        | Network access to BidWinner public pages (search scenarios)                              |
 
 **Demo files** (generate with `bun run demo:samples`):
 
@@ -118,10 +118,10 @@ flowchart TB
 
 **Goal:** Find packages matching keywords and region.
 
-| | |
-|--|--|
+|                   |                                     |
+| ----------------- | ----------------------------------- |
 | **Preconditions** | App running; no saved data required |
-| **Route** | `/search/packages` |
+| **Route**         | `/search/packages`                  |
 
 **Steps**
 
@@ -144,10 +144,10 @@ flowchart TB
 
 **Goal:** Reuse a stable filter set without re-entering criteria.
 
-| | |
-|--|--|
+|                   |                                                       |
+| ----------------- | ----------------------------------------------------- |
 | **Preconditions** | S01 completed with filters that return useful results |
-| **Route** | `/search/packages` → `/saved-items/smart-views` |
+| **Route**         | `/search/packages` → `/saved-items/smart-views`       |
 
 **Steps**
 
@@ -167,10 +167,10 @@ flowchart TB
 
 **Goal:** Track specific packages, plans, or projects for follow-up.
 
-| | |
-|--|--|
-| **Preconditions** | At least one search result or detail page open |
-| **Route** | Search detail or results → `/saved-items/watchlist` |
+|                   |                                                     |
+| ----------------- | --------------------------------------------------- |
+| **Preconditions** | At least one search result or detail page open      |
+| **Route**         | Search detail or results → `/saved-items/watchlist` |
 
 **Steps**
 
@@ -189,10 +189,10 @@ flowchart TB
 
 **Goal:** Turn a Smart View into a repeatable alert workflow.
 
-| | |
-|--|--|
-| **Preconditions** | S02 Smart View exists |
-| **Route** | `/workflows` → `/notifications` |
+|                   |                                 |
+| ----------------- | ------------------------------- |
+| **Preconditions** | S02 Smart View exists           |
+| **Route**         | `/workflows` → `/notifications` |
 
 **Steps**
 
@@ -217,13 +217,13 @@ flowchart TB
 
 **Goal:** Use all five BidWinner search modes appropriately.
 
-| Mode | Route | When to use |
-|------|-------|-------------|
-| Gói thầu | `/search/packages` | Primary package discovery |
-| Theo địa phương | `/search/packages/location` | One province scope |
-| Ngành & địa phương | `/search/packages/area` | Taxonomy exploration |
-| KHLCNT | `/search/plans` | Plans before packages |
-| Dự án | `/search/projects` | Early pipeline |
+| Mode               | Route                       | When to use               |
+| ------------------ | --------------------------- | ------------------------- |
+| Gói thầu           | `/search/packages`          | Primary package discovery |
+| Theo địa phương    | `/search/packages/location` | One province scope        |
+| Ngành & địa phương | `/search/packages/area`     | Taxonomy exploration      |
+| KHLCNT             | `/search/plans`             | Plans before packages     |
+| Dự án              | `/search/projects`          | Early pipeline            |
 
 **Expected outcome:** User understands which mode fits which procurement stage (see help **Tìm kiếm**).
 
@@ -235,10 +235,10 @@ flowchart TB
 
 **Goal:** Add a canonical product row before import or matching.
 
-| | |
-|--|--|
-| **Preconditions** | Empty or existing catalog |
-| **Route** | `/materials/new` → `/materials/[id]` |
+|                   |                                      |
+| ----------------- | ------------------------------------ |
+| **Preconditions** | Empty or existing catalog            |
+| **Route**         | `/materials/new` → `/materials/[id]` |
 
 **Steps**
 
@@ -258,10 +258,10 @@ flowchart TB
 
 **Goal:** Bulk-load materials from an existing supplier sheet.
 
-| | |
-|--|--|
+|                   |                                      |
+| ----------------- | ------------------------------------ |
 | **Preconditions** | Sample `catalog-seed.csv` or `.xlsx` |
-| **Route** | `/materials/import` |
+| **Route**         | `/materials/import`                  |
 
 **Steps**
 
@@ -283,10 +283,10 @@ flowchart TB
 
 **Goal:** Pull products from an e-commerce shop into the catalog.
 
-| | |
-|--|--|
-| **Preconditions** | Valid shop URL; Playwright available in runtime |
-| **Route** | `/materials/scrape` → `/materials/scrape/jobs/[jobId]` → `/jobs` |
+|                   |                                                                  |
+| ----------------- | ---------------------------------------------------------------- |
+| **Preconditions** | Valid shop URL; Playwright available in runtime                  |
+| **Route**         | `/materials/scrape` → `/materials/scrape/jobs/[jobId]` → `/jobs` |
 
 **Steps**
 
@@ -318,10 +318,10 @@ flowchart TB
 
 **Goal:** Fill blank specs, manufacturer, images, and PDF links for saved materials.
 
-| | |
-|--|--|
-| **Preconditions** | Materials with empty fields; OpenRouter configured |
-| **Route** | `/materials/enrich` → `/materials/enrich/jobs/[jobId]` |
+|                   |                                                        |
+| ----------------- | ------------------------------------------------------ |
+| **Preconditions** | Materials with empty fields; OpenRouter configured     |
+| **Route**         | `/materials/enrich` → `/materials/enrich/jobs/[jobId]` |
 
 **Steps**
 
@@ -349,10 +349,10 @@ flowchart TB
 
 **Goal:** Attach manufacturer PDF catalogs to materials.
 
-| | |
-|--|--|
-| **Preconditions** | PDF file or download URL |
-| **Route** | `/catalog-pdfs/new` → `/catalog-pdfs/[id]` |
+|                   |                                            |
+| ----------------- | ------------------------------------------ |
+| **Preconditions** | PDF file or download URL                   |
+| **Route**         | `/catalog-pdfs/new` → `/catalog-pdfs/[id]` |
 
 **Steps**
 
@@ -375,10 +375,10 @@ flowchart TB
 
 **Goal:** Fill blank BOQ cells from local catalog only — fastest happy path.
 
-| | |
-|--|--|
+|                   |                                                     |
+| ----------------- | --------------------------------------------------- |
 | **Preconditions** | S11 or S12 populated catalog; `boq-incomplete.xlsx` |
-| **Route** | `/enrich` |
+| **Route**         | `/enrich`                                           |
 
 **Steps**
 
@@ -399,11 +399,11 @@ flowchart TB
 
 **Fill rules (acceptance):**
 
-| Rule | Behavior |
-|------|----------|
-| Blank cell | Filled from catalog if user accepted field |
-| Existing value | Never overwritten (default) |
-| User override | Per-field checkbox / force toggle when offered |
+| Rule           | Behavior                                       |
+| -------------- | ---------------------------------------------- |
+| Blank cell     | Filled from catalog if user accepted field     |
+| Existing value | Never overwritten (default)                    |
+| User override  | Per-field checkbox / force toggle when offered |
 
 ---
 
@@ -411,10 +411,10 @@ flowchart TB
 
 **Goal:** Use AI + web search for rows the catalog cannot match.
 
-| | |
-|--|--|
+|                   |                                                                  |
+| ----------------- | ---------------------------------------------------------------- |
 | **Preconditions** | S20 with unmatched rows; OpenRouter + search provider configured |
-| **Route** | `/enrich` step 3 → `/enrich/jobs`, `/enrich/jobs/[jobId]` |
+| **Route**         | `/enrich` step 3 → `/enrich/jobs`, `/enrich/jobs/[jobId]`        |
 
 **Steps**
 
@@ -442,10 +442,10 @@ flowchart TB
 
 **Goal:** Full story for a bid coordinator preparing a pricing sheet.
 
-| | |
-|--|--|
+|                   |                                                   |
+| ----------------- | ------------------------------------------------- |
 | **Preconditions** | Supplier CSV + incomplete BOQ + optional shop URL |
-| **Routes** | S11 → S20 → (optional S21) → export |
+| **Routes**        | S11 → S20 → (optional S21) → export               |
 
 **Steps**
 
@@ -468,8 +468,8 @@ flowchart TB
 
 **Goal:** See what needs attention today.
 
-| | |
-|--|--|
+|           |                                          |
+| --------- | ---------------------------------------- |
 | **Route** | `/dashboard` → `/notifications`, `/jobs` |
 
 **Steps**
@@ -487,8 +487,8 @@ flowchart TB
 
 **Goal:** Enable web research and enrichment features.
 
-| | |
-|--|--|
+|           |                                    |
+| --------- | ---------------------------------- |
 | **Route** | `/settings` (AI providers section) |
 
 **Steps**
@@ -504,11 +504,11 @@ flowchart TB
 
 **Goal:** Confirm non-web surfaces serve the same workflows.
 
-| Surface | Check |
-|---------|-------|
-| On-prem Docker | `bun run onprem:install`, open app, run S01 + S20 |
-| Electron desktop | `bun run desktop:dev`, verify server URL or bundled server |
-| Version | Settings → About shows version; update banner if newer manifest |
+| Surface          | Check                                                           |
+| ---------------- | --------------------------------------------------------------- |
+| On-prem Docker   | `bun run onprem:install`, open app, run S01 + S20               |
+| Electron desktop | `bun run desktop:dev`, verify server URL or bundled server      |
+| Version          | Settings → About shows version; update banner if newer manifest |
 
 ---
 
@@ -516,15 +516,15 @@ flowchart TB
 
 Use this single narrative for demos, recordings, or UAT sign-off.
 
-| Min | Scene | Scenario IDs |
-|-----|-------|----------------|
-| 0–2 | Open dashboard; show tender + catalog KPIs | S30 |
-| 2–5 | Search packages in HCM; save Smart View; add one to Watchlist | S01, S02, S03 |
-| 5–6 | Create workflow; run now; show notification | S04 |
-| 6–9 | Import small CSV catalog; show list | S11 |
-| 9–12 | Upload BOQ Excel; auto-match; fix one review row; export | S20 |
-| 12–14 | Optional: start scrape or enrich job; show `/jobs` | S12 or S13 |
-| 14–15 | Recap: one tool for **tìm thầu** + **chuẩn hóa vật tư** + **điền BOQ** | — |
+| Min   | Scene                                                                  | Scenario IDs  |
+| ----- | ---------------------------------------------------------------------- | ------------- |
+| 0–2   | Open dashboard; show tender + catalog KPIs                             | S30           |
+| 2–5   | Search packages in HCM; save Smart View; add one to Watchlist          | S01, S02, S03 |
+| 5–6   | Create workflow; run now; show notification                            | S04           |
+| 6–9   | Import small CSV catalog; show list                                    | S11           |
+| 9–12  | Upload BOQ Excel; auto-match; fix one review row; export               | S20           |
+| 12–14 | Optional: start scrape or enrich job; show `/jobs`                     | S12 or S13    |
+| 14–15 | Recap: one tool for **tìm thầu** + **chuẩn hóa vật tư** + **điền BOQ** | —             |
 
 ---
 
@@ -565,40 +565,40 @@ Use this single narrative for demos, recordings, or UAT sign-off.
 
 Track separately — not required for MVP sign-off:
 
-| Item | Notes |
-|------|-------|
-| Scrape name quality | Wrong names, KH/Khấu hao noise, null-field drops |
-| Scrape pagination bugs | Single page / single product edge cases |
-| Catalog column in list | Show which materials have linked PDF |
-| Field locks UI | Prevent scrape/import overwrite on protected fields |
-| AI product match on import | Better matching for import/mapping |
-| List STT column | Row index in material table |
-| Merge Thông số + Chi tiết | Single spec/detail field; clarify Mã vật tư |
-| Enrich job list on `/enrich` | Ongoing/cancelled jobs inline |
-| Bulk commit UX | Research + enrichment review at scale |
-| Image comparison in enrich review | Side-by-side in Duyệt enrichment |
-| Gói thầu workspace | Excel workspace per tender package (DB ready, no UI) |
-| Demo assets | Sample files, test email, dedicated OpenRouter project |
+| Item                              | Notes                                                  |
+| --------------------------------- | ------------------------------------------------------ |
+| Scrape name quality               | Wrong names, KH/Khấu hao noise, null-field drops       |
+| Scrape pagination bugs            | Single page / single product edge cases                |
+| Catalog column in list            | Show which materials have linked PDF                   |
+| Field locks UI                    | Prevent scrape/import overwrite on protected fields    |
+| AI product match on import        | Better matching for import/mapping                     |
+| List STT column                   | Row index in material table                            |
+| Merge Thông số + Chi tiết         | Single spec/detail field; clarify Mã vật tư            |
+| Enrich job list on `/enrich`      | Ongoing/cancelled jobs inline                          |
+| Bulk commit UX                    | Research + enrichment review at scale                  |
+| Image comparison in enrich review | Side-by-side in Duyệt enrichment                       |
+| Gói thầu workspace                | Excel workspace per tender package (DB ready, no UI)   |
+| Demo assets                       | Sample files, test email, dedicated OpenRouter project |
 
 ---
 
 ## 11. Scenario → route index
 
-| ID | Title | Primary route |
-|----|-------|---------------|
-| S01 | First tender search | `/search/packages` |
-| S02 | Save Smart View | `/saved-items/smart-views` |
-| S03 | Watchlist | `/saved-items/watchlist` |
-| S04 | Workflow alert | `/workflows`, `/notifications` |
-| S05 | Multi-mode search | `/search/*` |
-| S10 | Manual material | `/materials/new` |
-| S11 | Import catalog | `/materials/import` |
-| S12 | Scrape shop | `/materials/scrape` |
-| S13 | Enrich catalog | `/materials/enrich` |
-| S14 | Catalog PDF | `/catalog-pdfs` |
-| S20 | Excel enrich sync | `/enrich` |
-| S21 | Excel web research | `/enrich/jobs` |
-| S22 | E2E BOQ prep | `/materials/import` → `/enrich` |
-| S30 | Morning check-in | `/dashboard` |
-| S31 | AI provider setup | `/settings` |
-| S32 | Desktop/on-prem smoke | varies |
+| ID  | Title                 | Primary route                   |
+| --- | --------------------- | ------------------------------- |
+| S01 | First tender search   | `/search/packages`              |
+| S02 | Save Smart View       | `/saved-items/smart-views`      |
+| S03 | Watchlist             | `/saved-items/watchlist`        |
+| S04 | Workflow alert        | `/workflows`, `/notifications`  |
+| S05 | Multi-mode search     | `/search/*`                     |
+| S10 | Manual material       | `/materials/new`                |
+| S11 | Import catalog        | `/materials/import`             |
+| S12 | Scrape shop           | `/materials/scrape`             |
+| S13 | Enrich catalog        | `/materials/enrich`             |
+| S14 | Catalog PDF           | `/catalog-pdfs`                 |
+| S20 | Excel enrich sync     | `/enrich`                       |
+| S21 | Excel web research    | `/enrich/jobs`                  |
+| S22 | E2E BOQ prep          | `/materials/import` → `/enrich` |
+| S30 | Morning check-in      | `/dashboard`                    |
+| S31 | AI provider setup     | `/settings`                     |
+| S32 | Desktop/on-prem smoke | varies                          |

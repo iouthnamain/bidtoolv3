@@ -10,8 +10,7 @@
       1. Pull the latest code from git
       2. Make sure Docker Desktop is running
       3. Refresh dependencies + database migrations (bun run dev:update)
-      4. Prepare auth (host-tenant backfill) and show how to create the
-         first admin when authentication is enabled
+      4. Run in single-user local mode (no sign-in or account setup)
       5. Start the app (bun run dev:run) and open http://localhost:3000
 
     Close this window (or press Ctrl+C) to stop the dev server.
@@ -76,14 +75,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 
 # --- Ensure .env exists ------------------------------------------------------
-# Several steps below read .env (auth setup) and the dev workflow expects it
-# to exist. Create it from the template on first run so a fresh checkout
-# starts cleanly.
+# The dev workflow reads .env for local database, search and AI settings.
+# Create it from the template on first run so a fresh checkout starts cleanly.
 if (-not (Test-Path ".env")) {
     if (Test-Path ".env.example") {
         Copy-Item ".env.example" ".env"
-        Write-Host "      Created .env from .env.example. Review it and add any"
-        Write-Host "      required secrets (e.g. AUTH_BOOTSTRAP_TOKEN) if needed."
+        Write-Host "      Created .env from .env.example. Review database, search and"
+        Write-Host "      AI provider settings if you use those integrations."
     } else {
         Write-Host "[WARNING] No .env and no .env.example found. The app may fail to" -ForegroundColor Yellow
         Write-Host "          start until a .env file is provided."
@@ -133,66 +131,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host ""
 
-# --- 4. Prepare auth (only when AUTH_ENABLED=true) ---------------------------
-# Reads AUTH_ENABLED + AUTH_BOOTSTRAP_TOKEN from .env, runs the idempotent
-# host-tenant backfill, and prints how to create the first admin. Skipped
-# entirely when auth is off, so the default no-auth experience is unchanged.
-Write-Host "[4/5] Checking authentication setup..."
-
-function Get-EnvValue($key) {
-    if (-not (Test-Path ".env")) { return $null }
-    foreach ($line in Get-Content ".env") {
-        $trimmed = $line.Trim()
-        if ($trimmed -eq "" -or $trimmed.StartsWith("#")) { continue }
-        $idx = $trimmed.IndexOf("=")
-        if ($idx -lt 1) { continue }
-        $name = $trimmed.Substring(0, $idx).Trim()
-        if ($name -ieq $key) {
-            $value = $trimmed.Substring($idx + 1).Trim()
-            # Strip surrounding single or double quotes.
-            if ($value.Length -ge 2 -and
-                (($value.StartsWith('"') -and $value.EndsWith('"')) -or
-                 ($value.StartsWith("'") -and $value.EndsWith("'")))) {
-                $value = $value.Substring(1, $value.Length - 2)
-            }
-            return $value
-        }
-    }
-    return $null
-}
-
-$authEnabled = Get-EnvValue "AUTH_ENABLED"
-$authToken   = Get-EnvValue "AUTH_BOOTSTRAP_TOKEN"
-
-if ($authEnabled -and $authEnabled.ToLower() -eq "true") {
-    Write-Host "      Authentication is ENABLED. Ensuring the host tenant exists..."
-    bun run auth:backfill
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ""
-        Write-Host "[WARNING] `"bun run auth:backfill`" did not complete cleanly." -ForegroundColor Yellow
-        Write-Host "          The app will still start; re-run it later with"
-        Write-Host "          `"bun run auth:backfill`" if customer data looks unscoped."
-        Write-Host ""
-    }
-    Write-Host ""
-    Write-Host "      ----------------------------------------------------------"
-    Write-Host "      FIRST ADMIN ACCOUNT"
-    Write-Host "      If no user exists yet, open this page to create the admin:"
-    Write-Host "          $AppUrl/setup"
-    if ($authToken) {
-        Write-Host "      Setup token (from .env AUTH_BOOTSTRAP_TOKEN):"
-        Write-Host "          $authToken"
-    } else {
-        Write-Host "      [!] AUTH_BOOTSTRAP_TOKEN is not set in .env - /setup is"
-        Write-Host "          DISABLED until you set it. Generate one and add it."
-    }
-    Write-Host "      Once a user exists, /setup turns itself off. Manage further"
-    Write-Host "      users and tenants under Settings after signing in at /login."
-    Write-Host "      ----------------------------------------------------------"
-} else {
-    Write-Host "      Authentication is OFF (AUTH_ENABLED is not `"true`"). Skipping."
-    Write-Host "      The app runs as the single-user tool with no login."
-}
+# --- 4. Local single-user mode ------------------------------------------------
+Write-Host "[4/5] Single-user local mode (no sign-in required)."
 Write-Host ""
 
 # --- 5. Open the browser once the server is listening ------------------------

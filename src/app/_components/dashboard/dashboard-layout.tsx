@@ -29,9 +29,7 @@ import { AdminUpdateBanner } from "~/app/_components/dashboard/admin-update-bann
 import { Badge } from "~/app/_components/ui";
 import { Logo } from "~/app/_components/brand/logo";
 import { MobileBanner } from "~/app/_components/dashboard/mobile-banner";
-import { RolePreviewBanner } from "~/app/_components/dashboard/role-preview-banner";
 import { SidebarUpdatePill } from "~/app/_components/dashboard/sidebar-update-pill";
-import { UserControl } from "~/app/_components/dashboard/user-control";
 import {
   buildNavSections,
   canAccessRoute,
@@ -101,9 +99,7 @@ function ChevronIcon({
 }) {
   return (
     <ChevronRight
-      className={`${className}  ${
-        expanded ? "rotate-90" : ""
-      }`}
+      className={`${className} ${expanded ? "rotate-90" : ""}`}
       aria-hidden="true"
     />
   );
@@ -293,7 +289,7 @@ function CollapseToggle({
       onClick={onToggle}
       aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
       title={`${collapsed ? "Mở rộng" : "Thu gọn"} (Ctrl/Cmd + B)`}
-      className={`flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] text-slate-600 transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
+      className={`flex h-8 w-8 items-center justify-center rounded border border-slate-500 bg-white text-slate-600 shadow-[var(--shadow-flat)] transition-colors duration-0 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${className}`}
     >
       {collapsed ? (
         <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
@@ -409,7 +405,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }, [hasLoadedSidebarPreference, sidebarCollapsed]);
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden text-slate-900 sm:flex-row">
+    <div className="flex h-dvh flex-col overflow-hidden text-slate-900 lg:flex-row">
       <RoleRouteGuard />
       <a
         href="#main-content"
@@ -418,9 +414,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         Bỏ qua điều hướng
       </a>
       <aside
-        className={`hidden shrink-0 flex-col border-slate-400/80 bg-white/95 backdrop-blur duration-0 ease-out sm:flex sm:h-screen sm:border-r ${
+        className={`hidden shrink-0 flex-col border-slate-400/80 bg-white/95 backdrop-blur duration-0 ease-out lg:flex lg:h-screen lg:border-r ${
           hasLoadedSidebarPreference ? "transition-[width]" : "transition-none"
-        } ${sidebarCollapsed ? "sm:w-16" : "sm:w-60"}`}
+        } ${sidebarCollapsed ? "lg:w-16" : "lg:w-60"}`}
         aria-label="Thanh điều hướng chính"
       >
         <div
@@ -442,7 +438,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="shrink-0 space-y-2 border-t border-slate-400/70 px-2 py-2">
-          <UserControl collapsed={sidebarCollapsed} />
           <SidebarUpdatePill collapsed={sidebarCollapsed} />
           {!sidebarCollapsed ? (
             <span className="block px-1 text-xs text-slate-600">
@@ -453,7 +448,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-1 border-b border-slate-400/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur sm:hidden">
+        <header className="flex shrink-0 items-center justify-between gap-1 border-b border-slate-400/80 bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur lg:hidden">
           <BrandHeader collapsed={false} />
           <button
             type="button"
@@ -466,13 +461,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <MobileBanner />
-        <RolePreviewBanner />
         <AdminUpdateBanner />
         <main
           id="main-content"
-          className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain bg-slate-50"
+          className="bg-surface-canvas min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain"
         >
-          <div className="mx-auto w-full min-w-0 max-w-[1440px] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+          <div className="dashboard-content pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}
           </div>
         </main>
@@ -483,13 +477,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             aria-label="Đóng menu"
-            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] sm:hidden"
+            className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
           <aside
             role="dialog"
             aria-modal="true"
-            className="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2rem))] flex-col overscroll-contain border-r border-slate-400 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl sm:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-2rem))] flex-col overscroll-contain border-r border-slate-400 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-xl lg:hidden"
             aria-label="Thanh điều hướng chính"
           >
             <div className="flex items-center justify-between border-b border-slate-400/70 px-3 py-3">

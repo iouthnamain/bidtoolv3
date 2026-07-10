@@ -25,6 +25,8 @@ export type AiSearchStoredResult = {
   sourceUrls: string[];
   evidence: MaterialEnrichmentEvidence[];
   catalogPdfUrls?: string[];
+  /** Catalog URLs verified to be present in the fetched source content. */
+  catalogEvidenceUrls?: string[];
   fieldConfidences?: Partial<Record<FillableField, number>>;
   title?: string;
   url?: string;
@@ -329,7 +331,9 @@ export function isExportableDecision(decision: RowDecisionLike): boolean {
   );
 }
 
-export function countFieldsToFill(decisions: Iterable<RowDecisionLike>): number {
+export function countFieldsToFill(
+  decisions: Iterable<RowDecisionLike>,
+): number {
   let count = 0;
   for (const decision of decisions) {
     if (isExportableDecision(decision)) {
@@ -339,7 +343,9 @@ export function countFieldsToFill(decisions: Iterable<RowDecisionLike>): number 
   return count;
 }
 
-export function countResolvedRows(decisions: Iterable<RowDecisionLike>): number {
+export function countResolvedRows(
+  decisions: Iterable<RowDecisionLike>,
+): number {
   let count = 0;
   for (const decision of decisions) {
     if (decision.skipped) continue;
@@ -385,8 +391,8 @@ export function buildExportPreviewRows(
 
     const candidate =
       decision.materialId != null
-        ? row.candidates.find((c) => c.materialId === decision.materialId) ??
-          null
+        ? (row.candidates.find((c) => c.materialId === decision.materialId) ??
+          null)
         : null;
     const catalogFields = candidate ? candidateToFields(candidate) : null;
     const baseFields = mergeWebGapFill(

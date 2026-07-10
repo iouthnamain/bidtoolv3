@@ -16,6 +16,7 @@ import {
   resolveWorkspaceWorkbookBuffer,
   sanitizeMaterialProfilePathSegment,
   sanitizeMaterialProfileWorkbookFileName,
+  selectMaterialProfileCleanExportItems,
   shouldBulkApplyMaterialProfileCandidate,
   summarizeMaterialProfileReviewReadiness,
   summarizeMaterialProfileExportEditState,
@@ -67,6 +68,20 @@ describe("material profile workspace helpers", () => {
       "BT - Tiền tệ",
       "BT - Nguồn",
       "BT - Catalog files",
+    ]);
+  });
+
+  it("keeps every current clean-export row even when legacy export inclusion is off", () => {
+    const rows = [
+      { id: 1, isStale: false, includedInExport: true },
+      { id: 2, isStale: false, includedInExport: false },
+      { id: 3, isStale: true, includedInExport: true },
+      { id: 4, isStale: true, includedInExport: false },
+    ];
+
+    expect(selectMaterialProfileCleanExportItems(rows)).toEqual([
+      rows[0],
+      rows[1],
     ]);
   });
 

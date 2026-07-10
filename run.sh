@@ -10,8 +10,7 @@
 #   2. Make sure the Docker daemon is running
 #   3. Ensure .env exists, then refresh deps, start Postgres + SearXNG in
 #      Docker, and apply DB migrations (bun run dev:update)
-#   4. Prepare auth (host-tenant backfill) and show how to create the
-#      first admin when authentication is enabled
+#   4. Run in single-user local mode (no sign-in or account setup)
 #   5. Start the app (bun run dev:run) on http://localhost:3000
 #
 # Press Ctrl+C to stop the dev server.
@@ -64,39 +63,6 @@ require_command() {
     echo "        $help" >&2
     exit 1
   fi
-}
-
-get_env_value() {
-  local key="$1"
-  if [[ ! -f .env ]]; then
-    return 0
-  fi
-
-  local line trimmed name value
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    trimmed="${line#"${line%%[![:space:]]*}"}"
-    [[ -z "$trimmed" || "$trimmed" == \#* ]] && continue
-    [[ "$trimmed" != *"="* ]] && continue
-
-    name="${trimmed%%=*}"
-    name="${name%"${name##*[![:space:]]}"}"
-    [[ "${name,,}" != "${key,,}" ]] && continue
-
-    value="${trimmed#*=}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
-
-    if [[ ${#value} -ge 2 ]]; then
-      if [[ "$value" == \"*\" && "$value" == *\" ]]; then
-        value="${value:1:${#value}-2}"
-      elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
-        value="${value:1:${#value}-2}"
-      fi
-    fi
-
-    printf '%s' "$value"
-    return 0
-  done < .env
 }
 
 docker_cli_error() {
@@ -308,7 +274,7 @@ if [[ ! -f .env ]]; then
   if [[ -f .env.example ]]; then
     cp .env.example .env
     echo "      Created .env from .env.example. Review it and add any"
-    echo "      required secrets (e.g. AUTH_BOOTSTRAP_TOKEN) if needed."
+    echo "      required provider or deployment settings if needed."
   else
     echo "[WARNING] No .env and no .env.example found. The app may fail to"
     echo "          start until a .env file is provided."
@@ -330,38 +296,7 @@ if ! bun run dev:update; then
 fi
 echo
 
-echo "[4/5] Checking authentication setup..."
-auth_enabled="$(get_env_value AUTH_ENABLED || true)"
-auth_token="$(get_env_value AUTH_BOOTSTRAP_TOKEN || true)"
-
-if [[ "${auth_enabled,,}" == "true" ]]; then
-  echo "      Authentication is ENABLED. Ensuring the host tenant exists..."
-  if ! bun run auth:backfill; then
-    echo
-    echo "[WARNING] 'bun run auth:backfill' did not complete cleanly."
-    echo "          The app will still start; re-run it later with"
-    echo "          'bun run auth:backfill' if customer data looks unscoped."
-    echo
-  fi
-  echo
-  echo "      ----------------------------------------------------------"
-  echo "      FIRST ADMIN ACCOUNT"
-  echo "      If no user exists yet, open this page to create the admin:"
-  echo "          ${APP_URL}/setup"
-  if [[ -n "$auth_token" ]]; then
-    echo "      Setup token (from .env AUTH_BOOTSTRAP_TOKEN):"
-    echo "          $auth_token"
-  else
-    echo "      [!] AUTH_BOOTSTRAP_TOKEN is not set in .env - /setup is"
-    echo "          DISABLED until you set it. Generate one and add it."
-  fi
-  echo "      Once a user exists, /setup turns itself off. Manage further"
-  echo "      users and tenants under Settings after signing in at /login."
-  echo "      ----------------------------------------------------------"
-else
-  echo "      Authentication is OFF (AUTH_ENABLED is not \"true\"). Skipping."
-  echo "      The app runs as the single-user tool with no login."
-fi
+echo "[4/5] Single-user local mode (no sign-in required)."
 echo
 
 echo "[5/5] Starting BidTool."

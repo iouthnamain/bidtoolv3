@@ -1,6 +1,7 @@
 name = "doctor"
 description = "Runs BidTool v3 health checks and startup smoke tests, then reports what is broken and the smallest next fix."
 sandbox_mode = "workspace-write"
+model = "gpt-5.5"
 model_reasoning_effort = "medium"
 nickname_candidates = ["Doctor", "Healthcheck"]
 

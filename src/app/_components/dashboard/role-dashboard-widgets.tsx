@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 
 import { Badge } from "~/app/_components/ui";
-import type { DashboardMetric, DashboardQueueItem } from "~/app/_lib/role-dashboard-data";
+import type {
+  DashboardMetric,
+  DashboardQueueItem,
+} from "~/app/_lib/role-dashboard-data";
 import type { Role } from "~/lib/permissions";
 import { ROLE_CAPABILITIES, ROLE_LABELS } from "~/lib/role-surfaces";
 
@@ -22,13 +25,16 @@ type QuickLaunchItem = {
 
 const toneClass: Record<
   NonNullable<DashboardMetric["tone"]>,
-  { border: string; badge: "neutral" | "success" | "warning" | "critical" | "info" }
+  {
+    accent: string;
+    badge: "neutral" | "success" | "warning" | "critical" | "info";
+  }
 > = {
-  neutral: { border: "border-slate-400", badge: "neutral" },
-  success: { border: "border-emerald-200", badge: "success" },
-  warning: { border: "border-amber-200", badge: "warning" },
-  critical: { border: "border-rose-200", badge: "critical" },
-  info: { border: "border-blue-200", badge: "info" },
+  neutral: { accent: "border-t-slate-400", badge: "neutral" },
+  success: { accent: "border-t-emerald-500", badge: "success" },
+  warning: { accent: "border-t-amber-500", badge: "warning" },
+  critical: { accent: "border-t-rose-600", badge: "critical" },
+  info: { accent: "border-t-sky-600", badge: "info" },
 };
 
 export function RoleDashboardFrame({
@@ -49,26 +55,26 @@ export function RoleDashboardFrame({
   const capability = ROLE_CAPABILITIES[role];
 
   return (
-    <section className="flex min-h-full flex-col gap-1">
-      <header className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-1">
+    <section className="flex min-h-full flex-col gap-3">
+      <header className="border-line bg-surface-1 rounded-[var(--radius-panel)] border p-4 shadow-[var(--shadow-flat)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="info">{ROLE_LABELS[role]}</Badge>
-              <span className="text-xs font-bold tracking-[0.16em] text-slate-600 uppercase">
+              <span className="text-ink-3 text-xs font-bold tracking-[0.16em] uppercase">
                 {eyebrow}
               </span>
             </div>
-            <h1 className="mt-2 text-2xl leading-tight font-extrabold tracking-tight text-slate-950">
+            <h1 className="text-ink-1 mt-2 text-2xl leading-tight font-extrabold tracking-tight">
               {title}
             </h1>
-            <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-600">
+            <p className="text-ink-2 mt-1 max-w-4xl text-sm leading-6">
               {description}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
             {primaryAction}
-            <span className="rounded border border-slate-400 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
+            <span className="border-line bg-surface-2 text-ink-2 rounded-[var(--radius-panel)] border px-2.5 py-1.5 text-xs font-semibold">
               {capability.summary}
             </span>
           </div>
@@ -81,27 +87,27 @@ export function RoleDashboardFrame({
 
 export function MetricStrip({ metrics }: { metrics: DashboardMetric[] }) {
   return (
-    <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
+    <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => {
         const tone = toneClass[metric.tone ?? "neutral"];
         return (
           <article
             key={metric.label}
-            className={`rounded border ${tone.border} bg-white px-3 py-2.5 shadow-sm`}
+            className={`border-line min-w-0 rounded-[var(--radius-panel)] border border-t-[3px] ${tone.accent} bg-surface-1 px-4 py-3 shadow-[var(--shadow-flat)]`}
           >
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-bold tracking-[0.14em] text-slate-700 uppercase">
+              <p className="text-ink-3 text-xs font-bold tracking-[0.14em] uppercase">
                 {metric.label}
               </p>
-              {metric.tone ? <Badge tone={tone.badge}>{metric.tone}</Badge> : null}
+              {metric.tone ? (
+                <Badge tone={tone.badge}>{metric.tone}</Badge>
+              ) : null}
             </div>
-            <p className="mt-1 text-xl font-extrabold tracking-tight text-slate-950 tabular-nums">
+            <p className="text-ink-1 mt-1 text-2xl font-extrabold tracking-tight tabular-nums">
               {metric.value}
             </p>
             {metric.hint ? (
-              <p className="mt-0.5 truncate text-xs text-slate-700">
-                {metric.hint}
-              </p>
+              <p className="text-ink-2 mt-1 truncate text-xs">{metric.hint}</p>
             ) : null}
           </article>
         );
@@ -122,46 +128,51 @@ export function WorkQueuePanel({
   emptyText?: string;
 }) {
   return (
-    <section className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-1 border-b border-slate-400 pb-3">
+    <section className="border-line bg-surface-1 rounded-[var(--radius-panel)] border p-4 shadow-[var(--shadow-flat)]">
+      <div className="border-line flex items-start justify-between gap-3 border-b pb-3">
         <div>
           <p className="section-title">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-700">{description}</p>
+          <p className="text-ink-2 mt-1 text-xs leading-5">{description}</p>
         </div>
         <Badge tone={items.length > 0 ? "warning" : "success"}>
           {items.length}
         </Badge>
       </div>
       {items.length === 0 ? (
-        <div className="mt-3 rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-4 text-center text-xs text-slate-700">
+        <div className="border-line-strong bg-surface-2 text-ink-2 mt-3 rounded-[var(--radius-panel)] border border-dashed px-3 py-4 text-center text-xs">
           {emptyText}
         </div>
       ) : (
-        <ul className="mt-3 divide-y divide-slate-100">
+        <ul className="divide-line mt-3 divide-y">
           {items.map((item) => {
             const content = (
               <div className="flex items-start gap-2 py-2.5">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                <CircleAlert className="text-ink-3 mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-950">
+                    <p className="text-ink-1 min-w-0 flex-1 truncate text-sm font-bold">
                       {item.title}
                     </p>
-                    <Badge tone={item.tone ?? "neutral"}>{item.tone ?? "info"}</Badge>
+                    <Badge tone={item.tone ?? "neutral"}>
+                      {item.tone ?? "info"}
+                    </Badge>
                   </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-slate-700">
+                  <p className="text-ink-2 mt-0.5 line-clamp-2 text-xs leading-5">
                     {item.meta}
                   </p>
                 </div>
                 {item.href ? (
-                  <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-600" />
+                  <ArrowRight className="text-ink-3 mt-1 h-3.5 w-3.5 shrink-0" />
                 ) : null}
               </div>
             );
             return (
               <li key={item.id}>
                 {item.href ? (
-                  <Link href={item.href} className="block hover:bg-slate-100">
+                  <Link
+                    href={item.href}
+                    className="hover:bg-surface-2 focus-visible:ring-ring focus-visible:ring-offset-surface-1 block rounded-[var(--radius-panel)] transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none"
+                  >
                     {content}
                   </Link>
                 ) : (
@@ -178,15 +189,15 @@ export function WorkQueuePanel({
 
 export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
   return (
-    <section className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] p-4 shadow-sm">
+    <section className="border-line bg-surface-1 rounded-[var(--radius-panel)] border p-4 shadow-[var(--shadow-flat)]">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <p className="section-title">Lối tắt</p>
-          <h2 className="mt-1 text-sm font-bold text-slate-950">
+          <h2 className="text-ink-1 mt-1 text-sm font-bold">
             Mở tác vụ thường dùng
           </h2>
         </div>
-        <CheckCircle2 className="h-4 w-4 text-slate-600" aria-hidden="true" />
+        <CheckCircle2 className="text-brand h-4 w-4" aria-hidden="true" />
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => {
@@ -195,13 +206,11 @@ export function QuickLaunchGrid({ items }: { items: QuickLaunchItem[] }) {
             <Link
               key={item.href}
               href={item.href}
-              className="group rounded border border-slate-400 bg-slate-50/70 px-3 py-3 transition-colors duration-0 hover:border-blue-300 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
+              className="group border-line bg-surface-2 focus-visible:ring-ring focus-visible:ring-offset-surface-1 rounded-[var(--radius-panel)] border px-3 py-3 transition-colors duration-150 hover:border-teal-300 hover:bg-teal-50 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none"
             >
-              <Icon className="h-4 w-4 text-blue-700" aria-hidden="true" />
-              <p className="mt-2 text-sm font-bold text-slate-950">
-                {item.label}
-              </p>
-              <p className="mt-0.5 text-xs leading-5 text-slate-700">
+              <Icon className="text-brand h-4 w-4" aria-hidden="true" />
+              <p className="text-ink-1 mt-2 text-sm font-bold">{item.label}</p>
+              <p className="text-ink-2 mt-0.5 text-xs leading-5">
                 {item.description}
               </p>
             </Link>
@@ -220,15 +229,15 @@ export function RoleBoundaryNotice({
   items: readonly string[];
 }) {
   return (
-    <section className="rounded border border-slate-400 bg-slate-50 p-4">
+    <section className="border-line bg-surface-2 rounded-[var(--radius-panel)] border p-4">
       <div className="flex items-center gap-2">
-        <EyeOff className="h-4 w-4 text-slate-600" aria-hidden="true" />
-        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+        <EyeOff className="text-ink-3 h-4 w-4" aria-hidden="true" />
+        <h2 className="text-ink-1 text-sm font-bold">{title}</h2>
       </div>
-      <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-slate-600 sm:grid-cols-2">
+      <ul className="text-ink-2 mt-2 grid gap-1.5 text-xs leading-5 sm:grid-cols-2">
         {items.map((item) => (
           <li key={item} className="flex gap-2">
-            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+            <span className="bg-brand mt-2 h-1 w-1 shrink-0 rounded-full" />
             <span>{item}</span>
           </li>
         ))}

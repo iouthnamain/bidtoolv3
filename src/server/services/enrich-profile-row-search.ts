@@ -27,6 +27,7 @@ import {
 } from "~/server/services/enrich-web-row";
 import { extractProductFromSources } from "~/server/services/material-enrichment-extract";
 import {
+  enrichSearchResultsWithFetchedContent,
   fetchUrlAsSearchResult,
   rankSearchResults,
   searchWebForProduct,
@@ -74,6 +75,33 @@ function fieldConfidencesFromExtracted(
   return result;
 }
 
+function verifiedCatalogUrlsFromSources(
+  urls: string[],
+  sources: WebSearchResult[],
+) {
+  const normalize = (value: string) => {
+    try {
+      const parsed = new URL(value);
+      parsed.hash = "";
+      return parsed.toString().replace(/\/$/, "");
+    } catch {
+      return "";
+    }
+  };
+  return urls.filter((url) => {
+    const normalized = normalize(url);
+    if (!normalized) return false;
+    return sources.some((source) => {
+      const discovered = source.discoveredPdfUrls ?? [];
+      return (
+        normalize(source.url) === normalized ||
+        source.snippet.includes(url) ||
+        discovered.some((candidate) => normalize(candidate) === normalized)
+      );
+    });
+  });
+}
+
 async function runPool<T, R>(
   items: T[],
   concurrency: number,
@@ -108,9 +136,11 @@ async function enrichLinkWithFetch(
   if (!fetched) return link;
   return {
     ...link,
+    url: fetched.url || link.url,
     title: fetched.title.trim() || link.title,
     snippet: fetched.snippet.trim() || link.snippet,
     domain: fetched.domain || link.domain,
+    discoveredPdfUrls: fetched.discoveredPdfUrls ?? link.discoveredPdfUrls,
   };
 }
 
@@ -197,15 +227,29 @@ async function _searchProfileRowWebLinks(
   });
   warnings.push(...searchResponse.warnings);
 
-  const ranked = rankSearchResults(
+  const rankingInput = {
+    manufacturer: input.manufacturer ?? null,
+    name: input.name,
+    code: input.code ?? null,
+    specText: input.specText ?? null,
+    unit: input.unit ?? null,
+    category: input.category ?? null,
+    originCountry: input.originCountry ?? null,
+    sourceUrl: null,
+    profileSearch: true,
+  };
+  const initialRanked = rankSearchResults(
     searchResponse.results,
-    {
-      manufacturer: input.manufacturer ?? null,
-      name: input.name,
-      code: input.code ?? null,
-      specText: input.specText ?? null,
-      sourceUrl: null,
-    },
+    rankingInput,
+    searchResponse.domainPolicy ?? domainPolicy,
+  );
+  const fetchedRanked = await enrichSearchResultsWithFetchedContent(
+    initialRanked,
+    { fetchCount: PROFILE_FETCH_LINKS, signal },
+  );
+  const ranked = rankSearchResults(
+    fetchedRanked,
+    rankingInput,
     searchResponse.domainPolicy ?? domainPolicy,
   ).slice(0, PROFILE_TOP_LINKS);
 
@@ -259,6 +303,10 @@ async function _extractProfileRowAiCandidates(
         );
         const mapped = mapExtractedToFillable(extracted, [link.url]);
         const fieldConfidences = fieldConfidencesFromExtracted(extracted);
+        const catalogEvidenceUrls = verifiedCatalogUrlsFromSources(
+          mapped.catalogPdfUrls,
+          [link],
+        );
         const hasFields = Object.keys(mapped.fields).some(
           (field) => field !== "sourceUrl",
         );
@@ -278,6 +326,8 @@ async function _extractProfileRowAiCandidates(
             mapped.catalogPdfUrls.length > 0
               ? mapped.catalogPdfUrls
               : undefined,
+          catalogEvidenceUrls:
+            catalogEvidenceUrls.length > 0 ? catalogEvidenceUrls : undefined,
           fieldConfidences,
           title: link.title,
           url: link.url,

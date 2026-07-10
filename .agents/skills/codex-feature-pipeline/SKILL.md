@@ -53,6 +53,23 @@ asks. If the agent name is unknown or ambiguous, stop and ask which role to use.
 12. Stop on blockers involving migrations, authentication, billing, destructive operations, production credentials, or public API changes unless the user explicitly approves.
 13. Do not commit, push, merge, deploy, or rotate secrets unless explicitly asked.
 
+## Model routing
+
+Keep role defaults in `.codex/agents/*.toml`; do not override them per run unless
+the user asks. Use this ChatGPT-compatible fallback until the account validates
+the GPT-5.6 tier slugs.
+
+| Role | Model | Reasoning |
+| --- | --- | --- |
+| scout | `gpt-5.5` | low |
+| planner, researcher, tester, doctor, reviewer | `gpt-5.5` | medium |
+| worker | `gpt-5.5` | high |
+
+This retains the intended Luna/Terra/Sol work allocation by reasoning level:
+low for lightweight read-only discovery, medium for testing/review/research,
+and high for coding. Switch back to the GPT-5.6 role tiers only after the
+current account accepts them.
+
 ## Pipeline
 
 1. Spawn `scout` to find relevant code and write `scout.md`.

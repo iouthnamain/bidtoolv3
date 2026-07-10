@@ -3,18 +3,18 @@ import { MaterialProfilesClient } from "~/app/_components/material-profiles/mate
 import { createPageMetadata } from "~/app/_lib/seo";
 
 export const metadata = createPageMetadata({
-  title: "Hồ sơ vật tư",
+  title: "Xử lý hồ sơ vật tư",
   description:
-    "Tập hợp hồ sơ vật tư, lối tắt tạo mới và danh sách công việc liên quan đến catalog vật tư trong BidTool v3.",
+    "Nhập sheet vật tư, tự tìm dữ liệu sản phẩm, lưu danh mục và tải file chuẩn.",
   path: "/material-profiles",
-  keywords: ["hồ sơ vật tư", "catalog vật tư", "quản lý vật tư"],
+  keywords: ["hồ sơ vật tư", "tìm vật tư", "catalog vật tư"],
 });
 
 export default function MaterialProfilesPage() {
   return (
     <DashboardShell
-      title="Hồ sơ vật tư"
-      description="Bắt đầu tạo hồ sơ vật tư mới hoặc quay lại các danh sách vật tư đã có."
+      title="Xử lý hồ sơ vật tư"
+      description="Nhập sheet → kiểm tra dữ liệu → tự tìm & điền → lưu danh mục → tải file chuẩn."
     >
       <MaterialProfilesClient />
     </DashboardShell>

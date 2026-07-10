@@ -19,12 +19,35 @@ function workbookBase64FromHeaders(
   for (const row of rows) {
     sheet.addRow(row);
   }
-  return workbook.xlsx.writeBuffer().then((buffer) =>
-    Buffer.from(buffer).toString("base64"),
-  );
+  return workbook.xlsx
+    .writeBuffer()
+    .then((buffer) => Buffer.from(buffer).toString("base64"));
 }
 
 describe("material import column mapping", () => {
+  it("keeps generic material imports permissive when profile-only identity is incomplete", async () => {
+    const workbookBase64 = await workbookBase64FromHeaders(
+      ["Tên vật tư", "Đơn giá"],
+      [["Bu lông mạ kẽm", "12000"]],
+    );
+
+    const workbook = await parseWorkbookBase64(
+      "generic-import.xlsx",
+      workbookBase64,
+    );
+    const [row] = rowsFromMapping(
+      workbook.sheets[0]!,
+      workbook.sheets[0]!.suggestedMapping,
+    );
+
+    expect(row).toMatchObject({
+      materialName: "Bu lông mạ kẽm",
+      unit: "",
+      specText: "",
+      unitPrice: 12000,
+    });
+  });
+
   it("maps NCC and Xuất xứ headers used in demo catalog sheets", async () => {
     const workbookBase64 = await workbookBase64FromHeaders(
       [

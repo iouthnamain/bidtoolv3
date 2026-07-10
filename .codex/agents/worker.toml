@@ -1,7 +1,8 @@
 name = "worker"
 description = "Implements one approved BidTool v3 plan narrowly. Use in a dedicated worktree for write-heavy work."
 sandbox_mode = "workspace-write"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.5"
+model_reasoning_effort = "high"
 
 developer_instructions = """
 You are the implementation worker.

@@ -50,16 +50,16 @@ export function isMaterialProfileBrowserFolderPickerSupported() {
   return typeof directoryPickerWindow()?.showDirectoryPicker === "function";
 }
 
-export async function pickMaterialProfileExportDir(defaultPath?: string | null) {
+export async function pickMaterialProfileExportDir(
+  defaultPath?: string | null,
+) {
   const bridge = window.bidtoolDesktop;
   if (!bridge?.isDesktop) {
     return null;
   }
 
   const initialPath =
-    defaultPath?.trim() ??
-    getLastMaterialProfileExportDir() ??
-    undefined;
+    defaultPath?.trim() ?? getLastMaterialProfileExportDir() ?? undefined;
   const result = await bridge.pickExportFolder(initialPath);
   return result.path?.trim() ?? null;
 }
@@ -113,6 +113,9 @@ async function writeBundleToDirectory(
     bundle.excelFileName,
     bundle.workbookBase64,
   );
+  if (bundle.catalogFiles.length === 0) {
+    return;
+  }
   const catalogDir = await outputDirectoryHandle.getDirectoryHandle("Catalog", {
     create: true,
   });
@@ -121,7 +124,9 @@ async function writeBundleToDirectory(
   }
 }
 
-async function downloadBundleAsZip(bundle: MaterialProfileExportDownloadBundle) {
+async function downloadBundleAsZip(
+  bundle: MaterialProfileExportDownloadBundle,
+) {
   const zip = new JSZip();
   const root = zip.folder(bundle.outputFolderName);
   if (!root) {
@@ -131,14 +136,16 @@ async function downloadBundleAsZip(bundle: MaterialProfileExportDownloadBundle) 
   root.file(bundle.excelFileName, base64ToUint8Array(bundle.workbookBase64), {
     binary: true,
   });
-  const catalogDir = root.folder("Catalog");
-  if (!catalogDir) {
-    throw new Error("Không tạo được folder Catalog.");
-  }
-  for (const file of bundle.catalogFiles) {
-    catalogDir.file(file.fileName, base64ToUint8Array(file.base64), {
-      binary: true,
-    });
+  if (bundle.catalogFiles.length > 0) {
+    const catalogDir = root.folder("Catalog");
+    if (!catalogDir) {
+      throw new Error("Không tạo được folder Catalog.");
+    }
+    for (const file of bundle.catalogFiles) {
+      catalogDir.file(file.fileName, base64ToUint8Array(file.base64), {
+        binary: true,
+      });
+    }
   }
 
   const blob = await zip.generateAsync({ type: "blob" });

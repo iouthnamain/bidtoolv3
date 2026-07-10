@@ -55,6 +55,12 @@ type ManualProductFormProps = {
   selectedCandidate: EnrichCandidate | null;
   onApplyToRow: (values: ManualProductValues) => void;
   onSavedToCatalog: (materialId: number, values: ManualProductValues) => void;
+  /**
+   * Profile review has a stricter canonical-material gate (including catalog
+   * evidence). Keep this legacy direct-upsert available elsewhere, but route
+   * profile saves through MatchChooser so it cannot bypass that gate.
+   */
+  allowSaveToCatalog?: boolean;
 };
 
 export function ManualProductForm({
@@ -63,6 +69,7 @@ export function ManualProductForm({
   selectedCandidate,
   onApplyToRow,
   onSavedToCatalog,
+  allowSaveToCatalog = true,
 }: ManualProductFormProps) {
   const toast = useToast();
   const [expanded, setExpanded] = useState(false);
@@ -130,9 +137,7 @@ export function ManualProductForm({
           onSavedToCatalog(material.id, { ...values, name });
           setExpanded(false);
           toast.success(
-            selectedCandidate
-              ? "Đã cập nhật vật tư."
-              : "Đã lưu vào vật tư.",
+            selectedCandidate ? "Đã cập nhật vật tư." : "Đã lưu vào vật tư.",
           );
         },
         onError: (error) => {
@@ -161,14 +166,19 @@ export function ManualProductForm({
         {expanded ? (
           <ChevronUp className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
         ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-slate-600"
+            aria-hidden
+          />
         )}
       </button>
 
       {expanded ? (
         <div className="space-y-3 border-t border-slate-400 px-3 py-3">
           <p className="text-xs text-slate-700">
-            {title}: nhập đủ 8 trường để áp dụng cho dòng hoặc lưu vào vật tư.
+            {allowSaveToCatalog
+              ? `${title}: nhập đủ các trường để áp dụng cho dòng hoặc lưu vào vật tư.`
+              : "Nhập hoặc chỉnh các trường tại đây, rồi dùng «Lưu vào vật tư» phía trên sau khi đã có URL catalog."}
           </p>
 
           <label className="block text-xs font-semibold text-slate-600">
@@ -197,19 +207,25 @@ export function ManualProductForm({
           ))}
 
           <div className="flex flex-wrap justify-end gap-2 pt-1">
-            <Button variant="secondary" onClick={applyToRow} disabled={isSaving}>
+            <Button
+              variant="secondary"
+              onClick={applyToRow}
+              disabled={isSaving}
+            >
               Áp dụng cho dòng
             </Button>
-            <Button onClick={saveToCatalog} disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Đang lưu…
-                </>
-              ) : (
-                "Lưu vào vật tư"
-              )}
-            </Button>
+            {allowSaveToCatalog ? (
+              <Button onClick={saveToCatalog} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Đang lưu…
+                  </>
+                ) : (
+                  "Lưu vào vật tư"
+                )}
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}

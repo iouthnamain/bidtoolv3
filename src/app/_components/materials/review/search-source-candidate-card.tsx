@@ -4,33 +4,32 @@ import { ExternalLink, Globe, Loader2, Sparkles } from "lucide-react";
 
 import {
   matchBand,
-  matchBandLabel,
   matchScorePercent,
   type MatchBand,
 } from "~/lib/materials/match-assessment";
 
-function confidenceTone(band: MatchBand): {
+function confidenceTone(band: MatchBand | null): {
   badge: string;
 } {
   if (band === "high") {
-    return { badge: "border-emerald-500 bg-emerald-50 text-emerald-700" };
+    return { badge: "border-emerald-200 bg-emerald-50 text-good" };
   }
-  return { badge: "border-amber-500 bg-amber-50 text-amber-800" };
+  return { badge: "border-amber-200 bg-amber-50 text-warning" };
 }
 
 function SourceTag({ source }: { source: "web" | "ai" }) {
   if (source === "web") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2 py-0.5 text-xs font-bold text-white">
-        <Globe className="h-3 w-3" aria-hidden />
+      <span className="text-ink-3 inline-flex min-w-0 items-center gap-1 text-xs font-semibold">
+        <Globe className="h-3.5 w-3.5 shrink-0" aria-hidden />
         Nguồn web
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2 py-0.5 text-xs font-bold text-white">
-      <Sparkles className="h-3 w-3" aria-hidden />
-      AI
+    <span className="text-ink-3 inline-flex min-w-0 items-center gap-1 text-xs font-semibold">
+      <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      Nguồn AI
     </span>
   );
 }
@@ -48,7 +47,25 @@ export type SearchSourceCandidate = {
   status?: "pending" | "done" | "error";
   /** Formatted unit price when AI extracted a price. */
   priceLabel?: string;
+  /** Whether price extraction found public evidence for this result. */
+  priceStatus?: "available" | "not_found" | "unchecked";
 };
+
+function priceStateLabel(candidate: SearchSourceCandidate) {
+  const priceLabel = candidate.priceLabel?.trim();
+  if (priceLabel) {
+    return priceLabel.startsWith("Giá:") ? priceLabel : `Giá: ${priceLabel}`;
+  }
+
+  if (
+    candidate.priceStatus === "unchecked" ||
+    (candidate.source === "web" && candidate.priceStatus == null)
+  ) {
+    return "Giá: Chưa kiểm tra";
+  }
+
+  return "Giá: Chưa thấy giá công khai";
+}
 
 export function SearchSourceCandidateCard({
   candidate,
@@ -64,56 +81,52 @@ export function SearchSourceCandidateCard({
   const isPending = candidate.status === "pending";
   const isError = candidate.status === "error";
   const band = matchBand(candidate.score);
-  const label = matchBandLabel(band);
   const pct = matchScorePercent(candidate.score);
-  const hasConfidence = band != null && !isPending && !isError;
-  const tone = band ? confidenceTone(band) : null;
+  const isCompleted = !isPending && !isError;
+  const tone = confidenceTone(band);
+  const priceLabel = priceStateLabel(candidate);
 
   return (
     <div
-      role="button"
-      tabIndex={isPending ? -1 : 0}
-      onClick={() => {
-        if (isPending || isError) return;
-        onChoose();
-      }}
-      onKeyDown={(event) => {
-        if (isPending || isError) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onChoose();
-        }
-      }}
-      aria-pressed={isSelected}
-      aria-disabled={isPending || isError}
-      className={`group relative flex w-full cursor-pointer flex-col gap-1 rounded border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none ${
+      className={`group relative flex w-full min-w-0 cursor-pointer flex-col gap-2 rounded-lg border p-3 text-left transition-colors ${
         isPending || isError
-          ? "cursor-default border-dashed border-slate-400 bg-slate-50 opacity-80"
+          ? "border-line-strong bg-surface-2 cursor-default border-dashed opacity-80"
           : isSelected
-            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
-            : "border-slate-500 bg-white shadow-sm hover:border-slate-600 hover:bg-slate-100"
+            ? "border-brand bg-brand/[0.06] ring-brand/20 ring-1"
+            : "border-line bg-surface-1 hover:border-line-strong hover:bg-surface-2"
       }`}
     >
-      {candidate.isRecommended && hasConfidence ? (
-        <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
-          Gợi ý tốt nhất
-        </span>
-      ) : null}
+      <button
+        type="button"
+        aria-label={`Chọn ${candidate.source === "web" ? "nguồn web" : "kết quả AI"} ${candidate.title}`}
+        aria-pressed={isSelected}
+        disabled={isPending || isError}
+        onClick={onChoose}
+        className="focus-visible:ring-ring absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-default"
+      />
 
-      <div className="flex items-start justify-between gap-2">
-        <SourceTag source={candidate.source} />
-        <div className="flex shrink-0 items-center gap-1">
-          {hasConfidence && tone ? (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <SourceTag source={candidate.source} />
+          {candidate.isRecommended && band != null ? (
+            <span className="text-good inline-flex items-center gap-1 text-xs font-semibold">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Gợi ý tốt nhất
+            </span>
+          ) : null}
+        </div>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+          {isCompleted ? (
             <span
-              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-bold tabular-nums ${tone.badge}`}
-              aria-label={`Độ khớp ${label} ${pct}%`}
+              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap tabular-nums ${tone.badge}`}
+              aria-label={`Độ tin cậy ${pct}%`}
             >
-              {label} · {pct}%
+              Độ tin cậy {pct}%
             </span>
           ) : null}
           {hotkeyIndex && hotkeyIndex <= 9 ? (
             <span
-              className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500 bg-white text-xs font-bold text-slate-700 tabular-nums shadow-[var(--shadow-flat)]"
+              className="border-line-strong bg-surface-1 text-ink-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold tabular-nums"
               aria-hidden
             >
               {hotkeyIndex}
@@ -124,39 +137,43 @@ export function SearchSourceCandidateCard({
 
       <div className="min-w-0">
         {isPending ? (
-          <div className="flex items-center gap-2 py-2 text-sm text-slate-700">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          <div
+            role="status"
+            aria-live="polite"
+            className="text-ink-2 flex min-w-0 items-center gap-2 py-2 text-sm"
+          >
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
             {candidate.source === "web" ? "Đang tìm web…" : "Đang tìm AI…"}
           </div>
         ) : isError ? (
-          <p className="py-1 text-sm text-red-700">
+          <p className="text-critical py-1 text-sm break-words">
             {candidate.source === "web"
               ? "Không tìm được liên kết."
               : "Không trích xuất được."}
           </p>
         ) : (
           <>
-            <p className="line-clamp-2 text-sm font-bold text-slate-900">
+            <p className="text-ink-1 line-clamp-3 text-sm font-semibold break-words">
               {candidate.title}
             </p>
-            {candidate.priceLabel ? (
-              <p className="mt-0.5 text-xs font-bold text-amber-800 tabular-nums">
-                {candidate.priceLabel}
+            {isCompleted ? (
+              <p className="text-warning mt-1 text-xs font-semibold break-words tabular-nums">
+                {priceLabel}
               </p>
             ) : null}
-            <p className="mt-0.5 line-clamp-1 text-xs text-slate-700">
+            <p className="text-ink-3 mt-1 line-clamp-2 text-xs break-words">
               {candidate.subtitle}
             </p>
           </>
         )}
       </div>
 
-      {hasConfidence && candidate.chips.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
+      {isCompleted && candidate.chips.length > 0 ? (
+        <div className="flex min-w-0 flex-wrap gap-1">
           {candidate.chips.map((chip) => (
             <span
               key={chip}
-              className="rounded border border-slate-400 bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600"
+              className="bg-surface-3 text-ink-3 max-w-full rounded px-1.5 py-0.5 text-xs font-medium break-words"
             >
               {chip}
             </span>
@@ -166,8 +183,8 @@ export function SearchSourceCandidateCard({
 
       {!isPending && !isError ? (
         <>
-          <div className="flex items-center justify-between gap-2 border-t border-slate-400 pt-2">
-            <span className="text-xs font-medium text-slate-700">
+          <div className="border-line flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
+            <span className="text-ink-3 min-w-0 flex-1 text-xs font-medium break-words">
               {candidate.fillCount > 0
                 ? `Sẽ điền ${candidate.fillCount} trường trống`
                 : candidate.source === "web"
@@ -179,21 +196,19 @@ export function SearchSourceCandidateCard({
                 href={candidate.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                className="text-brand focus-visible:ring-ring relative z-20 inline-flex min-h-8 shrink-0 items-center gap-1 text-xs font-semibold hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
-                <ExternalLink className="h-3 w-3" aria-hidden />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 Nguồn
               </a>
             ) : null}
           </div>
 
           <span
-            className={`pointer-events-none rounded px-3 py-1.5 text-center text-xs font-bold transition-colors ${
+            className={`pointer-events-none inline-flex min-h-9 w-full items-center justify-center rounded border px-3 py-1.5 text-center text-xs font-semibold transition-colors ${
               isSelected
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
+                ? "border-brand bg-brand text-white"
+                : "border-line bg-surface-2 text-ink-2 group-hover:border-line-strong group-hover:bg-surface-3"
             }`}
           >
             {isSelected ? "Đã chọn" : "Chọn kết quả này"}

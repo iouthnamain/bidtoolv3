@@ -79,11 +79,11 @@ export function AdminUpdateBanner() {
   };
 
   return (
-    <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-amber-950">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2">
+    <div className="border-b border-amber-200 bg-amber-50 py-2.5 text-amber-950">
+      <div className="dashboard-content flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800"
             aria-hidden
           >
             <ArrowUpCircle className="h-4 w-4" />
@@ -91,7 +91,10 @@ export function AdminUpdateBanner() {
           <p className="min-w-0 text-xs font-semibold">
             Có bản cập nhật on-prem {versionStatus.latest}. Bạn đang chạy{" "}
             {versionStatus.current}
-            {versionStatus.buildMetadata ? ` (${versionStatus.buildMetadata})` : ""}.
+            {versionStatus.buildMetadata
+              ? ` (${versionStatus.buildMetadata})`
+              : ""}
+            .
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -99,7 +102,7 @@ export function AdminUpdateBanner() {
             <button
               type="button"
               onClick={() => void copyCommand()}
-              className="inline-flex h-8 items-center gap-1.5 rounded bg-amber-800 px-2.5 text-xs font-bold text-white transition-colors hover:bg-amber-900"
+              className="focus-visible:ring-ring inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-panel)] bg-amber-800 px-3 text-xs font-bold text-white transition-colors duration-150 hover:bg-amber-900 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-amber-50 focus-visible:outline-none motion-reduce:transition-none"
             >
               <Copy className="h-3.5 w-3.5" />
               Sao chép lệnh cập nhật
@@ -109,7 +112,7 @@ export function AdminUpdateBanner() {
             type="button"
             onClick={dismiss}
             aria-label="Ẩn thông báo cập nhật on-prem"
-            className="flex h-8 w-8 items-center justify-center rounded text-amber-800 transition-colors hover:bg-amber-100"
+            className="focus-visible:ring-ring flex h-11 w-11 items-center justify-center rounded-[var(--radius-panel)] text-amber-800 transition-colors duration-150 hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-amber-50 focus-visible:outline-none motion-reduce:transition-none"
           >
             <X className="h-4 w-4" />
           </button>

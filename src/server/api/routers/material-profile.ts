@@ -20,6 +20,7 @@ import {
   matchMaterialProfileWorkspace,
   MaterialProfileWorkspaceError,
   openMaterialProfileOutputFolder,
+  previewMaterialProfileCleanExport,
   previewMaterialProfileExportWorkbook,
   resolveDefaultDownloadsDir,
   undoLastMaterialProfileBulkApply,
@@ -84,7 +85,7 @@ const searchJobIdInput = z.object({
   jobId: z.string().uuid(),
 });
 
-const searchModeInput = z.enum(["web", "ai"]);
+const searchModeInput = z.enum(["web", "ai", "auto"]);
 
 const cellEditsSchema = z.record(z.string(), z.record(z.string(), z.string()));
 const sheetNumberMapSchema = z.record(
@@ -151,7 +152,8 @@ export const materialProfileRouter = createTRPCRouter({
   create: requirePermission("material:write")
     .input(
       z.object({
-        noticeNumber: z.string().trim().min(1).max(120),
+        name: z.string().trim().max(160).optional(),
+        noticeNumber: z.string().trim().max(120).optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -184,7 +186,8 @@ export const materialProfileRouter = createTRPCRouter({
   update: requirePermission("material:write")
     .input(
       workspaceIdInput.extend({
-        noticeNumber: z.string().trim().min(1).max(120),
+        name: z.string().trim().max(160).optional(),
+        noticeNumber: z.string().trim().max(120).nullable().optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -351,7 +354,7 @@ export const materialProfileRouter = createTRPCRouter({
   startSearchJob: requirePermission("material:write")
     .input(
       workspaceIdInput.extend({
-        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        itemIds: z.array(z.number().int().positive()).min(1).max(5_000),
         mode: searchModeInput,
       }),
     )
@@ -492,6 +495,14 @@ export const materialProfileRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
         previewMaterialProfileExportWorkbook(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  previewCleanExport: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .query(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        previewMaterialProfileCleanExport(ctx.db, input.workspaceId),
       ),
     ),
 

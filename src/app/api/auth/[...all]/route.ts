@@ -1,5 +1,15 @@
-import { toNextJsHandler } from "better-auth/next-js";
+import { NextResponse } from "next/server";
 
-import { auth } from "~/server/auth";
+function retired() {
+  return NextResponse.json(
+    { error: "Xác thực đã được gỡ khỏi BidTool local." },
+    { status: 410 },
+  );
+}
 
-export const { GET, POST } = toNextJsHandler(auth.handler);
+export const GET = retired;
+export const POST = retired;
+export const PUT = retired;
+export const PATCH = retired;
+export const DELETE = retired;
+export const OPTIONS = retired;

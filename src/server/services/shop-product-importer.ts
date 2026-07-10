@@ -13,9 +13,7 @@ import {
   saveMatchDecision,
 } from "~/server/services/ai-product-matcher";
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
-import {
-  resolveAiMatchCandidateThreshold,
-} from "~/server/services/app-settings";
+import { resolveAiMatchCandidateThreshold } from "~/server/services/app-settings";
 import {
   buildMaterialMetadata,
   normalizeMaterialMetadata,
@@ -28,6 +26,7 @@ import type {
   ShopImportJobProgress,
   ShopImportJobResult,
 } from "~/server/services/shop-import-jobs";
+import type { ShopImportMode } from "~/server/services/shop-import-source";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import { createLogger, traceFn } from "~/server/lib/logger";
 
@@ -78,11 +77,13 @@ export type ImportScrapedProductsOptions = {
   signal?: AbortSignal;
   onProgress?: (progress: ShopImportJobProgress) => void;
   scrapeJobId?: string;
+  mode?: ShopImportMode;
 };
 
 type ClassifyOptions = {
   dryRun?: boolean;
   scrapeJobId?: string;
+  mode?: ShopImportMode;
 };
 
 async function _importScrapedProducts(
@@ -95,11 +96,14 @@ async function _importScrapedProducts(
   }
 
   throwIfImportAborted(options.signal);
-  const existingMaterials = await db
-    .select()
-    .from(materials)
-    .where(isNull(materials.deletedAt))
-    .limit(25_000);
+  const existingMaterials =
+    options.mode === "create_all"
+      ? []
+      : await db
+          .select()
+          .from(materials)
+          .where(isNull(materials.deletedAt))
+          .limit(25_000);
   throwIfImportAborted(options.signal);
 
   const indexes = createMaterialLookupIndexes(existingMaterials);
@@ -139,7 +143,7 @@ async function _importScrapedProducts(
         db,
         product,
         indexes,
-        { scrapeJobId: options.scrapeJobId },
+        { scrapeJobId: options.scrapeJobId, mode: options.mode },
       );
 
       if (classification.action === "skip_no_name") {
@@ -234,16 +238,20 @@ async function _importScrapedProducts(
 async function _previewShopImportProducts(
   db: AppDb,
   products: ScrapedShopProduct[],
+  options: Pick<ImportScrapedProductsOptions, "mode"> = {},
 ): Promise<{ summary: ImportPreviewSummary; items: ImportClassification[] }> {
   if (products.length === 0) {
     throw new Error("Không có sản phẩm scrape để xem trước.");
   }
 
-  const existingMaterials = await db
-    .select()
-    .from(materials)
-    .where(isNull(materials.deletedAt))
-    .limit(25_000);
+  const existingMaterials =
+    options.mode === "create_all"
+      ? []
+      : await db
+          .select()
+          .from(materials)
+          .where(isNull(materials.deletedAt))
+          .limit(25_000);
   const indexes = createMaterialLookupIndexes(existingMaterials);
   const items: ImportClassification[] = [];
 
@@ -251,6 +259,7 @@ async function _previewShopImportProducts(
     items.push(
       await classifyScrapedProductForImport(db, product, indexes, {
         dryRun: true,
+        mode: options.mode,
       }),
     );
   }
@@ -280,6 +289,15 @@ async function _classifyScrapedProductForImport(
       name: "(không có tên)",
       sourceUrl,
       message: "Bỏ qua vì thiếu tên sản phẩm.",
+    };
+  }
+
+  if (options.mode === "create_all") {
+    return {
+      action: "create",
+      name,
+      sourceUrl,
+      message: importMessageForCreated(product),
     };
   }
 

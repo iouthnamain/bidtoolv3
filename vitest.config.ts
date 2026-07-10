@@ -19,7 +19,6 @@ export default defineConfig({
   test: {
     environment: "node",
     env: {
-      BETTER_AUTH_URL: "http://localhost:3000",
       BIDTOOL_LOG_LEVEL: "error",
       SKIP_ENV_VALIDATION: "1",
     },

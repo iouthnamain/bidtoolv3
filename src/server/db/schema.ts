@@ -636,6 +636,8 @@ export const excelWorkspaceItems = pgTable(
       onDelete: "set null",
     }),
     originalRowIndex: integer("original_row_index").notNull(),
+    sourceFingerprint: text("source_fingerprint").notNull().default(""),
+    isStale: boolean("is_stale").notNull().default(false),
     originalDataJson: jsonb("original_data_json")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -737,6 +739,11 @@ export const excelWorkspaceItems = pgTable(
       table.workspaceId,
       table.matchStatus,
     ),
+    excelWorkspaceItemsSourceFingerprintUnique: uniqueIndex(
+      "excel_workspace_items_source_fingerprint_unique",
+    )
+      .on(table.workspaceId, table.sourceFingerprint)
+      .where(sql`${table.sourceFingerprint} <> ''`),
     excelWorkspaceItemsEnrichmentIdx: index(
       "excel_workspace_items_enrichment_idx",
     ).on(table.workspaceId, table.enrichmentStatus, table.enrichmentUpdatedAt),
@@ -1137,6 +1144,72 @@ export const materialProfileSearchRuns = pgTable(
     )
       .on(table.itemId)
       .where(sql`${table.isCurrent} = true`),
+  }),
+);
+
+/** Durable L2 cache for automatic profile web/AI research. */
+export const materialProfileSearchCache = pgTable(
+  "material_profile_search_cache",
+  {
+    id: serial("id").primaryKey(),
+    cacheKey: text("cache_key").notNull(),
+    payloadJson: jsonb("payload_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true })
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    materialProfileSearchCacheKeyUnique: uniqueIndex(
+      "material_profile_search_cache_key_unique",
+    ).on(table.cacheKey),
+    materialProfileSearchCacheExpiryIdx: index(
+      "material_profile_search_cache_expiry_idx",
+    ).on(table.expiresAt),
+  }),
+);
+
+/** Idempotency/audit ledger for automatic promotion into canonical materials. */
+export const materialProfilePromotionLedger = pgTable(
+  "material_profile_promotion_ledger",
+  {
+    id: serial("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => excelWorkspaceItems.id, { onDelete: "cascade" }),
+    sourceFingerprint: text("source_fingerprint").notNull(),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").notNull(),
+    resolutionJson: jsonb("resolution_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    materialProfilePromotionLedgerUnique: uniqueIndex(
+      "material_profile_promotion_ledger_unique",
+    ).on(table.workspaceId, table.itemId, table.sourceFingerprint),
+    materialProfilePromotionLedgerWorkspaceUpdatedIdx: index(
+      "material_profile_promotion_ledger_workspace_updated_idx",
+    ).on(table.workspaceId, table.updatedAt),
   }),
 );
 
