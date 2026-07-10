@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("~/server/services/search-audit", () => ({
+  recordSearchAuditLog: vi.fn(),
+}));
+
 function requestUrl(input: RequestInfo | URL) {
   if (typeof input === "string") {
     return input;
