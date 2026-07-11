@@ -21,8 +21,10 @@
 ## Multi-agent rules
 
 - `ok agents, do <request>` means run the full `codex-feature-pipeline` workflow.
+- Bare `ok ship` means invoke only the `ship` custom agent for one complete patch release; `patch`, `minor`, `major`, or an explicit `vX.Y.Z` may follow to override the target.
+- Each `ok ship` invocation explicitly authorizes the release-scoped source update, normal commit and `main` push, new tag push, and configured Release workflow described in `.codex/agents/ship.toml`. It does not authorize destructive release operations, rollback, secret changes, production database changes, or customer-host updates.
 - `ok <agent-name>, <request>` means call only that named custom agent, role, or limux pane.
-- Configured custom agents are `scout`, `planner`, `worker`, `reviewer`, `tester`, `doctor`, and `researcher`.
+- Configured custom agents are `scout`, `planner`, `worker`, `reviewer`, `tester`, `doctor`, `researcher`, and `ship`.
 - Canonical limux roles are `orchestrator`, `worker-ui`, `worker-api`, `worker-db`, `security-reviewer`, `documenter`, and `release-prep`.
 - Do not expand a targeted `ok <agent-name>` request into the full pipeline.
 - If the named agent or role is unknown or ambiguous, stop and ask which role to use.
@@ -34,4 +36,4 @@
 - The coordinator is the only role that updates `status.json`.
 - Write-capable workers must use dedicated Git worktrees for substantial or parallel tasks.
 - Workers own only the files and artifact paths explicitly assigned to them.
-- Reviewer and tester roles are read-only unless explicitly assigned to add focused tests or fixtures.
+- Reviewer and tester roles are read-only. Assign focused test or fixture edits to a write-capable worker in its dedicated worktree.

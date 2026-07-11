@@ -1,0 +1,1 @@
+ALTER TABLE "material_profile_material_batch_rows" ADD COLUMN "post_commit_catalog_links_json" jsonb;

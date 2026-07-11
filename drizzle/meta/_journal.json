@@ -239,6 +239,41 @@
       "when": 1783625750255,
       "tag": "0033_handy_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783778931799,
+      "tag": "0034_bizarre_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783781783392,
+      "tag": "0035_busy_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783784693393,
+      "tag": "0036_previous_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1783785173995,
+      "tag": "0037_majestic_victor_mancha",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783797852744,
+      "tag": "0038_violet_fantastic_four",
+      "breakpoints": true
     }
   ]
 }

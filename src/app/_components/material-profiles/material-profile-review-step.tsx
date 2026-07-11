@@ -75,8 +75,8 @@ function mergeDecisionWithSearchRun(
     selectedSearchCandidateKey:
       typeof decision.selectedSearchCandidateKey === "string"
         ? decision.selectedSearchCandidateKey
-        : (run.recommendedCandidateKey ?? undefined),
-    catalogPdfUrls: decision.catalogPdfUrls ?? aiSearchResult?.catalogPdfUrls,
+        : undefined,
+    catalogPdfUrls: decision.catalogPdfUrls,
   };
 }
 
@@ -100,6 +100,24 @@ function toReviewItem(item: WorkspaceItem): WorkspaceItemForReview & {
     materialId: item.materialId,
     matchStatus: item.matchStatus,
     reviewDecisionJson: item.reviewDecisionJson,
+    linkedCatalogPdfUrls: (item.profileResolution.candidate.evidenceUrls ?? [])
+      .map((url) => url?.trim() ?? "")
+      .filter(Boolean),
+    linkedMaterial:
+      item.materialId == null
+        ? undefined
+        : {
+            id: item.materialId,
+            name:
+              item.profileResolution.candidate.name?.trim() ?? item.productName,
+            code: item.profileResolution.candidate.code,
+            unit: item.profileResolution.candidate.unit,
+            specText: item.profileResolution.candidate.specText,
+            manufacturer: item.profileResolution.candidate.manufacturer,
+            originCountry: item.profileResolution.candidate.originCountry,
+            defaultUnitPrice: item.profileResolution.candidate.unitPrice,
+            sourceUrl: item.profileResolution.candidate.sourceUrl,
+          },
   };
 }
 
@@ -114,8 +132,8 @@ export function MaterialProfileReviewStep({
   bulkApplyUndoAvailable?: boolean;
   onContinue: () => void;
 }) {
-  const itemsKey = useMemo(
-    () => items.map((item) => item.id).join(","),
+  const rowIndicesKey = useMemo(
+    () => items.map((item) => item.originalRowIndex).join(","),
     [items],
   );
   const reviewItems = useMemo(() => items.map(toReviewItem), [items]);
@@ -141,26 +159,6 @@ export function MaterialProfileReviewStep({
     }
     return map;
   }, [items]);
-  const automaticEligibility = useMemo(() => {
-    const validItems = items.filter(
-      (item) =>
-        !item.isStale &&
-        item.productName.trim().length > 0 &&
-        item.unit.trim().length > 0 &&
-        item.specText.trim().length > 0,
-    );
-    const unresolvedItems = validItems.filter(
-      (item) => !item.profileResolution.promotable,
-    );
-    return {
-      valid: validItems.length,
-      invalid: items.length - validItems.length,
-      saved: validItems.filter((item) => item.profileResolution.promotable)
-        .length,
-      unresolvedItemIds: unresolvedItems.map((item) => item.id),
-    };
-  }, [items]);
-
   const [decisions, setDecisions] = useState<Map<number, RowDecision>>(() =>
     seedDecisionsFromItems(reviewItems),
   );
@@ -171,12 +169,14 @@ export function MaterialProfileReviewStep({
     () => reviewRows[0]?.originalRowIndex ?? null,
   );
   const [isFlushing, setIsFlushing] = useState(false);
+  const [isProfileCapturePending, setIsProfileCapturePending] = useState(false);
 
   const persistTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
   const previousActiveSearchJobIdRef = useRef<string | null>(null);
   const invalidatedTerminalSearchJobKeyRef = useRef<string | null>(null);
+  const selectedWorkspaceIdRef = useRef<number | null>(null);
   const decisionsRef = useRef(decisions);
   decisionsRef.current = decisions;
 
@@ -202,7 +202,8 @@ export function MaterialProfileReviewStep({
     onSuccess: () => {
       void utils.materialProfile.get.invalidate({ workspaceId });
     },
-    onError: (error) => toast.error(error.message || "Không bulk apply được."),
+    onError: (error) =>
+      toast.error(error.message || "Không áp dụng hàng loạt được."),
   });
   const undoLastBulkApply = api.materialProfile.undoLastBulkApply.useMutation({
     onSuccess: () => {
@@ -227,12 +228,6 @@ export function MaterialProfileReviewStep({
   const latestProfileSearchJob = searchJobsQuery.data?.[0] ?? null;
   const activeProfileSearchJob =
     searchJobsQuery.data?.find(isProfileSearchJobActive) ?? null;
-  const activeAutoSearchJob = searchJobsQuery.data?.find(
-    (job) => job.mode === "auto" && isProfileSearchJobActive(job),
-  );
-  const latestAutoSearchJob = searchJobsQuery.data?.find(
-    (job) => job.mode === "auto",
-  );
   const selectedItemId =
     selectedRowIndex == null
       ? null
@@ -270,7 +265,7 @@ export function MaterialProfileReviewStep({
         job.mode === "web"
           ? `Đã bắt đầu job tìm web cho ${job.total} dòng.`
           : job.mode === "auto"
-            ? `Đã bắt đầu tự xử lý ${job.total} dòng hợp lệ.`
+            ? `Đã bắt đầu thu thập & lưu ${job.total} dòng hợp lệ.`
             : `Đã bắt đầu job tìm AI cho ${job.total} dòng.`,
       );
       await utils.materialProfile.listSearchJobs.invalidate();
@@ -355,8 +350,28 @@ export function MaterialProfileReviewStep({
 
   useEffect(() => {
     setDecisions(seedDecisionsFromItems(reviewItems));
-    setSelectedRowIndex(reviewRows[0]?.originalRowIndex ?? null);
-  }, [itemsKey, reviewItems, reviewRows]);
+  }, [reviewItems]);
+
+  useEffect(() => {
+    const rowIndices = rowIndicesKey
+      .split(",")
+      .map((value) => Number.parseInt(value, 10))
+      .filter(Number.isFinite);
+    const requestedRow = Number.parseInt(
+      new URLSearchParams(window.location.search).get("row") ?? "",
+      10,
+    );
+    const workspaceChanged = selectedWorkspaceIdRef.current !== workspaceId;
+    selectedWorkspaceIdRef.current = workspaceId;
+    setSelectedRowIndex((current) => {
+      if (workspaceChanged && rowIndices.includes(requestedRow)) {
+        return requestedRow;
+      }
+      return current != null && rowIndices.includes(current)
+        ? current
+        : (rowIndices[0] ?? null);
+    });
+  }, [rowIndicesKey, workspaceId]);
 
   useEffect(
     () => () => {
@@ -436,6 +451,12 @@ export function MaterialProfileReviewStep({
 
   const handleProfileSearchJob = useCallback(
     async (kind: "web" | "ai", rowIndices: number[]) => {
+      if (isProfileCapturePending) {
+        toast.warning(
+          "Chờ thu thập nguồn hiện tại hoàn tất trước khi tìm lại.",
+        );
+        return;
+      }
       const itemIds = rowIndices
         .map((rowIndex) => itemIdByRowIndex.get(rowIndex))
         .filter((itemId): itemId is number => itemId != null);
@@ -449,25 +470,14 @@ export function MaterialProfileReviewStep({
         mode: kind,
       });
     },
-    [itemIdByRowIndex, startSearchJob, toast, workspaceId],
-  );
-
-  const handleAutoSearchJob = useCallback(async () => {
-    if (automaticEligibility.unresolvedItemIds.length === 0) {
-      toast.warning("Không còn dòng hợp lệ cần tự xử lý.");
-      return;
-    }
-    await startSearchJob.mutateAsync({
+    [
+      isProfileCapturePending,
+      itemIdByRowIndex,
+      startSearchJob,
+      toast,
       workspaceId,
-      itemIds: automaticEligibility.unresolvedItemIds,
-      mode: "auto",
-    });
-  }, [
-    automaticEligibility.unresolvedItemIds,
-    startSearchJob,
-    toast,
-    workspaceId,
-  ]);
+    ],
+  );
 
   const handleCancelProfileSearchJob = useCallback(async () => {
     if (!activeProfileSearchJob) return;
@@ -476,12 +486,24 @@ export function MaterialProfileReviewStep({
 
   const handleUseSearchRun = useCallback(
     async (runId: number) => {
+      if (isProfileCapturePending) {
+        toast.warning(
+          "Chờ thu thập nguồn hiện tại hoàn tất trước khi dùng kết quả cũ.",
+        );
+        return;
+      }
       if (selectedRowIndex != null) {
         await flushDecisionsForRows([selectedRowIndex]);
       }
       await setCurrentSearchRun.mutateAsync({ runId });
     },
-    [flushDecisionsForRows, selectedRowIndex, setCurrentSearchRun],
+    [
+      flushDecisionsForRows,
+      isProfileCapturePending,
+      selectedRowIndex,
+      setCurrentSearchRun,
+      toast,
+    ],
   );
 
   const flushDecisions = useCallback(async () => {
@@ -640,7 +662,7 @@ export function MaterialProfileReviewStep({
     try {
       const result = await undoLastBulkApply.mutateAsync({ workspaceId });
       toast.success(
-        `Đã hoàn tác bulk apply (${result.restoredCount.toLocaleString("vi-VN")} dòng).`,
+        `Đã hoàn tác áp dụng hàng loạt (${result.restoredCount.toLocaleString("vi-VN")} dòng).`,
       );
     } catch {
       // Errors surfaced by mutation onError.
@@ -648,6 +670,10 @@ export function MaterialProfileReviewStep({
   }, [toast, undoLastBulkApply, workspaceId]);
 
   const handleContinue = async () => {
+    if (isProfileCapturePending) {
+      toast.warning("Chờ thu thập nguồn hiện tại hoàn tất trước khi tiếp tục.");
+      return;
+    }
     setIsFlushing(true);
     try {
       await flushDecisions();
@@ -696,111 +722,21 @@ export function MaterialProfileReviewStep({
     );
   }
 
-  const autoProgress =
-    activeAutoSearchJob && activeAutoSearchJob.total > 0
-      ? Math.round(
-          (activeAutoSearchJob.processed / activeAutoSearchJob.total) * 100,
-        )
-      : 0;
-
   return (
     <div className="space-y-3">
-      <section className="panel overflow-hidden" aria-live="polite">
-        <div className="border-b border-slate-300 bg-slate-50 px-4 py-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="section-title">Tự tìm & điền</p>
-              <h2 className="mt-1 text-lg font-bold text-slate-950">
-                Xử lý tất cả dòng hợp lệ
-              </h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-                Hệ thống chỉ gửi dòng đủ Tên vật tư, ĐVT và Thông số kỹ thuật.
-                Kết quả thiếu bằng chứng sẽ được giữ ở trạng thái cần xác minh,
-                không tự lưu sai vào danh mục.
-              </p>
-            </div>
-            <Button
-              variant="primary"
-              disabled={
-                activeProfileSearchJob != null ||
-                automaticEligibility.unresolvedItemIds.length === 0
-              }
-              isLoading={startSearchJob.isPending}
-              onClick={() => void handleAutoSearchJob()}
-            >
-              Tự xử lý {automaticEligibility.unresolvedItemIds.length} dòng hợp
-              lệ
-            </Button>
-          </div>
-        </div>
-        <div className="grid divide-y divide-slate-200 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
-          {[
-            ["Hợp lệ", automaticEligibility.valid],
-            ["Thiếu dữ liệu", automaticEligibility.invalid],
-            ["Đã lưu danh mục", automaticEligibility.saved],
-            ["Cần tự xử lý", automaticEligibility.unresolvedItemIds.length],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="px-4 py-3">
-              <p className="text-xs font-semibold text-slate-600">{label}</p>
-              <p className="mt-1 text-2xl font-bold text-slate-950 tabular-nums">
-                {Number(value).toLocaleString("vi-VN")}
-              </p>
-            </div>
-          ))}
-        </div>
-        {activeAutoSearchJob ? (
-          <div className="border-t border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p>
-                Đang tự xử lý {activeAutoSearchJob.processed}/
-                {activeAutoSearchJob.total} dòng
-                {activeAutoSearchJob.currentProductName
-                  ? ` · ${activeAutoSearchJob.currentProductName}`
-                  : ""}
-              </p>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={cancelSearchJob.isPending}
-                onClick={() =>
-                  void cancelSearchJob.mutateAsync({
-                    jobId: activeAutoSearchJob.id,
-                  })
-                }
-              >
-                Hủy xử lý
-              </Button>
-            </div>
-            <div
-              className="mt-2 h-2 overflow-hidden rounded bg-blue-100"
-              role="progressbar"
-              aria-label="Tiến độ tự xử lý vật tư"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={autoProgress}
-            >
-              <div
-                className="h-full bg-blue-700 transition-[width] motion-reduce:transition-none"
-                style={{ width: `${autoProgress}%` }}
-              />
-            </div>
-          </div>
-        ) : latestAutoSearchJob?.status === "completed" ? (
-          <div className="border-t border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-            Đã hoàn tất tự xử lý {latestAutoSearchJob.total} dòng. Kết quả đủ
-            bằng chứng đã được lưu vào danh mục vật tư.
-          </div>
-        ) : latestAutoSearchJob?.status === "failed" ||
-          latestAutoSearchJob?.status === "cancelled" ? (
-          <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            {latestAutoSearchJob.error ??
-              latestAutoSearchJob.message ??
-              "Tác vụ chưa hoàn tất. Bạn có thể thử lại các dòng hợp lệ."}
-          </div>
-        ) : null}
+      <section className="panel bg-surface-2 p-4">
+        <p className="section-title">Quy trình theo giai đoạn</p>
+        <p className="text-ink-1 mt-1 text-sm font-semibold">
+          Tìm nguồn web → chọn nguồn → scrape → so sánh → lưu /materials
+        </p>
+        <p className="text-ink-2 mt-1 text-sm">
+          AI là thao tác tùy chọn riêng. Scrape không tự chạy AI và không tự lưu
+          vào danh mục vật tư.
+        </p>
       </section>
 
       <ReviewPanel
+        workspaceId={workspaceId}
         rows={reviewRows}
         summary={reviewSummary}
         decisions={decisions}
@@ -843,17 +779,22 @@ export function MaterialProfileReviewStep({
         onProfileSearchJob={handleProfileSearchJob}
         onProfileCancelSearchJob={handleCancelProfileSearchJob}
         onProfileUseSearchRun={handleUseSearchRun}
+        onCapturePendingChange={setIsProfileCapturePending}
         emptyTitle="Chưa có kết quả match"
         emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
         headerActions={
           <Button
             variant="primary"
             size="sm"
-            disabled={isFlushing || batchUpdateReviewDecisions.isPending}
+            disabled={
+              isFlushing ||
+              isProfileCapturePending ||
+              batchUpdateReviewDecisions.isPending
+            }
             isLoading={isFlushing || batchUpdateReviewDecisions.isPending}
             onClick={() => void handleContinue()}
           >
-            Qua preview export
+            Sang xem trước file xuất
           </Button>
         }
       />

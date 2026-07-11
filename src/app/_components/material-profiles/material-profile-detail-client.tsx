@@ -138,7 +138,7 @@ function MaterialProfileStepHeader({
         aria-valuenow={current}
       >
         <div
-          className="brand-rule h-full transition-all duration-500 ease-out motion-reduce:transition-none"
+          className="brand-rule h-full transition-[width] duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${progressPercent}%` }}
         />
       </div>

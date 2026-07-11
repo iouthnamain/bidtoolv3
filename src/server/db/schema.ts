@@ -849,6 +849,13 @@ export const shopScrapeJobs = pgTable(
     )
       .on(table.tenantId, table.normalizedUrl)
       .where(sql`${table.status} in ('queued', 'running')`),
+    activeInternalUrlUnique: uniqueIndex(
+      "shop_scrape_jobs_active_internal_url_unique",
+    )
+      .on(table.normalizedUrl)
+      .where(
+        sql`${table.tenantId} is null and ${table.status} in ('queued', 'running')`,
+      ),
     shopScrapeJobsTenantIdx: index("shop_scrape_jobs_tenant_id_idx").on(
       table.tenantId,
     ),
@@ -1114,7 +1121,10 @@ export const materialProfileSearchRuns = pgTable(
       .notNull()
       .default([]),
     recommendedCandidateKey: text("recommended_candidate_key"),
-    warningsJson: jsonb("warnings_json").$type<string[]>().notNull().default([]),
+    warningsJson: jsonb("warnings_json")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     errorMessage: text("error_message"),
     startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
     finishedAt: timestamp("finished_at", {
@@ -1129,10 +1139,9 @@ export const materialProfileSearchRuns = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    jobSortOrderIdx: index("material_profile_search_runs_job_sort_order_idx").on(
-      table.jobId,
-      table.sortOrder,
-    ),
+    jobSortOrderIdx: index(
+      "material_profile_search_runs_job_sort_order_idx",
+    ).on(table.jobId, table.sortOrder),
     workspaceItemUpdatedAtIdx: index(
       "material_profile_search_runs_workspace_item_updated_at_idx",
     ).on(table.workspaceId, table.itemId, table.updatedAt),
@@ -1147,6 +1156,155 @@ export const materialProfileSearchRuns = pgTable(
   }),
 );
 
+export const materialProfileScrapeJobs = pgTable(
+  "material_profile_scrape_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("queued"),
+    requestedItemIds: jsonb("requested_item_ids")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
+    sourceThreshold: numeric("source_threshold", {
+      precision: 4,
+      scale: 3,
+      mode: "number",
+    })
+      .notNull()
+      .default(0.75),
+    sourceMargin: numeric("source_margin", {
+      precision: 4,
+      scale: 3,
+      mode: "number",
+    })
+      .notNull()
+      .default(0.05),
+    maxProductsPerSource: integer("max_products_per_source")
+      .notNull()
+      .default(8),
+    total: integer("total").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    captured: integer("captured").notNull().default(0),
+    needsReview: integer("needs_review").notNull().default(0),
+    skipped: integer("skipped").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    currentItemId: integer("current_item_id").references(
+      () => excelWorkspaceItems.id,
+      { onDelete: "set null" },
+    ),
+    currentRowIndex: integer("current_row_index"),
+    currentProductName: text("current_product_name"),
+    message: text("message"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    lastProgressAt: timestamp("last_progress_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    progressJson: jsonb("progress_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    workspaceUpdatedAtIdx: index(
+      "material_profile_scrape_jobs_workspace_updated_at_idx",
+    ).on(table.workspaceId, table.updatedAt),
+    statusUpdatedAtIdx: index(
+      "material_profile_scrape_jobs_status_updated_at_idx",
+    ).on(table.status, table.updatedAt),
+  }),
+);
+
+export const materialProfileScrapeRuns = pgTable(
+  "material_profile_scrape_runs",
+  {
+    id: uuid("id").primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => materialProfileScrapeJobs.id, { onDelete: "cascade" }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => excelWorkspaceItems.id, { onDelete: "cascade" }),
+    originalRowIndex: integer("original_row_index").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    status: text("status").notNull().default("queued"),
+    sourceCandidateKey: text("source_candidate_key"),
+    sourceUrl: text("source_url"),
+    sourceKind: text("source_kind"),
+    sourceScore: numeric("source_score", {
+      precision: 5,
+      scale: 4,
+      mode: "number",
+    }),
+    shopScrapeJobId: uuid("shop_scrape_job_id").references(
+      () => shopScrapeJobs.id,
+      { onDelete: "set null" },
+    ),
+    childOwned: boolean("child_owned").notNull().default(false),
+    inputSnapshotJson: jsonb("input_snapshot_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    sourceFingerprint: text("source_fingerprint").notNull().default(""),
+    scrapedProductCandidatesJson: jsonb("scraped_product_candidates_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    selectedProductJson: jsonb("selected_product_json").$type<Record<
+      string,
+      unknown
+    > | null>(),
+    warningsJson: jsonb("warnings_json")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobItemUnique: uniqueIndex(
+      "material_profile_scrape_runs_job_item_unique",
+    ).on(table.jobId, table.itemId),
+    workspaceItemHistoryIdx: index(
+      "material_profile_scrape_runs_workspace_item_history_idx",
+    ).on(table.workspaceId, table.itemId, table.updatedAt),
+    jobSortOrderIdx: index(
+      "material_profile_scrape_runs_job_sort_order_idx",
+    ).on(table.jobId, table.sortOrder),
+    statusUpdatedAtIdx: index(
+      "material_profile_scrape_runs_status_updated_at_idx",
+    ).on(table.status, table.updatedAt),
+  }),
+);
+
 /** Durable L2 cache for automatic profile web/AI research. */
 export const materialProfileSearchCache = pgTable(
   "material_profile_search_cache",
@@ -1157,8 +1315,10 @@ export const materialProfileSearchCache = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
-    expiresAt: timestamp("expires_at", { mode: "string", withTimezone: true })
-      .notNull(),
+    expiresAt: timestamp("expires_at", {
+      mode: "string",
+      withTimezone: true,
+    }).notNull(),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1210,6 +1370,160 @@ export const materialProfilePromotionLedger = pgTable(
     materialProfilePromotionLedgerWorkspaceUpdatedIdx: index(
       "material_profile_promotion_ledger_workspace_updated_idx",
     ).on(table.workspaceId, table.updatedAt),
+  }),
+);
+
+export const materialProfileMaterialBatches = pgTable(
+  "material_profile_material_batches",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    sourceScrapeJobId: uuid("source_scrape_job_id").references(
+      () => materialProfileScrapeJobs.id,
+      { onDelete: "set null" },
+    ),
+    status: text("status").notNull().default("draft"),
+    overwriteScope: text("overwrite_scope").notNull().default("all"),
+    targetThreshold: numeric("target_threshold", {
+      precision: 4,
+      scale: 3,
+      mode: "number",
+    })
+      .notNull()
+      .default(0.85),
+    targetMargin: numeric("target_margin", {
+      precision: 4,
+      scale: 3,
+      mode: "number",
+    })
+      .notNull()
+      .default(0.05),
+    total: integer("total").notNull().default(0),
+    createCount: integer("create_count").notNull().default(0),
+    updateCount: integer("update_count").notNull().default(0),
+    linkOnlyCount: integer("link_only_count").notNull().default(0),
+    excludedCount: integer("excluded_count").notNull().default(0),
+    blockedCount: integer("blocked_count").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    message: text("message"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "string", withTimezone: true }),
+    finishedAt: timestamp("finished_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expiresAt: timestamp("expires_at", {
+      mode: "string",
+      withTimezone: true,
+    }).notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    workspaceUpdatedAtIdx: index(
+      "material_profile_material_batches_workspace_updated_at_idx",
+    ).on(table.workspaceId, table.updatedAt),
+    statusExpiryIdx: index(
+      "material_profile_material_batches_status_expiry_idx",
+    ).on(table.status, table.expiresAt),
+  }),
+);
+
+export const materialProfileMaterialBatchRows = pgTable(
+  "material_profile_material_batch_rows",
+  {
+    id: uuid("id").primaryKey(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => materialProfileMaterialBatches.id, {
+        onDelete: "cascade",
+      }),
+    workspaceItemId: integer("workspace_item_id")
+      .notNull()
+      .references(() => excelWorkspaceItems.id, { onDelete: "cascade" }),
+    originalRowIndex: integer("original_row_index").notNull(),
+    included: boolean("included").notNull().default(true),
+    action: text("action").notNull(),
+    targetMaterialId: integer("target_material_id").references(
+      () => materials.id,
+      { onDelete: "set null" },
+    ),
+    targetScore: numeric("target_score", {
+      precision: 5,
+      scale: 4,
+      mode: "number",
+    }),
+    targetMethod: text("target_method"),
+    expectedTargetUpdatedAt: timestamp("expected_target_updated_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    proposedMaterialJson: jsonb("proposed_material_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    preCommitMaterialSnapshotJson: jsonb(
+      "pre_commit_material_snapshot_json",
+    ).$type<Record<string, unknown> | null>(),
+    preCommitCatalogLinksJson: jsonb("pre_commit_catalog_links_json")
+      .$type<Record<string, unknown>[]>()
+      .notNull()
+      .default([]),
+    postCommitVersion: timestamp("post_commit_version", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    postCommitCatalogLinksJson: jsonb("post_commit_catalog_links_json").$type<
+      Record<string, unknown>[] | null
+    >(),
+    postCommitWorkspaceItemUpdatedAt: timestamp(
+      "post_commit_workspace_item_updated_at",
+      {
+        mode: "string",
+        withTimezone: true,
+      },
+    ),
+    previousWorkspaceItemStateJson: jsonb("previous_workspace_item_state_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    warningsJson: jsonb("warnings_json")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    errorJson: jsonb("error_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    winnerRowId: uuid("winner_row_id").references(
+      (): AnyPgColumn => materialProfileMaterialBatchRows.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    batchItemUnique: uniqueIndex(
+      "material_profile_material_batch_rows_batch_item_unique",
+    ).on(table.batchId, table.workspaceItemId),
+    batchRowIdx: index("material_profile_material_batch_rows_batch_row_idx").on(
+      table.batchId,
+      table.originalRowIndex,
+    ),
+    targetIdx: index("material_profile_material_batch_rows_target_idx").on(
+      table.targetMaterialId,
+    ),
   }),
 );
 

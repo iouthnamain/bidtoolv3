@@ -9,6 +9,11 @@ import {
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
 import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrichment-types";
+import type {
+  ProfileExtraField,
+  ProfileScrapedProduct,
+  ScrapedProductStoredResult,
+} from "~/lib/materials/profile-scrape-types";
 
 export type WebSearchStatus = "idle" | "pending" | "done" | "error";
 
@@ -26,6 +31,11 @@ export type SerializedRowDecision = {
   webLinksStatus?: WebSearchStatus;
   aiSearchResult?: AiSearchStoredResult;
   aiSearchCandidates?: AiSearchStoredResult[];
+  scrapeResults?: ScrapedProductStoredResult[];
+  acceptedProfileFields?: ProfileExtraField[];
+  editedProfileValues?: Partial<Record<ProfileExtraField, string>>;
+  /** Read-only migration alias. New decisions serialize `scrapeResults`. */
+  webScrapeResults?: AiSearchStoredResult[];
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
   selectedSearchCandidateKey?: string;
@@ -56,6 +66,29 @@ function filterFillableFields(values: unknown): FillableField[] {
   );
 }
 
+function isProfileExtraField(value: string): value is ProfileExtraField {
+  return value === "name" || value === "imageUrl";
+}
+
+function filterProfileExtraFields(values: unknown): ProfileExtraField[] {
+  if (!Array.isArray(values)) return [];
+  return values.filter(
+    (value): value is ProfileExtraField =>
+      typeof value === "string" && isProfileExtraField(value),
+  );
+}
+
+function filterProfileStringRecord(
+  value: unknown,
+): Partial<Record<ProfileExtraField, string>> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const result: Partial<Record<ProfileExtraField, string>> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (isProfileExtraField(key) && typeof raw === "string") result[key] = raw;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function filterStringRecord(
   value: unknown,
 ): Partial<Record<FillableField, string>> | undefined {
@@ -68,7 +101,9 @@ function filterStringRecord(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function filterEvidence(value: unknown): MaterialEnrichmentEvidence[] | undefined {
+function filterEvidence(
+  value: unknown,
+): MaterialEnrichmentEvidence[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const result: MaterialEnrichmentEvidence[] = [];
   for (const item of value) {
@@ -80,8 +115,7 @@ function filterEvidence(value: unknown): MaterialEnrichmentEvidence[] | undefine
       field,
       value: typeof record.value === "string" ? record.value : "",
       snippet: typeof record.snippet === "string" ? record.snippet : "",
-      sourceUrl:
-        typeof record.sourceUrl === "string" ? record.sourceUrl : "",
+      sourceUrl: typeof record.sourceUrl === "string" ? record.sourceUrl : "",
     });
   }
   return result.length > 0 ? result : undefined;
@@ -117,7 +151,8 @@ function filterWebLinkResults(value: unknown): WebLinkResult[] | undefined {
       snippet,
       query: typeof record.query === "string" ? record.query : undefined,
       rankScore:
-        typeof record.rankScore === "number" && Number.isFinite(record.rankScore)
+        typeof record.rankScore === "number" &&
+        Number.isFinite(record.rankScore)
           ? record.rankScore
           : undefined,
     });
@@ -139,7 +174,11 @@ function filterFieldConfidences(
   if (!value || typeof value !== "object") return undefined;
   const result: Partial<Record<FillableField, number>> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!isFillableField(key) || typeof raw !== "number" || !Number.isFinite(raw)) {
+    if (
+      !isFillableField(key) ||
+      typeof raw !== "number" ||
+      !Number.isFinite(raw)
+    ) {
       continue;
     }
     result[key] = raw;
@@ -147,7 +186,9 @@ function filterFieldConfidences(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function filterAiSearchResult(value: unknown): AiSearchStoredResult | undefined {
+function filterAiSearchResult(
+  value: unknown,
+): AiSearchStoredResult | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   const fields = filterStringRecord(record.fields) ?? {};
@@ -193,6 +234,134 @@ function filterAiSearchCandidates(
   return result.length > 0 ? result : undefined;
 }
 
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function filterScrapedProduct(value: unknown): ProfileScrapedProduct | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const name = typeof record.name === "string" ? record.name : "";
+  const sourceUrl =
+    typeof record.sourceUrl === "string" ? record.sourceUrl : "";
+  if (!name && !sourceUrl) return null;
+  return {
+    name,
+    unit: stringOrNull(record.unit),
+    category: stringOrNull(record.category),
+    specText: typeof record.specText === "string" ? record.specText : "",
+    manufacturer: stringOrNull(record.manufacturer),
+    originCountry: stringOrNull(record.originCountry),
+    price:
+      typeof record.price === "number" && Number.isFinite(record.price)
+        ? record.price
+        : null,
+    priceText: stringOrNull(record.priceText),
+    currency:
+      typeof record.currency === "string" && record.currency.trim()
+        ? record.currency
+        : "VND",
+    sourceUrl,
+    imageUrl: stringOrNull(record.imageUrl),
+    sku: stringOrNull(record.sku),
+    model: stringOrNull(record.model),
+    shopCategory: stringOrNull(record.shopCategory),
+    catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls) ?? [],
+  };
+}
+
+function legacyScrapeResult(
+  value: unknown,
+): ScrapedProductStoredResult | undefined {
+  const candidate = filterAiSearchResult(value);
+  if (!candidate) return undefined;
+  const sourceUrl = candidate.url ?? candidate.sourceUrls[0] ?? "";
+  const rawPrice = Number(candidate.fields.defaultUnitPrice);
+  const product: ProfileScrapedProduct = {
+    name: candidate.title ?? "",
+    unit: candidate.fields.unit ?? null,
+    category: candidate.fields.category ?? null,
+    specText: candidate.fields.specText ?? "",
+    manufacturer: candidate.fields.manufacturer ?? null,
+    originCountry: candidate.fields.originCountry ?? null,
+    price: Number.isFinite(rawPrice) ? rawPrice : null,
+    priceText: null,
+    currency: candidate.fields.currency ?? "VND",
+    sourceUrl,
+    imageUrl: null,
+    sku: candidate.fields.code ?? null,
+    model: null,
+    shopCategory: null,
+    catalogPdfUrls: candidate.catalogPdfUrls ?? [],
+  };
+  return {
+    jobId: "legacy",
+    shopScrapeJobId: null,
+    sourceCandidateKey: `web:${sourceUrl}`,
+    sourceUrl,
+    sourceScore: candidate.rankScore ?? null,
+    product,
+    fields: candidate.fields,
+    name: product.name,
+    evidence: candidate.evidence,
+    catalogPdfUrls: product.catalogPdfUrls,
+    productMatchScore: null,
+  };
+}
+
+function filterScrapeResult(
+  value: unknown,
+): ScrapedProductStoredResult | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const product = filterScrapedProduct(record.product);
+  if (!product) return legacyScrapeResult(value);
+  const sourceUrl =
+    typeof record.sourceUrl === "string" ? record.sourceUrl : product.sourceUrl;
+  return {
+    jobId: typeof record.jobId === "string" ? record.jobId : "legacy",
+    shopScrapeJobId:
+      typeof record.shopScrapeJobId === "string"
+        ? record.shopScrapeJobId
+        : null,
+    sourceCandidateKey:
+      typeof record.sourceCandidateKey === "string"
+        ? record.sourceCandidateKey
+        : `web:${sourceUrl}`,
+    sourceUrl,
+    sourceScore:
+      typeof record.sourceScore === "number" &&
+      Number.isFinite(record.sourceScore)
+        ? record.sourceScore
+        : null,
+    product,
+    fields: filterStringRecord(record.fields) ?? {},
+    name: typeof record.name === "string" ? record.name : product.name,
+    imageUrl:
+      typeof record.imageUrl === "string"
+        ? record.imageUrl
+        : (product.imageUrl ?? undefined),
+    evidence: filterEvidence(record.evidence) ?? [],
+    catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls) ?? [],
+    productMatchScore:
+      typeof record.productMatchScore === "number" &&
+      Number.isFinite(record.productMatchScore)
+        ? record.productMatchScore
+        : null,
+  };
+}
+
+function filterScrapeResults(
+  value: unknown,
+): ScrapedProductStoredResult[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const results = value.flatMap((item) => {
+    const parsed = filterScrapeResult(item);
+    return parsed ? [parsed] : [];
+  });
+  return results.length > 0 ? results : undefined;
+}
+
 function parseSelectedSource(
   value: unknown,
 ): "catalog" | "web" | "ai" | undefined {
@@ -216,12 +385,19 @@ export function isEmptySerializedRowDecision(
   const record = value as Partial<SerializedRowDecision>;
   if (record.skipped) return false;
   if (record.materialId != null) return false;
-  if (Array.isArray(record.acceptedFields) && record.acceptedFields.length > 0) {
+  if (
+    Array.isArray(record.acceptedFields) &&
+    record.acceptedFields.length > 0
+  ) {
+    return false;
+  }
+  if (record.editedValues && Object.keys(record.editedValues).length > 0) {
     return false;
   }
   if (
-    record.editedValues &&
-    Object.keys(record.editedValues).length > 0
+    (record.acceptedProfileFields?.length ?? 0) > 0 ||
+    (record.editedProfileValues &&
+      Object.keys(record.editedProfileValues).length > 0)
   ) {
     return false;
   }
@@ -234,13 +410,20 @@ export function isEmptySerializedRowDecision(
   if (record.webLinkResults && record.webLinkResults.length > 0) {
     return false;
   }
-  if (record.aiSearchResult || (record.aiSearchCandidates?.length ?? 0) > 0) {
+  if (
+    record.aiSearchResult ||
+    (record.aiSearchCandidates?.length ?? 0) > 0 ||
+    (record.scrapeResults?.length ?? 0) > 0 ||
+    (record.webScrapeResults?.length ?? 0) > 0
+  ) {
     return false;
   }
   return true;
 }
 
-export function serializeRowDecision(decision: RowDecision): SerializedRowDecision {
+export function serializeRowDecision(
+  decision: RowDecision,
+): SerializedRowDecision {
   return {
     materialId: decision.materialId,
     acceptedFields: Array.from(decision.acceptedFields),
@@ -256,6 +439,12 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
     webLinksStatus: decision.webLinksStatus,
     aiSearchResult: decision.aiSearchResult,
     aiSearchCandidates: decision.aiSearchCandidates,
+    scrapeResults: decision.scrapeResults,
+    acceptedProfileFields:
+      decision.acceptedProfileFields && decision.acceptedProfileFields.size > 0
+        ? Array.from(decision.acceptedProfileFields)
+        : undefined,
+    editedProfileValues: decision.editedProfileValues,
     aiSearchStatus: decision.aiSearchStatus,
     selectedSource: decision.selectedSource,
     selectedSearchCandidateKey: decision.selectedSearchCandidateKey,
@@ -264,14 +453,13 @@ export function serializeRowDecision(decision: RowDecision): SerializedRowDecisi
   };
 }
 
-export function deserializeRowDecision(
-  value: unknown,
-): RowDecision | null {
+export function deserializeRowDecision(value: unknown): RowDecision | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Partial<SerializedRowDecision>;
   if (
     record.materialId != null &&
-    (typeof record.materialId !== "number" || !Number.isFinite(record.materialId))
+    (typeof record.materialId !== "number" ||
+      !Number.isFinite(record.materialId))
   ) {
     return null;
   }
@@ -282,6 +470,9 @@ export function deserializeRowDecision(
       : undefined);
   const aiSearchResult =
     filterAiSearchResult(record.aiSearchResult) ?? aiSearchCandidates?.[0];
+  const scrapeResults =
+    filterScrapeResults(record.scrapeResults) ??
+    filterScrapeResults(record.webScrapeResults);
 
   let selectedSearchCandidateKey =
     typeof record.selectedSearchCandidateKey === "string" &&
@@ -309,6 +500,11 @@ export function deserializeRowDecision(
     webLinksStatus: parseWebSearchStatus(record.webLinksStatus),
     aiSearchResult,
     aiSearchCandidates,
+    scrapeResults,
+    acceptedProfileFields: new Set(
+      filterProfileExtraFields(record.acceptedProfileFields),
+    ),
+    editedProfileValues: filterProfileStringRecord(record.editedProfileValues),
     aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
     selectedSource,
     selectedSearchCandidateKey,
@@ -364,7 +560,9 @@ export function seedDecisionFromItem(
   const fillPlan = fillPlanFromSnapshot(item);
   const acceptedFields = new Set<FillableField>(
     fillPlan
-      .filter((cell) => cell.action === "filled" && isFillableField(cell.field ?? ""))
+      .filter(
+        (cell) => cell.action === "filled" && isFillableField(cell.field ?? ""),
+      )
       .map((cell) => cell.field as FillableField),
   );
 

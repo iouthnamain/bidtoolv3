@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Globe, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Globe, Loader2, Save, Sparkles } from "lucide-react";
 
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
+import { ProfileScrapeInlineLayer } from "~/app/_components/material-profiles/profile-scrape-inline-layer";
 import {
   ManualProductForm,
   type ManualProductValues,
@@ -19,7 +20,6 @@ import {
   applyAllProposedFieldsWithCurrency,
   applySavedMaterialToDecision,
   effectiveAcceptedFieldValues,
-  profileAcceptedFields,
   profileEffectiveFieldValues,
   webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
@@ -29,7 +29,11 @@ import {
   type FillableField,
   FILLABLE_FIELDS,
 } from "~/lib/materials/excel-enrich-fields";
-import type { RowDecision } from "~/lib/materials/review-decision";
+import {
+  deserializeRowDecision,
+  serializeRowDecision,
+  type RowDecision,
+} from "~/lib/materials/review-decision";
 import { formatMoney, parseOptionalNumber } from "~/lib/materials/format";
 import {
   aiCandidateMatchChips,
@@ -41,7 +45,15 @@ import {
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
 import { validateMaterialProfileResolution } from "~/lib/materials/profile-input-contract";
+import { simpleSimilarity } from "~/lib/materials/option-matcher";
+import {
+  findProfileCandidateCapture,
+  hasCapturedProductDetails,
+  profileCandidateCaptureKey,
+} from "~/lib/materials/profile-candidate-capture";
 import { api } from "~/trpc/react";
+
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
   const raw = fields.defaultUnitPrice?.trim();
@@ -62,6 +74,9 @@ function profileSearchFields(decision: RowDecision | undefined) {
     aiSearchResult: decision?.aiSearchResult,
     aiSearchCandidates: decision?.aiSearchCandidates,
     aiSearchStatus: decision?.aiSearchStatus,
+    scrapeResults: decision?.scrapeResults,
+    acceptedProfileFields: decision?.acceptedProfileFields,
+    editedProfileValues: decision?.editedProfileValues,
     catalogPdfUrls: decision?.catalogPdfUrls,
   };
 }
@@ -84,8 +99,69 @@ function sourceLabelFromUrl(value: string) {
   }
 }
 
+function trimmedOrUndefined(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
+}
+
+function materialProfileSaveResolution({
+  row,
+  name: proposedName,
+  effective,
+  catalogPdfUrls,
+  webEvidence,
+}: {
+  row: ReviewRow;
+  name?: string;
+  effective: Partial<Record<FillableField, string>>;
+  catalogPdfUrls: string[];
+  webEvidence: NonNullable<RowDecision["webEvidence"]>;
+}) {
+  const name = trimmedOrUndefined(proposedName) ?? row.name.trim();
+  const unit = effective.unit?.trim() ?? row.sheetFields.unit?.trim() ?? "";
+  const specText =
+    effective.specText?.trim() ?? row.sheetFields.specText?.trim() ?? "";
+  const sourceUrl = trimmedOrUndefined(effective.sourceUrl);
+  const resolution = validateMaterialProfileResolution({
+    input: { name, unit, specText, rowIndex: row.originalRowIndex },
+    candidate: {
+      code: trimmedOrUndefined(effective.code),
+      name,
+      unit,
+      specText,
+      manufacturer: trimmedOrUndefined(effective.manufacturer),
+      originCountry: trimmedOrUndefined(effective.originCountry),
+      unitPrice: parseOptionalNumber(effective.defaultUnitPrice ?? ""),
+      source: sourceUrl ? sourceLabelFromUrl(sourceUrl) : "",
+      sourceUrl,
+      catalogUrl: catalogPdfUrls[0],
+      evidenceUrls: [
+        ...catalogPdfUrls,
+        ...webEvidence
+          .map((evidence) => evidence.sourceUrl ?? "")
+          .filter(Boolean),
+      ],
+      confidence: 1,
+      provenance: "manual_verified",
+    },
+    promotionConfidence: 0,
+  });
+  if (!effective.code?.trim()) {
+    return {
+      ...resolution,
+      complete: false,
+      promotable: false,
+      status: "needs_verification" as const,
+      reasons: ["Chưa đủ dữ liệu: Mã vật tư.", ...resolution.reasons],
+    };
+  }
+  return resolution;
+}
+
 export function MatchChooser({
   row,
+  workspaceId,
   decision,
   onChange,
   searchMode = "default",
@@ -95,8 +171,11 @@ export function MatchChooser({
   isWebSearchPending,
   isWebLinksPending,
   isAiSearchPending,
+  isSearchBusy = false,
+  onCapturePendingChange,
 }: {
   row: ReviewRow;
+  workspaceId?: number;
   decision: RowDecision | undefined;
   onChange: (next: RowDecision) => void;
   searchMode?: ReviewSearchMode;
@@ -106,11 +185,24 @@ export function MatchChooser({
   isWebSearchPending?: boolean;
   isWebLinksPending?: boolean;
   isAiSearchPending?: boolean;
+  isSearchBusy?: boolean;
+  onCapturePendingChange?: (pending: boolean) => void;
 }) {
   const toast = useToast();
+  const materialSaveHintId = useId();
   const utils = api.useUtils();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [captureJobId, setCaptureJobId] = useState<string | null>(null);
+  const [startingCandidateKey, setStartingCandidateKey] = useState<
+    string | null
+  >(null);
+  const [pendingProductIndex, setPendingProductIndex] = useState<number | null>(
+    null,
+  );
+  const handledCaptureRunIdsRef = useRef(new Set<string>());
+  const onCapturePendingChangeRef = useRef(onCapturePendingChange);
+  onCapturePendingChangeRef.current = onCapturePendingChange;
   const isProfileSplit = searchMode === "profileSplit";
 
   useEffect(() => {
@@ -118,14 +210,170 @@ export function MatchChooser({
     return () => clearTimeout(id);
   }, [searchTerm]);
 
+  useEffect(
+    () => () => {
+      onCapturePendingChangeRef.current?.(false);
+    },
+    [],
+  );
+
   const searchQuery = api.material.enrichSearchMaterials.useQuery(
     { query: debounced },
     { enabled: debounced.length > 0 },
   );
   const upsertMaterial = api.material.upsertMaterial.useMutation();
+  const persistReviewDecision =
+    api.materialProfile.updateItemReviewDecision.useMutation();
+  const createSavePreview =
+    api.materialProfile.createMaterialSavePreview.useMutation();
+  const commitSaveBatch =
+    api.materialProfile.commitMaterialSaveBatch.useMutation();
+  const cancelSaveBatch =
+    api.materialProfile.cancelMaterialSaveBatch.useMutation();
+  const recentSaveBatches =
+    api.materialProfile.listMaterialSaveBatches.useQuery(
+      { workspaceId: workspaceId ?? 0, limit: 10 },
+      { enabled: isProfileSplit && workspaceId != null },
+    );
+  const activeScrapeJobQuery = api.materialProfile.getActiveScrapeJob.useQuery(
+    { workspaceId: workspaceId ?? 0 },
+    {
+      enabled: isProfileSplit && workspaceId != null,
+      refetchInterval: (query) => (query.state.data ? 1_000 : false),
+      refetchOnWindowFocus: false,
+    },
+  );
+  useEffect(() => {
+    if (activeScrapeJobQuery.data?.id) {
+      setCaptureJobId(activeScrapeJobQuery.data.id);
+    }
+  }, [activeScrapeJobQuery.data?.id]);
+  const captureProgressQuery =
+    api.materialProfile.getScrapeJobProgress.useQuery(
+      { workspaceId: workspaceId ?? 0, jobId: captureJobId ?? EMPTY_UUID },
+      {
+        enabled: workspaceId != null && captureJobId != null,
+        refetchInterval: (query) => {
+          const status = query.state.data?.status;
+          return !status || status === "queued" || status === "running"
+            ? 1_000
+            : false;
+        },
+        refetchOnWindowFocus: false,
+        retry: false,
+      },
+    );
+  const scrapeRunsQuery = api.materialProfile.listScrapeRuns.useQuery(
+    { workspaceId: workspaceId ?? 0, jobId: captureJobId ?? EMPTY_UUID },
+    {
+      enabled: workspaceId != null && captureJobId != null,
+      refetchInterval: (query) =>
+        query.state.data?.some(
+          (run) => run.status === "queued" || run.status === "running",
+        )
+          ? 1_000
+          : false,
+      refetchOnWindowFocus: false,
+      retry: false,
+    },
+  );
+  const activeScrapeRun =
+    scrapeRunsQuery.data?.find((run) => run.itemId === row.key) ?? null;
+  const capturingSearchCandidateKey =
+    startingCandidateKey ??
+    (activeScrapeRun &&
+    ["queued", "running", "awaiting_product_selection"].includes(
+      activeScrapeRun.status,
+    )
+      ? activeScrapeRun.sourceCandidateKey
+      : null);
+  const startScrapeJob = api.materialProfile.startScrapeJob.useMutation({
+    onSuccess: (job) => {
+      if (job) setCaptureJobId(job.id);
+      setStartingCandidateKey(null);
+      void activeScrapeJobQuery.refetch();
+    },
+    onError: (error) => {
+      setStartingCandidateKey(null);
+      toast.error(error.message || "Không thể bắt đầu scrape nguồn web.");
+    },
+  });
+  const attachPdfSource =
+    api.materialProfile.attachCatalogPdfSource.useMutation({
+      onSuccess: (serialized) => {
+        const next = deserializeRowDecision(serialized);
+        if (next) onChange(next);
+        setStartingCandidateKey(null);
+        toast.success("Đã thêm catalog PDF làm bằng chứng.");
+      },
+      onError: (error) => {
+        setStartingCandidateKey(null);
+        toast.error(error.message || "Không thể gắn catalog PDF.");
+      },
+    });
+  const cancelScrapeJob = api.materialProfile.cancelScrapeJob.useMutation({
+    onSuccess: () => void captureProgressQuery.refetch(),
+  });
+  const retryScrapeRuns = api.materialProfile.retryScrapeRuns.useMutation({
+    onSuccess: () => {
+      void captureProgressQuery.refetch();
+      void scrapeRunsQuery.refetch();
+    },
+  });
+  const selectScrapedProduct =
+    api.materialProfile.selectScrapedProduct.useMutation({
+      onSuccess: async () => {
+        setPendingProductIndex(null);
+        if (workspaceId == null) return;
+        const workspace = await utils.materialProfile.get.fetch({
+          workspaceId,
+        });
+        const item = workspace.items.find((entry) => entry.id === row.key);
+        const next = deserializeRowDecision(item?.reviewDecisionJson);
+        if (next) onChange(next);
+        void scrapeRunsQuery.refetch();
+        void captureProgressQuery.refetch();
+      },
+      onError: (error) => {
+        setPendingProductIndex(null);
+        toast.error(error.message || "Không áp dụng được sản phẩm đã chọn.");
+      },
+    });
 
   const selectedSearchCandidateKey =
     decision?.selectedSearchCandidateKey ?? null;
+  useEffect(() => {
+    if (
+      activeScrapeRun?.status !== "completed" ||
+      handledCaptureRunIdsRef.current.has(activeScrapeRun.id) ||
+      workspaceId == null
+    )
+      return;
+    handledCaptureRunIdsRef.current.add(activeScrapeRun.id);
+    void utils.materialProfile.get.fetch({ workspaceId }).then((workspace) => {
+      const item = workspace.items.find((entry) => entry.id === row.key);
+      const next = deserializeRowDecision(item?.reviewDecisionJson);
+      if (next) onChange(next);
+      toast.success("Đã đưa kết quả scrape vào bảng so sánh.");
+    });
+  }, [
+    activeScrapeRun,
+    onChange,
+    row.key,
+    toast,
+    utils.materialProfile.get,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    onCapturePendingChangeRef.current?.(
+      Boolean(startingCandidateKey) ||
+        activeScrapeRun?.status === "queued" ||
+        activeScrapeRun?.status === "running" ||
+        activeScrapeRun?.status === "awaiting_product_selection",
+    );
+  }, [activeScrapeRun?.status, startingCandidateKey]);
+
   const selectedId =
     selectedSearchCandidateKey == null &&
     (decision?.selectedSource === "catalog" || decision?.selectedSource == null)
@@ -137,13 +385,23 @@ export function MatchChooser({
     parsedSearchKey?.source === "ai"
       ? (aiCandidates[Number(parsedSearchKey.id)] ?? null)
       : null;
+  const selectedWebScrape =
+    parsedSearchKey?.source === "web"
+      ? (findProfileCandidateCapture(
+          decision?.scrapeResults,
+          parsedSearchKey.id,
+        ) ?? null)
+      : null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
+  const acceptedProfileFields =
+    decision?.acceptedProfileFields ?? new Set<"name" | "imageUrl">();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
   const editedValues = decision?.editedValues ?? {};
   const webProposedFields = decision?.webProposedFields ?? {};
   const webEvidence = decision?.webEvidence ?? [];
   const webSearchStatus = decision?.webSearchStatus;
   const profileFields = profileSearchFields(decision);
+  const linkedCatalogPdfUrls = row.linkedCatalogPdfUrls ?? [];
 
   const sheetFields: Partial<Record<FillableField, string>> = row.sheetFields;
 
@@ -176,7 +434,41 @@ export function MatchChooser({
   const editorProposedFields =
     selectedAiCandidate != null
       ? selectedAiCandidate.fields
-      : webProposedFields;
+      : selectedWebScrape != null
+        ? selectedWebScrape.fields
+        : webProposedFields;
+  const profileNameAfter =
+    decision?.editedProfileValues?.name ??
+    selectedWebScrape?.name ??
+    selectedAiCandidate?.title ??
+    selectedCandidate?.name ??
+    row.name;
+  const profileImageAfter =
+    decision?.editedProfileValues?.imageUrl ??
+    selectedWebScrape?.imageUrl ??
+    selectedCandidate?.imageUrl ??
+    "";
+  const sourceProvenance =
+    decision?.selectedSource === "web" && selectedWebScrape
+      ? "Scrape"
+      : decision?.selectedSource === "ai"
+        ? "AI"
+        : decision?.selectedSource === "catalog"
+          ? "Danh mục"
+          : "Thủ công";
+  const fieldProvenance = Object.fromEntries(
+    FILLABLE_FIELDS.map((field) => {
+      const edited = decision?.editedValues?.[field];
+      const proposed = editorProposedFields[field];
+      if (edited === undefined && !proposed?.trim()) return [field, undefined];
+      return [
+        field,
+        edited !== undefined && edited.trim() !== proposed?.trim()
+          ? "Thủ công"
+          : sourceProvenance,
+      ];
+    }),
+  ) as Partial<Record<FillableField, string>>;
 
   const profileSearchRunning = [isWebLinksPending, isAiSearchPending].some(
     (v) => v === true,
@@ -201,14 +493,17 @@ export function MatchChooser({
       });
     } else {
       links.forEach((link) => {
-        const { score, chips } = webLinkMatchChips(link, row.name, sheetFields);
-        const linkedAiCandidate = aiCandidates.find((candidate) =>
-          [candidate.url, ...candidate.sourceUrls].some(
-            (sourceUrl) => sourceUrl === link.url,
-          ),
+        const { score: assessedScore, chips } = webLinkMatchChips(
+          link,
+          row.name,
+          sheetFields,
         );
-        const linkedPriceLabel = linkedAiCandidate
-          ? aiPriceLabel(linkedAiCandidate.fields)
+        const linkedScrape = findProfileCandidateCapture(
+          decision?.scrapeResults,
+          link.url,
+        );
+        const linkedPriceLabel = linkedScrape
+          ? aiPriceLabel(linkedScrape.fields)
           : undefined;
         items.push({
           key: searchCandidateKey("web", link.url),
@@ -216,15 +511,19 @@ export function MatchChooser({
           title: link.title.trim() || link.url,
           subtitle: link.snippet,
           fillCount: 0,
-          score,
+          score: assessedScore,
           chips,
           sourceUrl: link.url,
           priceLabel: linkedPriceLabel,
-          priceStatus: linkedAiCandidate
+          priceStatus: linkedScrape
             ? linkedPriceLabel
               ? "available"
               : "not_found"
             : "unchecked",
+          isCaptured:
+            (linkedScrape != null && hasCapturedProductDetails(linkedScrape)) ||
+            (/\.pdf(?:$|[?#])/i.test(link.url) &&
+              Boolean(decision?.catalogPdfUrls?.includes(link.url))),
           isRecommended: false,
           status:
             decision?.webLinksStatus === "error" ? "error" : ("done" as const),
@@ -308,8 +607,10 @@ export function MatchChooser({
   }, [
     aiCandidates,
     decision?.aiSearchStatus,
+    decision?.catalogPdfUrls,
     decision?.webLinkResults,
     decision?.webLinksStatus,
+    decision?.scrapeResults,
     isProfileSplit,
     profileSearchRunning,
     row.name,
@@ -326,12 +627,24 @@ export function MatchChooser({
     selectedSearchCandidate?.source === "ai"
       ? "Sau (AI)"
       : selectedSearchCandidate?.source === "web"
-        ? "Sau (Web)"
+        ? selectedWebScrape
+          ? "Sau (Scrape)"
+          : "Sau (Web)"
         : selectedCandidate
           ? `Sau (${selectedCandidate.name})`
           : "Sau";
+  const scrapeSourceSelectionLocked = Boolean(
+    activeScrapeRun &&
+    ["queued", "running", "awaiting_product_selection"].includes(
+      activeScrapeRun.status,
+    ),
+  );
 
   const choose = (candidate: EnrichCandidate) => {
+    if (scrapeSourceSelectionLocked) {
+      toast.warning("Hãy hoàn tất hoặc hủy scrape nguồn đang chọn trước.");
+      return;
+    }
     const candidateFields = candidateToFields(candidate);
     if (isProfileSplit) {
       const { acceptedFields, editedValues: nextEdited } =
@@ -347,6 +660,11 @@ export function MatchChooser({
         webEvidence,
         webSearchStatus,
         ...profileFields,
+        acceptedProfileFields: new Set([
+          "name",
+          ...(candidate.imageUrl ? (["imageUrl"] as const) : []),
+        ]),
+        editedProfileValues: undefined,
       });
       return;
     }
@@ -381,6 +699,14 @@ export function MatchChooser({
   };
 
   const chooseSearchCandidate = (key: string) => {
+    if (
+      scrapeSourceSelectionLocked &&
+      activeScrapeRun &&
+      activeScrapeRun.sourceCandidateKey !== key
+    ) {
+      toast.warning("Hãy hoàn tất hoặc hủy scrape nguồn đang chọn trước.");
+      return;
+    }
     const parsed = parseSearchCandidateKey(key);
     if (!parsed) return;
 
@@ -393,37 +719,44 @@ export function MatchChooser({
         return;
       }
 
-      const matchingAi = aiCandidates.find(
-        (candidate) => candidate.url === link.url,
+      const matchingScrape = findProfileCandidateCapture(
+        decision?.scrapeResults,
+        link.url,
       );
-      if (matchingAi) {
+      if (matchingScrape) {
         const { acceptedFields, editedValues: nextEdited } =
-          applyAllProposedFieldsWithCurrency(matchingAi.fields);
+          applyAllProposedFieldsWithCurrency(matchingScrape.fields);
         onChange({
-          materialId: null,
+          materialId: decision?.materialId ?? null,
           selectedSource: "web",
           selectedSearchCandidateKey: key,
           acceptedFields,
           overwriteFields: new Set(),
           editedValues: nextEdited,
-          webProposedFields: { ...matchingAi.fields },
-          webEvidence: matchingAi.evidence,
+          webProposedFields: { ...matchingScrape.fields },
+          webEvidence: matchingScrape.evidence,
           webSearchStatus,
           ...profileFields,
-          catalogPdfUrls: matchingAi.catalogPdfUrls,
-          aiSearchResult: matchingAi,
+          catalogPdfUrls: [
+            ...new Set([
+              ...(decision?.catalogPdfUrls ?? []),
+              ...matchingScrape.catalogPdfUrls,
+            ]),
+          ],
+          acceptedProfileFields: new Set([
+            "name",
+            ...(matchingScrape.imageUrl ? (["imageUrl"] as const) : []),
+          ]),
+          editedProfileValues: undefined,
         });
         return;
       }
 
-      const pdfFromUrl = link.url.toLowerCase().includes(".pdf")
-        ? [link.url]
-        : [];
       const nextEdited: Partial<Record<FillableField, string>> = {
         sourceUrl: link.url,
       };
       onChange({
-        materialId: null,
+        materialId: decision?.materialId ?? null,
         selectedSource: "web",
         selectedSearchCandidateKey: key,
         acceptedFields: new Set<FillableField>(["sourceUrl"]),
@@ -433,7 +766,9 @@ export function MatchChooser({
         webEvidence: [],
         webSearchStatus,
         ...profileFields,
-        catalogPdfUrls: pdfFromUrl.length > 0 ? pdfFromUrl : undefined,
+        catalogPdfUrls: decision?.catalogPdfUrls,
+        acceptedProfileFields: new Set(),
+        editedProfileValues: undefined,
       });
       return;
     }
@@ -446,7 +781,7 @@ export function MatchChooser({
     }
     const gapFields = applyAllProposedFieldsWithCurrency(aiResult.fields);
     onChange({
-      materialId: null,
+      materialId: decision?.materialId ?? null,
       selectedSource: "ai",
       selectedSearchCandidateKey: key,
       acceptedFields: gapFields.acceptedFields,
@@ -456,8 +791,58 @@ export function MatchChooser({
       webEvidence: aiResult.evidence,
       webSearchStatus,
       ...profileFields,
-      catalogPdfUrls: aiResult.catalogPdfUrls,
+      catalogPdfUrls: [
+        ...new Set([
+          ...(decision?.catalogPdfUrls ?? []),
+          ...(aiResult.catalogPdfUrls ?? []),
+        ]),
+      ],
       aiSearchResult: aiResult,
+      acceptedProfileFields: aiResult.title ? new Set(["name"]) : new Set(),
+      editedProfileValues: undefined,
+    });
+  };
+
+  const captureSearchCandidate = (key: string) => {
+    const parsed = parseSearchCandidateKey(key);
+    if (
+      parsed?.source !== "web" ||
+      capturingSearchCandidateKey != null ||
+      isWebLinksPending ||
+      isAiSearchPending ||
+      isSearchBusy
+    ) {
+      return;
+    }
+    const link = decision?.webLinkResults?.find(
+      (item) => item.url === parsed.id,
+    );
+    if (!link) {
+      toast.warning("Chưa có liên kết web để thu thập thông tin.");
+      return;
+    }
+    if (workspaceId == null) {
+      toast.error("Thiếu mã hồ sơ vật tư để bắt đầu scrape.");
+      return;
+    }
+    const candidateKey = profileCandidateCaptureKey(link.url);
+    setStartingCandidateKey(candidateKey);
+    onCapturePendingChangeRef.current?.(true);
+    if (/\.pdf(?:$|[?#])/i.test(link.url)) {
+      attachPdfSource.mutate({
+        workspaceId,
+        itemId: row.key,
+        sourceUrl: link.url,
+        sourceCandidateKey: candidateKey,
+      });
+      return;
+    }
+    startScrapeJob.mutate({
+      workspaceId,
+      itemIds: [row.key],
+      interactive: true,
+      sourceUrl: link.url,
+      sourceCandidateKey: candidateKey,
     });
   };
 
@@ -488,7 +873,7 @@ export function MatchChooser({
       next.add(field);
     }
     onChange({
-      materialId: selectedId,
+      materialId: decision?.materialId ?? selectedId,
       selectedSource: decision?.selectedSource,
       selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: next,
@@ -512,7 +897,7 @@ export function MatchChooser({
       nextAccepted.add(field);
     }
     onChange({
-      materialId: selectedId,
+      materialId: decision?.materialId ?? selectedId,
       selectedSource: decision?.selectedSource,
       selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: nextAccepted,
@@ -527,18 +912,10 @@ export function MatchChooser({
 
   const editValue = (field: FillableField, value: string) => {
     const nextEdited = { ...editedValues, [field]: value };
-    const nextAccepted = isProfileSplit
-      ? profileAcceptedFields(sheetFields, catalogFields, {
-          editedValues: nextEdited,
-          webProposedFields: editorProposedFields,
-        })
-      : (() => {
-          const next = new Set(accepted);
-          next.add(field);
-          return next;
-        })();
+    const nextAccepted = new Set(accepted);
+    nextAccepted.add(field);
     onChange({
-      materialId: selectedId,
+      materialId: decision?.materialId ?? selectedId,
       selectedSource: decision?.selectedSource,
       selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: nextAccepted,
@@ -557,7 +934,7 @@ export function MatchChooser({
       .map((line) => line.trim())
       .filter(Boolean);
     onChange({
-      materialId: selectedId,
+      materialId: decision?.materialId ?? selectedId,
       selectedSource: decision?.selectedSource,
       selectedSearchCandidateKey: decision?.selectedSearchCandidateKey,
       acceptedFields: accepted,
@@ -568,6 +945,33 @@ export function MatchChooser({
       webSearchStatus,
       ...profileFields,
       catalogPdfUrls: urls.length > 0 ? urls : undefined,
+    });
+  };
+
+  const toggleProfileField = (field: "name" | "imageUrl") => {
+    const next = new Set(acceptedProfileFields);
+    if (next.has(field)) next.delete(field);
+    else next.add(field);
+    onChange({
+      ...(decision ?? {
+        materialId: null,
+        acceptedFields: new Set<FillableField>(),
+      }),
+      acceptedProfileFields: next,
+    });
+  };
+
+  const editProfileValue = (field: "name" | "imageUrl", value: string) => {
+    onChange({
+      ...(decision ?? {
+        materialId: null,
+        acceptedFields: new Set<FillableField>(),
+      }),
+      acceptedProfileFields: new Set([...acceptedProfileFields, field]),
+      editedProfileValues: {
+        ...decision?.editedProfileValues,
+        [field]: value,
+      },
     });
   };
 
@@ -583,7 +987,7 @@ export function MatchChooser({
       }
     }
     onChange({
-      materialId: null,
+      materialId: isProfileSplit ? (decision?.materialId ?? null) : null,
       selectedSource: undefined,
       acceptedFields: nextAccepted,
       overwriteFields: new Set(),
@@ -596,17 +1000,251 @@ export function MatchChooser({
 
   const profileEffective = isProfileSplit
     ? profileEffectiveFieldValues(sheetFields, catalogFields, {
+        acceptedFields: accepted,
         editedValues,
         webProposedFields: editorProposedFields,
       })
     : null;
+  const profileTargetName = acceptedProfileFields.has("name")
+    ? profileNameAfter
+    : row.name;
+  const targetLookupKeyword =
+    [profileEffective?.code?.trim(), profileTargetName.trim()].find(Boolean) ??
+    "";
+  const targetLookup = api.material.searchMaterials.useQuery(
+    {
+      keyword: targetLookupKeyword,
+      limit: 5,
+      offset: 0,
+    },
+    {
+      enabled: isProfileSplit && Boolean(targetLookupKeyword),
+    },
+  );
+  const targetLookupPending =
+    isProfileSplit && Boolean(targetLookupKeyword) && targetLookup.isLoading;
+  const profileSaveTarget = useMemo(() => {
+    if (!isProfileSplit) return null;
+    const candidates = targetLookup.data ?? [];
+    const linkedId = decision?.materialId ?? selectedId;
+    if (linkedId != null) {
+      const linked = candidates.find((material) => material.id === linkedId);
+      const linkedCandidate = row.candidates.find(
+        (material) => material.materialId === linkedId,
+      );
+      const linkedProfile =
+        row.linkedMaterial?.id === linkedId ? row.linkedMaterial : undefined;
+      return {
+        material:
+          linked ??
+          (linkedCandidate
+            ? {
+                id: linkedCandidate.materialId,
+                name: linkedCandidate.name,
+                code: linkedCandidate.code,
+                unit: linkedCandidate.unit,
+                category: linkedCandidate.category,
+                specText: linkedCandidate.specSnippet,
+                manufacturer: linkedCandidate.manufacturer,
+                originCountry: linkedCandidate.originCountry,
+                defaultUnitPrice: linkedCandidate.defaultUnitPrice,
+                currency: linkedCandidate.currency,
+                sourceUrl: linkedCandidate.sourceUrl,
+                imageUrl: linkedCandidate.imageUrl,
+              }
+            : (linkedProfile ?? { id: linkedId, name: "Vật tư đã liên kết" })),
+        ambiguous: false,
+      };
+    }
+    const code = profileEffective?.code?.trim().toLowerCase();
+    const exact = code
+      ? candidates.find(
+          (material) => material.code?.trim().toLowerCase() === code,
+        )
+      : undefined;
+    if (exact) return { material: exact, ambiguous: false };
+    const ranked = candidates
+      .map((material) => ({
+        material,
+        score:
+          simpleSimilarity(profileTargetName, material.name) * 0.7 +
+          simpleSimilarity(
+            profileEffective?.specText ?? "",
+            material.specText,
+          ) *
+            0.3,
+      }))
+      .sort((left, right) => right.score - left.score);
+    if ((ranked[0]?.score ?? 0) < 0.85) return null;
+    if (ranked[1] && ranked[0]!.score - ranked[1].score < 0.05) {
+      return { material: null, ambiguous: true };
+    }
+    return { material: ranked[0]!.material, ambiguous: false };
+  }, [
+    decision?.materialId,
+    isProfileSplit,
+    profileEffective?.code,
+    profileEffective?.specText,
+    profileTargetName,
+    row.candidates,
+    row.linkedMaterial,
+    selectedId,
+    targetLookup.data,
+  ]);
+  const targetCatalogQuery = api.catalogDocument.listByMaterial.useQuery(
+    { materialId: profileSaveTarget?.material?.id ?? 1 },
+    {
+      enabled: isProfileSplit && profileSaveTarget?.material?.id != null,
+    },
+  );
+  const targetCatalogPdfUrls = (targetCatalogQuery.data ?? []).flatMap(
+    (document) =>
+      document.sourceUrl?.trim() ? [document.sourceUrl.trim()] : [],
+  );
+  const catalogPdfUrlsBefore = [
+    ...new Set(
+      [...linkedCatalogPdfUrls, ...targetCatalogPdfUrls]
+        .map((url) => url.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const profileCatalogPdfUrls = [
+    ...new Set(
+      [...catalogPdfUrlsBefore, ...(decision?.catalogPdfUrls ?? [])]
+        .map((url) => url.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const proposedCatalogPdfUrls = selectedWebScrape
+    ? selectedWebScrape.catalogPdfUrls
+    : selectedAiCandidate
+      ? (selectedAiCandidate.catalogPdfUrls ?? [])
+      : selectedSearchCandidate?.sourceUrl &&
+          /\.pdf(?:$|[?#])/i.test(selectedSearchCandidate.sourceUrl)
+        ? [selectedSearchCandidate.sourceUrl]
+        : [];
+  const catalogPdfAccepted = (decision?.catalogPdfUrls?.length ?? 0) > 0;
+  const toggleCatalogPdfUrls = () => {
+    editCatalogPdfUrls(
+      catalogPdfAccepted ? "" : proposedCatalogPdfUrls.join("\n"),
+    );
+  };
+  const catalogPdfWasEdited =
+    catalogPdfAccepted &&
+    proposedCatalogPdfUrls.length > 0 &&
+    decision?.catalogPdfUrls != null &&
+    [
+      ...new Set(
+        decision.catalogPdfUrls.map((url) => url.trim()).filter(Boolean),
+      ),
+    ]
+      .sort()
+      .join("\n") !==
+      [
+        ...new Set(
+          [...catalogPdfUrlsBefore, ...proposedCatalogPdfUrls]
+            .map((url) => url.trim())
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .join("\n");
+  const catalogPdfProvenance = catalogPdfWasEdited
+    ? "Thủ công"
+    : selectedWebScrape
+      ? "Scrape"
+      : selectedAiCandidate
+        ? "AI"
+        : selectedSearchCandidate?.sourceUrl &&
+            /\.pdf(?:$|[?#])/i.test(selectedSearchCandidate.sourceUrl)
+          ? "Danh mục"
+          : decision?.catalogPdfUrls?.length
+            ? "Thủ công"
+            : catalogPdfUrlsBefore.length > 0
+              ? "Danh mục"
+              : undefined;
+  const profileFinalEffective = { ...(profileEffective ?? {}) };
+  const targetMaterial = profileSaveTarget?.material;
+  const profileCompareBeforeFields = { ...sheetFields };
+  if (targetMaterial) {
+    const retainedFields: Array<
+      [FillableField, string | number | null | undefined]
+    > = [
+      ["code", "code" in targetMaterial ? targetMaterial.code : undefined],
+      ["unit", "unit" in targetMaterial ? targetMaterial.unit : undefined],
+      [
+        "category",
+        "category" in targetMaterial ? targetMaterial.category : undefined,
+      ],
+      [
+        "specText",
+        "specText" in targetMaterial ? targetMaterial.specText : undefined,
+      ],
+      [
+        "manufacturer",
+        "manufacturer" in targetMaterial
+          ? targetMaterial.manufacturer
+          : undefined,
+      ],
+      [
+        "originCountry",
+        "originCountry" in targetMaterial
+          ? targetMaterial.originCountry
+          : undefined,
+      ],
+      [
+        "defaultUnitPrice",
+        "defaultUnitPrice" in targetMaterial
+          ? targetMaterial.defaultUnitPrice
+          : undefined,
+      ],
+      [
+        "currency",
+        "currency" in targetMaterial ? targetMaterial.currency : undefined,
+      ],
+      [
+        "sourceUrl",
+        "sourceUrl" in targetMaterial ? targetMaterial.sourceUrl : undefined,
+      ],
+    ];
+    for (const [field, value] of retainedFields) {
+      if (value != null) profileCompareBeforeFields[field] = String(value);
+      if (!accepted.has(field) && value != null && String(value).trim()) {
+        profileFinalEffective[field] = String(value);
+      }
+    }
+  }
+  const profileFinalName = !acceptedProfileFields.has("name")
+    ? (targetMaterial?.name ?? row.name)
+    : profileNameAfter;
+  const profileSaveResolution = isProfileSplit
+    ? materialProfileSaveResolution({
+        row,
+        name: profileFinalName,
+        effective: profileFinalEffective,
+        catalogPdfUrls: profileCatalogPdfUrls,
+        webEvidence,
+      })
+    : null;
+  const conflictingSaveBatch = recentSaveBatches.data?.find((batch) =>
+    ["draft", "queued", "running"].includes(batch.status),
+  );
+  const profileSaveHint = conflictingSaveBatch
+    ? "Đang có bản xem trước hoặc đợt lưu chưa hoàn tất."
+    : targetLookupPending
+      ? "Đang kiểm tra vật tư đích trước khi lưu."
+      : profileSaveResolution?.promotable
+        ? profileSaveTarget?.ambiguous
+          ? "Có nhiều vật tư đích gần điểm nhau; bản xem trước sẽ yêu cầu chọn đích."
+          : profileSaveTarget?.material
+            ? `Sẽ cập nhật vật tư #${profileSaveTarget.material.id} · ${profileSaveTarget.material.name}.`
+            : "Sẽ tạo vật tư mới trong /materials."
+        : (profileSaveResolution?.reasons[0] ??
+          "Hoàn thiện các trường bắt buộc trước khi lưu.");
 
-  const saveCurrentToMaterials = () => {
+  const saveCurrentToMaterials = async () => {
     const effective = isProfileSplit
-      ? profileEffectiveFieldValues(sheetFields, catalogFields, {
-          editedValues,
-          webProposedFields: editorProposedFields,
-        })
+      ? profileFinalEffective
       : effectiveAcceptedFieldValues(sheetFields, catalogFields, {
           acceptedFields: accepted,
           editedValues,
@@ -616,7 +1254,7 @@ export function MatchChooser({
     const unit = effective.unit?.trim() ?? sheetFields.unit?.trim() ?? "";
     const specText =
       effective.specText?.trim() ?? sheetFields.specText?.trim() ?? "";
-    const name = row.name.trim();
+    const name = (isProfileSplit ? profileFinalName : profileNameAfter).trim();
     if (!name) {
       toast.error("Tên vật tư không được để trống.");
       return;
@@ -634,14 +1272,6 @@ export function MatchChooser({
       return;
     }
 
-    const trimmedOrUndefined = (value: string | undefined) => {
-      const trimmed = value?.trim();
-      if (!trimmed) {
-        return undefined;
-      }
-      return trimmed;
-    };
-
     const sourceUrl = trimmedOrUndefined(effective.sourceUrl);
     const catalogPdfUrls = decision?.catalogPdfUrls ?? [];
 
@@ -651,39 +1281,83 @@ export function MatchChooser({
     // actual catalog URL. A user-entered record is considered manually
     // verified, while the automatic path has its own 85% confidence gate.
     if (isProfileSplit) {
-      const resolution = validateMaterialProfileResolution({
-        input: {
-          name,
-          unit,
-          specText,
-          rowIndex: row.originalRowIndex,
-        },
-        candidate: {
-          code: trimmedOrUndefined(effective.code),
-          name,
-          unit,
-          specText,
-          manufacturer: trimmedOrUndefined(effective.manufacturer),
-          originCountry: trimmedOrUndefined(effective.originCountry),
-          unitPrice: parseOptionalNumber(effective.defaultUnitPrice ?? ""),
-          source: sourceUrl ? sourceLabelFromUrl(sourceUrl) : "",
-          sourceUrl,
-          catalogUrl: catalogPdfUrls[0],
-          evidenceUrls: [
-            ...catalogPdfUrls,
-            ...webEvidence
-              .map((evidence) => evidence.sourceUrl ?? "")
-              .filter(Boolean),
-          ],
-          confidence: 1,
-          provenance: "manual_verified",
-        },
-        promotionConfidence: 0,
-      });
-      if (!resolution.promotable) {
-        toast.error(`Chưa thể lưu vào vật tư: ${resolution.reasons.join(" ")}`);
+      if (targetLookupPending) {
+        toast.warning(
+          "Đang kiểm tra vật tư đích; vui lòng chờ trong giây lát.",
+        );
         return;
       }
+      if (!profileSaveResolution?.promotable) {
+        toast.error(
+          `Chưa thể lưu vào vật tư: ${profileSaveResolution?.reasons.join(" ") ?? "Hồ sơ chưa đủ điều kiện."}`,
+        );
+        return;
+      }
+      if (workspaceId == null || !decision) {
+        toast.error("Thiếu dữ liệu hồ sơ để lưu vật tư.");
+        return;
+      }
+      try {
+        await persistReviewDecision.mutateAsync({
+          itemId: row.key,
+          decision: serializeRowDecision(decision),
+        });
+        const preview = await createSavePreview.mutateAsync({
+          workspaceId,
+          itemIds: [row.key],
+          single: true,
+        });
+        const blocked = preview.rows.find(
+          (entry) => entry.action === "blocked",
+        );
+        if (blocked) {
+          await cancelSaveBatch.mutateAsync({
+            workspaceId,
+            batchId: preview.batch.id,
+          });
+          toast.error(
+            blocked.warningsJson[0] ?? "Hồ sơ chưa đủ điều kiện lưu.",
+          );
+          return;
+        }
+        const previewRow = preview.rows[0];
+        const expectedTargetId = profileSaveTarget?.material?.id ?? null;
+        if (previewRow?.targetMaterialId !== expectedTargetId) {
+          await cancelSaveBatch.mutateAsync({
+            workspaceId,
+            batchId: preview.batch.id,
+          });
+          void targetLookup.refetch();
+          toast.warning(
+            "Vật tư đích vừa thay đổi; đã dừng lưu để bạn kiểm tra lại phần so sánh.",
+          );
+          return;
+        }
+        const committed = await commitSaveBatch.mutateAsync({
+          workspaceId,
+          batchId: preview.batch.id,
+        });
+        if (committed.status !== "completed") {
+          throw new Error(committed.message ?? "Đợt lưu vật tư chưa hoàn tất.");
+        }
+        const workspace = await utils.materialProfile.get.fetch({
+          workspaceId,
+        });
+        const item = workspace.items.find((entry) => entry.id === row.key);
+        const next = deserializeRowDecision(item?.reviewDecisionJson);
+        if (next) onChange(next);
+        await Promise.all([
+          utils.material.searchMaterials.invalidate(),
+          utils.material.getMaterialSummary.invalidate(),
+          utils.material.getMaterialFilterOptions.invalidate(),
+        ]);
+        toast.success("Đã lưu vào /materials.");
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Không lưu được vật tư.",
+        );
+      }
+      return;
     }
 
     upsertMaterial.mutate(
@@ -769,14 +1443,75 @@ export function MatchChooser({
         )));
 
   const rowNameMissing = row.name.trim().length === 0;
+  const captureProgress = captureProgressQuery.data;
+  const captureStatusText =
+    startScrapeJob.isPending || attachPdfSource.isPending
+      ? "Đang tạo job scrape…"
+      : activeScrapeRun?.status === "queued"
+        ? "Đang xếp hàng…"
+        : activeScrapeRun?.status === "running"
+          ? (captureProgress?.message ?? "Đang đọc nguồn…")
+          : undefined;
+  const selectedSourceInlineLayer =
+    isProfileSplit &&
+    captureProgress &&
+    activeScrapeRun &&
+    workspaceId &&
+    activeScrapeRun.sourceCandidateKey === selectedSearchCandidateKey ? (
+      <ProfileScrapeInlineLayer
+        job={captureProgress}
+        run={activeScrapeRun}
+        onCancel={
+          captureProgress.status === "queued" ||
+          captureProgress.status === "running" ||
+          captureProgress.status === "awaiting_review"
+            ? () =>
+                cancelScrapeJob.mutate({
+                  workspaceId,
+                  jobId: captureProgress.id,
+                })
+            : undefined
+        }
+        onRetry={
+          activeScrapeRun.status === "failed"
+            ? () =>
+                retryScrapeRuns.mutate({
+                  workspaceId,
+                  jobId: captureProgress.id,
+                  runIds: [activeScrapeRun.id],
+                })
+            : undefined
+        }
+        onSelectProduct={(index) => {
+          setPendingProductIndex(index);
+          selectScrapedProduct.mutate({
+            workspaceId,
+            runId: activeScrapeRun.id,
+            productIndex: index,
+          });
+        }}
+        cancelling={cancelScrapeJob.isPending}
+        retrying={retryScrapeRuns.isPending}
+        pendingProductIndex={pendingProductIndex}
+      />
+    ) : undefined;
   const canSaveToMaterials =
     (isProfileSplit
-      ? Object.keys(profileEffective ?? {}).length > 0
+      ? profileSaveResolution?.promotable === true
       : accepted.size > 0) &&
+    !conflictingSaveBatch &&
     !isWebSearchPending &&
     !isWebLinksPending &&
-    !isAiSearchPending;
-  const isSavingMaterial = upsertMaterial.isPending;
+    !isAiSearchPending &&
+    !isSearchBusy &&
+    !targetLookupPending &&
+    capturingSearchCandidateKey == null;
+  const isSavingMaterial =
+    upsertMaterial.isPending ||
+    persistReviewDecision.isPending ||
+    createSavePreview.isPending ||
+    commitSaveBatch.isPending ||
+    cancelSaveBatch.isPending;
 
   return (
     <div className="space-y-3">
@@ -784,10 +1519,15 @@ export function MatchChooser({
         {isProfileSplit ? (
           <>
             <Button
-              variant="secondary"
+              variant="search"
               size="sm"
               onClick={onWebLinksSearch}
-              disabled={[isWebLinksPending, rowNameMissing].some(Boolean)}
+              disabled={[
+                isWebLinksPending,
+                rowNameMissing,
+                isSearchBusy,
+                capturingSearchCandidateKey != null,
+              ].some(Boolean)}
             >
               {isWebLinksPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -797,10 +1537,15 @@ export function MatchChooser({
               Tìm nguồn web
             </Button>
             <Button
-              variant="secondary"
+              variant="ai"
               size="sm"
               onClick={onAiSearch}
-              disabled={[isAiSearchPending, rowNameMissing].some(Boolean)}
+              disabled={[
+                isAiSearchPending,
+                rowNameMissing,
+                isSearchBusy,
+                capturingSearchCandidateKey != null,
+              ].some(Boolean)}
             >
               {isAiSearchPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -812,10 +1557,15 @@ export function MatchChooser({
           </>
         ) : (
           <Button
-            variant="secondary"
+            variant="search"
             size="sm"
             onClick={onWebSearch}
-            disabled={[isWebSearchPending, rowNameMissing].some(Boolean)}
+            disabled={[
+              isWebSearchPending,
+              rowNameMissing,
+              isSearchBusy,
+              capturingSearchCandidateKey != null,
+            ].some(Boolean)}
           >
             {isWebSearchPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -825,30 +1575,12 @@ export function MatchChooser({
             Tìm web
           </Button>
         )}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={saveCurrentToMaterials}
-          disabled={!canSaveToMaterials || isSavingMaterial}
-          title={
-            canSaveToMaterials
-              ? "Lưu các trường đã chọn vào danh mục vật tư"
-              : isProfileSplit
-                ? "Nhập ít nhất một trường để lưu"
-                : "Chọn ít nhất một trường để lưu"
-          }
-        >
-          {isSavingMaterial ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : null}
-          Lưu vào vật tư
-        </Button>
       </div>
 
       <FieldCompareEditor
         sheetLabel={`Dòng Excel ${row.originalRowIndex}`}
         sheetName={row.name}
-        sheetFields={sheetFields}
+        sheetFields={isProfileSplit ? profileCompareBeforeFields : sheetFields}
         proposedFields={editorProposedFields}
         selectedMaterialId={selectedId}
         accepted={accepted}
@@ -874,15 +1606,100 @@ export function MatchChooser({
         compareLayout={isProfileSplit ? "sideBySide" : "inline"}
         afterColumnLabel={afterColumnLabel}
         alwaysEditableFields={isProfileSplit}
-        catalogPdfUrls={decision?.catalogPdfUrls}
+        catalogPdfUrls={profileCatalogPdfUrls}
+        catalogPdfUrlsBefore={catalogPdfUrlsBefore}
+        catalogPdfProvenance={catalogPdfProvenance}
+        catalogPdfAccepted={catalogPdfAccepted}
+        onToggleCatalogPdfUrls={
+          isProfileSplit ? toggleCatalogPdfUrls : undefined
+        }
         onEditCatalogPdfUrls={isProfileSplit ? editCatalogPdfUrls : undefined}
+        profileExtraFields={
+          isProfileSplit
+            ? {
+                before: {
+                  name:
+                    targetMaterial?.name ??
+                    row.linkedMaterial?.name ??
+                    row.name,
+                  imageUrl:
+                    targetMaterial && "imageUrl" in targetMaterial
+                      ? (targetMaterial.imageUrl ?? "")
+                      : "",
+                },
+                after: {
+                  name: profileNameAfter,
+                  imageUrl: profileImageAfter,
+                },
+                accepted: acceptedProfileFields,
+                provenance: {
+                  name: acceptedProfileFields.has("name")
+                    ? decision?.editedProfileValues?.name !== undefined
+                      ? "Thủ công"
+                      : sourceProvenance
+                    : undefined,
+                  imageUrl: acceptedProfileFields.has("imageUrl")
+                    ? decision?.editedProfileValues?.imageUrl !== undefined
+                      ? "Thủ công"
+                      : sourceProvenance
+                    : undefined,
+                },
+              }
+            : undefined
+        }
+        onToggleProfileField={isProfileSplit ? toggleProfileField : undefined}
+        onEditProfileValue={isProfileSplit ? editProfileValue : undefined}
+        fieldProvenance={isProfileSplit ? fieldProvenance : undefined}
         searchSourceCandidates={searchSourceCandidates}
         selectedSearchCandidateKey={selectedSearchCandidateKey}
         onChooseSearchCandidate={
           isProfileSplit ? chooseSearchCandidate : undefined
         }
+        onCaptureSearchCandidate={
+          isProfileSplit ? captureSearchCandidate : undefined
+        }
+        capturingSearchCandidateKey={capturingSearchCandidateKey}
+        captureSearchCandidateDisabled={
+          isWebLinksPending === true ||
+          isAiSearchPending === true ||
+          isSearchBusy
+        }
+        captureSearchCandidateStatus={captureStatusText}
+        selectedSourceInlineLayer={selectedSourceInlineLayer}
         unifiedCandidateGrid={isProfileSplit}
         decisionPaneLayout={isProfileSplit ? "sideBySide" : "stacked"}
+        decisionActions={
+          <div className="grid max-w-72 justify-items-end gap-1">
+            <Button
+              variant="save"
+              size="sm"
+              onClick={() => void saveCurrentToMaterials()}
+              disabled={!canSaveToMaterials}
+              isLoading={isSavingMaterial}
+              leftIcon={<Save className="h-4 w-4" />}
+              aria-describedby={isProfileSplit ? materialSaveHintId : undefined}
+              title={
+                isProfileSplit
+                  ? profileSaveHint
+                  : canSaveToMaterials
+                    ? "Lưu các trường đã chọn vào danh mục vật tư"
+                    : "Chọn ít nhất một trường để lưu"
+              }
+            >
+              Lưu vào /materials
+            </Button>
+            {isProfileSplit ? (
+              <p
+                id={materialSaveHintId}
+                role="status"
+                aria-live="polite"
+                className={`${profileSaveResolution?.promotable ? "text-good" : "text-warning"} text-right text-xs leading-4`}
+              >
+                {profileSaveHint}
+              </p>
+            ) : null}
+          </div>
+        }
       />
 
       {!isProfileSplit && webEvidence.length > 0 && !isWebSearchPending ? (

@@ -426,6 +426,37 @@ describe("searchQueryWithFallback", () => {
     );
   });
 
+  it("does not compound ranking boosts when fetched results are ranked again", async () => {
+    const { rankSearchResults } = await import("./material-web-search");
+    const input = {
+      name: "Tủ điện treo tường 600x400x200mm",
+      specText: "Thép sơn tĩnh điện",
+      profileSearch: true,
+    };
+    const policy = {
+      boostDomains: [],
+      penaltyDomains: [],
+      blockDomains: [],
+    };
+    const once = rankSearchResults(
+      [
+        {
+          title: "Tủ điện treo tường 600x400x200mm",
+          url: "https://thietbidien.example/tu-dien-600x400x200",
+          domain: "thietbidien.example",
+          snippet: "Sản phẩm tủ điện bằng thép sơn tĩnh điện.",
+          query: "Tủ điện treo tường 600x400x200mm sản phẩm",
+          rankScore: 0.5,
+        },
+      ],
+      input,
+      policy,
+    );
+    const twice = rankSearchResults(once, input, policy);
+
+    expect(twice[0]?.rankScore).toBeCloseTo(once[0]?.rankScore ?? 0);
+  });
+
   it("demotes steel sizing pages for plastic/PVC pipe queries", async () => {
     const { rankSearchResults } = await import("./material-web-search");
     const ranked = rankSearchResults(

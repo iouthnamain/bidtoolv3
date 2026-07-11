@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Globe, Sparkles } from "lucide-react";
 
+import { ProfileScrapeProgress } from "~/app/_components/material-profiles/profile-scrape-progress";
 import { MatchChooser } from "~/app/_components/materials/review/match-chooser";
 import type {
   ReviewRow,
@@ -24,14 +34,86 @@ import {
   type FillableField,
 } from "~/lib/materials/excel-enrich-fields";
 import type { RowDecision } from "~/lib/materials/review-decision";
-import { deriveReviewRowStatus } from "~/lib/materials/review-decision";
 import {
-  countCatalogEligibleRows,
-  countSearchResultEligibleRows,
-  rowHasSearchResults,
-} from "~/lib/materials/profile-review-bulk-apply";
+  deriveReviewRowStatus,
+  deserializeRowDecision,
+} from "~/lib/materials/review-decision";
+import {
+  findProfileCandidateCapture,
+  isProfilePdfSource,
+  profileSourceEligibility,
+} from "~/lib/materials/profile-scrape-capture";
 import { runWithConcurrency } from "~/lib/run-with-concurrency";
 import { api } from "~/trpc/react";
+
+function selectedWebSource(decision: RowDecision | undefined) {
+  const links = [...(decision?.webLinkResults ?? [])].sort(
+    (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
+  );
+  const selectedUrl = decision?.selectedSearchCandidateKey?.startsWith("web:")
+    ? decision.selectedSearchCandidateKey.slice(4)
+    : undefined;
+  const source = selectedUrl
+    ? links.find((link) => link.url === selectedUrl)
+    : links[0];
+  return { links, source, manuallySelected: Boolean(selectedUrl) };
+}
+
+function rowBulkScrapeEligible(decision: RowDecision | undefined) {
+  const { links, source, manuallySelected } = selectedWebSource(decision);
+  if (!source || isProfilePdfSource(source.url)) return false;
+  return profileSourceEligibility({
+    selectedScore: source.rankScore,
+    runnerUpScore: links.find((link) => link.url !== source.url)?.rankScore,
+    manuallySelected,
+  }).eligible;
+}
+
+function rowCompleteForMaterialSave(
+  row: ReviewRow,
+  decision: RowDecision | undefined,
+) {
+  if (!decision) return false;
+  const field = (key: FillableField) =>
+    (decision.acceptedFields.has(key)
+      ? (decision.editedValues?.[key] ?? decision.webProposedFields?.[key])
+      : row.sheetFields[key]
+    )?.trim() ?? "";
+  const selectedKey = decision.selectedSearchCandidateKey;
+  const selectedScrape = selectedKey?.startsWith("web:")
+    ? findProfileCandidateCapture(
+        decision.scrapeResults,
+        selectedKey.slice("web:".length),
+      )
+    : undefined;
+  const selectedAi = selectedKey?.startsWith("ai:")
+    ? (decision.aiSearchCandidates?.[Number(selectedKey.slice("ai:".length))] ??
+      decision.aiSearchResult)
+    : undefined;
+  const name = decision.acceptedProfileFields?.has("name")
+    ? (
+        decision.editedProfileValues?.name ??
+        selectedScrape?.name ??
+        selectedAi?.title ??
+        row.name
+      ).trim()
+    : row.name.trim();
+  const hasCatalog = [
+    ...(row.linkedCatalogPdfUrls ?? []),
+    ...(decision.catalogPdfUrls ?? []),
+  ].some((url) => url.trim());
+  return Boolean(
+    name &&
+    field("code") &&
+    field("unit") &&
+    field("specText") &&
+    field("manufacturer") &&
+    field("originCountry") &&
+    field("defaultUnitPrice") &&
+    field("sourceUrl") &&
+    hasCatalog,
+  );
+}
 
 export type ReviewPanelSummary = {
   totalRows: number;
@@ -112,6 +194,19 @@ function profileRunStatusLabel(status: ProfileSearchRunPanelState["status"]) {
   }
 }
 
+function materialSaveBatchStatusLabel(status: string) {
+  if (status === "draft") return "Bản nháp";
+  if (status === "queued") return "Đang chờ";
+  if (status === "running") return "Đang lưu";
+  if (status === "completed") return "Hoàn tất";
+  if (status === "partial") return "Một phần";
+  if (status === "failed") return "Thất bại";
+  if (status === "cancelled") return "Đã hủy";
+  if (status === "undone") return "Đã hoàn tác";
+  if (status === "expired") return "Hết hạn";
+  return status;
+}
+
 function profileRunBadgeMeta(run: ProfileSearchRunPanelState): {
   label: string;
   tone: "neutral" | "success" | "warning" | "critical" | "info";
@@ -147,6 +242,7 @@ function formatRunTime(value: string) {
 }
 
 export function ReviewPanel({
+  workspaceId,
   rows,
   summary,
   decisions,
@@ -165,12 +261,6 @@ export function ReviewPanel({
   onDecisionPersist,
   onFlushDecisionsForRows,
   searchMode = "default",
-  onProfileBulkApplyCatalog,
-  onProfileBulkApplySearchResults,
-  onProfileUndoBulkApply,
-  profileBulkApplyPending = false,
-  profileUndoPending = false,
-  profileUndoAvailable = false,
   activeProfileSearchJob = null,
   activeProfileSearchRuns = [],
   latestProfileSearchJob = null,
@@ -180,7 +270,9 @@ export function ReviewPanel({
   onProfileSearchJob,
   onProfileCancelSearchJob,
   onProfileUseSearchRun,
+  onCapturePendingChange,
 }: {
+  workspaceId?: number;
   rows: ReviewRow[];
   summary: ReviewPanelSummary;
   decisions: Map<number, RowDecision>;
@@ -221,9 +313,94 @@ export function ReviewPanel({
   ) => void | Promise<void>;
   onProfileCancelSearchJob?: () => void | Promise<void>;
   onProfileUseSearchRun?: (runId: number) => void | Promise<void>;
+  onCapturePendingChange?: (pending: boolean) => void;
 }) {
   const toast = useToast();
+  const router = useRouter();
+  const utils = api.useUtils();
+  const syncedScrapeJobRef = useRef<string | null>(null);
   const isProfileSplit = searchMode === "profileSplit";
+  const activeScrapeJobQuery = api.materialProfile.getActiveScrapeJob.useQuery(
+    { workspaceId: workspaceId ?? 0 },
+    {
+      enabled: isProfileSplit && workspaceId != null,
+      refetchInterval: (query) => (query.state.data ? 1_000 : false),
+      refetchOnWindowFocus: false,
+    },
+  );
+  const activeScrapeRunsQuery = api.materialProfile.listScrapeRuns.useQuery(
+    {
+      workspaceId: workspaceId ?? 0,
+      jobId:
+        activeScrapeJobQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
+    },
+    {
+      enabled: workspaceId != null && activeScrapeJobQuery.data != null,
+      refetchInterval: (query) =>
+        query.state.data?.some(
+          (run) => run.status === "queued" || run.status === "running",
+        )
+          ? 1_000
+          : false,
+      refetchOnWindowFocus: false,
+    },
+  );
+  const startBulkScrape = api.materialProfile.startScrapeJob.useMutation({
+    onSuccess: () => {
+      void activeScrapeJobQuery.refetch();
+      toast.success("Đã xếp hàng scrape các nguồn đủ điều kiện.");
+    },
+    onError: (error) =>
+      toast.error(error.message || "Không tạo được job scrape."),
+  });
+  const cancelBulkScrape = api.materialProfile.cancelScrapeJob.useMutation({
+    onSuccess: () => void activeScrapeJobQuery.refetch(),
+  });
+  const retryBulkScrape = api.materialProfile.retryScrapeRuns.useMutation({
+    onSuccess: () => {
+      void activeScrapeJobQuery.refetch();
+      void activeScrapeRunsQuery.refetch();
+    },
+  });
+  const createSavePreview =
+    api.materialProfile.createMaterialSavePreview.useMutation({
+      onError: (error) =>
+        toast.error(
+          error.message || "Không tạo được bản xem trước lưu vật tư.",
+        ),
+    });
+  const recentSaveBatches =
+    api.materialProfile.listMaterialSaveBatches.useQuery(
+      { workspaceId: workspaceId ?? 0, limit: 10 },
+      { enabled: isProfileSplit && workspaceId != null },
+    );
+  useEffect(() => {
+    const job = activeScrapeJobQuery.data;
+    if (
+      !job ||
+      workspaceId == null ||
+      ["queued", "running"].includes(job.status) ||
+      syncedScrapeJobRef.current === `${job.id}:${job.updatedAt}`
+    ) {
+      return;
+    }
+    syncedScrapeJobRef.current = `${job.id}:${job.updatedAt}`;
+    void utils.materialProfile.get.fetch({ workspaceId }).then((workspace) => {
+      applyDecisions((previous) => {
+        const next = new Map(previous);
+        for (const item of workspace.items) {
+          const decision = deserializeRowDecision(item.reviewDecisionJson);
+          if (decision) next.set(item.originalRowIndex, decision);
+        }
+        return next;
+      });
+    });
+  }, [
+    activeScrapeJobQuery.data,
+    applyDecisions,
+    utils.materialProfile.get,
+    workspaceId,
+  ]);
   const webSearch = api.material.enrichWebSearchRow.useMutation();
   const webLinksSearch = api.material.enrichWebSearchRowLinks.useMutation();
   const profileSearch = api.material.enrichProfileSearchRow.useMutation();
@@ -239,6 +416,14 @@ export function ReviewPanel({
     completed: number;
     total: number;
   } | null>(null);
+  const [isCapturePending, setIsCapturePending] = useState(false);
+  const handleCapturePendingChange = useCallback(
+    (pending: boolean) => {
+      setIsCapturePending(pending);
+      onCapturePendingChange?.(pending);
+    },
+    [onCapturePendingChange],
+  );
 
   const filtered =
     statusFilter === "all"
@@ -356,6 +541,15 @@ export function ReviewPanel({
     rows.filter((row) => checkedRows.has(row.originalRowIndex));
 
   const toggleRowChecked = (rowIndex: number, checked: boolean) => {
+    if (
+      checked &&
+      isProfileSplit &&
+      checkedRows.size >= 500 &&
+      !checkedRows.has(rowIndex)
+    ) {
+      toast.warning("Mỗi đợt tương tác chọn tối đa 500 dòng.");
+      return;
+    }
     setCheckedRows((prev) => {
       const next = new Set(prev);
       if (checked) next.add(rowIndex);
@@ -365,11 +559,30 @@ export function ReviewPanel({
   };
 
   const toggleAllFiltered = (checked: boolean) => {
+    if (
+      checked &&
+      isProfileSplit &&
+      filtered.some((row) => !checkedRows.has(row.originalRowIndex)) &&
+      filtered.filter((row) => !checkedRows.has(row.originalRowIndex)).length >
+        500 - checkedRows.size
+    ) {
+      toast.warning("Đã giữ tổng số dòng được chọn ở mức tối đa 500.");
+    }
     setCheckedRows((prev) => {
       const next = new Set(prev);
       for (const row of filtered) {
-        if (checked) next.add(row.originalRowIndex);
-        else next.delete(row.originalRowIndex);
+        if (checked) {
+          if (
+            isProfileSplit &&
+            next.size >= 500 &&
+            !next.has(row.originalRowIndex)
+          ) {
+            continue;
+          }
+          next.add(row.originalRowIndex);
+        } else {
+          next.delete(row.originalRowIndex);
+        }
       }
       return next;
     });
@@ -384,13 +597,25 @@ export function ReviewPanel({
   };
 
   const selectFilteredRows = () => {
-    setCheckedRows(new Set(filtered.map((row) => row.originalRowIndex)));
+    if (isProfileSplit && filtered.length > 500) {
+      toast.warning("Đã chọn 500 dòng đầu tiên trong bộ lọc.");
+    }
+    setCheckedRows(
+      new Set(
+        filtered
+          .slice(0, isProfileSplit ? 500 : undefined)
+          .map((row) => row.originalRowIndex),
+      ),
+    );
   };
 
   const selectRowsNeedingReview = () => {
     setCheckedRows(
       new Set(
-        filtered.filter(rowNeedsReview).map((row) => row.originalRowIndex),
+        filtered
+          .filter(rowNeedsReview)
+          .slice(0, isProfileSplit ? 500 : undefined)
+          .map((row) => row.originalRowIndex),
       ),
     );
   };
@@ -765,6 +990,10 @@ export function ReviewPanel({
     kind: "web" | "ai",
     targets: ReviewRow[],
   ) => {
+    if (isCapturePending) {
+      toast.warning("Chờ thu thập nguồn hiện tại hoàn tất trước khi tìm lại.");
+      return;
+    }
     if (!onProfileSearchJob) {
       await runWithConcurrency(
         targets.map(
@@ -895,23 +1124,90 @@ export function ReviewPanel({
     persistDecision(rowIndex, next);
   };
 
-  const bulkTargetCount = resolveTargetRows().filter((row) =>
+  const bulkTargetRows = resolveTargetRows();
+  const bulkTargetCount = bulkTargetRows.filter((row) =>
     row.name.trim(),
   ).length;
-  const selectedRowIndices = Array.from(checkedRows);
   const filteredNeedsReviewCount = filtered.filter(rowNeedsReview).length;
-  const selectedCatalogEligibleCount = isProfileSplit
-    ? countCatalogEligibleRows(rows, selectedRowIndices)
+  const selectedMissingWebResults = isProfileSplit
+    ? bulkTargetRows.filter(
+        (row) => !decisions.get(row.originalRowIndex)?.webLinkResults?.length,
+      ).length
     : 0;
-  const selectedSearchEligibleCount = isProfileSplit
-    ? countSearchResultEligibleRows(rows, decisions, selectedRowIndices)
-    : 0;
-  const selectedHasSearchResults = isProfileSplit
-    ? resolveTargetRows().some((row) =>
-        rowHasSearchResults(decisions.get(row.originalRowIndex)),
+  const selectedScrapeEligibleRows = isProfileSplit
+    ? bulkTargetRows.filter((row) =>
+        rowBulkScrapeEligible(decisions.get(row.originalRowIndex)),
       )
-    : false;
-  const isBulkRunning = bulkProgress != null || profileSearchBusy;
+    : [];
+  const selectedCompleteRows = isProfileSplit
+    ? bulkTargetRows.filter((row) =>
+        rowCompleteForMaterialSave(row, decisions.get(row.originalRowIndex)),
+      )
+    : [];
+  const conflictingSaveBatch = recentSaveBatches.data?.find((batch) =>
+    ["draft", "queued", "running"].includes(batch.status),
+  );
+  const activeBulkScrape = activeScrapeJobQuery.data;
+  const bulkScrapeIsActive = Boolean(
+    activeBulkScrape &&
+    ["queued", "running", "awaiting_review"].includes(activeBulkScrape.status),
+  );
+  const activeBulkScrapeRuns = activeScrapeRunsQuery.data ?? [];
+  const bulkActionReason = (kind: "search" | "scrape" | "save") => {
+    if (checkedRows.size === 0) return "Chọn ít nhất một dòng.";
+    if (bulkTargetCount === 0) return "Các dòng đã chọn đang thiếu tên vật tư.";
+    if (conflictingSaveBatch)
+      return "Đang có bản xem trước hoặc đợt lưu chưa hoàn tất.";
+    if (profileSearchBusy || bulkProgress)
+      return "Đang có một đợt tìm kiếm khác hoạt động.";
+    if (isCapturePending) return "Đang scrape nguồn của dòng hiện tại.";
+    if (bulkScrapeIsActive) return "Đang có một đợt scrape khác hoạt động.";
+    if (kind === "scrape" && selectedScrapeEligibleRows.length === 0) {
+      if (selectedMissingWebResults === bulkTargetRows.length) {
+        return "Các dòng đã chọn chưa có kết quả web.";
+      }
+      return "Không có nguồn đạt 75% và điều kiện chênh lệch 5 điểm.";
+    }
+    if (kind === "save" && selectedCompleteRows.length === 0)
+      return "Không có dòng hoàn chỉnh để lưu.";
+    return undefined;
+  };
+  const bulkSearchReason = bulkActionReason("search");
+  const bulkScrapeReason = bulkActionReason("scrape");
+  const bulkSaveReason = bulkActionReason("save");
+  const bulkUnavailableMessages = [
+    bulkSearchReason ? `Tìm nguồn web / AI: ${bulkSearchReason}` : null,
+    bulkScrapeReason ? `Scrape: ${bulkScrapeReason}` : null,
+    bulkSaveReason ? `Lưu /materials: ${bulkSaveReason}` : null,
+  ].filter((message): message is string => message != null);
+  const runBulkScrape = async () => {
+    if (workspaceId == null) return;
+    const rowIndices = bulkTargetRows.map((row) => row.originalRowIndex);
+    await onFlushDecisionsForRows?.(rowIndices);
+    startBulkScrape.mutate({
+      workspaceId,
+      itemIds: bulkTargetRows.map((row) => row.key),
+      interactive: false,
+    });
+  };
+  const openSavePreview = async () => {
+    if (workspaceId == null) return;
+    const rowIndices = bulkTargetRows.map((row) => row.originalRowIndex);
+    await onFlushDecisionsForRows?.(rowIndices);
+    const preview = await createSavePreview.mutateAsync({
+      workspaceId,
+      itemIds: bulkTargetRows.map((row) => row.key),
+      sourceScrapeJobId: activeBulkScrape?.id,
+    });
+    router.push(
+      `/material-profiles/${workspaceId}/save-batches/${preview.batch.id}`,
+    );
+  };
+  const isBulkRunning =
+    bulkProgress != null ||
+    profileSearchBusy ||
+    isCapturePending ||
+    bulkScrapeIsActive;
   const profileSearchProgressPct =
     activeProfileSearchJob && activeProfileSearchJob.total > 0
       ? Math.round(
@@ -1012,101 +1308,67 @@ export function ReviewPanel({
                 </span>
               ) : null}
               <Button
-                variant="secondary"
+                variant="search"
                 size="sm"
-                disabled={
-                  checkedRows.size === 0 ||
-                  bulkTargetCount === 0 ||
-                  isBulkRunning
-                }
-                title={
-                  checkedRows.size === 0
-                    ? "Chọn dòng trước khi tìm nguồn web"
-                    : undefined
-                }
+                disabled={Boolean(bulkSearchReason) || isBulkRunning}
+                title={bulkSearchReason}
                 onClick={() => void runBulkSearch("web")}
               >
                 <Globe className="h-4 w-4" aria-hidden />
                 Tìm nguồn web ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
               <Button
-                variant="secondary"
+                variant="scrape"
                 size="sm"
                 disabled={
-                  checkedRows.size === 0 ||
-                  bulkTargetCount === 0 ||
-                  isBulkRunning
+                  Boolean(bulkScrapeReason) || startBulkScrape.isPending
                 }
-                title={
-                  checkedRows.size === 0
-                    ? "Chọn dòng trước khi trích xuất AI"
-                    : undefined
-                }
+                title={bulkScrapeReason}
+                isLoading={startBulkScrape.isPending}
+                onClick={() => void runBulkScrape()}
+              >
+                Scrape nguồn đủ điều kiện (
+                {selectedScrapeEligibleRows.length.toLocaleString("vi-VN")})
+              </Button>
+              <Button
+                variant="ai"
+                size="sm"
+                disabled={Boolean(bulkSearchReason) || isBulkRunning}
+                title={bulkSearchReason}
                 onClick={() => void runBulkSearch("ai")}
               >
                 <Sparkles className="h-4 w-4" aria-hidden />
                 Trích xuất AI ({bulkTargetCount.toLocaleString("vi-VN")})
               </Button>
               <Button
-                variant="secondary"
+                variant="save"
                 size="sm"
                 disabled={
-                  checkedRows.size === 0 ||
-                  selectedCatalogEligibleCount === 0 ||
-                  isBulkRunning ||
-                  profileBulkApplyPending
+                  Boolean(bulkSaveReason) || createSavePreview.isPending
                 }
-                isLoading={profileBulkApplyPending}
-                onClick={() =>
-                  void onProfileBulkApplyCatalog?.(selectedRowIndices)
-                }
+                title={bulkSaveReason}
+                isLoading={createSavePreview.isPending}
+                onClick={() => void openSavePreview()}
               >
-                Áp dụng vật tư ≥ 85% (
-                {selectedCatalogEligibleCount.toLocaleString("vi-VN")})
+                Xem trước & lưu /materials (
+                {selectedCompleteRows.length.toLocaleString("vi-VN")})
               </Button>
-              {selectedHasSearchResults ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={
-                    checkedRows.size === 0 ||
-                    selectedSearchEligibleCount === 0 ||
-                    isBulkRunning ||
-                    profileBulkApplyPending
-                  }
-                  onClick={() =>
-                    onProfileBulkApplySearchResults?.(selectedRowIndices)
-                  }
-                >
-                  Áp dụng kết quả tìm kiếm (
-                  {selectedSearchEligibleCount.toLocaleString("vi-VN")})
-                </Button>
-              ) : null}
-              {profileUndoAvailable ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={profileUndoPending || isBulkRunning}
-                  isLoading={profileUndoPending}
-                  onClick={() => void onProfileUndoBulkApply?.()}
-                >
-                  Hoàn tác bulk apply
-                </Button>
-              ) : null}
             </>
           ) : null}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={effectiveSummary.auto === 0}
-            onClick={confirmAllAuto}
-          >
-            Xác nhận tất cả ≥ 85%
-          </Button>
+          {!isProfileSplit ? (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={effectiveSummary.auto === 0 || isBulkRunning}
+              onClick={confirmAllAuto}
+            >
+              Xác nhận tất cả ≥ 85%
+            </Button>
+          ) : null}
           <Button
             variant="warning"
             size="sm"
-            disabled={pendingUnmatched === 0}
+            disabled={pendingUnmatched === 0 || isBulkRunning}
             onClick={skipAllUnmatched}
           >
             Bỏ qua chưa khớp
@@ -1116,6 +1378,16 @@ export function ReviewPanel({
           </Button>
         </div>
       </div>
+
+      {isProfileSplit && bulkUnavailableMessages.length > 0 ? (
+        <div
+          className="text-ink-3 border-b border-slate-400 bg-white px-4 py-2 text-xs"
+          role="status"
+          aria-live="polite"
+        >
+          {bulkUnavailableMessages.join(" ")}
+        </div>
+      ) : null}
 
       {isProfileSplit ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 bg-white px-4 py-2 text-xs text-slate-700">
@@ -1154,8 +1426,77 @@ export function ReviewPanel({
         </div>
       ) : null}
 
+      {isProfileSplit && activeBulkScrape && workspaceId ? (
+        <div className="border-b border-slate-400 px-4 py-3">
+          <ProfileScrapeProgress
+            job={activeBulkScrape}
+            run={
+              activeBulkScrapeRuns.find(
+                (run) =>
+                  run.status === "running" ||
+                  run.status === "queued" ||
+                  run.status === "failed",
+              ) ?? null
+            }
+            onCancel={
+              bulkScrapeIsActive
+                ? () =>
+                    cancelBulkScrape.mutate({
+                      workspaceId,
+                      jobId: activeBulkScrape.id,
+                    })
+                : undefined
+            }
+            onRetry={
+              activeBulkScrape.failed > 0
+                ? () =>
+                    retryBulkScrape.mutate({
+                      workspaceId,
+                      jobId: activeBulkScrape.id,
+                      runIds: activeBulkScrapeRuns
+                        .filter((run) => run.status === "failed")
+                        .map((run) => run.id),
+                    })
+                : undefined
+            }
+            cancelling={cancelBulkScrape.isPending}
+            retrying={retryBulkScrape.isPending}
+          />
+        </div>
+      ) : null}
+
+      {isProfileSplit &&
+      workspaceId &&
+      (recentSaveBatches.data?.length ?? 0) > 0 ? (
+        <details className="bg-surface-2 border-b border-slate-400 px-4 py-2">
+          <summary className="focus-visible:ring-ring min-h-10 cursor-pointer rounded text-sm font-semibold focus-visible:ring-2 focus-visible:outline-none">
+            Lịch sử lưu /materials ({recentSaveBatches.data?.length ?? 0})
+          </summary>
+          <div className="grid gap-1 pb-2">
+            {recentSaveBatches.data?.slice(0, 10).map((batch) => (
+              <Link
+                key={batch.id}
+                href={`/material-profiles/${workspaceId}/save-batches/${batch.id}`}
+                className="border-line bg-surface-1 hover:bg-surface-2 focus-visible:ring-ring flex min-h-10 flex-wrap items-center justify-between gap-2 rounded border px-2 text-xs focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <span className="font-mono">{batch.id.slice(0, 8)}</span>
+                <span>{materialSaveBatchStatusLabel(batch.status)}</span>
+                <span className="tabular-nums">
+                  {batch.createCount} tạo · {batch.updateCount} ghi đè ·{" "}
+                  {batch.linkOnlyCount} liên kết
+                </span>
+              </Link>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
       {isProfileSplit && activeProfileSearchJob && isProfileSearchJobActive ? (
-        <div className="border-b border-slate-400 bg-slate-50 px-4 py-3">
+        <div
+          className="border-b border-slate-400 bg-slate-50 px-4 py-3"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold text-slate-900">
@@ -1181,7 +1522,7 @@ export function ReviewPanel({
             </div>
             {isProfileSearchJobActive && onProfileCancelSearchJob ? (
               <Button
-                variant="secondary"
+                variant="warning"
                 size="sm"
                 onClick={() => void onProfileCancelSearchJob()}
               >
@@ -1198,7 +1539,7 @@ export function ReviewPanel({
             aria-label="Tiến độ tìm kiếm hồ sơ vật tư"
           >
             <div
-              className="bg-brand h-full transition-all"
+              className="bg-brand h-full transition-[width] motion-reduce:transition-none"
               style={{ width: `${profileSearchProgressPct}%` }}
             />
           </div>
@@ -1278,7 +1619,13 @@ export function ReviewPanel({
                   type="button"
                   onClick={() => setSelectedRowIndex(row.originalRowIndex)}
                   aria-pressed={isSelected}
-                  className="min-w-0 flex-1 text-left"
+                  disabled={isCapturePending && !isSelected}
+                  title={
+                    isCapturePending && !isSelected
+                      ? "Chờ job scrape hiện tại hoàn tất"
+                      : undefined
+                  }
+                  className="focus-visible:ring-ring min-w-0 flex-1 rounded text-left focus-visible:ring-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
                 >
                   <div className="flex flex-wrap items-center gap-1">
                     <Badge tone={meta.tone}>{meta.label}</Badge>
@@ -1351,6 +1698,7 @@ export function ReviewPanel({
               <MatchChooser
                 key={selectedRow.originalRowIndex}
                 row={selectedRow}
+                workspaceId={workspaceId}
                 decision={decisions.get(selectedRow.originalRowIndex)}
                 onChange={(next) =>
                   handleDecisionChange(selectedRow.originalRowIndex, next)
@@ -1377,6 +1725,8 @@ export function ReviewPanel({
                   decisions.get(selectedRow.originalRowIndex)
                     ?.webSearchStatus === "pending"
                 }
+                isSearchBusy={profileSearchBusy || bulkScrapeIsActive}
+                onCapturePendingChange={handleCapturePendingChange}
               />
 
               {isProfileSplit ? (
@@ -1423,6 +1773,7 @@ export function ReviewPanel({
                               <Button
                                 variant="secondary"
                                 size="sm"
+                                disabled={isCapturePending || profileSearchBusy}
                                 onClick={() =>
                                   void onProfileUseSearchRun(run.id)
                                 }

@@ -172,6 +172,12 @@ async function pollScheduler() {
       fillImportSlots(),
       fillEnrichmentSlots(),
       fillMaterialProfileSearchSlots(),
+      import("~/server/services/material-profile-scrape-jobs").then((service) =>
+        service.advanceMaterialProfileScrapeJobs(),
+      ),
+      import("~/server/services/material-profile-material-batches").then(
+        (service) => service.resumeMaterialProfileSaveBatches(),
+      ),
       fillExcelResearchSlots(),
     ]);
   } catch (error) {
@@ -1262,6 +1268,12 @@ async function resetStaleRunningJobs() {
 
 async function cleanupExpiredJobs() {
   const now = new Date().toISOString();
+  await import("~/server/services/material-profile-material-batches").then(
+    (service) => service.cleanupExpiredMaterialProfileBatches(now),
+  );
+  await import("~/server/services/material-profile-scrape-jobs").then(
+    (service) => service.cleanupExpiredMaterialProfileScrapeJobs(now),
+  );
   await db
     .delete(shopImportJobs)
     .where(

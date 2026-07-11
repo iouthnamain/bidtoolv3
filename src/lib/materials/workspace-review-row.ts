@@ -18,6 +18,8 @@ export type WorkspaceItemForReview = {
   currency: string;
   originalDataJson: unknown;
   enrichedSnapshotJson: unknown;
+  linkedCatalogPdfUrls?: string[];
+  linkedMaterial?: ReviewRow["linkedMaterial"];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -133,6 +135,8 @@ export function workspaceItemToReviewRow(
     candidates,
     topCandidate,
     fillPlan: parseFillPlan(snapshot?.fillPlan),
+    linkedCatalogPdfUrls: item.linkedCatalogPdfUrls,
+    linkedMaterial: item.linkedMaterial,
   };
 }
 

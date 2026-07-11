@@ -1,0 +1,1 @@
+ALTER TABLE "material_profile_material_batch_rows" ADD COLUMN "post_commit_workspace_item_updated_at" timestamp with time zone;

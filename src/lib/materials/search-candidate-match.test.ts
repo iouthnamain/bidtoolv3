@@ -7,6 +7,7 @@ import {
   RELIABLE_SEARCH_MATCH_THRESHOLD,
   scoreAiCandidateCompletion,
   sortCandidatesByScore,
+  webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
 
 describe("scoreAiCandidateCompletion", () => {
@@ -192,5 +193,25 @@ describe("sortCandidatesByScore", () => {
     ]);
 
     expect(sorted.map((item) => item.score)).toEqual([0.9, 0.5, 0.2, 0.1]);
+  });
+});
+
+describe("webLinkMatchChips", () => {
+  it("does not turn a high retrieval rank into a reliable material match", () => {
+    const { score } = webLinkMatchChips(
+      {
+        title: "Mua tủ lạnh giá rẻ, trả góp 0%",
+        url: "https://dienmay.example/tu-lanh",
+        domain: "dienmay.example",
+        snippet: "Tủ lạnh có cửa thép sơn tĩnh điện, giao lắp miễn phí.",
+        query:
+          "Tủ điện treo tường 600x400x200mm Cái Thép sơn tĩnh điện sản phẩm",
+        rankScore: 2.02,
+      },
+      "Tủ điện treo tường 600x400x200mm",
+      { unit: "Cái", category: "Điện", specText: "Thép sơn tĩnh điện" },
+    );
+
+    expect(score).toBeLessThan(RELIABLE_SEARCH_MATCH_THRESHOLD);
   });
 });

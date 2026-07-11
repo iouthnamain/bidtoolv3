@@ -52,6 +52,9 @@ function profileSearchFields(decision: RowDecision) {
     webLinksStatus: decision.webLinksStatus,
     aiSearchResult: decision.aiSearchResult,
     aiSearchCandidates: decision.aiSearchCandidates,
+    scrapeResults: decision.scrapeResults,
+    acceptedProfileFields: decision.acceptedProfileFields,
+    editedProfileValues: decision.editedProfileValues,
     aiSearchStatus: decision.aiSearchStatus,
     catalogPdfUrls: decision.catalogPdfUrls,
   };

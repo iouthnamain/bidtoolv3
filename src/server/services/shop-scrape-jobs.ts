@@ -168,6 +168,30 @@ async function _listShopScrapeJobs(
   return rows.map(toScrapeJobListItem);
 }
 
+export async function getActiveShopScrapeJobByUrl(input: {
+  url: string;
+  tenantId?: string | null;
+}) {
+  const normalizedUrl = normalizeShopScrapeUrl(input.url);
+  const tenantCondition =
+    input.tenantId == null
+      ? isNull(shopScrapeJobs.tenantId)
+      : eq(shopScrapeJobs.tenantId, input.tenantId);
+  const [job] = await db
+    .select()
+    .from(shopScrapeJobs)
+    .where(
+      and(
+        eq(shopScrapeJobs.normalizedUrl, normalizedUrl),
+        inArray(shopScrapeJobs.status, ACTIVE_JOB_STATUSES),
+        tenantCondition,
+      ),
+    )
+    .orderBy(desc(shopScrapeJobs.startedAt))
+    .limit(1);
+  return job ? toScrapeJobListItem(job) : null;
+}
+
 async function _getShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
   const [job] = await db
     .select()
@@ -206,10 +230,7 @@ async function _getShopScrapeJobProgress(
   return job ? toScrapeJobListItem(job) : null;
 }
 
-async function _cancelShopScrapeJob(
-  jobId: string,
-  scope?: TenantScopeValue,
-) {
+async function _cancelShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
   // Fail closed: a customer cancelling another tenant's job gets NOT_FOUND.
   const inScope = await getShopScrapeJob(jobId, scope);
   if (!inScope) {
@@ -266,9 +287,7 @@ function _isScrapeJobProductsEditable(job: {
   if (EDITABLE_SCRAPE_JOB_STATUSES.includes(job.status)) {
     return true;
   }
-  return (
-    job.products.length > 0 && !isShopScrapeJobActivelyRunning(job.id)
-  );
+  return job.products.length > 0 && !isShopScrapeJobActivelyRunning(job.id);
 }
 
 function assertScrapeJobProductsEditable(job: ShopScrapeJobSnapshot) {
@@ -320,7 +339,10 @@ function normalizeScrapedProductInput(
   };
 }
 
-async function persistScrapeJobProducts(jobId: string, products: ScrapedShopProduct[]) {
+async function persistScrapeJobProducts(
+  jobId: string,
+  products: ScrapedShopProduct[],
+) {
   const sanitizedProducts = await replaceScrapeJobProducts(jobId, products);
   const now = new Date().toISOString();
   const [updated] = await db
@@ -366,10 +388,16 @@ async function _updateShopScrapeJobProduct(
 
   const nextProduct = normalizeScrapedProductInput(input.product);
   if (!nextProduct.name) {
-    throw new ShopJobServiceError("BAD_REQUEST", "Tên sản phẩm không được để trống.");
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Tên sản phẩm không được để trống.",
+    );
   }
   if (!nextProduct.sourceUrl) {
-    throw new ShopJobServiceError("BAD_REQUEST", "URL nguồn không được để trống.");
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "URL nguồn không được để trống.",
+    );
   }
   if (
     nextProduct.sourceUrl !== input.sourceUrl &&
@@ -474,12 +502,20 @@ async function _addShopScrapeJobProduct(
 
   const nextProduct = normalizeScrapedProductInput(input.product);
   if (!nextProduct.name) {
-    throw new ShopJobServiceError("BAD_REQUEST", "Tên sản phẩm không được để trống.");
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "Tên sản phẩm không được để trống.",
+    );
   }
   if (!nextProduct.sourceUrl) {
-    throw new ShopJobServiceError("BAD_REQUEST", "URL nguồn không được để trống.");
+    throw new ShopJobServiceError(
+      "BAD_REQUEST",
+      "URL nguồn không được để trống.",
+    );
   }
-  if (job.products.some((product) => product.sourceUrl === nextProduct.sourceUrl)) {
+  if (
+    job.products.some((product) => product.sourceUrl === nextProduct.sourceUrl)
+  ) {
     throw new ShopJobServiceError(
       "CONFLICT",
       "URL nguồn đã tồn tại trong job scrape.",
@@ -489,10 +525,7 @@ async function _addShopScrapeJobProduct(
   return persistScrapeJobProducts(input.jobId, [...job.products, nextProduct]);
 }
 
-async function _deleteShopScrapeJob(
-  jobId: string,
-  scope?: TenantScopeValue,
-) {
+async function _deleteShopScrapeJob(jobId: string, scope?: TenantScopeValue) {
   const existing = await getShopScrapeJob(jobId, scope);
   if (!existing) {
     return null;
@@ -655,19 +688,63 @@ function isUniqueViolation(error: unknown) {
   return false;
 }
 
-export const startShopScrapeJob = traceFn(log, "startShopScrapeJob", _startShopScrapeJob);
-export const listShopScrapeJobs = traceFn(log, "listShopScrapeJobs", _listShopScrapeJobs);
-export const getShopScrapeJob = traceFn(log, "getShopScrapeJob", _getShopScrapeJob);
+export const startShopScrapeJob = traceFn(
+  log,
+  "startShopScrapeJob",
+  _startShopScrapeJob,
+);
+export const listShopScrapeJobs = traceFn(
+  log,
+  "listShopScrapeJobs",
+  _listShopScrapeJobs,
+);
+export const getShopScrapeJob = traceFn(
+  log,
+  "getShopScrapeJob",
+  _getShopScrapeJob,
+);
 export const getShopScrapeJobProgress = traceFn(
   log,
   "getShopScrapeJobProgress",
   _getShopScrapeJobProgress,
 );
-export const cancelShopScrapeJob = traceFn(log, "cancelShopScrapeJob", _cancelShopScrapeJob);
-export const isScrapeJobProductsEditable = traceFn(log, "isScrapeJobProductsEditable", _isScrapeJobProductsEditable);
-export const updateShopScrapeJobProduct = traceFn(log, "updateShopScrapeJobProduct", _updateShopScrapeJobProduct);
-export const deleteShopScrapeJobProduct = traceFn(log, "deleteShopScrapeJobProduct", _deleteShopScrapeJobProduct);
-export const deleteShopScrapeJobProducts = traceFn(log, "deleteShopScrapeJobProducts", _deleteShopScrapeJobProducts);
-export const addShopScrapeJobProduct = traceFn(log, "addShopScrapeJobProduct", _addShopScrapeJobProduct);
-export const deleteShopScrapeJob = traceFn(log, "deleteShopScrapeJob", _deleteShopScrapeJob);
-export const normalizeShopScrapeUrl = traceFn(log, "normalizeShopScrapeUrl", _normalizeShopScrapeUrl);
+export const cancelShopScrapeJob = traceFn(
+  log,
+  "cancelShopScrapeJob",
+  _cancelShopScrapeJob,
+);
+export const isScrapeJobProductsEditable = traceFn(
+  log,
+  "isScrapeJobProductsEditable",
+  _isScrapeJobProductsEditable,
+);
+export const updateShopScrapeJobProduct = traceFn(
+  log,
+  "updateShopScrapeJobProduct",
+  _updateShopScrapeJobProduct,
+);
+export const deleteShopScrapeJobProduct = traceFn(
+  log,
+  "deleteShopScrapeJobProduct",
+  _deleteShopScrapeJobProduct,
+);
+export const deleteShopScrapeJobProducts = traceFn(
+  log,
+  "deleteShopScrapeJobProducts",
+  _deleteShopScrapeJobProducts,
+);
+export const addShopScrapeJobProduct = traceFn(
+  log,
+  "addShopScrapeJobProduct",
+  _addShopScrapeJobProduct,
+);
+export const deleteShopScrapeJob = traceFn(
+  log,
+  "deleteShopScrapeJob",
+  _deleteShopScrapeJob,
+);
+export const normalizeShopScrapeUrl = traceFn(
+  log,
+  "normalizeShopScrapeUrl",
+  _normalizeShopScrapeUrl,
+);

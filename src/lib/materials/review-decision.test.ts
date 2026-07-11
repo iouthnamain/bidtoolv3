@@ -97,11 +97,30 @@ describe("review-decision", () => {
       ],
     };
 
-    const restored = deserializeRowDecision(serializeRowDecision(decision));
+    const restored = deserializeRowDecision({
+      ...serializeRowDecision(decision),
+      webScrapeResults: [
+        {
+          fields: {
+            defaultUnitPrice: "1200000",
+            sourceUrl: "https://example.com/p",
+          },
+          sourceUrls: ["https://example.com/p"],
+          evidence: [],
+          url: "https://example.com/p",
+        },
+      ],
+    });
     expect(restored?.webLinkResults?.[0]?.url).toBe("https://example.com/p");
     expect(restored?.webLinksStatus).toBe("done");
     expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
     expect(restored?.aiSearchCandidates?.length).toBe(2);
+    expect(restored?.scrapeResults?.[0]?.fields.defaultUnitPrice).toBe(
+      "1200000",
+    );
+    expect(serializeRowDecision(restored!)).not.toHaveProperty(
+      "webScrapeResults",
+    );
     expect(restored?.aiSearchStatus).toBe("done");
     expect(restored?.selectedSource).toBe("ai");
     expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
@@ -124,6 +143,27 @@ describe("review-decision", () => {
     expect(restored?.aiSearchCandidates?.length).toBe(1);
     expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
     expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
+  });
+
+  it("round-trips profile-only name and image decisions", () => {
+    const restored = deserializeRowDecision(
+      serializeRowDecision({
+        materialId: null,
+        acceptedFields: new Set(),
+        acceptedProfileFields: new Set(["name", "imageUrl"]),
+        editedProfileValues: {
+          name: "Máy bơm đã duyệt",
+          imageUrl: "https://example.com/pump.jpg",
+        },
+      }),
+    );
+    expect(restored?.acceptedProfileFields).toEqual(
+      new Set(["name", "imageUrl"]),
+    );
+    expect(restored?.editedProfileValues).toEqual({
+      name: "Máy bơm đã duyệt",
+      imageUrl: "https://example.com/pump.jpg",
+    });
   });
 
   it("seeds auto row from item materialId and fill plan", () => {

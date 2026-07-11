@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "shop_scrape_jobs_active_internal_url_unique" ON "shop_scrape_jobs" USING btree ("normalized_url") WHERE "shop_scrape_jobs"."tenant_id" is null and "shop_scrape_jobs"."status" in ('queued', 'running');

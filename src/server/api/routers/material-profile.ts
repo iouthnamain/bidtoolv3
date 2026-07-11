@@ -42,8 +42,51 @@ import {
   setCurrentMaterialProfileSearchRun,
   startMaterialProfileSearchJob,
 } from "~/server/services/material-profile-search-jobs";
+import {
+  attachMaterialProfileCatalogPdfSource,
+  cancelMaterialProfileScrapeJob,
+  getActiveMaterialProfileScrapeJob,
+  getMaterialProfileScrapeJob,
+  listMaterialProfileScrapeRuns,
+  MaterialProfileScrapeJobError,
+  retryMaterialProfileScrapeRuns,
+  selectMaterialProfileScrapedProduct,
+  startMaterialProfileScrapeJob,
+} from "~/server/services/material-profile-scrape-jobs";
+import {
+  cancelMaterialProfileSaveBatch,
+  commitMaterialProfileSaveBatch,
+  createMaterialProfileSavePreview,
+  getMaterialProfileSaveBatch,
+  listMaterialProfileSaveBatches,
+  MaterialProfileMaterialBatchError,
+  undoMaterialProfileSaveBatch,
+  updateMaterialProfileSavePreviewRow,
+} from "~/server/services/material-profile-material-batches";
 
 function mapMaterialProfileError(error: unknown): never {
+  if (error instanceof MaterialProfileMaterialBatchError) {
+    throw new TRPCError({
+      code:
+        error.code === "NOT_FOUND"
+          ? "NOT_FOUND"
+          : error.code === "CONFLICT"
+            ? "CONFLICT"
+            : "BAD_REQUEST",
+      message: error.message,
+    });
+  }
+  if (error instanceof MaterialProfileScrapeJobError) {
+    throw new TRPCError({
+      code:
+        error.code === "NOT_FOUND"
+          ? "NOT_FOUND"
+          : error.code === "CONFLICT"
+            ? "CONFLICT"
+            : "BAD_REQUEST",
+      message: error.message,
+    });
+  }
   if (error instanceof MaterialProfileSearchJobError) {
     throw new TRPCError({
       code:
@@ -129,6 +172,39 @@ const aiSearchStoredResultSchema = z.object({
   rankScore: z.number().optional(),
 });
 
+const profileScrapedProductSchema = z.object({
+  name: z.string(),
+  unit: z.string().nullable(),
+  category: z.string().nullable(),
+  specText: z.string(),
+  manufacturer: z.string().nullable(),
+  originCountry: z.string().nullable(),
+  price: z.number().nullable(),
+  priceText: z.string().nullable(),
+  currency: z.string(),
+  sourceUrl: z.string(),
+  imageUrl: z.string().nullish(),
+  sku: z.string().nullable(),
+  model: z.string().nullable(),
+  shopCategory: z.string().nullable(),
+  catalogPdfUrls: z.array(z.string()),
+});
+
+const scrapedProductStoredResultSchema = z.object({
+  jobId: z.string(),
+  shopScrapeJobId: z.string().nullable(),
+  sourceCandidateKey: z.string(),
+  sourceUrl: z.string(),
+  sourceScore: z.number().nullable(),
+  product: profileScrapedProductSchema,
+  fields: z.record(z.string()),
+  name: z.string(),
+  imageUrl: z.string().optional(),
+  evidence: z.array(materialEnrichmentEvidenceSchema),
+  catalogPdfUrls: z.array(z.string()),
+  productMatchScore: z.number().nullable(),
+});
+
 const serializedRowDecisionSchema = z.object({
   materialId: z.number().int().positive().nullable(),
   acceptedFields: z.array(z.string()),
@@ -141,6 +217,11 @@ const serializedRowDecisionSchema = z.object({
   webLinksStatus: webSearchStatusSchema.optional(),
   aiSearchResult: aiSearchStoredResultSchema.optional(),
   aiSearchCandidates: z.array(aiSearchStoredResultSchema).optional(),
+  scrapeResults: z.array(scrapedProductStoredResultSchema).optional(),
+  acceptedProfileFields: z.array(z.enum(["name", "imageUrl"])).optional(),
+  editedProfileValues: z
+    .object({ name: z.string().optional(), imageUrl: z.string().optional() })
+    .optional(),
   aiSearchStatus: webSearchStatusSchema.optional(),
   selectedSource: z.enum(["catalog", "web", "ai"]).optional(),
   selectedSearchCandidateKey: z.string().optional(),
@@ -365,6 +446,168 @@ export const materialProfileRouter = createTRPCRouter({
           itemIds: input.itemIds,
           mode: input.mode,
         }),
+      ),
+    ),
+
+  startScrapeJob: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        interactive: z.boolean().default(false),
+        sourceUrl: z.string().url().optional(),
+        sourceCandidateKey: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() => startMaterialProfileScrapeJob(input)),
+    ),
+
+  getScrapeJob: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ jobId: z.string().uuid() }))
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        getMaterialProfileScrapeJob(input.jobId, input.workspaceId),
+      ),
+    ),
+
+  getScrapeJobProgress: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ jobId: z.string().uuid() }))
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        getMaterialProfileScrapeJob(input.jobId, input.workspaceId),
+      ),
+    ),
+
+  getActiveScrapeJob: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        getActiveMaterialProfileScrapeJob(input.workspaceId),
+      ),
+    ),
+
+  listScrapeRuns: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ jobId: z.string().uuid() }))
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        listMaterialProfileScrapeRuns(input.jobId, input.workspaceId),
+      ),
+    ),
+
+  selectScrapedProduct: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        runId: z.string().uuid(),
+        productIndex: z.number().int().min(0).max(7),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        selectMaterialProfileScrapedProduct(input),
+      ),
+    ),
+
+  retryScrapeRuns: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        jobId: z.string().uuid(),
+        runIds: z.array(z.string().uuid()).max(500).optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() => retryMaterialProfileScrapeRuns(input)),
+    ),
+
+  cancelScrapeJob: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ jobId: z.string().uuid() }))
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        cancelMaterialProfileScrapeJob(input.jobId, input.workspaceId),
+      ),
+    ),
+
+  attachCatalogPdfSource: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemId: z.number().int().positive(),
+        sourceUrl: z.string().url(),
+        sourceCandidateKey: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        attachMaterialProfileCatalogPdfSource(input),
+      ),
+    ),
+
+  createMaterialSavePreview: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemIds: z.array(z.number().int().positive()).min(1).max(500),
+        sourceScrapeJobId: z.string().uuid().optional(),
+        single: z.boolean().default(false),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() => createMaterialProfileSavePreview(input)),
+    ),
+
+  getMaterialSaveBatch: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ batchId: z.string().uuid() }))
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        getMaterialProfileSaveBatch(input.batchId, input.workspaceId),
+      ),
+    ),
+
+  updateMaterialSavePreviewRow: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        batchId: z.string().uuid(),
+        rowId: z.string().uuid(),
+        included: z.boolean().optional(),
+        targetMaterialId: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        updateMaterialProfileSavePreviewRow(input),
+      ),
+    ),
+
+  commitMaterialSaveBatch: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ batchId: z.string().uuid() }))
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        commitMaterialProfileSaveBatch(input.batchId, input.workspaceId),
+      ),
+    ),
+
+  cancelMaterialSaveBatch: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ batchId: z.string().uuid() }))
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        cancelMaterialProfileSaveBatch(input.batchId, input.workspaceId),
+      ),
+    ),
+
+  listMaterialSaveBatches: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
+    )
+    .query(({ input }) =>
+      withMaterialProfileErrors(() =>
+        listMaterialProfileSaveBatches(input.workspaceId, input.limit),
+      ),
+    ),
+
+  undoMaterialSaveBatch: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ batchId: z.string().uuid() }))
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        undoMaterialProfileSaveBatch(input.batchId, input.workspaceId),
       ),
     ),
 

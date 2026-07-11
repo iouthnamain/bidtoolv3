@@ -203,9 +203,8 @@ function reviewDecisionJsonWithCurrentSearchRun(
     selectedSearchCandidateKey:
       typeof base.selectedSearchCandidateKey === "string"
         ? base.selectedSearchCandidateKey
-        : (run.recommendedCandidateKey ?? undefined),
-    catalogPdfUrls:
-      base.catalogPdfUrls ?? aiSearchResult?.catalogPdfUrls ?? undefined,
+        : undefined,
+    catalogPdfUrls: base.catalogPdfUrls,
   };
 }
 

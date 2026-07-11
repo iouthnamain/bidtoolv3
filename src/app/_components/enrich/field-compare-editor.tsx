@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo } from "react";
+import { useEffect, useId, useMemo, type ReactNode } from "react";
 import { Loader2, Search } from "lucide-react";
 
 import { Button } from "~/app/_components/ui";
@@ -27,6 +27,7 @@ import {
   catalogCandidateScore,
   sortCandidatesByScore,
 } from "~/lib/materials/search-candidate-match";
+import type { ProfileExtraField } from "~/lib/materials/profile-scrape-types";
 
 /**
  * Shared side-by-side compare + per-field edit panel. Extracted from the step-2
@@ -106,12 +107,32 @@ export type FieldCompareEditorProps = {
   alwaysEditableFields?: boolean;
   /** Catalog PDF URLs extracted from web/AI search. */
   catalogPdfUrls?: string[];
+  catalogPdfUrlsBefore?: string[];
+  catalogPdfProvenance?: string;
+  catalogPdfAccepted?: boolean;
+  onToggleCatalogPdfUrls?: () => void;
   onEditCatalogPdfUrls?: (raw: string) => void;
+  profileExtraFields?: {
+    before: Record<ProfileExtraField, string>;
+    after: Record<ProfileExtraField, string>;
+    accepted: Set<ProfileExtraField>;
+    provenance?: Partial<Record<ProfileExtraField, string>>;
+  };
+  onToggleProfileField?: (field: ProfileExtraField) => void;
+  onEditProfileValue?: (field: ProfileExtraField, value: string) => void;
+  fieldProvenance?: Partial<Record<FillableField, string>>;
 
   /** Web/AI search results shown as additional selectable candidate cards. */
   searchSourceCandidates?: SearchSourceCandidate[];
   selectedSearchCandidateKey?: string | null;
   onChooseSearchCandidate?: (key: string) => void;
+  onCaptureSearchCandidate?: (key: string) => void;
+  capturingSearchCandidateKey?: string | null;
+  captureSearchCandidateDisabled?: boolean;
+  captureSearchCandidateStatus?: string;
+  selectedSourceInlineLayer?: ReactNode;
+  /** Actions that belong to the comparison-ledger header. */
+  decisionActions?: ReactNode;
   /** Profile: merge catalog + web/AI cards, sorted by score. */
   unifiedCandidateGrid?: boolean;
   /**
@@ -241,10 +262,24 @@ export function FieldCompareEditor({
   afterColumnLabel = "Sau",
   alwaysEditableFields = false,
   catalogPdfUrls,
+  catalogPdfUrlsBefore,
+  catalogPdfProvenance,
+  catalogPdfAccepted,
+  onToggleCatalogPdfUrls,
   onEditCatalogPdfUrls,
+  profileExtraFields,
+  onToggleProfileField,
+  onEditProfileValue,
+  fieldProvenance,
   searchSourceCandidates = [],
   selectedSearchCandidateKey = null,
   onChooseSearchCandidate,
+  onCaptureSearchCandidate,
+  capturingSearchCandidateKey = null,
+  captureSearchCandidateDisabled = false,
+  captureSearchCandidateStatus,
+  selectedSourceInlineLayer,
+  decisionActions,
   unifiedCandidateGrid = false,
   decisionPaneLayout = "stacked",
 }: FieldCompareEditorProps) {
@@ -434,7 +469,7 @@ export function FieldCompareEditor({
             autoComplete="off"
             value={searchTerm}
             onChange={(event) => onSearchTermChange(event.target.value)}
-            placeholder="Tìm sản phẩm khác trong catalog…"
+            placeholder="Tìm vật tư trong danh mục…"
             spellCheck={false}
             aria-label="Tìm sản phẩm khác trong catalog"
             className="w-full max-w-full min-w-0 rounded border border-slate-400 py-2 pr-3 pl-9 text-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
@@ -455,7 +490,7 @@ export function FieldCompareEditor({
         <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-6 text-center text-xs text-slate-700">
           {showingSearch
             ? "Không tìm thấy sản phẩm phù hợp."
-            : "Không có ứng viên ghép tự động — hãy tìm thủ công hoặc chạy Tìm web / Tìm AI."}
+            : "Không có ứng viên ghép tự động — hãy tìm thủ công hoặc chạy Tìm nguồn web / Trích xuất AI."}
         </p>
       ) : (
         <div className="space-y-2">
@@ -509,6 +544,28 @@ export function FieldCompareEditor({
                     onChoose={() =>
                       onChooseSearchCandidate?.(entry.candidate.key)
                     }
+                    onCapture={
+                      onCaptureSearchCandidate
+                        ? () => onCaptureSearchCandidate(entry.candidate.key)
+                        : undefined
+                    }
+                    isCapturePending={
+                      capturingSearchCandidateKey === entry.candidate.key
+                    }
+                    isCaptureDisabled={
+                      captureSearchCandidateDisabled ||
+                      capturingSearchCandidateKey != null
+                    }
+                    captureStatusText={
+                      capturingSearchCandidateKey === entry.candidate.key
+                        ? captureSearchCandidateStatus
+                        : undefined
+                    }
+                    inlineLayer={
+                      selectedSearchCandidateKey === entry.candidate.key
+                        ? selectedSourceInlineLayer
+                        : undefined
+                    }
                     hotkeyIndex={index + 1}
                   />
                 );
@@ -546,6 +603,28 @@ export function FieldCompareEditor({
                     candidate={candidate}
                     isSelected={selectedSearchCandidateKey === candidate.key}
                     onChoose={() => onChooseSearchCandidate?.(candidate.key)}
+                    onCapture={
+                      onCaptureSearchCandidate
+                        ? () => onCaptureSearchCandidate(candidate.key)
+                        : undefined
+                    }
+                    isCapturePending={
+                      capturingSearchCandidateKey === candidate.key
+                    }
+                    isCaptureDisabled={
+                      captureSearchCandidateDisabled ||
+                      capturingSearchCandidateKey != null
+                    }
+                    captureStatusText={
+                      capturingSearchCandidateKey === candidate.key
+                        ? captureSearchCandidateStatus
+                        : undefined
+                    }
+                    inlineLayer={
+                      selectedSearchCandidateKey === candidate.key
+                        ? selectedSourceInlineLayer
+                        : undefined
+                    }
                     hotkeyIndex={catalogCardCount + index + 1}
                   />
                 ))}
@@ -567,12 +646,19 @@ export function FieldCompareEditor({
             : "border-line border shadow-[var(--shadow-flat)]"
         }`}
       >
-        <h3
-          id={fillPlanHeadingId}
-          className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase"
-        >
-          Sẽ điền vào dòng
-        </h3>
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <h3
+            id={fillPlanHeadingId}
+            className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase"
+          >
+            Sẽ điền vào dòng
+          </h3>
+          {decisionActions ? (
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              {decisionActions}
+            </div>
+          ) : null}
+        </div>
         {hasDecision ? (
           <>
             {compareLayout === "sideBySide" ? (
@@ -586,14 +672,12 @@ export function FieldCompareEditor({
                   </caption>
                   <thead>
                     <tr className="border-b border-slate-300 text-left text-slate-600">
-                      {!alwaysEditableFields ? (
-                        <th
-                          scope="col"
-                          className="profile-decision-check-column py-2 pr-2"
-                        >
-                          <span className="sr-only">Chọn trường</span>
-                        </th>
-                      ) : null}
+                      <th
+                        scope="col"
+                        className="profile-decision-check-column py-2 pr-2"
+                      >
+                        <span className="sr-only">Chọn trường</span>
+                      </th>
                       <th
                         scope="col"
                         className="profile-decision-field-column py-2 pr-2 font-semibold"
@@ -615,8 +699,86 @@ export function FieldCompareEditor({
                     </tr>
                   </thead>
                   <tbody>
+                    {profileExtraFields
+                      ? (["name", "imageUrl"] as const).map((field) => {
+                          const label =
+                            field === "name" ? "Tên vật tư" : "Ảnh sản phẩm";
+                          const beforeValue = profileExtraFields.before[field];
+                          const afterValue = profileExtraFields.after[field];
+                          return (
+                            <tr
+                              key={field}
+                              className="border-b border-slate-100 bg-slate-50/80"
+                            >
+                              <td className="py-2 pr-2 align-top">
+                                <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
+                                  <input
+                                    type="checkbox"
+                                    className="size-4"
+                                    checked={profileExtraFields.accepted.has(
+                                      field,
+                                    )}
+                                    onChange={() =>
+                                      onToggleProfileField?.(field)
+                                    }
+                                    aria-label={`Chấp nhận ${label}`}
+                                  />
+                                </label>
+                              </td>
+                              <th
+                                scope="row"
+                                className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
+                              >
+                                {label}
+                                {profileExtraFields.provenance?.[field] ? (
+                                  <span className="border-line bg-surface-2 text-ink-3 mt-1 block w-fit rounded border px-1 py-0.5 text-[10px] font-semibold">
+                                    {profileExtraFields.provenance[field]}
+                                  </span>
+                                ) : null}
+                              </th>
+                              <td className="min-w-0 py-2 pr-2 align-top break-words text-slate-700">
+                                {field === "imageUrl" && beforeValue ? (
+                                  // eslint-disable-next-line @next/next/no-img-element -- arbitrary external evidence URL.
+                                  <img
+                                    src={beforeValue}
+                                    alt="Ảnh vật tư trước thay đổi"
+                                    width={64}
+                                    height={48}
+                                    className="border-line h-12 w-16 rounded border object-cover"
+                                  />
+                                ) : (
+                                  beforeValue || "(trống)"
+                                )}
+                              </td>
+                              <td className="min-w-0 py-2 pr-2 align-top break-words">
+                                <input
+                                  value={afterValue}
+                                  onChange={(event) =>
+                                    onEditProfileValue?.(
+                                      field,
+                                      event.target.value,
+                                    )
+                                  }
+                                  aria-label={`${afterColumnLabel} ${label}`}
+                                  className="border-line bg-surface-1 text-good focus-visible:ring-ring min-h-9 w-full rounded border px-1.5 py-0.5 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none"
+                                />
+                                {field === "imageUrl" && afterValue ? (
+                                  // eslint-disable-next-line @next/next/no-img-element -- arbitrary external evidence URL.
+                                  <img
+                                    src={afterValue}
+                                    alt="Ảnh vật tư sau thay đổi"
+                                    width={64}
+                                    height={48}
+                                    className="border-line mt-1 h-12 w-16 rounded border object-cover"
+                                  />
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      : null}
                     {(alwaysEditableFields
-                      ? EDITABLE_FIELDS
+                      ? FILLABLE_FIELDS
                       : plan.map((cell) => cell.field)
                     ).map((field) => {
                       const cell = plan.find((item) => item.field === field);
@@ -658,22 +820,28 @@ export function FieldCompareEditor({
                             isFillable ? "bg-slate-50/80" : "opacity-60"
                           }`}
                         >
-                          {!alwaysEditableFields ? (
-                            <td className="py-2 pr-2 align-top">
+                          <td className="py-2 pr-2 align-top">
+                            <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500 has-[:disabled]:cursor-not-allowed">
                               <input
                                 type="checkbox"
+                                className="size-4"
                                 disabled={!isFillable}
                                 checked={isFillable && accepted.has(field)}
                                 onChange={() => onToggleField(field)}
                                 aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
                               />
-                            </td>
-                          ) : null}
+                            </label>
+                          </td>
                           <th
                             scope="row"
                             className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
                           >
                             {FIELD_LABELS[field]}
+                            {fieldProvenance?.[field] ? (
+                              <span className="border-line bg-surface-2 text-ink-3 mt-1 block w-fit rounded border px-1 py-0.5 text-[10px] font-semibold">
+                                {fieldProvenance[field]}
+                              </span>
+                            ) : null}
                           </th>
                           <td
                             className={`min-w-0 py-2 pr-2 align-top break-words ${beforeFieldClass(field)} ${
@@ -707,25 +875,34 @@ export function FieldCompareEditor({
                     })}
                     {onEditCatalogPdfUrls ? (
                       <tr className="border-b border-slate-100 bg-slate-50/80">
-                        {!alwaysEditableFields ? (
-                          <td className="py-2 pr-2 align-top">
+                        <td className="py-2 pr-2 align-top">
+                          <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
                             <input
                               type="checkbox"
-                              checked={(catalogPdfUrls?.length ?? 0) > 0}
-                              readOnly
-                              aria-label="URL catalog"
-                              className="pointer-events-none opacity-70"
+                              className="size-4"
+                              checked={
+                                catalogPdfAccepted ??
+                                (catalogPdfUrls?.length ?? 0) > 0
+                              }
+                              onChange={onToggleCatalogPdfUrls}
+                              readOnly={!onToggleCatalogPdfUrls}
+                              aria-label="Chấp nhận URL catalog"
                             />
-                          </td>
-                        ) : null}
+                          </label>
+                        </td>
                         <th
                           scope="row"
                           className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
                         >
                           URL catalog
+                          {catalogPdfProvenance ? (
+                            <span className="border-line bg-surface-2 text-ink-3 mt-1 block w-fit rounded border px-1 py-0.5 text-[10px] font-semibold">
+                              {catalogPdfProvenance}
+                            </span>
+                          ) : null}
                         </th>
                         <td className="min-w-0 py-2 pr-2 align-top break-words text-slate-700">
-                          (trống)
+                          {(catalogPdfUrlsBefore ?? []).join("\n") || "(trống)"}
                         </td>
                         <td className="min-w-0 py-2 pr-2 align-top break-words">
                           <textarea
@@ -878,9 +1055,7 @@ export function FieldCompareEditor({
       <div className="border-line bg-surface-2 max-w-full min-w-0 rounded border p-3">
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
-            <p className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase">
-              {sheetLabel}
-            </p>
+            <p className="section-title">{sheetLabel}</p>
             <p className="mt-1 max-w-full text-sm font-semibold break-words text-slate-900">
               {sheetName || "(không có tên)"}
             </p>
@@ -933,10 +1108,7 @@ export function FieldCompareEditor({
             aria-labelledby={candidatePaneHeadingId}
             className="profile-evidence max-w-full min-w-0 space-y-3"
           >
-            <h3
-              id={candidatePaneHeadingId}
-              className="text-xs font-bold tracking-[0.12em] text-slate-700 uppercase"
-            >
+            <h3 id={candidatePaneHeadingId} className="section-title">
               Ứng viên và nguồn
             </h3>
             {candidatePane}

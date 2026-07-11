@@ -20,6 +20,19 @@ export type ReviewRow = {
   candidates: EnrichCandidate[];
   topCandidate: EnrichCandidate | null;
   fillPlan: FillPlanCell[];
+  /** Catalog URLs already linked to the row's current material. */
+  linkedCatalogPdfUrls?: string[];
+  linkedMaterial?: {
+    id: number;
+    name: string;
+    code?: string | null;
+    unit?: string | null;
+    specText?: string | null;
+    manufacturer?: string | null;
+    originCountry?: string | null;
+    defaultUnitPrice?: number | null;
+    sourceUrl?: string | null;
+  };
 };
 
 export type ReviewSummary = {

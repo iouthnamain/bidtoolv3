@@ -1,0 +1,1 @@
+ALTER TABLE "material_profile_scrape_runs" ADD COLUMN "child_owned" boolean DEFAULT false NOT NULL;

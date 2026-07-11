@@ -34,6 +34,8 @@ export type WebSearchResult = {
   /** PDF links discovered directly in fetched HTML, never model-generated. */
   discoveredPdfUrls?: string[];
   query: string;
+  /** Provider score before BidTool ranking boosts; preserved across re-ranking. */
+  baseRankScore?: number;
   rankScore: number;
   rankReasons?: string[];
   provider?: WebSearchProvider;
@@ -885,7 +887,8 @@ function _rankSearchResults(
   const filtered = applyDomainPolicy(results, policy);
 
   const scored = filtered.map((result) => {
-    let score = result.rankScore || 0;
+    const baseRankScore = result.baseRankScore ?? result.rankScore ?? 0;
+    let score = baseRankScore;
     const reasons: string[] = [...(result.rankReasons ?? [])];
     const domain = result.domain.toLowerCase();
     const penaltyDomain = isPenaltyDomain(domain, policy);
@@ -980,7 +983,12 @@ function _rankSearchResults(
       reasons.push("penalty_domain");
     }
 
-    return { ...result, rankScore: score, rankReasons: [...new Set(reasons)] };
+    return {
+      ...result,
+      baseRankScore,
+      rankScore: score,
+      rankReasons: [...new Set(reasons)],
+    };
   });
 
   return scored.sort((left, right) => right.rankScore - left.rankScore);

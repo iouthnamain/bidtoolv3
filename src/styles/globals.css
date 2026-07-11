@@ -20,6 +20,10 @@
   --color-warning: var(--warning);
   --color-good: var(--good);
   --color-ring: var(--ring);
+  --color-action-search: var(--action-search);
+  --color-action-scrape: var(--action-scrape);
+  --color-action-ai: var(--action-ai);
+  --color-action-save: var(--action-save);
 
   --radius-panel: 8px;
 }
@@ -42,6 +46,15 @@
   --good: #047857;
   --ring: #0284c7;
   --ring-offset: 2px;
+
+  --action-search: #0369a1;
+  --action-search-hover: #075985;
+  --action-scrape: #0f766e;
+  --action-scrape-hover: #115e59;
+  --action-ai: #6d28d9;
+  --action-ai-hover: #5b21b6;
+  --action-save: #047857;
+  --action-save-hover: #065f46;
 
   --shadow-flat: 0 1px 2px rgba(16, 42, 56, 0.05);
   --shadow-raised: 0 2px 6px rgba(16, 42, 56, 0.08);
@@ -127,7 +140,8 @@ textarea {
 .profile-candidate-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
+  align-items: start;
+  gap: 0.5rem;
   min-width: 0;
   max-width: 100%;
 }
@@ -163,23 +177,23 @@ textarea {
   width: 42%;
 }
 
-@container profile-evidence (min-width: 48rem) {
+@container profile-evidence (min-width: 44rem) {
   .profile-candidate-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@container profile-editor (min-width: 68rem) {
+@container profile-editor (min-width: 52rem) {
   .profile-review-layout {
     grid-template-columns:
       minmax(0, 1fr)
-      clamp(28rem, 30cqi, 30rem);
+      clamp(25rem, 31cqi, 29rem);
   }
 
   .profile-decision-ledger {
     position: sticky;
     top: 1rem;
-    width: clamp(28rem, 30cqi, 30rem);
+    width: clamp(25rem, 31cqi, 29rem);
   }
 
   .profile-decision-field-column {

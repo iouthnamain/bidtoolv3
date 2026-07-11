@@ -56,29 +56,27 @@ asks. If the agent name is unknown or ambiguous, stop and ask which role to use.
 ## Model routing
 
 Keep role defaults in `.codex/agents/*.toml`; do not override them per run unless
-the user asks. Use this ChatGPT-compatible fallback until the account validates
-the GPT-5.6 tier slugs.
+the user asks.
 
 | Role | Model | Reasoning |
 | --- | --- | --- |
-| scout | `gpt-5.5` | low |
-| planner, researcher, tester, doctor, reviewer | `gpt-5.5` | medium |
-| worker | `gpt-5.5` | high |
+| scout, researcher, tester, doctor | `gpt-5.6-luna` | low |
+| planner, reviewer | `gpt-5.6-terra` | medium |
+| worker, ship | `gpt-5.6-sol` | high |
 
-This retains the intended Luna/Terra/Sol work allocation by reasoning level:
-low for lightweight read-only discovery, medium for testing/review/research,
-and high for coding. Switch back to the GPT-5.6 role tiers only after the
-current account accepts them.
+Use Luna for bounded read-only discovery, search, testing, and routine checks;
+Terra as the medium-reasoning planning, review, and project-default workhorse;
+and Sol for hard, write-heavy coding and release work.
 
 ## Pipeline
 
-1. Spawn `scout` to find relevant code and write `scout.md`.
-2. Spawn `planner` with the request and scout output; write `spec.md`.
+1. Spawn `scout` to find relevant code; the coordinator writes its returned report to `scout.md`.
+2. Spawn `planner` with the request and scout output; the coordinator writes its returned spec to `spec.md`.
 3. Stop if the planner returns blockers.
 4. Spawn `worker` only with the approved spec and run directory.
-5. Ask the worker to write `implementation.md`.
-6. Spawn `reviewer` with the request, spec, implementation notes, and actual diff; write `review.md`.
-7. Spawn `tester` with acceptance criteria and evidence; write `test-results.md` and `verdict.md`.
+5. Ask the worker to return implementation notes; the coordinator writes `implementation.md`.
+6. Spawn `reviewer` with the request, spec, implementation notes, and actual diff; the coordinator writes its returned review to `review.md`.
+7. Spawn `tester` with acceptance criteria and evidence; the coordinator writes its returned report to `test-results.md` and `verdict.md`.
 8. Run deterministic checks independently of agent claims when available.
 9. Finish with:
    - final outcome
@@ -185,8 +183,8 @@ Rules:
 - Do not commit, push, merge, deploy, or rotate secrets.
 - If the spec conflicts with repository facts, stop and report BLOCKED.
 - Run the smallest relevant checks.
-- Write your report to:
-  <repo-root>/.pipeline/runs/<run-id>/<worker-role>-implementation.md
+- Return your implementation report to the coordinator; do not write outside
+  your assigned worktree. The coordinator persists it to the run directory.
 
 Return:
 - changed files
@@ -209,8 +207,8 @@ Read:
 
 Do not edit files.
 Review correctness, regressions, security, missing tests, and acceptance gaps.
-Write review to:
-<repo-root>/.pipeline/runs/<run-id>/review.md
+Return the review to the coordinator; do not write files. The coordinator
+persists it to `<repo-root>/.pipeline/runs/<run-id>/review.md`.
 
 Return APPROVE, REQUEST_CHANGES, or BLOCKED.
 ```

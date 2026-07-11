@@ -6,6 +6,15 @@ export const buttonBaseClass =
 export const buttonVariantClass = {
   primary:
     "border border-brand bg-brand text-white shadow-[var(--shadow-flat)] hover:border-teal-800 hover:bg-teal-800 active:border-teal-900 active:bg-teal-900",
+  info: "border border-brand-muted bg-brand-muted text-white shadow-[var(--shadow-flat)] hover:brightness-90 active:brightness-75",
+  success:
+    "border border-good bg-good text-white shadow-[var(--shadow-flat)] hover:brightness-90 active:brightness-75",
+  search:
+    "border border-[var(--action-search)] bg-[var(--action-search)] text-white shadow-[var(--shadow-flat)] hover:border-[var(--action-search-hover)] hover:bg-[var(--action-search-hover)] active:brightness-75",
+  scrape:
+    "border border-[var(--action-scrape)] bg-[var(--action-scrape)] text-white shadow-[var(--shadow-flat)] hover:border-[var(--action-scrape-hover)] hover:bg-[var(--action-scrape-hover)] active:brightness-75",
+  ai: "border border-[var(--action-ai)] bg-[var(--action-ai)] text-white shadow-[var(--shadow-flat)] hover:border-[var(--action-ai-hover)] hover:bg-[var(--action-ai-hover)] active:brightness-75",
+  save: "border border-[var(--action-save)] bg-[var(--action-save)] text-white shadow-[var(--shadow-flat)] hover:border-[var(--action-save-hover)] hover:bg-[var(--action-save-hover)] active:brightness-75",
   secondary:
     "border border-line bg-surface-1 text-ink-1 shadow-[var(--shadow-flat)] hover:border-line-strong hover:bg-surface-2 active:bg-surface-3",
   ghost:

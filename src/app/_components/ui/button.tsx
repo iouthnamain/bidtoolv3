@@ -12,6 +12,13 @@ import {
 type ButtonVariant = keyof typeof buttonVariantClass;
 type ButtonSize = keyof typeof buttonSizeClass;
 
+const PROFILE_ACTION_VARIANTS = new Set<ButtonVariant>([
+  "search",
+  "scrape",
+  "ai",
+  "save",
+]);
+
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
@@ -36,13 +43,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) {
+    const sizeClass =
+      size === "sm" && PROFILE_ACTION_VARIANTS.has(variant)
+        ? buttonSizeClass.md
+        : buttonSizeClass[size];
     return (
       <button
         ref={ref}
         type={type ?? "button"}
         disabled={isLoading ? true : disabled}
         aria-busy={isLoading ? true : undefined}
-        className={`${buttonBaseClass} ${buttonVariantClass[variant]} ${buttonSizeClass[size]} ${className ?? ""}`}
+        className={`${buttonBaseClass} ${buttonVariantClass[variant]} ${sizeClass} ${className ?? ""}`}
         {...rest}
       >
         {isLoading ? (

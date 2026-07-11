@@ -8,6 +8,10 @@ import {
 } from "~/lib/materials/excel-enrich-fields";
 import type { CandidateFieldSource } from "~/lib/materials/excel-enrich-fields";
 import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrichment-types";
+import type {
+  ProfileExtraField,
+  ScrapedProductStoredResult,
+} from "~/lib/materials/profile-scrape-types";
 
 export type WebSearchStatus = "idle" | "pending" | "done" | "error";
 
@@ -46,6 +50,9 @@ export type RowDecisionLike = {
   webSearchStatus?: WebSearchStatus;
   webLinkResults?: WebLinkResult[];
   webLinksStatus?: WebSearchStatus;
+  scrapeResults?: ScrapedProductStoredResult[];
+  acceptedProfileFields?: Set<ProfileExtraField>;
+  editedProfileValues?: Partial<Record<ProfileExtraField, string>>;
   aiSearchResult?: AiSearchStoredResult;
   aiSearchCandidates?: AiSearchCandidateStored[];
   aiSearchStatus?: WebSearchStatus;
@@ -164,7 +171,11 @@ export function applyAllProposedFieldsWithCurrency(
 export function profileEffectiveFieldValues(
   sheetFields: Partial<Record<FillableField, string>>,
   catalogFields: Partial<Record<FillableField, string>> | null,
-  decision: Pick<RowDecisionLike, "editedValues" | "webProposedFields">,
+  decision: {
+    acceptedFields?: Set<FillableField>;
+    editedValues?: Partial<Record<FillableField, string>>;
+    webProposedFields?: Partial<Record<FillableField, string>>;
+  },
 ): Partial<Record<FillableField, string>> {
   const baseFields: Partial<Record<FillableField, string>> =
     catalogFields != null
@@ -177,10 +188,12 @@ export function profileEffectiveFieldValues(
   const result: Partial<Record<FillableField, string>> = {};
   for (const field of FILLABLE_FIELDS) {
     if (field === "currency") continue;
+    const useProposal =
+      decision.acceptedFields == null || decision.acceptedFields.has(field);
     const value = (
-      decision.editedValues?.[field] ??
-      baseFields[field] ??
-      ""
+      useProposal
+        ? (decision.editedValues?.[field] ?? baseFields[field] ?? "")
+        : (sheetFields[field] ?? "")
     ).trim();
     if (value) result[field] = value;
   }
@@ -205,7 +218,10 @@ export function profileAcceptedFields(
 ): Set<FillableField> {
   return new Set(
     Object.keys(
-      profileEffectiveFieldValues(sheetFields, catalogFields, decision),
+      profileEffectiveFieldValues(sheetFields, catalogFields, {
+        ...decision,
+        acceptedFields: undefined,
+      }),
     ) as FillableField[],
   );
 }
@@ -279,6 +295,9 @@ export function applyWebSearchToDecision(
     webSearchStatus: "done",
     webLinkResults: current.webLinkResults,
     webLinksStatus: current.webLinksStatus,
+    scrapeResults: current.scrapeResults,
+    acceptedProfileFields: current.acceptedProfileFields,
+    editedProfileValues: current.editedProfileValues,
     aiSearchResult: current.aiSearchResult,
     aiSearchCandidates: current.aiSearchCandidates,
     aiSearchStatus: current.aiSearchStatus,
@@ -311,6 +330,9 @@ export function applySavedMaterialToDecision(
       current?.webSearchStatus === "pending" ? "pending" : undefined,
     webLinkResults: current?.webLinkResults,
     webLinksStatus: current?.webLinksStatus,
+    scrapeResults: current?.scrapeResults,
+    acceptedProfileFields: current?.acceptedProfileFields,
+    editedProfileValues: current?.editedProfileValues,
     aiSearchResult: current?.aiSearchResult,
     aiSearchCandidates: current?.aiSearchCandidates,
     aiSearchStatus: current?.aiSearchStatus,
