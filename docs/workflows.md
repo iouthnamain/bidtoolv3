@@ -38,18 +38,20 @@ flowchart LR
 
 Defined in `src/server/api/root.ts`:
 
-| Router                                   | Primary domain                            |
-| ---------------------------------------- | ----------------------------------------- |
-| `search`                                 | BidWinner tender search, saved filters    |
-| `watchlist`                              | Saved tender/material references          |
-| `workflow`                               | Alert workflows and runs                  |
-| `notification`                           | In-app notifications                      |
-| `material`                               | Catalog CRUD, import, Excel enrich (sync) |
-| `materialEnrichment`                     | Catalog web-enrichment jobs               |
-| `excelResearch`                          | Excel row web-research jobs               |
-| `catalogDocument`                        | Catalog PDF library                       |
-| `ai`                                     | Chat sandbox / AI dispatch                |
-| `appConfig`, `version`                  | Local settings and version information    |
+| Router                 | Primary domain                            |
+| ---------------------- | ----------------------------------------- |
+| `search`               | BidWinner tender search, saved filters    |
+| `watchlist`            | Saved tender/material references          |
+| `workflow`             | Alert workflows and runs                  |
+| `notification`         | In-app notifications                      |
+| `material`             | Catalog CRUD, import, Excel enrich (sync) |
+| `materialProfile`      | BOQ workspaces, search, scrape, review    |
+| `materialEnrichment`   | Catalog web-enrichment jobs               |
+| `excelResearch`        | Excel row web-research jobs               |
+| `catalogDocument`      | Catalog PDF library                       |
+| `searchConfig`         | Search provider configuration             |
+| `ai`                   | Chat sandbox / AI dispatch                |
+| `appConfig`, `version` | Local settings and version information    |
 
 ---
 
@@ -64,7 +66,7 @@ Long-running work uses an **in-process scheduler** (not Redis/Bull). It starts o
 | Expired job cleanup     | hourly                                                                |
 | Runs in                 | Next.js Node process (skipped on serverless / missing `DATABASE_URL`) |
 
-Four job families share the poll loop:
+The scheduler claims five job queues directly and also advances the material-profile scrape and save orchestrators:
 
 | Job table                | Service                           | UI                               |
 | ------------------------ | --------------------------------- | -------------------------------- |
@@ -73,9 +75,15 @@ Four job families share the poll loop:
 | `materialEnrichmentJobs` | `material-enrichment-runner.ts`   | `/materials/enrich`              |
 | `excelResearchJobs`      | `excel-research/process-batch.ts` | `/enrich/jobs`                   |
 
+| Material-profile table           | Service                                | UI                        |
+| -------------------------------- | -------------------------------------- | ------------------------- |
+| `materialProfileSearchJobs`      | `material-profile-search-jobs.ts`      | `/material-profiles/[id]` |
+| `materialProfileScrapeJobs`      | `material-profile-scrape-jobs.ts`      | `/material-profiles/[id]` |
+| `materialProfileMaterialBatches` | `material-profile-material-batches.ts` | `/material-profiles/[id]` |
+
 Unified job list: `/jobs` (`jobs-list-client.tsx`).
 
-Concurrency limits come from `app_settings` (see `src/server/services/app-settings.ts`).
+Shared job concurrency limits come from `app_settings` (see `src/server/services/app-settings.ts`). Material-profile source scraping is separately capped at eight concurrent runs.
 
 ---
 
@@ -287,21 +295,46 @@ Flow: upload PDF / URL / download from source → store on disk → link to mate
 
 ---
 
-## 9. Unified jobs list
+## 9. Material profiles — BOQ to reviewed materials
 
-**Route:** `/jobs` — aggregates all four job families in `jobs-list-client.tsx`.
+**Purpose:** Turn a tender BOQ into a resumable workspace, reconcile each row with the catalog or researched sources, and export a clean workbook.
+
+|              |                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Routes**   | `/material-profiles`, `/material-profiles/[id]`, `/material-profiles/[id]/save-batches/[batchId]`                                              |
+| **Clients**  | `material-profile-detail-client.tsx`, `material-profile-review-step.tsx`, `match-chooser.tsx`                                                  |
+| **Router**   | `material-profile.ts`                                                                                                                          |
+| **Services** | `material-profile-workspaces.ts`, `material-profile-search-jobs.ts`, `material-profile-scrape-jobs.ts`, `material-profile-material-batches.ts` |
+| **Tables**   | `materialProfileWorkspaces`, items/matches, search jobs/runs, scrape jobs/runs, material-save batches                                          |
+
+| Step | What happens                                                                                                                                                                                                   |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Upload an `.xlsx` workbook and choose the material sheet.                                                                                                                                                      |
+| 2    | Map BOQ columns, edit cells if needed, and match rows against the local catalog.                                                                                                                               |
+| 3    | Review each row: keep a catalog match, search the web/AI, attach a catalog PDF, or scrape HTML sources. Up to eight source runs can progress concurrently.                                                     |
+| 4    | A row may retain multiple scraped products, including multiple products from the same source. Each product keeps its own review draft; only the active product feeds the comparison and material-save preview. |
+| 5    | Preview/commit selected rows to `/materials`, then export the clean workbook. Saving a row uses only its active product.                                                                                       |
+
+Scrape job and candidate history remains reopenable for 30 days. Retained products and their per-product drafts live in the workspace review decision, so they remain available after job history expires. Background completions add alternatives without changing the product currently shown in the comparison panel.
+
+See [material-profiles-and-materials-mvp.md](./material-profiles-and-materials-mvp.md) for the manual test path and sample workbooks.
 
 ---
 
-## 10. Supporting surfaces
+## 10. Unified jobs list
 
-| Surface       | Route                  | Notes                                                                               |
-| ------------- | ---------------------- | ----------------------------------------------------------------------------------- |
-| Dashboard     | `/dashboard`           | Server component reads `getDashboardSnapshot()` — KPIs, recent workflows, alerts    |
-| Settings      | `/settings/*`          | Local AI, search, desktop and update settings                                       |
-| Chat sandbox  | `/chat`                | `ai` router + OpenRouter                                                            |
-| Material profile | `/material-profiles` | Upload sheet → auto find → canonical materials → clean export                     |
-| Documents hub | `/documents`           | Shortcut links only (not a workflow)                                                |
+**Route:** `/jobs` — aggregates the four shared job families in `jobs-list-client.tsx`. Material-profile job state stays inside its workspace review flow.
+
+---
+
+## 11. Supporting surfaces
+
+| Surface       | Route         | Notes                                                                            |
+| ------------- | ------------- | -------------------------------------------------------------------------------- |
+| Dashboard     | `/dashboard`  | Server component reads `getDashboardSnapshot()` — KPIs, recent workflows, alerts |
+| Settings      | `/settings/*` | Local AI, search, desktop and update settings                                    |
+| Chat sandbox  | `/chat`       | `ai` router + OpenRouter                                                         |
+| Documents hub | `/documents`  | Shortcut links only (not a workflow)                                             |
 
 ---
 
@@ -320,15 +353,16 @@ Both share fill-empty semantics and evidence-backed suggestions; see the linked 
 
 ## Key orchestration files
 
-| File                                                 | Role                                |
-| ---------------------------------------------------- | ----------------------------------- |
-| `src/server/api/root.ts`                             | tRPC API surface                    |
-| `instrumentation.ts`                                 | Scheduler startup                    |
-| `src/server/services/job-scheduler.ts`               | Background job polling and claims   |
-| `src/server/services/excel-enrich.ts`                | Excel ↔ catalog matching core       |
-| `src/server/services/bidwinner-public-search.ts`     | Tender search orchestration         |
-| `src/server/services/shop-material-scraper.ts`       | Playwright shop scraping            |
-| `src/app/_components/dashboard/dashboard-layout.tsx` | Feature navigation map              |
+| File                                                  | Role                                    |
+| ----------------------------------------------------- | --------------------------------------- |
+| `src/server/api/root.ts`                              | tRPC API surface                        |
+| `instrumentation.ts`                                  | Scheduler startup                       |
+| `src/server/services/job-scheduler.ts`                | Background job polling and claims       |
+| `src/server/services/excel-enrich.ts`                 | Excel ↔ catalog matching core           |
+| `src/server/services/bidwinner-public-search.ts`      | Tender search orchestration             |
+| `src/server/services/shop-material-scraper.ts`        | Playwright shop scraping                |
+| `src/server/services/material-profile-scrape-jobs.ts` | Per-source profile scrape orchestration |
+| `src/app/_components/dashboard/dashboard-layout.tsx`  | Feature navigation map                  |
 
 ---
 
