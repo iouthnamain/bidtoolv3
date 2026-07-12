@@ -1008,9 +1008,6 @@ export function FieldCompareEditor({
                 {selectedSearchCandidate?.source === "web" &&
                 selectedSearchCandidate.sourceUrl ? (
                   <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
-                    <p className="text-xs font-semibold text-slate-700">
-                      Liên kết đã chọn
-                    </p>
                     <a
                       href={selectedSearchCandidate.sourceUrl}
                       target="_blank"
