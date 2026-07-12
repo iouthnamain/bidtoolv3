@@ -5,6 +5,7 @@ import {
   RELIABLE_SEARCH_MATCH_THRESHOLD,
   scoreAiCandidateCompletion,
 } from "~/lib/materials/search-candidate-match";
+import { assessMaterialSearchCandidate } from "~/lib/materials/match-assessment";
 import type {
   AiSearchStoredResult,
   WebLinkResult,
@@ -18,8 +19,14 @@ import {
   resolveAiProvider,
   resolveSearchDomainPolicy,
   resolveSearchQueryControls,
+  resolveSearchRelevancePipelineMode,
+  resolveSearxngSearchConfig,
 } from "~/server/services/app-settings";
-import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
+import {
+  buildLegacyProfileSearchQueries,
+  buildProfileSearchQueryWaves,
+  type SearchQuery,
+} from "~/server/services/excel-research/query-builder";
 import {
   enrichmentInputFromRow,
   mapExtractedToFillable,
@@ -33,6 +40,12 @@ import {
   searchWebForProduct,
   type WebSearchResult,
 } from "~/server/services/material-web-search";
+import {
+  activeRejectedUrls,
+  normalizeMaterialSearchUrl,
+} from "~/server/services/material-search-feedback";
+import { rerankAmbiguousMaterialLinks } from "~/server/services/material-search-ai-reranker";
+import { recordSearchAuditLog } from "~/server/services/search-audit";
 
 const log = createLogger("services-enrich-profile-row-search");
 
@@ -51,9 +64,60 @@ export type EnrichProfileRowSearchResult = {
 
 export type ProfileWebLinksSearchResult = {
   webLinkResults: WebLinkResult[];
+  primaryResults?: WebLinkResult[];
+  weakResults?: WebLinkResult[];
+  rejectedCount?: number;
+  identity?: ReturnType<typeof buildProfileSearchQueryWaves>["identity"];
+  pipelineMode?: "guarded" | "legacy";
+  timing?: { initialLinksMs: number };
   queries: string[];
   warnings: string[];
 };
+
+function mergeWaveResults(...groups: WebSearchResult[][]) {
+  const byUrl = new Map<string, WebSearchResult>();
+  for (const result of groups.flat()) {
+    const existing = byUrl.get(result.url);
+    if (!existing) {
+      byUrl.set(result.url, { ...result });
+      continue;
+    }
+    const occurrences = [
+      ...(existing.matchedQueries ?? []),
+      ...(result.matchedQueries ?? []),
+    ];
+    existing.matchedQueries = [
+      ...new Map(
+        occurrences.map((item) => [`${item.query}:${item.rank}`, item]),
+      ).values(),
+    ];
+    existing.rrfScore = existing.matchedQueries.reduce(
+      (sum, item) => sum + 1 / (60 + item.rank),
+      0,
+    );
+  }
+  return [...byUrl.values()];
+}
+
+function toWebLink(
+  result: WebSearchResult,
+  assessment: ReturnType<typeof assessMaterialSearchCandidate>,
+  fetchStatus: WebLinkResult["fetchStatus"],
+): WebLinkResult {
+  return {
+    title: result.title,
+    url: result.url,
+    domain: result.domain,
+    snippet: result.snippet,
+    query: result.query,
+    rankScore: assessment.score,
+    baseRankScore: result.baseRankScore,
+    matchedQueries: result.matchedQueries,
+    rrfScore: result.rrfScore,
+    assessment,
+    fetchStatus,
+  };
+}
 
 export type ProfileAiCandidatesSearchResult = {
   aiSearchCandidates: AiSearchStoredResult[];
@@ -183,49 +247,125 @@ async function _searchProfileRowWebLinks(
   signal?: AbortSignal,
 ): Promise<ProfileWebLinksSearchResult> {
   const warnings: string[] = [];
+  const startedAt = Date.now();
 
   if (!input.name.trim()) {
     return {
       webLinkResults: [],
+      primaryResults: [],
+      weakResults: [],
+      rejectedCount: 0,
+      identity: buildProfileSearchQueryWaves(input).identity,
+      pipelineMode: "guarded",
+      timing: { initialLinksMs: Date.now() - startedAt },
       queries: [],
       warnings: ["Tên vật tư trống."],
     };
   }
 
-  const [domainPolicy, queryControls] = await Promise.all([
+  const [domainPolicy, queryControls, pipelineMode] = await Promise.all([
     resolveSearchDomainPolicy(),
     resolveSearchQueryControls(),
+    resolveSearchRelevancePipelineMode(),
   ]);
-  const queries = buildSearchQueries(
-    {
-      name: input.name,
-      manufacturer: input.manufacturer,
-      code: input.code,
-      specText: input.specText,
-      unit: input.unit,
-      category: input.category,
-      originCountry: input.originCountry,
-      maxQueries: 6,
-    },
-    {
-      context: "profile_search",
-      domainPolicy,
-      queryControls,
-    },
-  ).map((query) => query.query);
+  const queryInput = { ...input };
+  const waves = buildProfileSearchQueryWaves(queryInput, {
+    domainPolicy,
+    queryControls,
+  });
+  const legacyQueries = buildLegacyProfileSearchQueries(queryInput, {
+    domainPolicy,
+    queryControls,
+  });
+  const queryBudget = queryControls.interactiveMaxQueries;
+  const firstQueries = (
+    pipelineMode === "guarded" ? waves.wave1 : legacyQueries
+  ).slice(0, queryBudget);
+  let executedQueries: SearchQuery[] = [...firstQueries];
 
-  if (queries.length === 0) {
+  if (firstQueries.length === 0) {
     return {
       webLinkResults: [],
+      primaryResults: [],
+      weakResults: [],
+      rejectedCount: 0,
+      identity: waves.identity,
+      pipelineMode,
+      timing: { initialLinksMs: Date.now() - startedAt },
       queries: [],
       warnings: ["Không tạo được truy vấn tìm kiếm."],
     };
   }
 
-  const searchResponse = await searchWebForProduct(queries, signal, {
+  const budgetSignal = AbortSignal.timeout(15_000);
+  const searchSignal = signal
+    ? AbortSignal.any([signal, budgetSignal])
+    : budgetSignal;
+  const searchResponse = await searchWebForProduct(firstQueries, searchSignal, {
     feature: "profile_search",
   });
   warnings.push(...searchResponse.warnings);
+  const unsafeRejectedUrls = new Set(searchResponse.unsafeRejectedUrls ?? []);
+  const rejectedUrls = await activeRejectedUrls(waves.identity.signature);
+  const feedbackRejectedUrls = new Set<string>();
+  const feedbackFiltered = searchResponse.results.filter((result) => {
+    try {
+      const normalizedUrl = normalizeMaterialSearchUrl(result.url);
+      if (rejectedUrls.has(normalizedUrl)) {
+        feedbackRejectedUrls.add(normalizedUrl);
+        return false;
+      }
+      return true;
+    } catch {
+      feedbackRejectedUrls.add(result.url.trim());
+      return false;
+    }
+  });
+  const coarse = feedbackFiltered.map((candidate) => ({
+    candidate,
+    assessment: assessMaterialSearchCandidate({
+      identity: waves.identity,
+      candidate,
+    }),
+  }));
+  const plausibleCount = coarse.filter(
+    ({ assessment }) =>
+      assessment.score >= 0.2 && assessment.hardRejects.length === 0,
+  ).length;
+  let mergedResults = feedbackFiltered;
+  if (
+    pipelineMode === "guarded" &&
+    plausibleCount < 5 &&
+    executedQueries.length < queryBudget &&
+    !searchSignal.aborted
+  ) {
+    const remainingQueries = waves.wave2.slice(
+      0,
+      queryBudget - executedQueries.length,
+    );
+    executedQueries = [...executedQueries, ...remainingQueries];
+    const wave2 = await searchWebForProduct(remainingQueries, searchSignal, {
+      feature: "profile_search",
+    });
+    warnings.push(...wave2.warnings);
+    for (const url of wave2.unsafeRejectedUrls ?? []) {
+      unsafeRejectedUrls.add(url);
+    }
+    const wave2FeedbackFiltered = wave2.results.filter((result) => {
+      try {
+        const normalizedUrl = normalizeMaterialSearchUrl(result.url);
+        if (rejectedUrls.has(normalizedUrl)) {
+          feedbackRejectedUrls.add(normalizedUrl);
+          return false;
+        }
+        return true;
+      } catch {
+        feedbackRejectedUrls.add(result.url.trim());
+        return false;
+      }
+    });
+    mergedResults = mergeWaveResults(feedbackFiltered, wave2FeedbackFiltered);
+  }
 
   const rankingInput = {
     manufacturer: input.manufacturer ?? null,
@@ -239,34 +379,148 @@ async function _searchProfileRowWebLinks(
     profileSearch: true,
   };
   const initialRanked = rankSearchResults(
-    searchResponse.results,
+    mergedResults,
     rankingInput,
     searchResponse.domainPolicy ?? domainPolicy,
   );
-  const fetchedRanked = await enrichSearchResultsWithFetchedContent(
-    initialRanked,
-    { fetchCount: PROFILE_FETCH_LINKS, signal },
+  const plausible =
+    pipelineMode === "legacy"
+      ? initialRanked
+      : initialRanked.filter((candidate) => {
+          const assessment = assessMaterialSearchCandidate({
+            identity: waves.identity,
+            candidate,
+          });
+          return assessment.score >= 0.2 || assessment.aiOverrideEligible;
+        });
+  const deterministicRejectedUrls = new Set(
+    initialRanked
+      .filter((candidate) => !plausible.includes(candidate))
+      .map((candidate) => candidate.url),
   );
+  let fetchedRanked = plausible;
+  try {
+    fetchedRanked = await enrichSearchResultsWithFetchedContent(plausible, {
+      fetchCount: 8,
+      signal: searchSignal,
+    });
+  } catch {
+    warnings.push("Một số nguồn chưa được xác minh nội dung trong 15 giây.");
+  }
   const ranked = rankSearchResults(
     fetchedRanked,
     rankingInput,
     searchResponse.domainPolicy ?? domainPolicy,
-  ).slice(0, PROFILE_TOP_LINKS);
-
-  const webLinkResults: WebLinkResult[] = ranked.map((hit) => ({
-    title: hit.title,
-    url: hit.url,
-    domain: hit.domain,
-    snippet: hit.snippet,
-    query: hit.query,
-    rankScore: hit.rankScore,
-  }));
+  );
+  const assessed = ranked.map((hit) => {
+    const assessment = assessMaterialSearchCandidate({
+      identity: waves.identity,
+      candidate: hit,
+    });
+    return {
+      hit,
+      assessment:
+        hit.fetchStatus === "verified" || assessment.tier === "rejected"
+          ? assessment
+          : { ...assessment, tier: "weak" as const },
+    };
+  });
+  const primaryResults = assessed
+    .filter(({ assessment }) => assessment.tier === "primary")
+    .slice(0, PROFILE_TOP_LINKS)
+    .map(({ hit, assessment }) =>
+      toWebLink(hit, assessment, hit.fetchStatus ?? "unverified"),
+    );
+  const weakResults = assessed
+    .filter(({ assessment }) => assessment.tier === "weak")
+    .slice(0, PROFILE_TOP_LINKS)
+    .map(({ hit, assessment }) =>
+      toWebLink(hit, assessment, hit.fetchStatus ?? "unverified"),
+    );
+  const webLinkResults =
+    pipelineMode === "legacy"
+      ? ranked.slice(0, PROFILE_TOP_LINKS).map((hit) => {
+          const assessment = assessMaterialSearchCandidate({
+            identity: waves.identity,
+            candidate: hit,
+          });
+          return toWebLink(
+            hit,
+            { ...assessment, tier: "primary" },
+            hit.fetchStatus ?? "unverified",
+          );
+        })
+      : [...primaryResults, ...weakResults];
+  for (const { hit, assessment } of assessed) {
+    if (assessment.tier === "rejected") deterministicRejectedUrls.add(hit.url);
+  }
+  const unsafeRejectedCount = unsafeRejectedUrls.size;
+  const feedbackRejectedCount = feedbackRejectedUrls.size;
+  const rejectedCount = new Set([
+    ...unsafeRejectedUrls,
+    ...feedbackRejectedUrls,
+    ...deterministicRejectedUrls,
+  ]).size;
+  const auditPrimaryCount =
+    pipelineMode === "legacy" ? webLinkResults.length : primaryResults.length;
+  const auditWeakCount = pipelineMode === "legacy" ? 0 : weakResults.length;
+  const searxng = await resolveSearxngSearchConfig();
+  await recordSearchAuditLog({
+    feature: "profile_search",
+    provider: "guarded_pipeline",
+    query: executedQueries.map((query) => query.query).join(" | "),
+    engines: searxng.engines,
+    language: searxng.language,
+    resultCount: mergedResults.length,
+    selectedResultCount: webLinkResults.length,
+    durationMs: Date.now() - startedAt,
+    status: webLinkResults.length > 0 ? "success" : "no_results",
+    warnings,
+    topResults: webLinkResults.slice(0, 8).map((result) => ({
+      title: result.title,
+      url: result.url,
+      domain: result.domain,
+      rankScore: result.assessment?.score ?? 0,
+      reasons: result.assessment?.reasons ?? [],
+    })),
+    rankingPolicy: searchResponse.domainPolicy ?? domainPolicy,
+    qualitySummary: {
+      pipelineMode,
+      primaryCount: auditPrimaryCount,
+      weakCount: auditWeakCount,
+      rejectedCount,
+      unsafeRejectedCount,
+      feedbackRejectedCount,
+      aiPromotedCount: 0,
+      initialLinksMs: Date.now() - startedAt,
+    },
+  });
 
   if (ranked.length === 0) {
-    return { webLinkResults, queries, warnings };
+    return {
+      webLinkResults,
+      primaryResults,
+      weakResults,
+      rejectedCount,
+      identity: waves.identity,
+      pipelineMode,
+      timing: { initialLinksMs: Date.now() - startedAt },
+      queries: executedQueries.map((query) => query.query),
+      warnings,
+    };
   }
 
-  return { webLinkResults, queries, warnings };
+  return {
+    webLinkResults,
+    primaryResults,
+    weakResults,
+    rejectedCount,
+    identity: waves.identity,
+    pipelineMode,
+    timing: { initialLinksMs: Date.now() - startedAt },
+    queries: executedQueries.map((query) => query.query),
+    warnings,
+  };
 }
 
 async function _extractProfileRowAiCandidates(
@@ -283,7 +537,83 @@ async function _extractProfileRowAiCandidates(
 
   const provider = await resolveAiProvider("enrichment");
   const extractionWarnings: string[] = [];
-  const ranked = webLinkResults.map(webLinkToSearchResult);
+  const identity = buildProfileSearchQueryWaves(input).identity;
+  const deterministicPrimary = webLinkResults.filter(
+    (link) => link.assessment?.tier === "primary",
+  );
+  let promoted: WebLinkResult[] = [];
+  const ambiguous = webLinkResults.filter(
+    (link) =>
+      link.assessment != null &&
+      ((link.assessment.score >= 0.2 && link.assessment.score < 0.75) ||
+        link.assessment.aiOverrideEligible),
+  );
+  if (ambiguous.length > 0) {
+    const rerankStartedAt = Date.now();
+    try {
+      const reranked = await rerankAmbiguousMaterialLinks({
+        identity,
+        candidates: ambiguous,
+        signal,
+      });
+      promoted = reranked.promotedResults;
+      if (promoted.length > 0) {
+        const [config, policy, mode] = await Promise.all([
+          resolveSearxngSearchConfig(),
+          resolveSearchDomainPolicy(),
+          resolveSearchRelevancePipelineMode(),
+        ]);
+        await recordSearchAuditLog({
+          feature: "profile_search",
+          provider: "ai_relevance_reranker",
+          query: identity.name,
+          engines: config.engines,
+          language: config.language,
+          resultCount: ambiguous.length,
+          selectedResultCount: promoted.length,
+          durationMs: Date.now() - rerankStartedAt,
+          status: "success",
+          topResults: promoted.map((link) => ({
+            title: link.title,
+            url: link.url,
+            domain: link.domain,
+            rankScore: link.assessment?.score ?? 0,
+            reasons: link.aiDecision?.reasons ?? [],
+          })),
+          rankingPolicy: policy,
+          qualitySummary: {
+            pipelineMode: mode,
+            primaryCount: 0,
+            weakCount: 0,
+            rejectedCount: 0,
+            unsafeRejectedCount: 0,
+            feedbackRejectedCount: 0,
+            aiPromotedCount: promoted.length,
+            initialLinksMs: 0,
+          },
+        });
+      }
+    } catch (error) {
+      pushAiExtractionWarning(
+        extractionWarnings,
+        `AI đánh giá độ liên quan không khả dụng: ${extractionErrorMessage(error)}.`,
+      );
+    }
+  }
+  const validatedLinks = [...deterministicPrimary, ...promoted].filter(
+    (link, index, values) =>
+      values.findIndex((candidate) => candidate.url === link.url) === index,
+  );
+  if (validatedLinks.length === 0) {
+    return {
+      aiSearchCandidates: [],
+      warnings: [
+        "Không có nguồn đủ phù hợp để trích xuất dữ liệu.",
+        ...extractionWarnings,
+      ],
+    };
+  }
+  const ranked = validatedLinks.map(webLinkToSearchResult);
   const linksToFetch = ranked.slice(0, PROFILE_FETCH_LINKS);
   const enrichedLinks = await runPool(linksToFetch, FETCH_CONCURRENCY, (link) =>
     enrichLinkWithFetch(link, signal),
@@ -333,6 +663,9 @@ async function _extractProfileRowAiCandidates(
           url: link.url,
           snippet: link.snippet,
           rankScore: link.rankScore,
+          relevanceDecision: promoted.find(
+            (candidate) => candidate.url === link.url,
+          )?.aiDecision,
         };
         return candidate;
       } catch (error) {

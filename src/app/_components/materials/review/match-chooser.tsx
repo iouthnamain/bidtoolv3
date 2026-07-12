@@ -200,7 +200,12 @@ export function MatchChooser({
   const [pendingProductIndex, setPendingProductIndex] = useState<number | null>(
     null,
   );
+  const [rejectingSearchCandidateKey, setRejectingSearchCandidateKey] =
+    useState<string | null>(null);
+  const rejectingSearchCandidateKeyRef = useRef<string | null>(null);
   const handledCaptureRunIdsRef = useRef(new Set<string>());
+  const decisionRef = useRef(decision);
+  decisionRef.current = decision;
   const onCapturePendingChangeRef = useRef(onCapturePendingChange);
   onCapturePendingChangeRef.current = onCapturePendingChange;
   const isProfileSplit = searchMode === "profileSplit";
@@ -224,6 +229,10 @@ export function MatchChooser({
   const upsertMaterial = api.material.upsertMaterial.useMutation();
   const persistReviewDecision =
     api.materialProfile.updateItemReviewDecision.useMutation();
+  const rejectSearchResult =
+    api.materialProfile.rejectSearchResult.useMutation();
+  const restoreSearchResult =
+    api.materialProfile.restoreSearchResult.useMutation();
   const createSavePreview =
     api.materialProfile.createMaterialSavePreview.useMutation();
   const commitSaveBatch =
@@ -525,6 +534,37 @@ export function MatchChooser({
             (/\.pdf(?:$|[?#])/i.test(link.url) &&
               Boolean(decision?.catalogPdfUrls?.includes(link.url))),
           isRecommended: false,
+          tier: link.assessment?.tier === "weak" ? "weak" : "primary",
+          debug: link.assessment ? (
+            <>
+              <p>
+                Điểm vật tư: {(link.assessment.score * 100).toFixed(0)}% · RRF:{" "}
+                {link.rrfScore?.toFixed(4) ?? "—"} · Nội dung:{" "}
+                {link.fetchStatus === "verified"
+                  ? "Đã xác minh"
+                  : "Chưa xác minh nội dung"}
+              </p>
+              <p>
+                Identity {link.assessment.dimensions.identity.toFixed(2)} · Spec{" "}
+                {link.assessment.dimensions.specification.toFixed(2)} · Trust{" "}
+                {link.assessment.dimensions.sourceTrust.toFixed(2)} · Consensus{" "}
+                {link.assessment.dimensions.retrievalConsensus.toFixed(2)}
+              </p>
+              {link.assessment.conflicts.length > 0 ? (
+                <p>Xung đột: {link.assessment.conflicts.join(" · ")}</p>
+              ) : null}
+              {(link.matchedQueries ?? []).map((match) => (
+                <p key={`${match.query}-${match.rank}`}>
+                  #{match.rank} {match.intent}: {match.query}
+                </p>
+              ))}
+              {link.aiDecision ? (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap">
+                  {JSON.stringify(link.aiDecision, null, 2)}
+                </pre>
+              ) : null}
+            </>
+          ) : undefined,
           status:
             decision?.webLinksStatus === "error" ? "error" : ("done" as const),
         });
@@ -576,6 +616,11 @@ export function MatchChooser({
           priceLabel,
           priceStatus: priceLabel ? "available" : "not_found",
           isRecommended: false,
+          debug: candidate.relevanceDecision ? (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(candidate.relevanceDecision, null, 2)}
+            </pre>
+          ) : undefined,
           status:
             fillCount > 0
               ? "done"
@@ -844,6 +889,78 @@ export function MatchChooser({
       sourceUrl: link.url,
       sourceCandidateKey: candidateKey,
     });
+  };
+
+  const rejectSearchCandidate = (key: string) => {
+    if (rejectingSearchCandidateKeyRef.current != null) return;
+    const parsed = parseSearchCandidateKey(key);
+    if (parsed?.source !== "web") return;
+    const link = decision?.webLinkResults?.find(
+      (item) => item.url === parsed.id,
+    );
+    if (!link) return;
+    rejectingSearchCandidateKeyRef.current = key;
+    setRejectingSearchCandidateKey(key);
+    rejectSearchResult.mutate(
+      { itemId: row.key, url: link.url, title: link.title },
+      {
+        onSuccess: (feedback) => {
+          const next: RowDecision = {
+            ...(decision ?? {
+              materialId: null,
+              acceptedFields: new Set(),
+            }),
+            webLinkResults: (decision?.webLinkResults ?? []).filter(
+              (candidate) => candidate.url !== link.url,
+            ),
+            selectedSearchCandidateKey:
+              decision?.selectedSearchCandidateKey === key
+                ? undefined
+                : decision?.selectedSearchCandidateKey,
+          };
+          onChange(next);
+          void Promise.all([
+            utils.materialProfile.get.invalidate(),
+            utils.searchConfig.listSearchFeedback.invalidate(),
+          ]);
+          toast.success("Đã ẩn kết quả không liên quan.", {
+            actionLabel: "Hoàn tác",
+            onAction: () =>
+              restoreSearchResult.mutate(
+                { feedbackId: feedback.id },
+                {
+                  onSuccess: () => {
+                    onChange({
+                      ...(decisionRef.current ?? next),
+                      webLinkResults: [
+                        ...(decisionRef.current?.webLinkResults ??
+                          next.webLinkResults ??
+                          []),
+                        link,
+                      ].filter(
+                        (candidate, index, values) =>
+                          values.findIndex(
+                            (value) => value.url === candidate.url,
+                          ) === index,
+                      ),
+                    });
+                    void utils.searchConfig.listSearchFeedback.invalidate();
+                    toast.success("Đã khôi phục kết quả.");
+                  },
+                  onError: (mutationError) =>
+                    toast.error(`Không thể hoàn tác: ${mutationError.message}`),
+                },
+              ),
+          });
+        },
+        onError: (mutationError) => toast.error(mutationError.message),
+        onSettled: () => {
+          if (rejectingSearchCandidateKeyRef.current !== key) return;
+          rejectingSearchCandidateKeyRef.current = null;
+          setRejectingSearchCandidateKey(null);
+        },
+      },
+    );
   };
 
   const isSkipped = decision?.skipped === true;
@@ -1658,6 +1775,11 @@ export function MatchChooser({
         onCaptureSearchCandidate={
           isProfileSplit ? captureSearchCandidate : undefined
         }
+        onRejectSearchCandidate={
+          isProfileSplit ? rejectSearchCandidate : undefined
+        }
+        rejectingSearchCandidateKey={rejectingSearchCandidateKey}
+        rejectSearchCandidateDisabled={rejectingSearchCandidateKey != null}
         capturingSearchCandidateKey={capturingSearchCandidateKey}
         captureSearchCandidateDisabled={
           isWebLinksPending === true ||

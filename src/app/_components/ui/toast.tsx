@@ -18,11 +18,15 @@ interface Toast {
   message: string;
   variant: ToastVariant;
   durationMs: number;
+  actionLabel?: string;
+  onAction?: () => void;
 }
+
+type ToastAction = { actionLabel: string; onAction: () => void };
 
 interface ToastContextValue {
   toast: (message: string, variant?: ToastVariant, durationMs?: number) => void;
-  success: (message: string) => void;
+  success: (message: string, action?: ToastAction) => void;
   error: (message: string) => void;
   warning: (message: string) => void;
   info: (message: string) => void;
@@ -96,6 +100,18 @@ function ToastItem({
     >
       <span className="mt-0.5 shrink-0">{variantIcons[toast.variant]}</span>
       <span className="flex-1 leading-snug">{toast.message}</span>
+      {toast.actionLabel && toast.onAction ? (
+        <button
+          type="button"
+          className="min-h-9 shrink-0 rounded px-2 text-sm font-bold underline focus-visible:ring-2 focus-visible:outline-none"
+          onClick={() => {
+            toast.onAction?.();
+            handleDismiss();
+          }}
+        >
+          {toast.actionLabel}
+        </button>
+      ) : null}
       <button
         type="button"
         className="-my-1 -mr-1 ml-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
@@ -116,11 +132,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToast = useCallback(
-    (message: string, variant: ToastVariant = "info", durationMs = 4000) => {
+    (
+      message: string,
+      variant: ToastVariant = "info",
+      durationMs = 4000,
+      action?: ToastAction,
+    ) => {
       const id = ++nextId;
       setToasts((prev) => [
         ...prev.slice(-4),
-        { id, message, variant, durationMs },
+        { id, message, variant, durationMs, ...action },
       ]);
     },
     [],
@@ -128,7 +149,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const value: ToastContextValue = {
     toast: addToast,
-    success: useCallback((msg: string) => addToast(msg, "success"), [addToast]),
+    success: useCallback(
+      (msg: string, action?: ToastAction) =>
+        addToast(msg, "success", action ? 8000 : 4000, action),
+      [addToast],
+    ),
     error: useCallback(
       (msg: string) => addToast(msg, "error", 6000),
       [addToast],

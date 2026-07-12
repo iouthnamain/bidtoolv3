@@ -63,6 +63,10 @@ import {
   undoMaterialProfileSaveBatch,
   updateMaterialProfileSavePreviewRow,
 } from "~/server/services/material-profile-material-batches";
+import {
+  rejectMaterialSearchResult,
+  restoreMaterialSearchResult,
+} from "~/server/services/material-search-feedback";
 
 function mapMaterialProfileError(error: unknown): never {
   if (error instanceof MaterialProfileMaterialBatchError) {
@@ -158,6 +162,35 @@ const webLinkResultSchema = z.object({
   snippet: z.string(),
   query: z.string().optional(),
   rankScore: z.number().optional(),
+  relevanceDecision: z
+    .object({
+      url: z.string(),
+      verdict: z.enum(["relevant", "irrelevant", "uncertain"]),
+      confidence: z.number(),
+      productFamilyMatch: z.boolean(),
+      matchedIdentifiers: z.array(z.string()),
+      conflictingIdentifiers: z.array(z.string()),
+      numericSpecMatch: z.boolean().nullable(),
+      reasons: z.array(z.string()),
+      evidence: z.array(
+        z.object({ sourceUrl: z.string(), snippet: z.string() }),
+      ),
+    })
+    .optional(),
+  baseRankScore: z.number().optional(),
+  rrfScore: z.number().optional(),
+  fetchStatus: z.enum(["verified", "unverified", "failed"]).optional(),
+  matchedQueries: z
+    .array(
+      z.object({
+        query: z.string(),
+        intent: z.string(),
+        rank: z.number().int().positive(),
+      }),
+    )
+    .optional(),
+  assessment: z.record(z.unknown()).optional(),
+  aiDecision: z.record(z.unknown()).optional(),
 });
 
 const aiSearchStoredResultSchema = z.object({
@@ -230,6 +263,20 @@ const serializedRowDecisionSchema = z.object({
 });
 
 export const materialProfileRouter = createTRPCRouter({
+  rejectSearchResult: requirePermission("material:write")
+    .input(
+      z.object({
+        itemId: z.number().int().positive(),
+        url: z.string().url().max(2000),
+        title: z.string().trim().max(500).optional(),
+      }),
+    )
+    .mutation(({ input }) => rejectMaterialSearchResult(input)),
+
+  restoreSearchResult: requirePermission("material:write")
+    .input(z.object({ feedbackId: z.number().int().positive() }))
+    .mutation(({ input }) => restoreMaterialSearchResult(input.feedbackId)),
+
   create: requirePermission("material:write")
     .input(
       z.object({

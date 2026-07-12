@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   and,
@@ -37,6 +37,7 @@ import {
   validateMaterialProfileInput,
   validateMaterialProfileResolution,
 } from "~/lib/materials/profile-input-contract";
+import { createMaterialSearchIdentity } from "~/lib/materials/material-search-identity";
 import { db } from "~/server/db";
 import {
   excelWorkspaceItems,
@@ -56,8 +57,20 @@ import {
   extractProfileRowAiCandidates,
   searchProfileRowWebLinks,
 } from "~/server/services/enrich-profile-row-search";
+import {
+  filterActiveRejectedAiCandidates,
+  filterActiveRejectedWebLinks,
+} from "~/server/services/material-search-feedback";
 import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import {
+  getAppSettingsRevision,
+  resolveAiExecutionIdentity,
+  resolveSearchDomainPolicy,
+  resolveSearchQueryControls,
+  resolveSearchRelevancePipelineMode,
+  resolveSearxngSearchConfig,
+} from "~/server/services/app-settings";
 
 const log = createLogger("services-material-profile-search-jobs");
 
@@ -1042,12 +1055,48 @@ type AutoProfileSearchCachePayload = {
   recommendedCandidateKey: string | null;
 };
 
-function autoProfileSearchCacheKey(input: EnrichWebRowInput) {
-  return `profile-auto:v1:${createMaterialProfileSourceFingerprint({
-    name: input.name ?? "",
-    unit: input.unit ?? "",
-    specText: input.specText ?? "",
-  })}`;
+export function createAutoProfileSearchConfigurationFingerprint(value: {
+  ai: { provider: string; model: string; baseUrl?: string | null };
+  mode: "guarded" | "legacy";
+  searxng: unknown;
+  domainPolicy: unknown;
+  queryControls: unknown;
+}) {
+  const searxng =
+    value.searxng && typeof value.searxng === "object"
+      ? Object.fromEntries(
+          Object.entries(value.searxng).filter(([key]) => key !== "apiKey"),
+        )
+      : value.searxng;
+  return createHash("sha256")
+    .update(JSON.stringify({ ...value, searxng }))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+async function autoProfileSearchCacheSnapshot(input: EnrichWebRowInput) {
+  while (true) {
+    const revision = getAppSettingsRevision();
+    const [ai, mode, searxng, domainPolicy, queryControls] = await Promise.all([
+      resolveAiExecutionIdentity("enrichment"),
+      resolveSearchRelevancePipelineMode(),
+      resolveSearxngSearchConfig(),
+      resolveSearchDomainPolicy(),
+      resolveSearchQueryControls(),
+    ]);
+    if (revision !== getAppSettingsRevision()) continue;
+    const configFingerprint = createAutoProfileSearchConfigurationFingerprint({
+      ai,
+      mode,
+      searxng,
+      domainPolicy,
+      queryControls,
+    });
+    return {
+      key: `profile-auto:v3:${configFingerprint}:${createMaterialSearchIdentity(input).signature}`,
+      revision,
+    };
+  }
 }
 
 function autoProfileSearchCachePayload(
@@ -1071,16 +1120,13 @@ function autoProfileSearchCachePayload(
   };
 }
 
-async function readAutoProfileSearchCache(input: EnrichWebRowInput) {
+async function readAutoProfileSearchCache(cacheKey: string) {
   const [row] = await db
     .select({ payloadJson: materialProfileSearchCache.payloadJson })
     .from(materialProfileSearchCache)
     .where(
       and(
-        eq(
-          materialProfileSearchCache.cacheKey,
-          autoProfileSearchCacheKey(input),
-        ),
+        eq(materialProfileSearchCache.cacheKey, cacheKey),
         gt(materialProfileSearchCache.expiresAt, new Date().toISOString()),
       ),
     )
@@ -1090,8 +1136,15 @@ async function readAutoProfileSearchCache(input: EnrichWebRowInput) {
 
 async function writeAutoProfileSearchCache(
   input: EnrichWebRowInput,
+  cacheSnapshot: { key: string; revision: number },
   payload: AutoProfileSearchCachePayload,
 ) {
+  const currentCacheSnapshot = await autoProfileSearchCacheSnapshot(input);
+  if (
+    currentCacheSnapshot.revision !== cacheSnapshot.revision ||
+    currentCacheSnapshot.key !== cacheSnapshot.key
+  )
+    return;
   const now = new Date().toISOString();
   const expiresAt = new Date(
     Date.now() + 7 * 24 * 60 * 60 * 1_000,
@@ -1099,7 +1152,7 @@ async function writeAutoProfileSearchCache(
   await db
     .insert(materialProfileSearchCache)
     .values({
-      cacheKey: autoProfileSearchCacheKey(input),
+      cacheKey: cacheSnapshot.key,
       payloadJson: sanitizeStoredJson(payload) as Record<string, unknown>,
       expiresAt,
       createdAt: now,
@@ -1583,6 +1636,9 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     });
   }
 
+  const autoCacheSnapshot =
+    job.mode === "auto" ? await autoProfileSearchCacheSnapshot(input) : null;
+
   try {
     if (job.mode === "web") {
       const web = await searchProfileRowWebLinks(input, signal);
@@ -1606,8 +1662,16 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
     }
 
     if (job.mode === "auto") {
-      const cached = await readAutoProfileSearchCache(input);
+      const cached = await readAutoProfileSearchCache(autoCacheSnapshot!.key);
       if (cached) {
+        cached.webLinkResults = await filterActiveRejectedWebLinks(
+          input,
+          cached.webLinkResults,
+        );
+        cached.aiSearchCandidates = await filterActiveRejectedAiCandidates(
+          input,
+          cached.aiSearchCandidates,
+        );
         const cachedStatus: MaterialProfileSearchRunStatus =
           cached.aiSearchCandidates.length > 0
             ? "completed"
@@ -1658,7 +1722,10 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
 
     const currentRun = await loadCurrentRunForItem(run.itemId);
     const currentDecision = currentRun ? parseRunDecision(currentRun) : null;
-    let webLinkResults = currentDecision?.webLinkResults ?? [];
+    let webLinkResults = await filterActiveRejectedWebLinks(
+      input,
+      currentDecision?.webLinkResults ?? [],
+    );
     let queries = parseStringArray(currentRun?.queriesJson);
     const warnings: string[] = [];
     const sourceWebRunId: number | null =
@@ -1697,7 +1764,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
       warnings.push(...ai.warnings);
       const hasCandidates = ai.aiSearchCandidates.length > 0;
       if (job.mode === "auto") {
-        await writeAutoProfileSearchCache(input, {
+        await writeAutoProfileSearchCache(input, autoCacheSnapshot!, {
           queries,
           warnings,
           webLinkResults,
@@ -1747,7 +1814,7 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
           : "Không cấu hình AI enrichment.";
       warnings.push(message);
       if (job.mode === "auto") {
-        await writeAutoProfileSearchCache(input, {
+        await writeAutoProfileSearchCache(input, autoCacheSnapshot!, {
           queries,
           warnings,
           webLinkResults,

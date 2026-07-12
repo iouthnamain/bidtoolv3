@@ -30,6 +30,17 @@ export type SearchAuditTopResult = {
   reasons: string[];
 };
 
+export type SearchQualitySummary = {
+  pipelineMode: "legacy" | "guarded";
+  primaryCount: number;
+  weakCount: number;
+  rejectedCount: number;
+  unsafeRejectedCount: number;
+  feedbackRejectedCount: number;
+  aiPromotedCount: number;
+  initialLinksMs: number;
+};
+
 type SearchAuditEvent = {
   feature: SearchAuditFeature;
   provider?: string;
@@ -44,6 +55,7 @@ type SearchAuditEvent = {
   errorText?: string;
   topResults?: SearchAuditTopResult[];
   rankingPolicy: SearchDomainPolicy;
+  qualitySummary?: SearchQualitySummary;
 };
 
 function normalizeQuery(query: string) {
@@ -111,6 +123,7 @@ export async function recordSearchAuditLog(event: SearchAuditEvent) {
         reasons: result.reasons.slice(0, 8),
       })),
       rankingPolicyJson: event.rankingPolicy,
+      qualitySummaryJson: event.qualitySummary ?? null,
     });
   } catch (error) {
     log.warn("search_audit_insert_failed", { error });
@@ -144,6 +157,7 @@ export async function listSearchAuditLogs(input: {
       warningText: searchAuditLogs.warningText,
       errorText: searchAuditLogs.errorText,
       topResultsJson: searchAuditLogs.topResultsJson,
+      qualitySummaryJson: searchAuditLogs.qualitySummaryJson,
       createdAt: searchAuditLogs.createdAt,
     })
     .from(searchAuditLogs)
@@ -161,6 +175,10 @@ export async function getSearchAuditSummary() {
       errors24h: 0,
       medianDurationMs24h: 0,
       avgDurationMs24h: 0,
+      primary24h: 0,
+      weak24h: 0,
+      rejected24h: 0,
+      aiPromoted24h: 0,
     };
   }
 
@@ -173,6 +191,10 @@ export async function getSearchAuditSummary() {
       errors24h: sql<number>`count(*) filter (where ${searchAuditLogs.status} = 'error')::int`,
       medianDurationMs24h: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${searchAuditLogs.durationMs}), 0)::int`,
       avgDurationMs24h: sql<number>`coalesce(avg(${searchAuditLogs.durationMs}), 0)::int`,
+      primary24h: sql<number>`coalesce(sum((${searchAuditLogs.qualitySummaryJson}->>'primaryCount')::int), 0)::int`,
+      weak24h: sql<number>`coalesce(sum((${searchAuditLogs.qualitySummaryJson}->>'weakCount')::int), 0)::int`,
+      rejected24h: sql<number>`coalesce(sum((${searchAuditLogs.qualitySummaryJson}->>'rejectedCount')::int), 0)::int`,
+      aiPromoted24h: sql<number>`coalesce(sum((${searchAuditLogs.qualitySummaryJson}->>'aiPromotedCount')::int), 0)::int`,
     })
     .from(searchAuditLogs)
     .where(gte(searchAuditLogs.createdAt, since));
@@ -184,5 +206,9 @@ export async function getSearchAuditSummary() {
     errors24h: row?.errors24h ?? 0,
     medianDurationMs24h: row?.medianDurationMs24h ?? 0,
     avgDurationMs24h: row?.avgDurationMs24h ?? 0,
+    primary24h: row?.primary24h ?? 0,
+    weak24h: row?.weak24h ?? 0,
+    rejected24h: row?.rejected24h ?? 0,
+    aiPromoted24h: row?.aiPromoted24h ?? 0,
   };
 }

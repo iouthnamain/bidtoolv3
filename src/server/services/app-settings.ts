@@ -49,6 +49,7 @@ export const SETTING_KEYS = {
   searchBoostDomains: "search_boost_domains",
   searchPenaltyDomains: "search_penalty_domains",
   searchBlockDomains: "search_block_domains",
+  searchRelevancePipelineMode: "search_relevance_pipeline_mode",
   searchEnableSiteVnVariants: "search_enable_site_vn_variants",
   searchEnableNegativeMarketplaceVariants:
     "search_enable_negative_marketplace_variants",
@@ -77,6 +78,12 @@ export const AI_PROVIDERS: AiProvider[] = [
 ];
 
 export type AiFeature = "chat" | "enrichment";
+
+let appSettingsRevision = 0;
+
+export function getAppSettingsRevision(): number {
+  return appSettingsRevision;
+}
 
 function isAiProvider(value: unknown): value is AiProvider {
   return (
@@ -117,6 +124,35 @@ export type ResolvedAiProvider =
       baseUrl: string;
       model: string;
     };
+
+export type AiExecutionIdentity = {
+  provider: AiProvider;
+  model: string;
+  baseUrl?: string | null;
+};
+
+/** Resolve cache-relevant AI identity without reading or validating credentials. */
+export async function resolveAiExecutionIdentity(
+  feature: AiFeature,
+): Promise<AiExecutionIdentity> {
+  const provider = await getActiveProvider(feature);
+  if (provider === "gemini") {
+    const model = await getSetting(SETTING_KEYS.geminiDefaultModel);
+    return {
+      provider,
+      model: model ?? DEFAULT_GEMINI_MODEL,
+    };
+  }
+  if (provider === "openai_compatible") {
+    const model = await getSetting(SETTING_KEYS.openaiCompatibleDefaultModel);
+    return {
+      provider,
+      model: model ?? "gpt-4o-mini",
+      baseUrl: await resolveOpenaiCompatibleBaseUrl(),
+    };
+  }
+  return { provider, model: await resolveOpenRouterDefaultModel() };
+}
 
 export async function resolveAiProvider(
   feature: AiFeature,
@@ -196,10 +232,12 @@ export async function setSetting(key: string, value: string) {
       target: appSettings.key,
       set: { value, updatedAt },
     });
+  appSettingsRevision += 1;
 }
 
 export async function deleteSetting(key: string) {
   await db.delete(appSettings).where(eq(appSettings.key, key));
+  appSettingsRevision += 1;
 }
 
 export async function resolveOpenRouterApiKey(): Promise<string | null> {
@@ -361,6 +399,7 @@ export type OperationalSettingKey =
   | "searchBoostDomains"
   | "searchPenaltyDomains"
   | "searchBlockDomains"
+  | "searchRelevancePipelineMode"
   | "searchEnableSiteVnVariants"
   | "searchEnableNegativeMarketplaceVariants"
   | "searchMaterialJobMaxQueries"
@@ -605,6 +644,12 @@ export const OPERATIONAL_SETTINGS: Record<
     type: "list",
     defaultValue: "",
   },
+  searchRelevancePipelineMode: {
+    settingKey: SETTING_KEYS.searchRelevancePipelineMode,
+    envVar: "SEARCH_RELEVANCE_PIPELINE_MODE",
+    type: "string",
+    defaultValue: "guarded",
+  },
   searchEnableSiteVnVariants: {
     settingKey: SETTING_KEYS.searchEnableSiteVnVariants,
     envVar: "SEARCH_ENABLE_SITE_VN_VARIANTS",
@@ -806,6 +851,13 @@ export function validateOperationalSettingValue(
       return trimmed;
     }
     case "string": {
+      if (key === "searchRelevancePipelineMode") {
+        if (trimmed !== "guarded" && trimmed !== "legacy") {
+          throw new OperationalSettingError(
+            'Chế độ phải là "guarded" hoặc "legacy".',
+          );
+        }
+      }
       if (key === "searxngLanguage") {
         if (!/^[a-z]{2}(?:-[A-Z]{2})?$/.test(trimmed)) {
           throw new OperationalSettingError(
@@ -1202,6 +1254,15 @@ export async function resolveSearchDomainPolicy(): Promise<SearchDomainPolicy> {
       ),
     ),
   };
+}
+
+export async function resolveSearchRelevancePipelineMode(): Promise<
+  "guarded" | "legacy"
+> {
+  return (await resolveOperationalSetting("searchRelevancePipelineMode")) ===
+    "legacy"
+    ? "legacy"
+    : "guarded";
 }
 
 export async function resolveSearchQueryControls(): Promise<SearchQueryControls> {

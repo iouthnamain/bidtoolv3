@@ -274,6 +274,13 @@
       "when": 1783797852744,
       "tag": "0038_violet_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783816978989,
+      "tag": "0039_thick_punisher",
+      "breakpoints": true
     }
   ]
 }

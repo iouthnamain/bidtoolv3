@@ -12,6 +12,8 @@ import type {
   ProfileExtraField,
   ScrapedProductStoredResult,
 } from "~/lib/materials/profile-scrape-types";
+import type { MaterialSearchAssessment } from "~/lib/materials/match-assessment";
+import type { AiRelevanceDecision } from "~/lib/materials/material-search-ai-types";
 
 export type WebSearchStatus = "idle" | "pending" | "done" | "error";
 
@@ -22,6 +24,16 @@ export type WebLinkResult = {
   snippet: string;
   query?: string;
   rankScore?: number;
+  baseRankScore?: number;
+  matchedQueries?: Array<{
+    query: string;
+    intent: string;
+    rank: number;
+  }>;
+  rrfScore?: number;
+  assessment?: MaterialSearchAssessment;
+  fetchStatus?: "verified" | "unverified" | "failed";
+  aiDecision?: AiRelevanceDecision;
 };
 
 export type AiSearchStoredResult = {
@@ -36,6 +48,7 @@ export type AiSearchStoredResult = {
   url?: string;
   snippet?: string;
   rankScore?: number;
+  relevanceDecision?: AiRelevanceDecision;
 };
 
 export type AiSearchCandidateStored = AiSearchStoredResult;

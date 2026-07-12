@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import {
   CheckCircle2,
+  Ban,
+  Bug,
   ExternalLink,
   Globe,
   Loader2,
@@ -60,6 +62,8 @@ export type SearchSourceCandidate = {
   priceStatus?: "available" | "not_found" | "unchecked";
   /** Whether this web source already has extracted product fields or a PDF. */
   isCaptured?: boolean;
+  tier?: "primary" | "weak";
+  debug?: ReactNode;
 };
 
 function priceStateLabel(candidate: SearchSourceCandidate) {
@@ -88,6 +92,9 @@ export function SearchSourceCandidateCard({
   captureStatusText,
   inlineLayer,
   hotkeyIndex,
+  onReject,
+  isRejectPending = false,
+  isRejectDisabled = false,
 }: {
   candidate: SearchSourceCandidate;
   isSelected: boolean;
@@ -98,6 +105,9 @@ export function SearchSourceCandidateCard({
   captureStatusText?: string;
   inlineLayer?: ReactNode;
   hotkeyIndex?: number;
+  onReject?: () => void;
+  isRejectPending?: boolean;
+  isRejectDisabled?: boolean;
 }) {
   const isPending = candidate.status === "pending";
   const isError = candidate.status === "error";
@@ -156,6 +166,11 @@ export function SearchSourceCandidateCard({
               className="text-brand h-4 w-4 shrink-0"
               aria-label="Đã chọn"
             />
+          ) : null}
+          {candidate.tier === "weak" ? (
+            <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-800">
+              Liên quan thấp
+            </span>
           ) : null}
           {hotkeyIndex && hotkeyIndex <= 9 ? (
             <span
@@ -240,7 +255,33 @@ export function SearchSourceCandidateCard({
                 Nguồn
               </a>
             ) : null}
+            {candidate.source === "web" && onReject ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="relative z-20 min-h-10"
+                onClick={onReject}
+                isLoading={isRejectPending}
+                disabled={isRejectDisabled}
+                leftIcon={<Ban className="h-3.5 w-3.5" aria-hidden />}
+              >
+                Không liên quan
+              </Button>
+            ) : null}
           </div>
+
+          {candidate.debug ? (
+            <details className="border-line relative z-20 rounded border p-2 text-xs">
+              <summary className="focus-visible:ring-ring flex min-h-10 cursor-pointer items-center gap-1 font-semibold focus-visible:ring-2 focus-visible:outline-none">
+                <Bug className="h-3.5 w-3.5" aria-hidden />
+                Chẩn đoán xếp hạng
+              </summary>
+              <div className="mt-2 space-y-2 break-words">
+                {candidate.debug}
+              </div>
+            </details>
+          ) : null}
 
           {isSelected && candidate.source === "web" ? (
             candidate.isCaptured ? (

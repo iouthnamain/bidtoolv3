@@ -353,6 +353,64 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("misses the product-search cache when relevant configuration changes", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_SAFE_SEARCH", "0");
+    vi.stubEnv("ENRICHMENT_SEARCH_CACHE_TTL_MS", "60000");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Ống PVC 90",
+                url: "https://example.com/pvc-90",
+                content: "Thông số kỹ thuật",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchWebForProduct } = await import("./material-web-search");
+    await searchWebForProduct(["Ống PVC 90"]);
+    vi.stubEnv("SEARXNG_SAFE_SEARCH", "1");
+    await searchWebForProduct(["Ống PVC 90"]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a response when configuration changes during execution", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_SAFE_SEARCH", "0");
+    vi.stubEnv("ENRICHMENT_SEARCH_CACHE_TTL_MS", "60000");
+    const fetchMock = vi.fn(async () => {
+      vi.stubEnv("SEARXNG_SAFE_SEARCH", "1");
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              title: "Ống PVC 90",
+              url: "https://example.com/pvc-90",
+              content: "Thông số kỹ thuật",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchWebForProduct } = await import("./material-web-search");
+    await searchWebForProduct(["Ống PVC race"]);
+    vi.stubEnv("SEARXNG_SAFE_SEARCH", "0");
+    await searchWebForProduct(["Ống PVC race"]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("deduplicates repeated warnings across product query variants", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
     vi.stubEnv("SEARXNG_ENGINES", "google,duckduckgo");
@@ -664,6 +722,40 @@ describe("searchQueryWithFallback", () => {
     expect(url.searchParams.get("time_range")).toBe("month");
   });
 
+  it("excludes the SearXNG API key from the web cache fingerprint", async () => {
+    const { createWebSearchConfigurationFingerprint } =
+      await import("./material-web-search");
+    const policy = {
+      boostDomains: [],
+      penaltyDomains: [],
+      blockDomains: [],
+    };
+    const config = {
+      baseUrl: "http://searxng.test",
+      apiKey: "secret-a",
+      engines: ["google"],
+      language: "vi-VN",
+      safeSearch: 2 as const,
+      timeRange: "" as const,
+      requestTimeoutMs: 12_000,
+      htmlFallback: true,
+      resultLimitPerQuery: 8,
+    };
+
+    expect(createWebSearchConfigurationFingerprint(config, policy)).toBe(
+      createWebSearchConfigurationFingerprint(
+        { ...config, apiKey: "secret-b" },
+        policy,
+      ),
+    );
+    expect(
+      createWebSearchConfigurationFingerprint(
+        { ...config, engines: ["bing"] },
+        policy,
+      ),
+    ).not.toBe(createWebSearchConfigurationFingerprint(config, policy));
+  });
+
   it("filters hard-blocked domains before ranking", async () => {
     const { applyDomainPolicy } = await import("./material-web-search");
     const filtered = applyDomainPolicy(
@@ -735,5 +827,54 @@ describe("searchQueryWithFallback", () => {
 
     expect(ranked[0]?.domain).toBe("shop.example");
     expect(ranked[0]?.rankReasons).toContain("profile_fetched_product_offer");
+  });
+});
+
+describe("guarded fusion and safety", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("enforces strict safe search for profile search even in legacy mode", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_SAFE_SEARCH", "0");
+    vi.stubEnv("SEARCH_RELEVANCE_PIPELINE_MODE", "legacy");
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(requestUrl(input));
+        return new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    await searchQueryWithFallback("tủ điện", undefined, {
+      feature: "profile_search",
+      overrideEngines: ["google"],
+    });
+    expect(new URL(urls[0]!).searchParams.get("safesearch")).toBe("2");
+  });
+
+  it("filters explicit domains before returning results", async () => {
+    const { applyDomainPolicy } = await import("./material-web-search");
+    const results = applyDomainPolicy(
+      [
+        {
+          title: "Adult video",
+          url: "https://pornhub.com/item",
+          domain: "pornhub.com",
+          snippet: "",
+          query: "item",
+          rankScore: 1,
+        },
+      ],
+      { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    );
+    expect(results).toEqual([]);
   });
 });
