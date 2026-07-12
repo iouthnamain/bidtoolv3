@@ -90,6 +90,7 @@ export function SearchSourceCandidateCard({
   isCapturePending = false,
   isCaptureDisabled = false,
   captureStatusText,
+  captureActionLabel,
   inlineLayer,
   hotkeyIndex,
   onReject,
@@ -103,6 +104,7 @@ export function SearchSourceCandidateCard({
   isCapturePending?: boolean;
   isCaptureDisabled?: boolean;
   captureStatusText?: string;
+  captureActionLabel?: string;
   inlineLayer?: ReactNode;
   hotkeyIndex?: number;
   onReject?: () => void;
@@ -283,8 +285,8 @@ export function SearchSourceCandidateCard({
             </details>
           ) : null}
 
-          {isSelected && candidate.source === "web" ? (
-            candidate.isCaptured ? (
+          {candidate.source === "web" ? (
+            candidate.isCaptured && !onCapture ? (
               <p
                 role="status"
                 className="text-good relative z-20 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold"
@@ -307,13 +309,16 @@ export function SearchSourceCandidateCard({
                   isLoading={isCapturePending}
                   disabled={isCaptureDisabled}
                 >
-                  {isCapturePending
-                    ? isPdf
-                      ? "Đang gắn PDF…"
-                      : "Đang scrape…"
-                    : isPdf
-                      ? "Dùng catalog PDF"
-                      : "Scrape nguồn này"}
+                  {captureActionLabel ??
+                    (isCapturePending
+                      ? isPdf
+                        ? "Đang gắn PDF…"
+                        : "Đang scrape…"
+                      : isPdf
+                        ? "Dùng catalog PDF"
+                        : candidate.isCaptured
+                          ? "Xem sản phẩm"
+                          : "Scrape nguồn này")}
                 </Button>
                 {isCapturePending && captureStatusText ? (
                   <p className="text-ink-3 mt-1 text-xs leading-4">
@@ -323,7 +328,7 @@ export function SearchSourceCandidateCard({
               </div>
             ) : null
           ) : null}
-          {isSelected && candidate.source === "web" && inlineLayer ? (
+          {candidate.source === "web" && inlineLayer ? (
             <div className="relative z-20 mt-1">{inlineLayer}</div>
           ) : null}
         </>

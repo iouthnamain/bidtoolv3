@@ -71,6 +71,7 @@ export type RowDecisionLike = {
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
   selectedSearchCandidateKey?: string;
+  selectedScrapeProductKey?: string | null;
   catalogPdfUrls?: string[];
   skipped?: boolean;
 };
@@ -316,6 +317,7 @@ export function applyWebSearchToDecision(
     aiSearchStatus: current.aiSearchStatus,
     selectedSource: current.selectedSource ?? "ai",
     selectedSearchCandidateKey: current.selectedSearchCandidateKey,
+    selectedScrapeProductKey: current.selectedScrapeProductKey,
     skipped: current.skipped,
   };
 }
@@ -351,6 +353,7 @@ export function applySavedMaterialToDecision(
     aiSearchStatus: current?.aiSearchStatus,
     selectedSource: "catalog",
     selectedSearchCandidateKey: current?.selectedSearchCandidateKey,
+    selectedScrapeProductKey: current?.selectedScrapeProductKey,
     skipped: false,
   };
 }

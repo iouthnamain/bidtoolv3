@@ -12,8 +12,10 @@ import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrich
 import type {
   ProfileExtraField,
   ProfileScrapedProduct,
+  ScrapedProductReviewDraft,
   ScrapedProductStoredResult,
 } from "~/lib/materials/profile-scrape-types";
+import { scrapedProductKey } from "~/lib/materials/profile-scrape-types";
 
 export type WebSearchStatus = "idle" | "pending" | "done" | "error";
 
@@ -39,6 +41,7 @@ export type SerializedRowDecision = {
   aiSearchStatus?: WebSearchStatus;
   selectedSource?: "catalog" | "web" | "ai";
   selectedSearchCandidateKey?: string;
+  selectedScrapeProductKey?: string | null;
   catalogPdfUrls?: string[];
   skipped?: boolean;
 };
@@ -270,6 +273,48 @@ function filterScrapedProduct(value: unknown): ProfileScrapedProduct | null {
   };
 }
 
+function filterScrapedProductReviewDraft(
+  value: unknown,
+): ScrapedProductReviewDraft | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.acceptedFields)) return undefined;
+  const acceptedFields = filterFillableFields(record.acceptedFields);
+  return {
+    acceptedFields,
+    overwriteFields: filterFillableFields(record.overwriteFields),
+    editedValues: filterStringRecord(record.editedValues),
+    acceptedProfileFields: filterProfileExtraFields(
+      record.acceptedProfileFields,
+    ),
+    editedProfileValues: filterProfileStringRecord(record.editedProfileValues),
+    catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
+  };
+}
+
+function reviewDraftFromDecision(
+  decision: Pick<
+    RowDecision,
+    | "acceptedFields"
+    | "overwriteFields"
+    | "editedValues"
+    | "acceptedProfileFields"
+    | "editedProfileValues"
+    | "catalogPdfUrls"
+  >,
+): ScrapedProductReviewDraft {
+  return {
+    acceptedFields: [...decision.acceptedFields],
+    overwriteFields: [...(decision.overwriteFields ?? new Set())],
+    editedValues: decision.editedValues,
+    acceptedProfileFields: [
+      ...(decision.acceptedProfileFields ?? new Set<ProfileExtraField>()),
+    ],
+    editedProfileValues: decision.editedProfileValues,
+    catalogPdfUrls: decision.catalogPdfUrls,
+  };
+}
+
 function legacyScrapeResult(
   value: unknown,
 ): ScrapedProductStoredResult | undefined {
@@ -295,6 +340,7 @@ function legacyScrapeResult(
     catalogPdfUrls: candidate.catalogPdfUrls ?? [],
   };
   return {
+    productKey: scrapedProductKey(sourceUrl, product),
     jobId: "legacy",
     shopScrapeJobId: null,
     sourceCandidateKey: `web:${sourceUrl}`,
@@ -319,6 +365,10 @@ function filterScrapeResult(
   const sourceUrl =
     typeof record.sourceUrl === "string" ? record.sourceUrl : product.sourceUrl;
   return {
+    productKey:
+      typeof record.productKey === "string" && record.productKey.trim()
+        ? record.productKey
+        : scrapedProductKey(sourceUrl, product),
     jobId: typeof record.jobId === "string" ? record.jobId : "legacy",
     shopScrapeJobId:
       typeof record.shopScrapeJobId === "string"
@@ -348,6 +398,7 @@ function filterScrapeResult(
       Number.isFinite(record.productMatchScore)
         ? record.productMatchScore
         : null,
+    reviewDraft: filterScrapedProductReviewDraft(record.reviewDraft),
   };
 }
 
@@ -424,6 +475,11 @@ export function isEmptySerializedRowDecision(
 export function serializeRowDecision(
   decision: RowDecision,
 ): SerializedRowDecision {
+  const scrapeResults = decision.scrapeResults?.map((result) =>
+    decision.selectedScrapeProductKey === result.productKey
+      ? { ...result, reviewDraft: reviewDraftFromDecision(decision) }
+      : result,
+  );
   return {
     materialId: decision.materialId,
     acceptedFields: Array.from(decision.acceptedFields),
@@ -439,7 +495,7 @@ export function serializeRowDecision(
     webLinksStatus: decision.webLinksStatus,
     aiSearchResult: decision.aiSearchResult,
     aiSearchCandidates: decision.aiSearchCandidates,
-    scrapeResults: decision.scrapeResults,
+    scrapeResults,
     acceptedProfileFields:
       decision.acceptedProfileFields && decision.acceptedProfileFields.size > 0
         ? Array.from(decision.acceptedProfileFields)
@@ -448,6 +504,7 @@ export function serializeRowDecision(
     aiSearchStatus: decision.aiSearchStatus,
     selectedSource: decision.selectedSource,
     selectedSearchCandidateKey: decision.selectedSearchCandidateKey,
+    selectedScrapeProductKey: decision.selectedScrapeProductKey,
     catalogPdfUrls: decision.catalogPdfUrls,
     skipped: decision.skipped ? true : undefined,
   };
@@ -488,6 +545,49 @@ export function deserializeRowDecision(value: unknown): RowDecision | null {
     selectedSearchCandidateKey = "ai:0";
   }
 
+  const hasSelectedScrapeProductKey = Object.prototype.hasOwnProperty.call(
+    record,
+    "selectedScrapeProductKey",
+  );
+  let selectedScrapeProductKey = hasSelectedScrapeProductKey
+    ? typeof record.selectedScrapeProductKey === "string"
+      ? record.selectedScrapeProductKey
+      : null
+    : undefined;
+  if (
+    selectedScrapeProductKey === undefined &&
+    selectedSource === "web" &&
+    selectedSearchCandidateKey
+  ) {
+    selectedScrapeProductKey = scrapeResults?.find(
+      (result) => result.sourceCandidateKey === selectedSearchCandidateKey,
+    )?.productKey;
+  }
+
+  const migratedScrapeResults = scrapeResults?.map((result) =>
+    result.productKey === selectedScrapeProductKey && !result.reviewDraft
+      ? {
+          ...result,
+          reviewDraft: reviewDraftFromDecision({
+            acceptedFields: new Set(
+              filterFillableFields(record.acceptedFields),
+            ),
+            overwriteFields: new Set(
+              filterFillableFields(record.overwriteFields),
+            ),
+            editedValues: filterStringRecord(record.editedValues),
+            acceptedProfileFields: new Set(
+              filterProfileExtraFields(record.acceptedProfileFields),
+            ),
+            editedProfileValues: filterProfileStringRecord(
+              record.editedProfileValues,
+            ),
+            catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
+          }),
+        }
+      : result,
+  );
+
   return {
     materialId: record.materialId ?? null,
     acceptedFields: new Set(filterFillableFields(record.acceptedFields)),
@@ -500,7 +600,7 @@ export function deserializeRowDecision(value: unknown): RowDecision | null {
     webLinksStatus: parseWebSearchStatus(record.webLinksStatus),
     aiSearchResult,
     aiSearchCandidates,
-    scrapeResults,
+    scrapeResults: migratedScrapeResults,
     acceptedProfileFields: new Set(
       filterProfileExtraFields(record.acceptedProfileFields),
     ),
@@ -508,6 +608,7 @@ export function deserializeRowDecision(value: unknown): RowDecision | null {
     aiSearchStatus: parseWebSearchStatus(record.aiSearchStatus),
     selectedSource,
     selectedSearchCandidateKey,
+    selectedScrapeProductKey,
     catalogPdfUrls: filterCatalogPdfUrls(record.catalogPdfUrls),
     skipped: record.skipped === true,
   };

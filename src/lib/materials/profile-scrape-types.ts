@@ -3,6 +3,15 @@ import type { MaterialEnrichmentEvidence } from "~/lib/materials/material-enrich
 
 export type ProfileExtraField = "name" | "imageUrl";
 
+export type ScrapedProductReviewDraft = {
+  acceptedFields: FillableField[];
+  overwriteFields?: FillableField[];
+  editedValues?: Partial<Record<FillableField, string>>;
+  acceptedProfileFields?: ProfileExtraField[];
+  editedProfileValues?: Partial<Record<ProfileExtraField, string>>;
+  catalogPdfUrls?: string[];
+};
+
 export type ProfileScrapedProduct = {
   name: string;
   unit: string | null;
@@ -22,6 +31,7 @@ export type ProfileScrapedProduct = {
 };
 
 export type ScrapedProductStoredResult = {
+  productKey: string;
   jobId: string;
   shopScrapeJobId: string | null;
   sourceCandidateKey: string;
@@ -34,4 +44,53 @@ export type ScrapedProductStoredResult = {
   evidence: MaterialEnrichmentEvidence[];
   catalogPdfUrls: string[];
   productMatchScore: number | null;
+  reviewDraft?: ScrapedProductReviewDraft;
 };
+
+function normalizedProductIdentityText(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("vi-VN")
+    .replace(/\s+/g, " ");
+}
+
+function normalizedProductIdentityUrl(value: string | null | undefined) {
+  try {
+    const url = new URL((value ?? "").trim());
+    url.hash = "";
+    url.hostname = url.hostname.toLowerCase();
+    url.username = "";
+    url.password = "";
+    url.searchParams.sort();
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return url.toString();
+  } catch {
+    return (value ?? "").trim().replace(/\/+$/, "");
+  }
+}
+
+function productIdentityHash(value: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Stable identity shared by retained results and live scrape candidates. */
+export function scrapedProductKey(
+  sourceUrl: string,
+  product: Pick<ProfileScrapedProduct, "sourceUrl" | "sku" | "model" | "name">,
+) {
+  const identity = [
+    normalizedProductIdentityUrl(sourceUrl),
+    normalizedProductIdentityUrl(product.sourceUrl),
+    normalizedProductIdentityText(product.sku),
+    normalizedProductIdentityText(product.model),
+    normalizedProductIdentityText(product.name),
+  ].join("\u0000");
+  return `scrape:${productIdentityHash(identity)}`;
+}

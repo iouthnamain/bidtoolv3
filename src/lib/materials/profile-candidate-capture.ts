@@ -11,13 +11,16 @@ import type { RowDecision } from "~/lib/materials/review-decision";
 import { searchCandidateKey } from "~/lib/materials/search-candidate-match";
 import type {
   ProfileScrapedProduct,
+  ScrapedProductReviewDraft,
   ScrapedProductStoredResult,
 } from "~/lib/materials/profile-scrape-types";
+import { scrapedProductKey } from "~/lib/materials/profile-scrape-types";
 
 export type { ProfileScrapedProduct } from "~/lib/materials/profile-scrape-types";
 
 export type ProfileCandidateCaptureMerge = {
   candidateKey: string;
+  productKey: string;
   candidate: ScrapedProductStoredResult;
   decision: RowDecision;
 };
@@ -130,6 +133,15 @@ export function findProfileCandidateCapture(
   sourceUrl: string,
 ) {
   return candidates?.find((candidate) => sameSource(candidate, sourceUrl));
+}
+
+export function findProfileCandidateCaptureByProductKey(
+  candidates: ScrapedProductStoredResult[] | undefined,
+  productKey: string | null | undefined,
+) {
+  return productKey
+    ? candidates?.find((candidate) => candidate.productKey === productKey)
+    : undefined;
 }
 
 function nonEmptyFields(
@@ -327,8 +339,49 @@ export function findProfileScrapedProduct(
   return resolution.status === "selected" ? resolution.product : undefined;
 }
 
-/** Merge one completed shop scrape into the selected profile-review web source. */
-export function mergeProfileCandidateCapture(
+function reviewDraftFromDecision(
+  decision: RowDecision,
+): ScrapedProductReviewDraft {
+  return {
+    acceptedFields: [...decision.acceptedFields],
+    overwriteFields: [...(decision.overwriteFields ?? new Set())],
+    editedValues: decision.editedValues,
+    acceptedProfileFields: [...(decision.acceptedProfileFields ?? new Set())],
+    editedProfileValues: decision.editedProfileValues,
+    catalogPdfUrls: decision.catalogPdfUrls,
+  } satisfies ScrapedProductReviewDraft;
+}
+
+function defaultReviewDraft(
+  candidate: ScrapedProductStoredResult,
+): ScrapedProductReviewDraft {
+  const applied = applyAllProposedFieldsWithCurrency(candidate.fields);
+  return {
+    acceptedFields: [...applied.acceptedFields],
+    overwriteFields: [],
+    editedValues: applied.editedValues,
+    acceptedProfileFields: [
+      "name",
+      ...(candidate.imageUrl ? (["imageUrl"] as const) : []),
+    ],
+    catalogPdfUrls: candidate.catalogPdfUrls,
+  } satisfies ScrapedProductReviewDraft;
+}
+
+function stashActiveScrapeDraft(decision: RowDecision): RowDecision {
+  if (!decision.selectedScrapeProductKey) return decision;
+  return {
+    ...decision,
+    scrapeResults: decision.scrapeResults?.map((result) =>
+      result.productKey === decision.selectedScrapeProductKey
+        ? { ...result, reviewDraft: reviewDraftFromDecision(decision) }
+        : result,
+    ),
+  };
+}
+
+/** Store or refresh one product without changing the active comparison. */
+export function storeProfileCandidateCapture(
   decision: RowDecision,
   source: WebLinkResult,
   product: ProfileScrapedProduct,
@@ -352,9 +405,11 @@ export function mergeProfileCandidateCapture(
     return null;
   }
 
-  const candidates = decision.scrapeResults ?? [];
-  const existingIndex = candidates.findIndex((candidate) =>
-    sameSource(candidate, source.url),
+  const current = stashActiveScrapeDraft(decision);
+  const candidates = current.scrapeResults ?? [];
+  const productKey = scrapedProductKey(source.url, product);
+  const existingIndex = candidates.findIndex(
+    (candidate) => candidate.productKey === productKey,
   );
   const existing = existingIndex >= 0 ? candidates[existingIndex] : undefined;
   const storedProduct = mergeProductSnapshot(existing?.product, product);
@@ -363,12 +418,21 @@ export function mergeProfileCandidateCapture(
     ...storedProduct.catalogPdfUrls,
     ...capturedCatalogPdfUrls,
   ]);
-  const catalogPdfUrls = uniqueNonEmpty([
-    ...(decision.catalogPdfUrls ?? []),
-    ...scrapedCatalogPdfUrls,
-  ]);
   const candidateKey = profileCandidateCaptureKey(source.url);
+  const inheritedDraft =
+    !existing &&
+    current.selectedSource === "web" &&
+    current.selectedSearchCandidateKey === candidateKey
+      ? {
+          ...reviewDraftFromDecision(current),
+          catalogPdfUrls: uniqueNonEmpty([
+            ...(current.catalogPdfUrls ?? []),
+            ...scrapedCatalogPdfUrls,
+          ]),
+        }
+      : undefined;
   const candidate: ScrapedProductStoredResult = {
+    productKey,
     jobId: capture.jobId ?? existing?.jobId ?? "interactive",
     shopScrapeJobId:
       capture.shopScrapeJobId ?? existing?.shopScrapeJobId ?? null,
@@ -387,52 +451,106 @@ export function mergeProfileCandidateCapture(
       ? storedProduct.imageUrl.trim()
       : undefined,
     productMatchScore: capture.productMatchScore ?? null,
+    reviewDraft: existing?.reviewDraft ?? inheritedDraft,
   };
   const nextCandidates = [...candidates];
   if (existingIndex >= 0) nextCandidates[existingIndex] = candidate;
   else nextCandidates.push(candidate);
 
-  const applied = applyAllProposedFieldsWithCurrency(fields);
-  if (decision.selectedSource !== "catalog") {
-    for (const field of FILLABLE_FIELDS) {
-      const edited = decision.editedValues?.[field];
-      if (edited === undefined) continue;
-      const previousProposal = decision.webProposedFields?.[field];
-      if (previousProposal?.trim() === edited.trim()) {
-        continue;
-      }
-      applied.acceptedFields.add(field);
-      applied.editedValues[field] = edited;
-    }
-  }
-  const currency = fields.currency?.trim();
-  if (currency) {
-    applied.acceptedFields.add("currency");
-    applied.editedValues.currency = currency;
-  }
   return {
     candidateKey,
+    productKey,
     candidate,
     decision: {
-      ...decision,
-      materialId: decision.materialId,
-      selectedSource: "web",
-      selectedSearchCandidateKey: candidateKey,
-      acceptedFields: applied.acceptedFields,
-      overwriteFields: new Set(),
-      editedValues: applied.editedValues,
-      webProposedFields: { ...fields },
-      webEvidence: candidate.evidence,
-      catalogPdfUrls,
+      ...current,
       scrapeResults: nextCandidates,
-      acceptedProfileFields: new Set([
-        "name",
-        ...(candidate.imageUrl ||
-        decision.editedProfileValues?.imageUrl !== undefined
-          ? (["imageUrl"] as const)
-          : []),
-      ]),
-      editedProfileValues: decision.editedProfileValues,
     },
   };
+}
+
+/** Activate one retained product, stashing and restoring complete drafts. */
+export function activateProfileCandidateCapture(
+  decision: RowDecision,
+  productKey: string,
+): RowDecision | null {
+  const current = stashActiveScrapeDraft(decision);
+  const candidate = findProfileCandidateCaptureByProductKey(
+    current.scrapeResults,
+    productKey,
+  );
+  if (!candidate) return null;
+  const draft = candidate.reviewDraft ?? defaultReviewDraft(candidate);
+  return {
+    ...current,
+    selectedSource: "web",
+    selectedSearchCandidateKey: candidate.sourceCandidateKey,
+    selectedScrapeProductKey: candidate.productKey,
+    acceptedFields: new Set(draft.acceptedFields),
+    overwriteFields: new Set(draft.overwriteFields ?? []),
+    editedValues: draft.editedValues,
+    webProposedFields: { ...candidate.fields },
+    webEvidence: candidate.evidence,
+    catalogPdfUrls: draft.catalogPdfUrls,
+    acceptedProfileFields: new Set(draft.acceptedProfileFields ?? []),
+    editedProfileValues: draft.editedProfileValues,
+    scrapeResults: current.scrapeResults?.map((result) =>
+      result.productKey === productKey
+        ? { ...result, reviewDraft: draft }
+        : result,
+    ),
+  };
+}
+
+/** Remove one retained product; active removal intentionally selects no fallback. */
+export function removeProfileCandidateCapture(
+  decision: RowDecision,
+  productKey: string,
+): RowDecision {
+  const current = stashActiveScrapeDraft(decision);
+  const scrapeResults = current.scrapeResults?.filter(
+    (result) => result.productKey !== productKey,
+  );
+  if (current.selectedScrapeProductKey !== productKey) {
+    return { ...current, scrapeResults };
+  }
+  return {
+    ...current,
+    selectedSource: undefined,
+    selectedSearchCandidateKey: undefined,
+    selectedScrapeProductKey: null,
+    acceptedFields: new Set(),
+    overwriteFields: new Set(),
+    editedValues: {},
+    webProposedFields: {},
+    webEvidence: [],
+    catalogPdfUrls: undefined,
+    acceptedProfileFields: new Set(),
+    editedProfileValues: undefined,
+    scrapeResults,
+  };
+}
+
+/** Backward-compatible explicit capture: store, then activate. */
+export function mergeProfileCandidateCapture(
+  decision: RowDecision,
+  source: WebLinkResult,
+  product: ProfileScrapedProduct,
+  capture: {
+    jobId?: string;
+    shopScrapeJobId?: string | null;
+    productMatchScore?: number | null;
+  } = {},
+): ProfileCandidateCaptureMerge | null {
+  const stored = storeProfileCandidateCapture(
+    decision,
+    source,
+    product,
+    capture,
+  );
+  if (!stored) return null;
+  const activated = activateProfileCandidateCapture(
+    stored.decision,
+    stored.productKey,
+  );
+  return activated ? { ...stored, decision: activated } : null;
 }

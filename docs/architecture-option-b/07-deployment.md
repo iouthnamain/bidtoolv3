@@ -34,7 +34,7 @@ services:
     image: ghcr.io/.../bidtoolv3-worker:${TAG}
     environment:
       DATABASE_URL: ...
-      SCRAPE_MAX_CONCURRENT_JOBS: "2"
+      SCRAPE_MAX_CONCURRENT_JOBS: "8"
     # optional: shm_size for chromium
     shm_size: "1gb"
   postgres:
@@ -205,7 +205,7 @@ BIDWINNER_BASE_URL=https://bidwinner.info
 APP_BASE_URL=https://bidtool.customer.local
 
 # worker
-SCRAPE_MAX_CONCURRENT_JOBS=2
+SCRAPE_MAX_CONCURRENT_JOBS=8
 SCRAPE_MAX_CONCURRENT_PAGES=4
 IMPORT_MAX_CONCURRENT_JOBS=1
 

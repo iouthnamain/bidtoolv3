@@ -1,50 +1,78 @@
 "use client";
 
-import { ProfileScrapedProductPicker } from "~/app/_components/material-profiles/profile-scraped-product-picker";
+import { RotateCcw } from "lucide-react";
+
+import {
+  ProfileScrapedProductPicker,
+  type ProfileScrapedProductPickerItem,
+} from "~/app/_components/material-profiles/profile-scraped-product-picker";
 import { ProfileScrapeProgress } from "~/app/_components/material-profiles/profile-scrape-progress";
+import { Button } from "~/app/_components/ui";
 
 type Job = Parameters<typeof ProfileScrapeProgress>[0]["job"];
-type Run = Parameters<typeof ProfileScrapeProgress>[0]["run"] & {
-  scrapedProductCandidatesJson?: Record<string, unknown>[];
-};
+type Run = Parameters<typeof ProfileScrapeProgress>[0]["run"];
 
 export function ProfileScrapeInlineLayer({
   job,
   run,
+  products,
   onCancel,
   onRetry,
+  onRescrape,
   onSelectProduct,
+  onRemoveProduct,
   cancelling,
   retrying,
-  pendingProductIndex,
+  rescraping,
+  pendingProductKey,
+  removingProductKey,
 }: {
-  job: Job;
+  job?: Job;
   run?: Run | null;
+  products: ProfileScrapedProductPickerItem[];
   onCancel?: () => void;
   onRetry?: () => void;
-  onSelectProduct?: (index: number) => void;
+  onRescrape?: () => void;
+  onSelectProduct: (product: ProfileScrapedProductPickerItem) => void;
+  onRemoveProduct: (productKey: string) => void;
   cancelling?: boolean;
   retrying?: boolean;
-  pendingProductIndex?: number | null;
+  rescraping?: boolean;
+  pendingProductKey: string | null;
+  removingProductKey: string | null;
 }) {
   return (
     <div className="grid gap-3">
-      <ProfileScrapeProgress
-        job={job}
-        run={run}
-        onCancel={onCancel}
-        onRetry={onRetry}
-        cancelling={cancelling}
-        retrying={retrying}
-      />
-      {run?.status === "awaiting_product_selection" &&
-      run.scrapedProductCandidatesJson?.length &&
-      onSelectProduct ? (
-        <ProfileScrapedProductPicker
-          products={run.scrapedProductCandidatesJson}
-          onSelect={onSelectProduct}
-          pendingIndex={pendingProductIndex ?? null}
+      {job ? (
+        <ProfileScrapeProgress
+          job={job}
+          run={run}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          cancelling={cancelling}
+          retrying={retrying}
         />
+      ) : null}
+      {products.length > 0 ? (
+        <ProfileScrapedProductPicker
+          products={products}
+          onSelect={onSelectProduct}
+          onRemove={onRemoveProduct}
+          pendingProductKey={pendingProductKey}
+          removingProductKey={removingProductKey}
+        />
+      ) : null}
+      {onRescrape ? (
+        <Button
+          variant="scrape"
+          size="sm"
+          className="w-fit"
+          onClick={onRescrape}
+          isLoading={rescraping}
+          leftIcon={<RotateCcw aria-hidden />}
+        >
+          Scrape lại
+        </Button>
       ) : null}
     </div>
   );

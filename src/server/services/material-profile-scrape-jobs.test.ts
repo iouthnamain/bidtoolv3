@@ -20,13 +20,13 @@ describe("material profile scrape input snapshot", () => {
     expect(isMaterialProfileScrapeInputCurrent(current)).toBe(true);
   });
 
-  it("rejects row edits, remaps, source changes, and newer search results", () => {
+  it("accepts sibling/manual timestamp changes but rejects material, source, and search changes", () => {
     expect(
       isMaterialProfileScrapeInputCurrent({
         ...current,
         currentUpdatedAt: "2026-07-12T01:01:00.000Z",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isMaterialProfileScrapeInputCurrent({
         ...current,

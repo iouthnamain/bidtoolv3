@@ -134,6 +134,13 @@ export type FieldCompareEditorProps = {
   captureSearchCandidateDisabled?: boolean;
   captureSearchCandidateStatus?: string;
   selectedSourceInlineLayer?: ReactNode;
+  getCaptureSearchCandidateState?: (key: string) => {
+    pending?: boolean;
+    disabled?: boolean;
+    actionLabel?: string;
+    statusText?: string;
+    inlineLayer?: ReactNode;
+  };
   /** Actions that belong to the comparison-ledger header. */
   decisionActions?: ReactNode;
   /** Profile: merge catalog + web/AI cards, sorted by score. */
@@ -285,6 +292,7 @@ export function FieldCompareEditor({
   captureSearchCandidateDisabled = false,
   captureSearchCandidateStatus,
   selectedSourceInlineLayer,
+  getCaptureSearchCandidateState,
   decisionActions,
   unifiedCandidateGrid = false,
   decisionPaneLayout = "stacked",
@@ -570,21 +578,33 @@ export function FieldCompareEditor({
                       }
                       isRejectDisabled={rejectSearchCandidateDisabled}
                       isCapturePending={
+                        getCaptureSearchCandidateState?.(entry.candidate.key)
+                          .pending ??
                         capturingSearchCandidateKey === entry.candidate.key
                       }
                       isCaptureDisabled={
-                        captureSearchCandidateDisabled ||
-                        capturingSearchCandidateKey != null
+                        getCaptureSearchCandidateState?.(entry.candidate.key)
+                          .disabled ??
+                        (captureSearchCandidateDisabled ||
+                          capturingSearchCandidateKey != null)
                       }
                       captureStatusText={
-                        capturingSearchCandidateKey === entry.candidate.key
+                        getCaptureSearchCandidateState?.(entry.candidate.key)
+                          .statusText ??
+                        (capturingSearchCandidateKey === entry.candidate.key
                           ? captureSearchCandidateStatus
-                          : undefined
+                          : undefined)
+                      }
+                      captureActionLabel={
+                        getCaptureSearchCandidateState?.(entry.candidate.key)
+                          .actionLabel
                       }
                       inlineLayer={
-                        selectedSearchCandidateKey === entry.candidate.key
+                        getCaptureSearchCandidateState?.(entry.candidate.key)
+                          .inlineLayer ??
+                        (selectedSearchCandidateKey === entry.candidate.key
                           ? selectedSourceInlineLayer
-                          : undefined
+                          : undefined)
                       }
                       hotkeyIndex={index + 1}
                     />
@@ -638,21 +658,32 @@ export function FieldCompareEditor({
                     }
                     isRejectDisabled={rejectSearchCandidateDisabled}
                     isCapturePending={
+                      getCaptureSearchCandidateState?.(candidate.key).pending ??
                       capturingSearchCandidateKey === candidate.key
                     }
                     isCaptureDisabled={
-                      captureSearchCandidateDisabled ||
-                      capturingSearchCandidateKey != null
+                      getCaptureSearchCandidateState?.(candidate.key)
+                        .disabled ??
+                      (captureSearchCandidateDisabled ||
+                        capturingSearchCandidateKey != null)
                     }
                     captureStatusText={
-                      capturingSearchCandidateKey === candidate.key
+                      getCaptureSearchCandidateState?.(candidate.key)
+                        .statusText ??
+                      (capturingSearchCandidateKey === candidate.key
                         ? captureSearchCandidateStatus
-                        : undefined
+                        : undefined)
+                    }
+                    captureActionLabel={
+                      getCaptureSearchCandidateState?.(candidate.key)
+                        .actionLabel
                     }
                     inlineLayer={
-                      selectedSearchCandidateKey === candidate.key
+                      getCaptureSearchCandidateState?.(candidate.key)
+                        .inlineLayer ??
+                      (selectedSearchCandidateKey === candidate.key
                         ? selectedSourceInlineLayer
-                        : undefined
+                        : undefined)
                     }
                     hotkeyIndex={catalogCardCount + index + 1}
                   />
@@ -702,11 +733,27 @@ export function FieldCompareEditor({
                       }
                       isRejectDisabled={rejectSearchCandidateDisabled}
                       isCapturePending={
+                        getCaptureSearchCandidateState?.(candidate.key)
+                          .pending ??
                         capturingSearchCandidateKey === candidate.key
                       }
                       isCaptureDisabled={
-                        captureSearchCandidateDisabled ||
-                        capturingSearchCandidateKey != null
+                        getCaptureSearchCandidateState?.(candidate.key)
+                          .disabled ??
+                        (captureSearchCandidateDisabled ||
+                          capturingSearchCandidateKey != null)
+                      }
+                      captureActionLabel={
+                        getCaptureSearchCandidateState?.(candidate.key)
+                          .actionLabel
+                      }
+                      captureStatusText={
+                        getCaptureSearchCandidateState?.(candidate.key)
+                          .statusText
+                      }
+                      inlineLayer={
+                        getCaptureSearchCandidateState?.(candidate.key)
+                          .inlineLayer
                       }
                     />
                   ))}

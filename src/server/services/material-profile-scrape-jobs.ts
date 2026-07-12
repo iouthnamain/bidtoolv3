@@ -2,15 +2,28 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { normalizeCatalogPdfUrl } from "~/lib/materials/catalog-pdf";
 import {
   highestProfileScrapeSource,
   isProfilePdfSource,
-  mergeProfileCandidateCapture,
+  activateProfileCandidateCapture,
   profileCandidateSearchGeneration,
+  removeProfileCandidateCapture,
   resolveProfileScrapedProduct,
+  storeProfileCandidateCapture,
 } from "~/lib/materials/profile-scrape-capture";
 import type { ProfileScrapedProduct } from "~/lib/materials/profile-scrape-types";
 import {
@@ -43,7 +56,7 @@ const ACTIVE_JOB_STATUSES = ["queued", "running", "awaiting_review"];
 const ACTIVE_RUN_STATUSES = ["queued", "running", "awaiting_product_selection"];
 const TERMINAL_RUN_STATUSES = ["completed", "skipped", "failed", "cancelled"];
 const MAX_BATCH_ITEMS = 500;
-const MAX_CONCURRENT_RUNS = 3;
+const MAX_CONCURRENT_RUNS = 8;
 const MAX_PRODUCTS = 8;
 const HISTORY_DAYS = 30;
 let advanceInFlight: Promise<void> | null = null;
@@ -81,13 +94,9 @@ export function isMaterialProfileScrapeInputCurrent(input: {
   currentSearchGeneration: unknown;
 }) {
   const snapshot = recordOf(input.snapshot);
-  const snapshotUpdatedAt =
-    typeof snapshot.itemUpdatedAt === "string" ? snapshot.itemUpdatedAt : null;
   return (
     input.currentSourceFingerprint === input.runSourceFingerprint &&
     input.currentSearchGeneration === snapshot.searchGeneration &&
-    (snapshotUpdatedAt === null ||
-      input.currentUpdatedAt === snapshotUpdatedAt) &&
     (!("materialId" in snapshot) ||
       input.currentMaterialId === snapshot.materialId)
   );
@@ -262,6 +271,33 @@ export async function startMaterialProfileScrapeJob(input: {
     }),
   );
 
+  if (input.interactive) {
+    const run = runValues[0];
+    if (run?.sourceCandidateKey) {
+      const [duplicate] = await db
+        .select({ id: materialProfileScrapeRuns.id })
+        .from(materialProfileScrapeRuns)
+        .where(
+          and(
+            eq(materialProfileScrapeRuns.workspaceId, input.workspaceId),
+            eq(materialProfileScrapeRuns.itemId, run.itemId),
+            eq(
+              materialProfileScrapeRuns.sourceCandidateKey,
+              run.sourceCandidateKey,
+            ),
+            inArray(materialProfileScrapeRuns.status, ["queued", "running"]),
+          ),
+        )
+        .limit(1);
+      if (duplicate) {
+        throw new MaterialProfileScrapeJobError(
+          "CONFLICT",
+          "Nguồn này đang được scrape cho dòng vật tư.",
+        );
+      }
+    }
+  }
+
   await db.transaction(async (tx) => {
     await tx.insert(materialProfileScrapeJobs).values({
       id: jobId,
@@ -332,80 +368,90 @@ async function applySelectedProduct(
   run: ScrapeRunRow,
   product: ProfileScrapedProduct,
   productMatchScore: number | null,
+  activate: boolean,
 ) {
-  const [item] = await db
-    .select()
-    .from(excelWorkspaceItems)
-    .where(
-      and(
-        eq(excelWorkspaceItems.id, run.itemId),
-        eq(excelWorkspaceItems.workspaceId, run.workspaceId),
-      ),
-    )
-    .limit(1);
-  if (!item)
-    return { status: "skipped", error: "Dòng hồ sơ không còn tồn tại." };
-  const decision = await materialProfileDecisionForItem(item);
-  const snapshot = recordOf(run.inputSnapshotJson);
-  const snapshotUpdatedAt =
-    typeof snapshot.itemUpdatedAt === "string" ? snapshot.itemUpdatedAt : null;
-  if (
-    !isMaterialProfileScrapeInputCurrent({
-      snapshot,
-      currentUpdatedAt: item.updatedAt,
-      currentMaterialId: item.materialId,
-      currentSourceFingerprint: item.sourceFingerprint,
-      runSourceFingerprint: run.sourceFingerprint,
-      currentSearchGeneration: profileCandidateSearchGeneration(decision),
-    })
-  ) {
-    return {
-      status: "skipped",
-      error:
-        "Dòng hoặc nguồn web đã thay đổi trong lúc scrape; kết quả cũ không được áp dụng.",
-    };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const [item] = await db
+      .select()
+      .from(excelWorkspaceItems)
+      .where(
+        and(
+          eq(excelWorkspaceItems.id, run.itemId),
+          eq(excelWorkspaceItems.workspaceId, run.workspaceId),
+        ),
+      )
+      .limit(1);
+    if (!item)
+      return { status: "skipped", error: "Dòng hồ sơ không còn tồn tại." };
+    const decision = await materialProfileDecisionForItem(item);
+    const snapshot = recordOf(run.inputSnapshotJson);
+    if (
+      !isMaterialProfileScrapeInputCurrent({
+        snapshot,
+        currentUpdatedAt: item.updatedAt,
+        currentMaterialId: item.materialId,
+        currentSourceFingerprint: item.sourceFingerprint,
+        runSourceFingerprint: run.sourceFingerprint,
+        currentSearchGeneration: profileCandidateSearchGeneration(decision),
+      })
+    ) {
+      return {
+        status: "skipped",
+        error:
+          "Dòng hoặc nguồn web đã thay đổi trong lúc scrape; kết quả cũ không được áp dụng.",
+      };
+    }
+    const source = decision.webLinkResults?.find(
+      (link) => link.url === run.sourceUrl,
+    );
+    if (!source) {
+      return {
+        status: "skipped",
+        error: "Nguồn web đã chọn không còn tồn tại.",
+      };
+    }
+    const stored = storeProfileCandidateCapture(decision, source, product, {
+      jobId: run.jobId,
+      shopScrapeJobId: run.shopScrapeJobId,
+      productMatchScore,
+    });
+    if (!stored) {
+      return {
+        status: "failed",
+        error: "Nguồn không có đủ thông tin sản phẩm để đưa vào so sánh.",
+      };
+    }
+    const next = activate
+      ? activateProfileCandidateCapture(stored.decision, stored.productKey)
+      : stored.decision;
+    if (!next) {
+      return { status: "failed", error: "Không kích hoạt được sản phẩm." };
+    }
+    const now = new Date().toISOString();
+    const serialized = serializeRowDecision(next);
+    const [updated] = await db
+      .update(excelWorkspaceItems)
+      .set({
+        reviewDecisionJson: serialized,
+        enrichmentUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(excelWorkspaceItems.id, item.id),
+          eq(excelWorkspaceItems.updatedAt, item.updatedAt),
+          eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
+        ),
+      )
+      .returning({ id: excelWorkspaceItems.id });
+    if (updated) {
+      return { status: "completed", error: null, decision: serialized };
+    }
   }
-  const source = decision.webLinkResults?.find(
-    (link) => link.url === run.sourceUrl,
-  );
-  if (!source) {
-    return { status: "skipped", error: "Nguồn web đã chọn không còn tồn tại." };
-  }
-  const merged = mergeProfileCandidateCapture(decision, source, product, {
-    jobId: run.jobId,
-    shopScrapeJobId: run.shopScrapeJobId,
-    productMatchScore,
-  });
-  if (!merged) {
-    return {
-      status: "failed",
-      error: "Nguồn không có đủ thông tin sản phẩm để đưa vào so sánh.",
-    };
-  }
-  const now = new Date().toISOString();
-  const [updated] = await db
-    .update(excelWorkspaceItems)
-    .set({
-      reviewDecisionJson: serializeRowDecision(merged.decision),
-      enrichmentUpdatedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(excelWorkspaceItems.id, item.id),
-        eq(excelWorkspaceItems.updatedAt, snapshotUpdatedAt ?? item.updatedAt),
-        eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
-      ),
-    )
-    .returning({ id: excelWorkspaceItems.id });
-  if (!updated) {
-    return {
-      status: "skipped",
-      error:
-        "Dòng hoặc nguồn web đã thay đổi trong lúc scrape; kết quả cũ không được áp dụng.",
-    };
-  }
-  return { status: "completed", error: null };
+  return {
+    status: "skipped",
+    error: "Kết quả scrape bị tranh chấp khi lưu; hãy thử chọn lại.",
+  };
 }
 
 async function restorePersistedProductsForMissingChild(
@@ -505,6 +551,7 @@ async function refreshRunningRun(run: ScrapeRunRow) {
     run,
     resolution.product,
     resolution.score,
+    false,
   );
   await db
     .update(materialProfileScrapeRuns)
@@ -780,6 +827,64 @@ export async function listMaterialProfileScrapeRuns(
     .orderBy(asc(materialProfileScrapeRuns.sortOrder));
 }
 
+export async function getMaterialProfileScrapeHistory(input: {
+  workspaceId: number;
+  itemId: number;
+}) {
+  await advanceMaterialProfileScrapeJobs();
+  const [item] = await db
+    .select({ id: excelWorkspaceItems.id })
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.id, input.itemId),
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!item) {
+    throw new MaterialProfileScrapeJobError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng hồ sơ vật tư.",
+    );
+  }
+  const now = new Date().toISOString();
+  const rows = await db
+    .select({
+      run: materialProfileScrapeRuns,
+      parentJob: materialProfileScrapeJobs,
+    })
+    .from(materialProfileScrapeRuns)
+    .innerJoin(
+      materialProfileScrapeJobs,
+      eq(materialProfileScrapeJobs.id, materialProfileScrapeRuns.jobId),
+    )
+    .where(
+      and(
+        eq(materialProfileScrapeRuns.workspaceId, input.workspaceId),
+        eq(materialProfileScrapeRuns.itemId, input.itemId),
+        or(
+          isNull(materialProfileScrapeJobs.expiresAt),
+          gte(materialProfileScrapeJobs.expiresAt, now),
+        ),
+      ),
+    )
+    .orderBy(desc(materialProfileScrapeRuns.updatedAt))
+    .limit(100);
+  return Promise.all(
+    rows.map(async ({ run, parentJob }) => ({
+      ...run,
+      parentJob,
+      childShopJob:
+        run.status === "running" && run.shopScrapeJobId
+          ? await getShopScrapeJobProgress(run.shopScrapeJobId).catch(
+              () => null,
+            )
+          : null,
+    })),
+  );
+}
+
 export async function selectMaterialProfileScrapedProduct(input: {
   workspaceId: number;
   runId: string;
@@ -800,7 +905,10 @@ export async function selectMaterialProfileScrapedProduct(input: {
       "NOT_FOUND",
       "Không tìm thấy lượt scrape.",
     );
-  if (run.status !== "awaiting_product_selection") {
+  if (
+    run.status !== "awaiting_product_selection" &&
+    run.status !== "completed"
+  ) {
     throw new MaterialProfileScrapeJobError(
       "CONFLICT",
       "Lượt scrape này không chờ chọn sản phẩm.",
@@ -813,7 +921,7 @@ export async function selectMaterialProfileScrapedProduct(input: {
       "BAD_REQUEST",
       "Sản phẩm đã chọn không hợp lệ.",
     );
-  const applied = await applySelectedProduct(run, product, null);
+  const applied = await applySelectedProduct(run, product, null, true);
   const now = new Date().toISOString();
   await db
     .update(materialProfileScrapeRuns)
@@ -831,10 +939,85 @@ export async function selectMaterialProfileScrapedProduct(input: {
     .where(eq(materialProfileScrapeJobs.id, run.jobId))
     .limit(1);
   if (job) await refreshParent(job);
-  return {
-    status: applied.status,
-    decisionApplied: applied.status === "completed",
-  };
+  if (applied.status !== "completed" || !applied.decision) {
+    throw new MaterialProfileScrapeJobError(
+      "CONFLICT",
+      applied.error ?? "Không thể áp dụng sản phẩm đã chọn.",
+    );
+  }
+  return applied.decision;
+}
+
+async function updateRetainedProductDecision(input: {
+  workspaceId: number;
+  itemId: number;
+  productKey: string;
+  operation: "activate" | "remove";
+}) {
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.id, input.itemId),
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!item) {
+    throw new MaterialProfileScrapeJobError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng hồ sơ vật tư.",
+    );
+  }
+  const decision = await materialProfileDecisionForItem(item);
+  if (
+    !decision.scrapeResults?.some(
+      (result) => result.productKey === input.productKey,
+    )
+  ) {
+    throw new MaterialProfileScrapeJobError(
+      "NOT_FOUND",
+      "Sản phẩm scrape đã chọn không còn tồn tại.",
+    );
+  }
+  const next =
+    input.operation === "activate"
+      ? activateProfileCandidateCapture(decision, input.productKey)
+      : removeProfileCandidateCapture(decision, input.productKey);
+  if (!next) {
+    throw new MaterialProfileScrapeJobError(
+      "BAD_REQUEST",
+      "Không kích hoạt được sản phẩm scrape.",
+    );
+  }
+  const serialized = serializeRowDecision(next);
+  const now = new Date().toISOString();
+  await db
+    .update(excelWorkspaceItems)
+    .set({
+      reviewDecisionJson: serialized,
+      enrichmentUpdatedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaceItems.id, item.id));
+  return serialized;
+}
+
+export function activateMaterialProfileScrapedProduct(input: {
+  workspaceId: number;
+  itemId: number;
+  productKey: string;
+}) {
+  return updateRetainedProductDecision({ ...input, operation: "activate" });
+}
+
+export function removeMaterialProfileScrapedProduct(input: {
+  workspaceId: number;
+  itemId: number;
+  productKey: string;
+}) {
+  return updateRetainedProductDecision({ ...input, operation: "remove" });
 }
 
 export async function retryMaterialProfileScrapeRuns(input: {

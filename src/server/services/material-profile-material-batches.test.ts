@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activateProfileCandidateCapture,
+  mergeProfileCandidateCapture,
+  storeProfileCandidateCapture,
+} from "~/lib/materials/profile-candidate-capture";
+import {
+  buildMaterialProfileProposal,
   incompleteProfileMaterialFields,
   isMaterialProfileCatalogSnapshotCurrent,
   isMaterialProfileUndoVersionCurrent,
@@ -28,6 +34,71 @@ const complete: ProfileMaterialProposal = {
 };
 
 describe("material profile save batch policy", () => {
+  it("builds a save proposal from only the active retained product", () => {
+    const firstSource = {
+      title: "Sản phẩm A",
+      url: "https://shop.test/a",
+      domain: "shop.test",
+      snippet: "A",
+    };
+    const secondSource = {
+      ...firstSource,
+      title: "Sản phẩm B",
+      url: "https://shop.test/b",
+    };
+    const product = {
+      name: "Sản phẩm A",
+      unit: "cái",
+      category: null,
+      specText: "Thông số A",
+      manufacturer: null,
+      originCountry: null,
+      price: null,
+      priceText: null,
+      currency: "VND",
+      sourceUrl: firstSource.url,
+      sku: "A-01",
+      model: null,
+      shopCategory: null,
+      catalogPdfUrls: [],
+    };
+    const first = mergeProfileCandidateCapture(
+      {
+        materialId: null,
+        acceptedFields: new Set(),
+        webLinkResults: [firstSource, secondSource],
+      },
+      firstSource,
+      product,
+    )!;
+    const second = storeProfileCandidateCapture(first.decision, secondSource, {
+      ...product,
+      name: "Sản phẩm B",
+      specText: "Thông số B",
+      sourceUrl: secondSource.url,
+      sku: "B-01",
+    })!;
+    const activeSecond = activateProfileCandidateCapture(
+      second.decision,
+      second.productKey,
+    )!;
+    const item = {
+      productName: "Tên trên dòng",
+      unit: "",
+      specText: "",
+      vendorHint: null,
+      originHint: null,
+      unitPrice: null,
+      currency: "VND",
+      originalDataJson: {},
+    } as Parameters<typeof buildMaterialProfileProposal>[0];
+
+    const proposal = buildMaterialProfileProposal(item, activeSecond);
+    expect(proposal.name).toBe("Sản phẩm B");
+    expect(proposal.code).toBe("B-01");
+    expect(proposal.sourceUrl).toBe(secondSource.url);
+  });
+
   it("allows optional enrichment fields to be missing", () => {
     expect(incompleteProfileMaterialFields(complete)).toEqual([]);
     expect(

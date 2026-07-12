@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { WebLinkResult } from "~/lib/materials/enrich-gap-fill";
 import type { RowDecision } from "~/lib/materials/review-decision";
 import {
+  activateProfileCandidateCapture,
   findProfileScrapedProduct,
   mergeProfileCandidateCapture,
   profileCandidateCaptureKey,
   profileCandidateSearchGeneration,
   profileCandidateSourceMatches,
+  removeProfileCandidateCapture,
+  storeProfileCandidateCapture,
   type ProfileScrapedProduct,
 } from "~/lib/materials/profile-candidate-capture";
 
@@ -92,14 +95,13 @@ describe("profile candidate shop scrape", () => {
     expect(merged?.decision.materialId).toBe(42);
   });
 
-  it("replaces the same-source scrape and preserves omitted values and row state", () => {
-    const previous = mergeProfileCandidateCapture(
-      baseDecision,
-      source,
-      product,
-    )!.candidate;
+  it("refreshes the same product without duplicating it", () => {
+    const first = mergeProfileCandidateCapture(baseDecision, source, product)!;
+    const previous = first.decision.scrapeResults![0]!;
     const decision: RowDecision = {
       ...baseDecision,
+      selectedSource: "web",
+      selectedScrapeProductKey: previous.productKey,
       skipped: true,
       editedValues: { category: "Máy công nghiệp" },
       catalogPdfUrls: ["https://example.com/manual.pdf"],
@@ -126,7 +128,6 @@ describe("profile candidate shop scrape", () => {
       originCountry: null,
       price: null,
       priceText: null,
-      sku: null,
       catalogPdfUrls: [],
     });
 
@@ -142,10 +143,109 @@ describe("profile candidate shop scrape", () => {
     ]);
     expect(merged?.decision.catalogPdfUrls).toEqual([
       "https://example.com/manual.pdf",
-      "https://example.com/catalog.pdf",
     ]);
     expect(merged?.decision.skipped).toBe(true);
     expect(merged?.decision.webLinksStatus).toBe("done");
+  });
+
+  it("retains two products from the same source", () => {
+    const first = storeProfileCandidateCapture(baseDecision, source, product)!;
+    const second = storeProfileCandidateCapture(first.decision, source, {
+      ...product,
+      name: "Máy bơm ABC bản công suất lớn",
+      sku: "ABC-02",
+      sourceUrl: `${source.url}#abc-02`,
+    });
+
+    expect(second?.decision.scrapeResults).toHaveLength(2);
+    expect(
+      new Set(second?.decision.scrapeResults?.map((item) => item.productKey))
+        .size,
+    ).toBe(2);
+  });
+
+  it("stores background results without stealing active focus", () => {
+    const active = mergeProfileCandidateCapture(baseDecision, source, product)!;
+    const background = storeProfileCandidateCapture(
+      {
+        ...active.decision,
+        editedValues: { ...active.decision.editedValues, unit: "bộ" },
+      },
+      source,
+      {
+        ...product,
+        name: "Máy bơm ABC dự phòng",
+        sku: "ABC-03",
+      },
+    )!;
+
+    expect(background.decision.selectedScrapeProductKey).toBe(
+      active.productKey,
+    );
+    expect(background.decision.editedValues?.unit).toBe("bộ");
+  });
+
+  it("switches products with separate complete drafts", () => {
+    const first = mergeProfileCandidateCapture(baseDecision, source, product)!;
+    const secondStored = storeProfileCandidateCapture(
+      {
+        ...first.decision,
+        editedValues: { ...first.decision.editedValues, unit: "bộ A" },
+        editedProfileValues: { name: "Tên A" },
+        catalogPdfUrls: ["https://example.com/a.pdf"],
+      },
+      source,
+      { ...product, name: "Máy bơm B", sku: "B-01" },
+    )!;
+    const second = activateProfileCandidateCapture(
+      secondStored.decision,
+      secondStored.productKey,
+    )!;
+    const editedSecond: RowDecision = {
+      ...second,
+      editedValues: { ...second.editedValues, unit: "bộ B" },
+      editedProfileValues: { name: "Tên B" },
+      catalogPdfUrls: ["https://example.com/b.pdf"],
+    };
+    const restoredFirst = activateProfileCandidateCapture(
+      editedSecond,
+      first.productKey,
+    )!;
+    const restoredSecond = activateProfileCandidateCapture(
+      restoredFirst,
+      secondStored.productKey,
+    )!;
+
+    expect(restoredFirst.editedValues?.unit).toBe("bộ A");
+    expect(restoredFirst.editedProfileValues?.name).toBe("Tên A");
+    expect(restoredFirst.catalogPdfUrls).toEqual(["https://example.com/a.pdf"]);
+    expect(restoredSecond.editedValues?.unit).toBe("bộ B");
+    expect(restoredSecond.editedProfileValues?.name).toBe("Tên B");
+  });
+
+  it("removes inactive and active products without selecting a fallback", () => {
+    const first = mergeProfileCandidateCapture(baseDecision, source, product)!;
+    const second = storeProfileCandidateCapture(first.decision, source, {
+      ...product,
+      name: "Máy bơm B",
+      sku: "B-01",
+    })!;
+    const withoutInactive = removeProfileCandidateCapture(
+      second.decision,
+      second.productKey,
+    );
+    expect(withoutInactive.selectedScrapeProductKey).toBe(first.productKey);
+    expect(withoutInactive.editedValues).toEqual(first.decision.editedValues);
+
+    const withoutActive = removeProfileCandidateCapture(
+      second.decision,
+      first.productKey,
+    );
+    expect(withoutActive.selectedScrapeProductKey).toBeNull();
+    expect(withoutActive.acceptedFields.size).toBe(0);
+    expect(withoutActive.scrapeResults?.map((item) => item.productKey)).toEqual(
+      [second.productKey],
+    );
   });
 
   it("keeps AI fields out of the stored scrape snapshot", () => {

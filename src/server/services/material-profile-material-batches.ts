@@ -172,8 +172,7 @@ export function buildMaterialProfileProposal(
     );
   };
   const selectedScrapeResult = decision.scrapeResults?.find(
-    (result) =>
-      result.sourceCandidateKey === decision.selectedSearchCandidateKey,
+    (result) => result.productKey === decision.selectedScrapeProductKey,
   );
   const proposedName = [
     selectedScrapeResult?.name,

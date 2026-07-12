@@ -33,7 +33,7 @@ async function main() {
 
 | Variable | Default | Scope |
 | --- | --- | --- |
-| `SCRAPE_MAX_CONCURRENT_JOBS` | 2 | Per worker process |
+| `SCRAPE_MAX_CONCURRENT_JOBS` | 8 | Per worker process |
 | `SCRAPE_MAX_CONCURRENT_PAGES` | 2 | Per scrape job |
 | `IMPORT_MAX_CONCURRENT_JOBS` | 1 | Per worker process |
 

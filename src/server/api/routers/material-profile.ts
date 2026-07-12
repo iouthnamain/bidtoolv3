@@ -44,12 +44,15 @@ import {
 } from "~/server/services/material-profile-search-jobs";
 import {
   attachMaterialProfileCatalogPdfSource,
+  activateMaterialProfileScrapedProduct,
   cancelMaterialProfileScrapeJob,
   getActiveMaterialProfileScrapeJob,
   getMaterialProfileScrapeJob,
+  getMaterialProfileScrapeHistory,
   listMaterialProfileScrapeRuns,
   MaterialProfileScrapeJobError,
   retryMaterialProfileScrapeRuns,
+  removeMaterialProfileScrapedProduct,
   selectMaterialProfileScrapedProduct,
   startMaterialProfileScrapeJob,
 } from "~/server/services/material-profile-scrape-jobs";
@@ -224,6 +227,7 @@ const profileScrapedProductSchema = z.object({
 });
 
 const scrapedProductStoredResultSchema = z.object({
+  productKey: z.string(),
   jobId: z.string(),
   shopScrapeJobId: z.string().nullable(),
   sourceCandidateKey: z.string(),
@@ -236,6 +240,21 @@ const scrapedProductStoredResultSchema = z.object({
   evidence: z.array(materialEnrichmentEvidenceSchema),
   catalogPdfUrls: z.array(z.string()),
   productMatchScore: z.number().nullable(),
+  reviewDraft: z
+    .object({
+      acceptedFields: z.array(z.string()),
+      overwriteFields: z.array(z.string()).optional(),
+      editedValues: z.record(z.string()).optional(),
+      acceptedProfileFields: z.array(z.enum(["name", "imageUrl"])).optional(),
+      editedProfileValues: z
+        .object({
+          name: z.string().optional(),
+          imageUrl: z.string().optional(),
+        })
+        .optional(),
+      catalogPdfUrls: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 
 const serializedRowDecisionSchema = z.object({
@@ -258,6 +277,7 @@ const serializedRowDecisionSchema = z.object({
   aiSearchStatus: webSearchStatusSchema.optional(),
   selectedSource: z.enum(["catalog", "web", "ai"]).optional(),
   selectedSearchCandidateKey: z.string().optional(),
+  selectedScrapeProductKey: z.string().nullable().optional(),
   catalogPdfUrls: z.array(z.string()).optional(),
   skipped: z.boolean().optional(),
 });
@@ -541,6 +561,12 @@ export const materialProfileRouter = createTRPCRouter({
       ),
     ),
 
+  getScrapeHistory: requirePermission("material:write")
+    .input(workspaceIdInput.extend({ itemId: z.number().int().positive() }))
+    .query(({ input }) =>
+      withMaterialProfileErrors(() => getMaterialProfileScrapeHistory(input)),
+    ),
+
   selectScrapedProduct: requirePermission("material:write")
     .input(
       workspaceIdInput.extend({
@@ -551,6 +577,32 @@ export const materialProfileRouter = createTRPCRouter({
     .mutation(({ input }) =>
       withMaterialProfileErrors(() =>
         selectMaterialProfileScrapedProduct(input),
+      ),
+    ),
+
+  activateScrapedProduct: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemId: z.number().int().positive(),
+        productKey: z.string().trim().min(1).max(200),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        activateMaterialProfileScrapedProduct(input),
+      ),
+    ),
+
+  removeScrapedProduct: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemId: z.number().int().positive(),
+        productKey: z.string().trim().min(1).max(200),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        removeMaterialProfileScrapedProduct(input),
       ),
     ),
 

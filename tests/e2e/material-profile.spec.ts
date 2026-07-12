@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test as base, type Page } from "@playwright/test";
+import { expect, test as base, type Page, type Route } from "@playwright/test";
 import dotenv from "dotenv";
 import postgres from "postgres";
 
@@ -158,12 +158,61 @@ async function createProfileSeed(
 }
 
 async function cleanupProfileSeed(seed: ProfileSeed) {
+  const childJobs = await sql<{ shop_scrape_job_id: string }[]>`
+    select shop_scrape_job_id
+    from material_profile_scrape_runs
+    where workspace_id = ${seed.workspaceId} and shop_scrape_job_id is not null
+  `;
   await sql`delete from excel_workspaces where id = ${seed.workspaceId}`;
+  if (childJobs.length > 0) {
+    await sql`
+      delete from shop_scrape_jobs
+      where id in ${sql(childJobs.map((job) => job.shop_scrape_job_id))}
+    `;
+  }
   await sql`delete from materials where code = ${seed.code}`;
   await sql`
     delete from material_catalog_documents
     where source_url in (${seed.catalogUrl}, ${seed.pdfUrl})
   `;
+}
+
+async function addSecondHtmlSource(seed: ProfileSeed) {
+  const [item] = await sql<{ review_decision_json: Record<string, unknown> }[]>`
+    select review_decision_json
+    from excel_workspace_items
+    where id = ${seed.itemId}
+  `;
+  if (!item) throw new Error("Không đọc được quyết định E2E.");
+  const secondUrl = `${seed.htmlUrl}/alternate`;
+  const secondTitle = `Nguồn HTML phụ ${seed.marker}`;
+  const links: Record<string, unknown>[] = Array.isArray(
+    item.review_decision_json.webLinkResults,
+  )
+    ? item.review_decision_json.webLinkResults.filter(
+        (link): link is Record<string, unknown> =>
+          link != null && typeof link === "object",
+      )
+    : [];
+  await sql`
+    update excel_workspace_items
+    set review_decision_json = ${sql.json({
+      ...item.review_decision_json,
+      webLinkResults: [
+        ...links,
+        {
+          title: secondTitle,
+          url: secondUrl,
+          domain: "example.com",
+          snippet: "Trang sản phẩm phụ E2E",
+          query: seed.marker,
+          rankScore: 0.92,
+        },
+      ],
+    } as postgres.JSONValue)}
+    where id = ${seed.itemId}
+  `;
+  return { secondUrl, secondTitle };
 }
 
 async function addSecondProfileItem(seed: ProfileSeed) {
@@ -240,6 +289,13 @@ async function openReview(page: Page, seed: ProfileSeed) {
   ).toBeVisible();
 }
 
+function scrapedProductCard(page: Page, name: string) {
+  return page.getByRole("group", {
+    name: `Sản phẩm ${name}`,
+    exact: true,
+  });
+}
+
 async function seedAwaitingProductSelection(seed: ProfileSeed) {
   const jobId = randomUUID();
   const runId = randomUUID();
@@ -252,7 +308,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
   Reflect.deleteProperty(decision, "editedProfileValues");
   const searchGeneration = JSON.stringify({
     webLinksStatus: "done",
-    aiSearchStatus: null,
+    aiSearchStatus: "idle",
     webLinks: [
       [seed.htmlUrl, 0.96],
       [seed.pdfUrl, 0.9],
@@ -332,6 +388,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
     set review_decision_json = ${sql.json(decision)}, updated_at = ${seed.itemUpdatedAt}
     where id = ${seed.itemId}
   `;
+  await seedCurrentSearchRun(seed);
 }
 
 const test = base.extend<{ profileSeed: ProfileSeed }>({
@@ -598,7 +655,48 @@ test("changing a different material does not jump back to the deep-linked first 
   }
 });
 
-test("persisted listing scrape reopens the product picker and applies the chosen product", async ({
+test("two HTML source cards can scrape in parallel", async ({ page }) => {
+  const seed = await createProfileSeed({ catalogAttached: false });
+  try {
+    await addSecondHtmlSource(seed);
+    const pendingRoutes: Route[] = [];
+    let releaseRequests: () => void = () => undefined;
+    const releaseGate = new Promise<void>((resolve) => {
+      releaseRequests = resolve;
+    });
+    await page.route(
+      "**/api/trpc/materialProfile.startScrapeJob**",
+      async (route) => {
+        pendingRoutes.push(route);
+        await releaseGate;
+        await route.abort("aborted");
+      },
+    );
+    await openReview(page, seed);
+    const scrapeButtons = page.getByRole("button", {
+      name: "Scrape nguồn này",
+    });
+    await expect(scrapeButtons).toHaveCount(2);
+
+    await scrapeButtons.nth(0).click();
+    await expect(scrapeButtons).toHaveCount(1);
+    await scrapeButtons.click();
+    await expect.poll(() => pendingRoutes.length).toBe(2);
+
+    await expect
+      .poll(() =>
+        page.getByRole("button", { name: /Đang chờ|Đang scrape/ }).count(),
+      )
+      .toBe(2);
+    releaseRequests();
+    await page.unrouteAll({ behavior: "wait" });
+  } finally {
+    await page.close();
+    await cleanupProfileSeed(seed);
+  }
+});
+
+test("persisted scrape retains multiple products and restores separate drafts", async ({
   page,
 }) => {
   const seed = await createProfileSeed({ catalogAttached: false });
@@ -606,6 +704,7 @@ test("persisted listing scrape reopens the product picker and applies the chosen
     await test.step("khôi phục picker từ job đang chờ duyệt", async () => {
       await seedAwaitingProductSelection(seed);
       await openReview(page, seed);
+      await page.getByRole("button", { name: "Chọn sản phẩm" }).click();
       await expect(
         page.getByText(`Máy bơm ${seed.marker} B`, { exact: true }),
       ).toBeVisible();
@@ -614,20 +713,71 @@ test("persisted listing scrape reopens the product picker and applies the chosen
     await test.step("mở lại trang và chọn sản phẩm B", async () => {
       await page.reload();
       await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
+      await page.getByRole("button", { name: "Chọn sản phẩm" }).click();
       const productName = page.getByText(`Máy bơm ${seed.marker} B`, {
         exact: true,
       });
+      const productCard = scrapedProductCard(page, `Máy bơm ${seed.marker} B`);
       await expect(productName).toBeVisible();
       const selected = page.waitForResponse(
         (response) =>
           response.url().includes("selectScrapedProduct") &&
           response.status() === 200,
       );
-      await productName
-        .locator("..")
+      await productCard
         .getByRole("button", { name: "Chọn sản phẩm này" })
         .click();
       await selected;
+      await expect(
+        page.getByRole("columnheader", { name: "Sau (Scrape)" }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Sau (Scrape) Tên vật tư")).toHaveValue(
+        `Máy bơm ${seed.marker} B`,
+      );
+      await expect(productCard).toContainText("Đang xem");
+      await expect(
+        page.getByText(`Máy bơm ${seed.marker} A`, { exact: true }),
+      ).toBeVisible();
+    });
+
+    await test.step("giữ B, chọn A và khôi phục bản nháp riêng", async () => {
+      const productA = scrapedProductCard(page, `Máy bơm ${seed.marker} A`);
+      const productB = scrapedProductCard(page, `Máy bơm ${seed.marker} B`);
+      await productA.getByRole("button", { name: "Chọn sản phẩm này" }).click();
+      await expect(productA).toContainText("Đang xem");
+      await expect(productB).toContainText("Đã chọn");
+
+      const manufacturer = page.getByLabel("Sau (Scrape) Nhà sản xuất");
+      await manufacturer.fill(`Nhà sản xuất A ${seed.marker}`);
+      await productB.getByRole("button", { name: "Xem kết quả" }).click();
+      await manufacturer.fill(`Nhà sản xuất B ${seed.marker}`);
+      await productA.getByRole("button", { name: "Xem kết quả" }).click();
+      await expect(manufacturer).toHaveValue(`Nhà sản xuất A ${seed.marker}`);
+
+      await page.reload();
+      await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
+      await page.getByRole("button", { name: "Xem sản phẩm" }).click();
+      await expect(page.getByLabel("Sau (Scrape) Nhà sản xuất")).toHaveValue(
+        `Nhà sản xuất A ${seed.marker}`,
+      );
+    });
+
+    await test.step("bỏ riêng sản phẩm không làm đổi sản phẩm đang xem", async () => {
+      const productA = scrapedProductCard(page, `Máy bơm ${seed.marker} A`);
+      const productB = scrapedProductCard(page, `Máy bơm ${seed.marker} B`);
+      await productB.getByRole("button", { name: "Bỏ" }).click();
+      await expect(productA).toContainText("Đang xem");
+      await expect(page.getByLabel("Sau (Scrape) Nhà sản xuất")).toHaveValue(
+        `Nhà sản xuất A ${seed.marker}`,
+      );
+
+      await productB.getByRole("button", { name: "Chọn sản phẩm này" }).click();
+      await productA.getByRole("button", { name: "Xem kết quả" }).click();
+      await productA.getByRole("button", { name: "Bỏ" }).click();
+      await expect(
+        page.getByRole("columnheader", { name: "Sau (Scrape)" }),
+      ).toBeHidden();
+      await expect(productB).toContainText("Đã chọn");
     });
 
     await test.step("ghi kết quả scrape tách biệt khỏi AI", async () => {
@@ -651,20 +801,7 @@ test("persisted listing scrape reopens the product picker and applies the chosen
         where id = ${seed.itemId}
       `;
       expect(item?.review_decision_json.aiSearchCandidates).toBeUndefined();
-      await page.reload();
-      await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
-      await expect
-        .poll(() => page.getByRole("columnheader").allTextContents())
-        .toContain("Sau (Scrape)");
-      await expect
-        .poll(() =>
-          page
-            .locator("input")
-            .evaluateAll((inputs) =>
-              inputs.map((input) => (input as HTMLInputElement).value),
-            ),
-        )
-        .toContain(`Máy bơm ${seed.marker} B`);
+      expect(item?.review_decision_json.selectedScrapeProductKey).toBeNull();
     });
   } finally {
     await page.close();

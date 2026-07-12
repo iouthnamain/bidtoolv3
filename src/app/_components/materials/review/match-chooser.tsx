@@ -3,6 +3,7 @@ import { Globe, Loader2, Save, Sparkles } from "lucide-react";
 
 import { FieldCompareEditor } from "~/app/_components/enrich/field-compare-editor";
 import { ProfileScrapeInlineLayer } from "~/app/_components/material-profiles/profile-scrape-inline-layer";
+import type { ProfileScrapedProductPickerItem } from "~/app/_components/material-profiles/profile-scraped-product-picker";
 import {
   ManualProductForm,
   type ManualProductValues,
@@ -47,13 +48,16 @@ import {
 import { simpleSimilarity } from "~/lib/materials/option-matcher";
 import {
   findProfileCandidateCapture,
+  findProfileCandidateCaptureByProductKey,
   hasCapturedProductDetails,
   profileCandidateCaptureKey,
 } from "~/lib/materials/profile-candidate-capture";
 import { missingProfileMaterialSaveFields } from "~/lib/materials/profile-scrape-capture";
+import {
+  scrapedProductKey,
+  type ProfileScrapedProduct,
+} from "~/lib/materials/profile-scrape-types";
 import { api } from "~/trpc/react";
-
-const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 function aiPriceLabel(fields: Partial<Record<FillableField, string>>) {
   const raw = fields.defaultUnitPrice?.trim();
@@ -75,6 +79,7 @@ function profileSearchFields(decision: RowDecision | undefined) {
     aiSearchCandidates: decision?.aiSearchCandidates,
     aiSearchStatus: decision?.aiSearchStatus,
     scrapeResults: decision?.scrapeResults,
+    selectedScrapeProductKey: decision?.selectedScrapeProductKey,
     acceptedProfileFields: decision?.acceptedProfileFields,
     editedProfileValues: decision?.editedProfileValues,
     catalogPdfUrls: decision?.catalogPdfUrls,
@@ -95,6 +100,29 @@ function trimmedOrUndefined(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   return trimmed;
+}
+
+function profileScrapedProduct(value: unknown): ProfileScrapedProduct | null {
+  if (!value || typeof value !== "object") return null;
+  const product = value as Partial<ProfileScrapedProduct>;
+  if (!product.name || !product.sourceUrl) return null;
+  return {
+    name: product.name,
+    unit: product.unit ?? null,
+    category: product.category ?? null,
+    specText: product.specText ?? "",
+    manufacturer: product.manufacturer ?? null,
+    originCountry: product.originCountry ?? null,
+    price: product.price ?? null,
+    priceText: product.priceText ?? null,
+    currency: product.currency?.trim() ? product.currency : "VND",
+    sourceUrl: product.sourceUrl,
+    imageUrl: product.imageUrl ?? null,
+    sku: product.sku ?? null,
+    model: product.model ?? null,
+    shopCategory: product.shopCategory ?? null,
+    catalogPdfUrls: product.catalogPdfUrls ?? [],
+  };
 }
 
 function materialProfileSaveResolution({
@@ -175,11 +203,16 @@ export function MatchChooser({
   const utils = api.useUtils();
   const [searchTerm, setSearchTerm] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [captureJobId, setCaptureJobId] = useState<string | null>(null);
-  const [startingCandidateKey, setStartingCandidateKey] = useState<
+  const [startingCandidateKeys, setStartingCandidateKeys] = useState(
+    () => new Set<string>(),
+  );
+  const [expandedScrapeSourceKey, setExpandedScrapeSourceKey] = useState<
     string | null
   >(null);
-  const [pendingProductIndex, setPendingProductIndex] = useState<number | null>(
+  const [pendingProductKey, setPendingProductKey] = useState<string | null>(
+    null,
+  );
+  const [removingProductKey, setRemovingProductKey] = useState<string | null>(
     null,
   );
   const [rejectingSearchCandidateKey, setRejectingSearchCandidateKey] =
@@ -226,38 +259,10 @@ export function MatchChooser({
       { workspaceId: workspaceId ?? 0, limit: 10 },
       { enabled: isProfileSplit && workspaceId != null },
     );
-  const activeScrapeJobQuery = api.materialProfile.getActiveScrapeJob.useQuery(
-    { workspaceId: workspaceId ?? 0 },
+  const scrapeHistoryQuery = api.materialProfile.getScrapeHistory.useQuery(
+    { workspaceId: workspaceId ?? 0, itemId: row.key },
     {
       enabled: isProfileSplit && workspaceId != null,
-      refetchInterval: (query) => (query.state.data ? 1_000 : false),
-      refetchOnWindowFocus: false,
-    },
-  );
-  useEffect(() => {
-    if (activeScrapeJobQuery.data?.id) {
-      setCaptureJobId(activeScrapeJobQuery.data.id);
-    }
-  }, [activeScrapeJobQuery.data?.id]);
-  const captureProgressQuery =
-    api.materialProfile.getScrapeJobProgress.useQuery(
-      { workspaceId: workspaceId ?? 0, jobId: captureJobId ?? EMPTY_UUID },
-      {
-        enabled: workspaceId != null && captureJobId != null,
-        refetchInterval: (query) => {
-          const status = query.state.data?.status;
-          return !status || status === "queued" || status === "running"
-            ? 1_000
-            : false;
-        },
-        refetchOnWindowFocus: false,
-        retry: false,
-      },
-    );
-  const scrapeRunsQuery = api.materialProfile.listScrapeRuns.useQuery(
-    { workspaceId: workspaceId ?? 0, jobId: captureJobId ?? EMPTY_UUID },
-    {
-      enabled: workspaceId != null && captureJobId != null,
       refetchInterval: (query) =>
         query.state.data?.some(
           (run) => run.status === "queued" || run.status === "running",
@@ -265,105 +270,79 @@ export function MatchChooser({
           ? 1_000
           : false,
       refetchOnWindowFocus: false,
-      retry: false,
+      staleTime: 0,
     },
   );
-  const activeScrapeRun =
-    scrapeRunsQuery.data?.find((run) => run.itemId === row.key) ?? null;
-  const capturingSearchCandidateKey =
-    startingCandidateKey ??
-    (activeScrapeRun &&
-    ["queued", "running", "awaiting_product_selection"].includes(
-      activeScrapeRun.status,
-    )
-      ? activeScrapeRun.sourceCandidateKey
-      : null);
-  const startScrapeJob = api.materialProfile.startScrapeJob.useMutation({
-    onSuccess: (job) => {
-      if (job) setCaptureJobId(job.id);
-      setStartingCandidateKey(null);
-      void activeScrapeJobQuery.refetch();
-    },
-    onError: (error) => {
-      setStartingCandidateKey(null);
-      toast.error(error.message || "Không thể bắt đầu scrape nguồn web.");
-    },
-  });
+  const scrapeHistory = scrapeHistoryQuery.data;
+  const latestScrapeRunsBySource = useMemo(() => {
+    const runs = new Map<string, NonNullable<typeof scrapeHistory>[number]>();
+    for (const run of scrapeHistory ?? []) {
+      if (run.sourceCandidateKey && !runs.has(run.sourceCandidateKey)) {
+        runs.set(run.sourceCandidateKey, run);
+      }
+    }
+    return runs;
+  }, [scrapeHistory]);
+  const activeScrapeRuns = (scrapeHistory ?? []).filter(
+    (run) => run.status === "queued" || run.status === "running",
+  );
+  const anyScrapePending =
+    startingCandidateKeys.size > 0 || activeScrapeRuns.length > 0;
+  const capturingSearchCandidateKey = anyScrapePending ? "multiple" : null;
+  const startScrapeJob = api.materialProfile.startScrapeJob.useMutation();
   const attachPdfSource =
     api.materialProfile.attachCatalogPdfSource.useMutation({
       onSuccess: (serialized) => {
         const next = deserializeRowDecision(serialized);
         if (next) onChange(next);
-        setStartingCandidateKey(null);
         toast.success("Đã thêm catalog PDF làm bằng chứng.");
       },
       onError: (error) => {
-        setStartingCandidateKey(null);
         toast.error(error.message || "Không thể gắn catalog PDF.");
       },
     });
   const cancelScrapeJob = api.materialProfile.cancelScrapeJob.useMutation({
-    onSuccess: () => void captureProgressQuery.refetch(),
+    onSuccess: () => void scrapeHistoryQuery.refetch(),
   });
   const retryScrapeRuns = api.materialProfile.retryScrapeRuns.useMutation({
-    onSuccess: () => {
-      void captureProgressQuery.refetch();
-      void scrapeRunsQuery.refetch();
-    },
+    onSuccess: () => void scrapeHistoryQuery.refetch(),
   });
   const selectScrapedProduct =
-    api.materialProfile.selectScrapedProduct.useMutation({
-      onSuccess: async () => {
-        setPendingProductIndex(null);
-        if (workspaceId == null) return;
-        const workspace = await utils.materialProfile.get.fetch({
-          workspaceId,
-        });
-        const item = workspace.items.find((entry) => entry.id === row.key);
-        const next = deserializeRowDecision(item?.reviewDecisionJson);
-        if (next) onChange(next);
-        void scrapeRunsQuery.refetch();
-        void captureProgressQuery.refetch();
-      },
-      onError: (error) => {
-        setPendingProductIndex(null);
-        toast.error(error.message || "Không áp dụng được sản phẩm đã chọn.");
-      },
-    });
+    api.materialProfile.selectScrapedProduct.useMutation();
+  const activateScrapedProduct =
+    api.materialProfile.activateScrapedProduct.useMutation();
+  const removeScrapedProduct =
+    api.materialProfile.removeScrapedProduct.useMutation();
 
   const selectedSearchCandidateKey =
     decision?.selectedSearchCandidateKey ?? null;
   useEffect(() => {
-    if (
-      activeScrapeRun?.status !== "completed" ||
-      handledCaptureRunIdsRef.current.has(activeScrapeRun.id) ||
-      workspaceId == null
-    )
-      return;
-    handledCaptureRunIdsRef.current.add(activeScrapeRun.id);
+    const unhandled = (scrapeHistory ?? []).filter(
+      (run) =>
+        run.status === "completed" &&
+        !handledCaptureRunIdsRef.current.has(run.id),
+    );
+    if (unhandled.length === 0 || workspaceId == null) return;
+    unhandled.forEach((run) => handledCaptureRunIdsRef.current.add(run.id));
     void utils.materialProfile.get.fetch({ workspaceId }).then((workspace) => {
       const item = workspace.items.find((entry) => entry.id === row.key);
       const next = deserializeRowDecision(item?.reviewDecisionJson);
-      if (next) onChange(next);
-      toast.success("Đã đưa kết quả scrape vào bảng so sánh.");
+      const current = decisionRef.current;
+      if (next?.scrapeResults && current) {
+        onChange({ ...current, scrapeResults: next.scrapeResults });
+      }
     });
   }, [
-    activeScrapeRun,
+    scrapeHistory,
     onChange,
     row.key,
-    toast,
     utils.materialProfile.get,
     workspaceId,
   ]);
 
   useEffect(() => {
-    onCapturePendingChangeRef.current?.(
-      Boolean(startingCandidateKey) ||
-        activeScrapeRun?.status === "queued" ||
-        activeScrapeRun?.status === "running" ||
-        activeScrapeRun?.status === "awaiting_product_selection",
-    );
-  }, [activeScrapeRun?.status, startingCandidateKey]);
+    onCapturePendingChangeRef.current?.(anyScrapePending);
+  }, [anyScrapePending]);
 
   const selectedId =
     selectedSearchCandidateKey == null &&
@@ -377,12 +356,10 @@ export function MatchChooser({
       ? (aiCandidates[Number(parsedSearchKey.id)] ?? null)
       : null;
   const selectedWebScrape =
-    parsedSearchKey?.source === "web"
-      ? (findProfileCandidateCapture(
-          decision?.scrapeResults,
-          parsedSearchKey.id,
-        ) ?? null)
-      : null;
+    findProfileCandidateCaptureByProductKey(
+      decision?.scrapeResults,
+      decision?.selectedScrapeProductKey,
+    ) ?? null;
   const accepted = decision?.acceptedFields ?? new Set<FillableField>();
   const acceptedProfileFields =
     decision?.acceptedProfileFields ?? new Set<"name" | "imageUrl">();
@@ -660,18 +637,7 @@ export function MatchChooser({
         : selectedCandidate
           ? `Sau (${selectedCandidate.name})`
           : "Sau";
-  const scrapeSourceSelectionLocked = Boolean(
-    activeScrapeRun &&
-    ["queued", "running", "awaiting_product_selection"].includes(
-      activeScrapeRun.status,
-    ),
-  );
-
   const choose = (candidate: EnrichCandidate) => {
-    if (scrapeSourceSelectionLocked) {
-      toast.warning("Hãy hoàn tất hoặc hủy scrape nguồn đang chọn trước.");
-      return;
-    }
     const candidateFields = candidateToFields(candidate);
     if (isProfileSplit) {
       const { acceptedFields, editedValues: nextEdited } =
@@ -687,6 +653,7 @@ export function MatchChooser({
         webEvidence,
         webSearchStatus,
         ...profileFields,
+        selectedScrapeProductKey: null,
         acceptedProfileFields: new Set([
           "name",
           ...(candidate.imageUrl ? (["imageUrl"] as const) : []),
@@ -722,18 +689,11 @@ export function MatchChooser({
       webEvidence,
       webSearchStatus,
       ...profileFields,
+      selectedScrapeProductKey: null,
     });
   };
 
   const chooseSearchCandidate = (key: string) => {
-    if (
-      scrapeSourceSelectionLocked &&
-      activeScrapeRun &&
-      activeScrapeRun.sourceCandidateKey !== key
-    ) {
-      toast.warning("Hãy hoàn tất hoặc hủy scrape nguồn đang chọn trước.");
-      return;
-    }
     const parsed = parseSearchCandidateKey(key);
     if (!parsed) return;
 
@@ -743,39 +703,6 @@ export function MatchChooser({
       );
       if (!link) {
         toast.warning("Chưa có liên kết web để chọn.");
-        return;
-      }
-
-      const matchingScrape = findProfileCandidateCapture(
-        decision?.scrapeResults,
-        link.url,
-      );
-      if (matchingScrape) {
-        const { acceptedFields, editedValues: nextEdited } =
-          applyAllProposedFieldsWithCurrency(matchingScrape.fields);
-        onChange({
-          materialId: decision?.materialId ?? null,
-          selectedSource: "web",
-          selectedSearchCandidateKey: key,
-          acceptedFields,
-          overwriteFields: new Set(),
-          editedValues: nextEdited,
-          webProposedFields: { ...matchingScrape.fields },
-          webEvidence: matchingScrape.evidence,
-          webSearchStatus,
-          ...profileFields,
-          catalogPdfUrls: [
-            ...new Set([
-              ...(decision?.catalogPdfUrls ?? []),
-              ...matchingScrape.catalogPdfUrls,
-            ]),
-          ],
-          acceptedProfileFields: new Set([
-            "name",
-            ...(matchingScrape.imageUrl ? (["imageUrl"] as const) : []),
-          ]),
-          editedProfileValues: undefined,
-        });
         return;
       }
 
@@ -793,6 +720,7 @@ export function MatchChooser({
         webEvidence: [],
         webSearchStatus,
         ...profileFields,
+        selectedScrapeProductKey: null,
         catalogPdfUrls: decision?.catalogPdfUrls,
         acceptedProfileFields: new Set(),
         editedProfileValues: undefined,
@@ -818,6 +746,7 @@ export function MatchChooser({
       webEvidence: aiResult.evidence,
       webSearchStatus,
       ...profileFields,
+      selectedScrapeProductKey: null,
       catalogPdfUrls: [
         ...new Set([
           ...(decision?.catalogPdfUrls ?? []),
@@ -832,13 +761,7 @@ export function MatchChooser({
 
   const captureSearchCandidate = (key: string) => {
     const parsed = parseSearchCandidateKey(key);
-    if (
-      parsed?.source !== "web" ||
-      capturingSearchCandidateKey != null ||
-      isWebLinksPending ||
-      isAiSearchPending ||
-      isSearchBusy
-    ) {
+    if (parsed?.source !== "web" || isWebLinksPending || isAiSearchPending) {
       return;
     }
     const link = decision?.webLinkResults?.find(
@@ -853,24 +776,76 @@ export function MatchChooser({
       return;
     }
     const candidateKey = profileCandidateCaptureKey(link.url);
-    setStartingCandidateKey(candidateKey);
-    onCapturePendingChangeRef.current?.(true);
-    if (/\.pdf(?:$|[?#])/i.test(link.url)) {
-      attachPdfSource.mutate({
+    const latestRun = latestScrapeRunsBySource.get(candidateKey);
+    const hasRetainedProducts = decision?.scrapeResults?.some(
+      (result) => result.sourceCandidateKey === candidateKey,
+    );
+    if (!latestRun && hasRetainedProducts) {
+      setExpandedScrapeSourceKey(candidateKey);
+      return;
+    }
+    if (
+      latestRun &&
+      ["queued", "running", "awaiting_product_selection", "completed"].includes(
+        latestRun.status,
+      )
+    ) {
+      setExpandedScrapeSourceKey(candidateKey);
+      return;
+    }
+    if (latestRun?.status === "failed") {
+      setExpandedScrapeSourceKey(candidateKey);
+      retryScrapeRuns.mutate({
         workspaceId,
-        itemId: row.key,
-        sourceUrl: link.url,
-        sourceCandidateKey: candidateKey,
+        jobId: latestRun.jobId,
+        runIds: [latestRun.id],
       });
       return;
     }
-    startScrapeJob.mutate({
-      workspaceId,
-      itemIds: [row.key],
-      interactive: true,
-      sourceUrl: link.url,
-      sourceCandidateKey: candidateKey,
-    });
+    setStartingCandidateKeys((current) => new Set(current).add(candidateKey));
+    onCapturePendingChangeRef.current?.(true);
+    if (/\.pdf(?:$|[?#])/i.test(link.url)) {
+      attachPdfSource.mutate(
+        {
+          workspaceId,
+          itemId: row.key,
+          sourceUrl: link.url,
+          sourceCandidateKey: candidateKey,
+        },
+        {
+          onSettled: () =>
+            setStartingCandidateKeys((current) => {
+              const next = new Set(current);
+              next.delete(candidateKey);
+              return next;
+            }),
+        },
+      );
+      return;
+    }
+    startScrapeJob.mutate(
+      {
+        workspaceId,
+        itemIds: [row.key],
+        interactive: true,
+        sourceUrl: link.url,
+        sourceCandidateKey: candidateKey,
+      },
+      {
+        onSuccess: () => {
+          setExpandedScrapeSourceKey(candidateKey);
+          void scrapeHistoryQuery.refetch();
+        },
+        onError: (error) =>
+          toast.error(error.message || "Không thể bắt đầu scrape nguồn web."),
+        onSettled: () =>
+          setStartingCandidateKeys((current) => {
+            const next = new Set(current);
+            next.delete(candidateKey);
+            return next;
+          }),
+      },
+    );
   };
 
   const rejectSearchCandidate = (key: string) => {
@@ -959,6 +934,7 @@ export function MatchChooser({
       webEvidence: [],
       skipped: !isSkipped,
       ...profileFields,
+      selectedScrapeProductKey: null,
     });
   };
 
@@ -1094,6 +1070,7 @@ export function MatchChooser({
       webProposedFields: {},
       webEvidence: [],
       ...profileFields,
+      selectedScrapeProductKey: null,
     });
   };
 
@@ -1523,6 +1500,7 @@ export function MatchChooser({
       webProposedFields: {},
       webEvidence: [],
       ...profileFields,
+      selectedScrapeProductKey: null,
       catalogPdfUrls: undefined,
     });
   };
@@ -1537,58 +1515,226 @@ export function MatchChooser({
         )));
 
   const rowNameMissing = row.name.trim().length === 0;
-  const captureProgress = captureProgressQuery.data;
-  const captureStatusText =
-    startScrapeJob.isPending || attachPdfSource.isPending
-      ? "Đang tạo job scrape…"
-      : activeScrapeRun?.status === "queued"
-        ? "Đang xếp hàng…"
-        : activeScrapeRun?.status === "running"
-          ? (captureProgress?.message ?? "Đang đọc nguồn…")
-          : undefined;
-  const selectedSourceInlineLayer =
-    isProfileSplit &&
-    captureProgress &&
-    activeScrapeRun &&
-    workspaceId &&
-    activeScrapeRun.sourceCandidateKey === selectedSearchCandidateKey ? (
-      <ProfileScrapeInlineLayer
-        job={captureProgress}
-        run={activeScrapeRun}
-        onCancel={
-          captureProgress.status === "queued" ||
-          captureProgress.status === "running" ||
-          captureProgress.status === "awaiting_review"
-            ? () =>
-                cancelScrapeJob.mutate({
-                  workspaceId,
-                  jobId: captureProgress.id,
-                })
-            : undefined
-        }
-        onRetry={
-          activeScrapeRun.status === "failed"
-            ? () =>
-                retryScrapeRuns.mutate({
-                  workspaceId,
-                  jobId: captureProgress.id,
-                  runIds: [activeScrapeRun.id],
-                })
-            : undefined
-        }
-        onSelectProduct={(index) => {
-          setPendingProductIndex(index);
-          selectScrapedProduct.mutate({
-            workspaceId,
-            runId: activeScrapeRun.id,
-            productIndex: index,
-          });
-        }}
-        cancelling={cancelScrapeJob.isPending}
-        retrying={retryScrapeRuns.isPending}
-        pendingProductIndex={pendingProductIndex}
-      />
-    ) : undefined;
+
+  const pickerProductsForSource = (
+    sourceKey: string,
+    run: NonNullable<typeof scrapeHistory>[number] | null,
+  ) => {
+    const products = new Map<string, ProfileScrapedProductPickerItem>();
+    const sourceUrl = sourceKey.startsWith("web:") ? sourceKey.slice(4) : "";
+    const liveProducts = Array.isArray(run?.scrapedProductCandidatesJson)
+      ? run.scrapedProductCandidatesJson
+      : [];
+    liveProducts.forEach((raw, productIndex) => {
+      const product = profileScrapedProduct(raw);
+      if (!product) return;
+      const productKey = scrapedProductKey(sourceUrl, product);
+      products.set(productKey, {
+        productKey,
+        product,
+        retained: false,
+        active: false,
+        productIndex,
+      });
+    });
+    for (const result of decision?.scrapeResults ?? []) {
+      if (result.sourceCandidateKey !== sourceKey) continue;
+      const live = products.get(result.productKey);
+      products.set(result.productKey, {
+        productKey: result.productKey,
+        product: live?.product ?? result.product,
+        retained: true,
+        active: decision?.selectedScrapeProductKey === result.productKey,
+        productIndex: live?.productIndex,
+      });
+    }
+    return [...products.values()].slice(0, 8);
+  };
+
+  const applySerializedDecision = (serialized: unknown) => {
+    const next = deserializeRowDecision(serialized);
+    if (!next) throw new Error("Máy chủ không trả về quyết định hợp lệ.");
+    onChange(next);
+  };
+
+  const persistCurrentDecision = async () => {
+    if (!decision) return;
+    await persistReviewDecision.mutateAsync({
+      itemId: row.key,
+      decision: serializeRowDecision(decision),
+    });
+  };
+
+  const selectPickerProduct = async (
+    item: ProfileScrapedProductPickerItem,
+    run: NonNullable<typeof scrapeHistory>[number] | null,
+  ) => {
+    if (workspaceId == null) return;
+    setPendingProductKey(item.productKey);
+    try {
+      if (decision?.selectedScrapeProductKey) {
+        await persistCurrentDecision();
+      }
+      if (item.productIndex != null && run) {
+        const serialized = await selectScrapedProduct.mutateAsync({
+          workspaceId,
+          runId: run.id,
+          productIndex: item.productIndex,
+        });
+        applySerializedDecision(serialized);
+      } else {
+        const serialized = await activateScrapedProduct.mutateAsync({
+          workspaceId,
+          itemId: row.key,
+          productKey: item.productKey,
+        });
+        applySerializedDecision(serialized);
+      }
+      void scrapeHistoryQuery.refetch();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không áp dụng được sản phẩm đã chọn.",
+      );
+    } finally {
+      setPendingProductKey(null);
+    }
+  };
+
+  const removePickerProduct = async (productKey: string) => {
+    if (workspaceId == null) return;
+    setRemovingProductKey(productKey);
+    try {
+      await persistCurrentDecision();
+      const serialized = await removeScrapedProduct.mutateAsync({
+        workspaceId,
+        itemId: row.key,
+        productKey,
+      });
+      applySerializedDecision(serialized);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Không bỏ được sản phẩm.",
+      );
+    } finally {
+      setRemovingProductKey(null);
+    }
+  };
+
+  const rescrapeSource = (sourceKey: string) => {
+    const parsed = parseSearchCandidateKey(sourceKey);
+    const link = decision?.webLinkResults?.find(
+      (candidate) => candidate.url === parsed?.id,
+    );
+    if (!link || workspaceId == null) return;
+    setStartingCandidateKeys((current) => new Set(current).add(sourceKey));
+    startScrapeJob.mutate(
+      {
+        workspaceId,
+        itemIds: [row.key],
+        interactive: true,
+        sourceUrl: link.url,
+        sourceCandidateKey: sourceKey,
+      },
+      {
+        onSuccess: () => void scrapeHistoryQuery.refetch(),
+        onError: (error) => toast.error(error.message),
+        onSettled: () =>
+          setStartingCandidateKeys((current) => {
+            const next = new Set(current);
+            next.delete(sourceKey);
+            return next;
+          }),
+      },
+    );
+  };
+
+  const getCaptureSearchCandidateState = (sourceKey: string) => {
+    const run = latestScrapeRunsBySource.get(sourceKey) ?? null;
+    const products = pickerProductsForSource(sourceKey, run);
+    const starting = startingCandidateKeys.has(sourceKey);
+    const pending =
+      starting || run?.status === "queued" || run?.status === "running";
+    const actionLabel = starting
+      ? "Đang chờ"
+      : run?.status === "queued"
+        ? "Đang chờ"
+        : run?.status === "running"
+          ? "Đang scrape"
+          : run?.status === "awaiting_product_selection"
+            ? "Chọn sản phẩm"
+            : run?.status === "failed"
+              ? "Thử lại"
+              : run?.status === "cancelled" || run?.status === "skipped"
+                ? "Scrape lại"
+                : run?.status === "completed" || products.length > 0
+                  ? "Xem sản phẩm"
+                  : undefined;
+    const expanded = expandedScrapeSourceKey === sourceKey;
+    return {
+      pending,
+      disabled: starting,
+      actionLabel,
+      statusText:
+        run?.status === "queued"
+          ? "Đang xếp hàng…"
+          : run?.status === "running"
+            ? (run.childShopJob?.message ?? "Đang đọc nguồn…")
+            : undefined,
+      inlineLayer:
+        expanded && (run || products.length > 0) && workspaceId != null ? (
+          <ProfileScrapeInlineLayer
+            job={
+              run
+                ? { ...run.parentJob, childShopJob: run.childShopJob }
+                : undefined
+            }
+            run={run}
+            products={products}
+            onCancel={
+              run && (run.status === "queued" || run.status === "running")
+                ? () =>
+                    cancelScrapeJob.mutate({
+                      workspaceId,
+                      jobId: run.jobId,
+                    })
+                : undefined
+            }
+            onRetry={
+              run?.status === "failed"
+                ? () =>
+                    retryScrapeRuns.mutate({
+                      workspaceId,
+                      jobId: run.jobId,
+                      runIds: [run.id],
+                    })
+                : undefined
+            }
+            onRescrape={
+              run &&
+              [
+                "awaiting_product_selection",
+                "completed",
+                "cancelled",
+                "skipped",
+              ].includes(run.status)
+                ? () => rescrapeSource(sourceKey)
+                : undefined
+            }
+            onSelectProduct={(item) => void selectPickerProduct(item, run)}
+            onRemoveProduct={(productKey) =>
+              void removePickerProduct(productKey)
+            }
+            cancelling={cancelScrapeJob.isPending}
+            retrying={retryScrapeRuns.isPending}
+            rescraping={starting}
+            pendingProductKey={pendingProductKey}
+            removingProductKey={removingProductKey}
+          />
+        ) : undefined,
+    };
+  };
   const canSaveToMaterials =
     (isProfileSplit
       ? profileSaveResolution?.promotable === true
@@ -1599,7 +1745,10 @@ export function MatchChooser({
     !isAiSearchPending &&
     !isSearchBusy &&
     !targetLookupPending &&
-    capturingSearchCandidateKey == null;
+    (decision?.selectedSource == null
+      ? decision?.selectedScrapeProductKey !== null
+      : decision.selectedSource !== "web" ||
+        decision.selectedScrapeProductKey != null);
   const isSavingMaterial =
     upsertMaterial.isPending ||
     persistReviewDecision.isPending ||
@@ -1763,8 +1912,7 @@ export function MatchChooser({
           isAiSearchPending === true ||
           isSearchBusy
         }
-        captureSearchCandidateStatus={captureStatusText}
-        selectedSourceInlineLayer={selectedSourceInlineLayer}
+        getCaptureSearchCandidateState={getCaptureSearchCandidateState}
         unifiedCandidateGrid={isProfileSplit}
         decisionPaneLayout={isProfileSplit ? "sideBySide" : "stacked"}
         decisionActions={

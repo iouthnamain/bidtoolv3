@@ -485,7 +485,7 @@ export const OPERATIONAL_SETTINGS: Record<
     settingKey: SETTING_KEYS.scrapeMaxConcurrentJobs,
     envVar: "SCRAPE_MAX_CONCURRENT_JOBS",
     type: "number",
-    defaultValue: 2,
+    defaultValue: 8,
     min: 1,
     max: 16,
     integer: true,

@@ -166,6 +166,108 @@ describe("review-decision", () => {
     });
   });
 
+  it("migrates a legacy active scrape into a product-specific draft", () => {
+    const sourceUrl = "https://example.com/pump";
+    const restored = deserializeRowDecision({
+      materialId: null,
+      acceptedFields: ["unit"],
+      overwriteFields: ["unit"],
+      editedValues: { unit: "bộ" },
+      acceptedProfileFields: ["name"],
+      editedProfileValues: { name: "Máy bơm đã sửa" },
+      catalogPdfUrls: ["https://example.com/manual.pdf"],
+      selectedSource: "web",
+      selectedSearchCandidateKey: `web:${sourceUrl}`,
+      scrapeResults: [
+        {
+          jobId: "legacy-job",
+          shopScrapeJobId: null,
+          sourceCandidateKey: `web:${sourceUrl}`,
+          sourceUrl,
+          sourceScore: 0.9,
+          product: {
+            name: "Máy bơm ABC",
+            unit: "cái",
+            category: null,
+            specText: "IP68",
+            manufacturer: null,
+            originCountry: null,
+            price: null,
+            priceText: null,
+            currency: "VND",
+            sourceUrl,
+            imageUrl: null,
+            sku: "ABC-01",
+            model: null,
+            shopCategory: null,
+            catalogPdfUrls: [],
+          },
+          fields: { unit: "cái", sourceUrl },
+          name: "Máy bơm ABC",
+          evidence: [],
+          catalogPdfUrls: [],
+          productMatchScore: null,
+        },
+      ],
+    });
+
+    const result = restored?.scrapeResults?.[0];
+    expect(result?.productKey).toMatch(/^scrape:/);
+    expect(restored?.selectedScrapeProductKey).toBe(result?.productKey);
+    expect(result?.reviewDraft).toMatchObject({
+      acceptedFields: ["unit"],
+      overwriteFields: ["unit"],
+      editedValues: { unit: "bộ" },
+      acceptedProfileFields: ["name"],
+      editedProfileValues: { name: "Máy bơm đã sửa" },
+      catalogPdfUrls: ["https://example.com/manual.pdf"],
+    });
+  });
+
+  it("round-trips an explicit null active scrape and ignores malformed drafts", () => {
+    const restored = deserializeRowDecision({
+      materialId: null,
+      acceptedFields: [],
+      selectedScrapeProductKey: null,
+      scrapeResults: [
+        {
+          productKey: "scrape:one",
+          jobId: "job",
+          shopScrapeJobId: null,
+          sourceCandidateKey: "web:https://example.com/p",
+          sourceUrl: "https://example.com/p",
+          sourceScore: null,
+          product: {
+            name: "P",
+            unit: null,
+            category: null,
+            specText: "x",
+            manufacturer: null,
+            originCountry: null,
+            price: null,
+            priceText: null,
+            currency: "VND",
+            sourceUrl: "https://example.com/p",
+            sku: null,
+            model: null,
+            shopCategory: null,
+            catalogPdfUrls: [],
+          },
+          fields: { specText: "x" },
+          name: "P",
+          evidence: [],
+          catalogPdfUrls: [],
+          productMatchScore: null,
+          reviewDraft: { acceptedFields: "invalid" },
+        },
+      ],
+    });
+
+    expect(restored?.selectedScrapeProductKey).toBeNull();
+    expect(restored?.scrapeResults?.[0]?.reviewDraft).toBeUndefined();
+    expect(serializeRowDecision(restored!).selectedScrapeProductKey).toBeNull();
+  });
+
   it("seeds auto row from item materialId and fill plan", () => {
     const decision = seedDecisionFromItem({
       id: 1,
