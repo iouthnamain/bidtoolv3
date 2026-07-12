@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  highestProfileScrapeSource,
   isProfilePdfSource,
+  missingProfileMaterialSaveFields,
   profileSourceEligibility,
   resolveProfileScrapedProduct,
   type ProfileScrapedProduct,
@@ -102,5 +104,27 @@ describe("profile scrape capture policy", () => {
       isProfilePdfSource("https://example.test/catalog.PDF?download=1"),
     ).toBe(true);
     expect(isProfilePdfSource("https://example.test/product/1")).toBe(false);
+  });
+
+  it("selects the highest-ranked HTML source without a score gate", () => {
+    expect(
+      highestProfileScrapeSource([
+        { url: "https://example.test/catalog.pdf", rankScore: 0.99 },
+        { url: "https://example.test/low", rankScore: 0.2 },
+        { url: "https://example.test/high", rankScore: 0.4 },
+      ])?.url,
+    ).toBe("https://example.test/high");
+  });
+
+  it("does not require enrichment-only fields when saving a material", () => {
+    expect(
+      missingProfileMaterialSaveFields({
+        code: "BT-01",
+        name: "Máy bơm",
+        unit: "cái",
+        specText: "IP68",
+        sourceUrl: "https://example.test/pump",
+      }),
+    ).toEqual([]);
   });
 });

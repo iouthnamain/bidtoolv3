@@ -13,6 +13,30 @@ export function isProfilePdfSource(url: string) {
   }
 }
 
+export function highestProfileScrapeSource<
+  T extends { url: string; rankScore?: number | null },
+>(sources: T[]) {
+  return [...sources]
+    .filter((source) => !isProfilePdfSource(source.url))
+    .sort((left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0))[0];
+}
+
+export function missingProfileMaterialSaveFields(input: {
+  code: string;
+  name: string;
+  unit: string;
+  specText: string;
+  sourceUrl: string;
+}) {
+  const missing: string[] = [];
+  if (!input.code.trim()) missing.push("mã vật tư");
+  if (!input.name.trim()) missing.push("tên vật tư");
+  if (!input.unit.trim()) missing.push("ĐVT");
+  if (!input.specText.trim()) missing.push("thông số");
+  if (!input.sourceUrl.trim()) missing.push("URL nguồn");
+  return missing;
+}
+
 export function profileSourceEligibility(input: {
   selectedScore: number | null | undefined;
   runnerUpScore?: number | null;

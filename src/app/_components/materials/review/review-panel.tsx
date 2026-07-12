@@ -40,33 +40,14 @@ import {
 } from "~/lib/materials/review-decision";
 import {
   findProfileCandidateCapture,
-  isProfilePdfSource,
-  profileSourceEligibility,
+  highestProfileScrapeSource,
+  missingProfileMaterialSaveFields,
 } from "~/lib/materials/profile-scrape-capture";
 import { runWithConcurrency } from "~/lib/run-with-concurrency";
 import { api } from "~/trpc/react";
 
-function selectedWebSource(decision: RowDecision | undefined) {
-  const links = [...(decision?.webLinkResults ?? [])].sort(
-    (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
-  );
-  const selectedUrl = decision?.selectedSearchCandidateKey?.startsWith("web:")
-    ? decision.selectedSearchCandidateKey.slice(4)
-    : undefined;
-  const source = selectedUrl
-    ? links.find((link) => link.url === selectedUrl)
-    : links[0];
-  return { links, source, manuallySelected: Boolean(selectedUrl) };
-}
-
-function rowBulkScrapeEligible(decision: RowDecision | undefined) {
-  const { links, source, manuallySelected } = selectedWebSource(decision);
-  if (!source || isProfilePdfSource(source.url)) return false;
-  return profileSourceEligibility({
-    selectedScore: source.rankScore,
-    runnerUpScore: links.find((link) => link.url !== source.url)?.rankScore,
-    manuallySelected,
-  }).eligible;
+function rowHasScrapeSource(decision: RowDecision | undefined) {
+  return Boolean(highestProfileScrapeSource(decision?.webLinkResults ?? []));
 }
 
 function rowCompleteForMaterialSave(
@@ -98,20 +79,14 @@ function rowCompleteForMaterialSave(
         row.name
       ).trim()
     : row.name.trim();
-  const hasCatalog = [
-    ...(row.linkedCatalogPdfUrls ?? []),
-    ...(decision.catalogPdfUrls ?? []),
-  ].some((url) => url.trim());
-  return Boolean(
-    name &&
-    field("code") &&
-    field("unit") &&
-    field("specText") &&
-    field("manufacturer") &&
-    field("originCountry") &&
-    field("defaultUnitPrice") &&
-    field("sourceUrl") &&
-    hasCatalog,
+  return (
+    missingProfileMaterialSaveFields({
+      code: field("code"),
+      name,
+      unit: field("unit"),
+      specText: field("specText"),
+      sourceUrl: field("sourceUrl"),
+    }).length === 0
   );
 }
 
@@ -348,7 +323,9 @@ export function ReviewPanel({
   const startBulkScrape = api.materialProfile.startScrapeJob.useMutation({
     onSuccess: () => {
       void activeScrapeJobQuery.refetch();
-      toast.success("Đã xếp hàng scrape các nguồn đủ điều kiện.");
+      toast.success(
+        "Đã xếp hàng scrape nguồn điểm cao nhất của các dòng đã chọn.",
+      );
     },
     onError: (error) =>
       toast.error(error.message || "Không tạo được job scrape."),
@@ -1134,9 +1111,9 @@ export function ReviewPanel({
         (row) => !decisions.get(row.originalRowIndex)?.webLinkResults?.length,
       ).length
     : 0;
-  const selectedScrapeEligibleRows = isProfileSplit
+  const selectedRowsWithScrapeSource = isProfileSplit
     ? bulkTargetRows.filter((row) =>
-        rowBulkScrapeEligible(decisions.get(row.originalRowIndex)),
+        rowHasScrapeSource(decisions.get(row.originalRowIndex)),
       )
     : [];
   const selectedCompleteRows = isProfileSplit
@@ -1162,11 +1139,11 @@ export function ReviewPanel({
       return "Đang có một đợt tìm kiếm khác hoạt động.";
     if (isCapturePending) return "Đang scrape nguồn của dòng hiện tại.";
     if (bulkScrapeIsActive) return "Đang có một đợt scrape khác hoạt động.";
-    if (kind === "scrape" && selectedScrapeEligibleRows.length === 0) {
+    if (kind === "scrape" && selectedRowsWithScrapeSource.length === 0) {
       if (selectedMissingWebResults === bulkTargetRows.length) {
         return "Các dòng đã chọn chưa có kết quả web.";
       }
-      return "Không có nguồn đạt 75% và điều kiện chênh lệch 5 điểm.";
+      return "Các dòng đã chọn không có nguồn HTML để scrape.";
     }
     if (kind === "save" && selectedCompleteRows.length === 0)
       return "Không có dòng hoàn chỉnh để lưu.";
@@ -1327,8 +1304,8 @@ export function ReviewPanel({
                 isLoading={startBulkScrape.isPending}
                 onClick={() => void runBulkScrape()}
               >
-                Scrape nguồn đủ điều kiện (
-                {selectedScrapeEligibleRows.length.toLocaleString("vi-VN")})
+                Scrape nguồn điểm cao nhất (
+                {selectedRowsWithScrapeSource.length.toLocaleString("vi-VN")})
               </Button>
               <Button
                 variant="ai"

@@ -256,6 +256,47 @@ describe("extractProductsFromPageSnapshot", () => {
     ]);
   });
 
+  it("fills enrichment fields from a selected product detail page", () => {
+    const products = extractProductsFromPageSnapshot({
+      pageUrl: "https://shop.example.com/product/pump",
+      title: "Máy bơm Acme",
+      pageText:
+        "Máy bơm Acme Nhà sản xuất: Acme Xuất xứ: Việt Nam Giá: 1.250.000 đ",
+      jsonLdTexts: [
+        JSON.stringify({
+          "@graph": [
+            {
+              "@type": "Product",
+              name: "Máy bơm Acme",
+              url: "https://shop.example.com/product/pump",
+            },
+            {
+              "@type": "Product",
+              name: "Sản phẩm liên quan",
+              url: "https://shop.example.com/product/related",
+            },
+          ],
+        }),
+      ],
+      cards: [],
+      nextLinks: [],
+      pagePdfUrls: ["https://shop.example.com/files/pump-catalog.pdf"],
+    });
+
+    expect(products[0]).toMatchObject({
+      manufacturer: "Acme",
+      originCountry: "Việt Nam",
+      price: 1_250_000,
+      catalogPdfUrls: ["https://shop.example.com/files/pump-catalog.pdf"],
+    });
+    expect(products[1]).toMatchObject({
+      manufacturer: null,
+      originCountry: null,
+      price: null,
+      catalogPdfUrls: [],
+    });
+  });
+
   it("dedupes catalog PDF links that normalize to the same URL", () => {
     const products = extractProductsFromPageSnapshot({
       pageUrl: "https://shop.example.com/tools",

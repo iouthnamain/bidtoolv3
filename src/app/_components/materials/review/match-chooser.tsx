@@ -44,13 +44,13 @@ import {
   sortCandidatesByScore,
   webLinkMatchChips,
 } from "~/lib/materials/search-candidate-match";
-import { validateMaterialProfileResolution } from "~/lib/materials/profile-input-contract";
 import { simpleSimilarity } from "~/lib/materials/option-matcher";
 import {
   findProfileCandidateCapture,
   hasCapturedProductDetails,
   profileCandidateCaptureKey,
 } from "~/lib/materials/profile-candidate-capture";
+import { missingProfileMaterialSaveFields } from "~/lib/materials/profile-scrape-capture";
 import { api } from "~/trpc/react";
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
@@ -91,14 +91,6 @@ function aiCandidatesFromDecision(decision: RowDecision | undefined) {
   return [];
 }
 
-function sourceLabelFromUrl(value: string) {
-  try {
-    return new URL(value).hostname.replace(/^www\./i, "");
-  } catch {
-    return value;
-  }
-}
-
 function trimmedOrUndefined(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -109,54 +101,44 @@ function materialProfileSaveResolution({
   row,
   name: proposedName,
   effective,
-  catalogPdfUrls,
-  webEvidence,
 }: {
   row: ReviewRow;
   name?: string;
   effective: Partial<Record<FillableField, string>>;
-  catalogPdfUrls: string[];
-  webEvidence: NonNullable<RowDecision["webEvidence"]>;
 }) {
   const name = trimmedOrUndefined(proposedName) ?? row.name.trim();
   const unit = effective.unit?.trim() ?? row.sheetFields.unit?.trim() ?? "";
   const specText =
     effective.specText?.trim() ?? row.sheetFields.specText?.trim() ?? "";
-  const sourceUrl = trimmedOrUndefined(effective.sourceUrl);
-  const resolution = validateMaterialProfileResolution({
-    input: { name, unit, specText, rowIndex: row.originalRowIndex },
-    candidate: {
-      code: trimmedOrUndefined(effective.code),
-      name,
-      unit,
-      specText,
-      manufacturer: trimmedOrUndefined(effective.manufacturer),
-      originCountry: trimmedOrUndefined(effective.originCountry),
-      unitPrice: parseOptionalNumber(effective.defaultUnitPrice ?? ""),
-      source: sourceUrl ? sourceLabelFromUrl(sourceUrl) : "",
-      sourceUrl,
-      catalogUrl: catalogPdfUrls[0],
-      evidenceUrls: [
-        ...catalogPdfUrls,
-        ...webEvidence
-          .map((evidence) => evidence.sourceUrl ?? "")
-          .filter(Boolean),
-      ],
-      confidence: 1,
-      provenance: "manual_verified",
-    },
-    promotionConfidence: 0,
+  const sourceUrl = effective.sourceUrl?.trim() ?? "";
+  const missing = missingProfileMaterialSaveFields({
+    code: effective.code ?? "",
+    name,
+    unit,
+    specText,
+    sourceUrl,
   });
-  if (!effective.code?.trim()) {
-    return {
-      ...resolution,
-      complete: false,
-      promotable: false,
-      status: "needs_verification" as const,
-      reasons: ["Chưa đủ dữ liệu: Mã vật tư.", ...resolution.reasons],
-    };
+  const reasons =
+    missing.length > 0 ? [`Chưa đủ dữ liệu: ${missing.join(", ")}.`] : [];
+  if (sourceUrl) {
+    try {
+      const url = new URL(sourceUrl);
+      if (!["http:", "https:"].includes(url.protocol)) {
+        reasons.push("URL nguồn không hợp lệ.");
+      }
+    } catch {
+      reasons.push("URL nguồn không hợp lệ.");
+    }
   }
-  return resolution;
+  return {
+    complete: missing.length === 0,
+    promotable: reasons.length === 0,
+    status:
+      reasons.length === 0
+        ? ("saved" as const)
+        : ("needs_verification" as const),
+    reasons,
+  };
 }
 
 export function MatchChooser({
@@ -1339,8 +1321,6 @@ export function MatchChooser({
         row,
         name: profileFinalName,
         effective: profileFinalEffective,
-        catalogPdfUrls: profileCatalogPdfUrls,
-        webEvidence,
       })
     : null;
   const conflictingSaveBatch = recentSaveBatches.data?.find((batch) =>
@@ -1392,11 +1372,8 @@ export function MatchChooser({
     const sourceUrl = trimmedOrUndefined(effective.sourceUrl);
     const catalogPdfUrls = decision?.catalogPdfUrls ?? [];
 
-    // Material-profile rows are a stricter contract than the legacy material
-    // editor. Do not let a one-click review action create a partial canonical
-    // material: it must carry the complete requested product record and an
-    // actual catalog URL. A user-entered record is considered manually
-    // verified, while the automatic path has its own 85% confidence gate.
+    // Material-profile rows still require canonical identity fields before
+    // creating or updating a material.
     if (isProfileSplit) {
       if (targetLookupPending) {
         toast.warning(

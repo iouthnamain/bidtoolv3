@@ -427,7 +427,7 @@ test("staged review uses action colors, compare fields, and responsive stacking"
     return (
       [
         ["Tìm nguồn web", "rgb(3, 105, 161)"],
-        ["Scrape nguồn đủ điều kiện", "rgb(15, 118, 110)"],
+        ["Scrape nguồn điểm cao nhất", "rgb(15, 118, 110)"],
         ["Trích xuất AI", "rgb(109, 40, 217)"],
         ["Xem trước & lưu /materials", "rgb(4, 120, 87)"],
       ] as const

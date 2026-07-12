@@ -6,13 +6,11 @@ import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { normalizeCatalogPdfUrl } from "~/lib/materials/catalog-pdf";
 import {
+  highestProfileScrapeSource,
+  isProfilePdfSource,
   mergeProfileCandidateCapture,
   profileCandidateSearchGeneration,
   resolveProfileScrapedProduct,
-} from "~/lib/materials/profile-scrape-capture";
-import {
-  isProfilePdfSource,
-  profileSourceEligibility,
 } from "~/lib/materials/profile-scrape-capture";
 import type { ProfileScrapedProduct } from "~/lib/materials/profile-scrape-types";
 import {
@@ -111,17 +109,21 @@ function sourceForDecision(
     (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
   );
   const explicitUrl = options.explicitSourceUrl?.trim();
-  const selectedKey = options.explicitSourceCandidateKey?.trim();
-  const selectedUrl = [
-    explicitUrl,
-    selectedKey?.startsWith("web:") ? selectedKey.slice(4) : undefined,
-    decision.selectedSearchCandidateKey?.startsWith("web:")
-      ? decision.selectedSearchCandidateKey.slice(4)
-      : undefined,
-  ].find(Boolean);
+  const selectedKey = options.interactive
+    ? options.explicitSourceCandidateKey?.trim()
+    : undefined;
+  const selectedUrl = options.interactive
+    ? [
+        explicitUrl,
+        selectedKey?.startsWith("web:") ? selectedKey.slice(4) : undefined,
+        decision.selectedSearchCandidateKey?.startsWith("web:")
+          ? decision.selectedSearchCandidateKey.slice(4)
+          : undefined,
+      ].find(Boolean)
+    : undefined;
   const source = selectedUrl
     ? links.find((link) => link.url === selectedUrl)
-    : links[0];
+    : highestProfileScrapeSource(links);
 
   if (!source) {
     return {
@@ -136,20 +138,6 @@ function sourceForDecision(
         "Nguồn PDF dùng thao tác “Dùng catalog PDF”, không chạy scraper HTML.",
     } as const;
   }
-  if (!options.interactive) {
-    const sourceIndex = links.findIndex((link) => link.url === source.url);
-    const manual = sourceIndex > 0 || Boolean(selectedUrl);
-    const runnerUp = links.find((link) => link.url !== source.url);
-    const eligibility = profileSourceEligibility({
-      selectedScore: source.rankScore,
-      runnerUpScore: runnerUp?.rankScore,
-      manuallySelected: manual,
-    });
-    if (!eligibility.eligible) {
-      return { decision, error: eligibility.reason } as const;
-    }
-  }
-
   return { decision, source, error: null } as const;
 }
 

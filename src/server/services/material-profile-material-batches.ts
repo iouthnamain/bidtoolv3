@@ -21,6 +21,7 @@ import {
 } from "~/lib/materials/catalog-pdf";
 import type { FillableField } from "~/lib/materials/excel-enrich-fields";
 import { simpleSimilarity } from "~/lib/materials/option-matcher";
+import { missingProfileMaterialSaveFields } from "~/lib/materials/profile-scrape-capture";
 import {
   serializeRowDecision,
   type RowDecision,
@@ -229,17 +230,7 @@ export function buildMaterialProfileProposal(
 export function incompleteProfileMaterialFields(
   proposal: ProfileMaterialProposal,
 ) {
-  const missing: string[] = [];
-  if (!proposal.code) missing.push("mã vật tư");
-  if (!proposal.name) missing.push("tên vật tư");
-  if (!proposal.unit) missing.push("ĐVT");
-  if (!proposal.specText) missing.push("thông số");
-  if (!proposal.manufacturer) missing.push("nhà sản xuất");
-  if (!proposal.originCountry) missing.push("xuất xứ");
-  if (proposal.defaultUnitPrice == null) missing.push("đơn giá");
-  if (!proposal.sourceUrl) missing.push("URL nguồn");
-  if (proposal.catalogPdfUrls.length === 0) missing.push("URL catalog");
-  return missing;
+  return missingProfileMaterialSaveFields(proposal);
 }
 
 function proposalForTarget(
@@ -997,9 +988,7 @@ type CatalogSnapshot = Array<{
   document: typeof materialCatalogDocuments.$inferSelect;
 }>;
 
-function catalogUrlsFromSnapshot(
-  snapshot: CatalogSnapshot,
-) {
+function catalogUrlsFromSnapshot(snapshot: CatalogSnapshot) {
   return snapshot.flatMap(({ document }) =>
     document.deletedAt || !document.sourceUrl ? [] : [document.sourceUrl],
   );

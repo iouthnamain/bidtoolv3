@@ -667,21 +667,32 @@ function _extractProductsWithDiagnosticsFromPageSnapshot(
   ).map((candidate) => candidate.product);
   // Page-level spec rows (a detail page's spec table / <dl>) fill any field a
   // product is still missing. Structured pairs are more reliable than the
-  // flattened-text regex that produced the candidate. Only apply this on
-  // single-product (detail) snapshots: on a multi-product listing page the
-  // document-level pairs are a mix of every card, so filling a missing field
-  // from "the first value on the page" would smear one product's
-  // manufacturer/origin onto the others.
-  const pageLabels =
-    mergedProducts.length <= 1
-      ? extractLabelsFromPairs(snapshot.specPairs, {
-          includeUnmatchedSpec: true,
-        })
-      : null;
+  // flattened-text regex that produced the candidate. Apply this to the only
+  // product on a page, or to the product whose URL is the current detail page.
+  // This avoids smearing document-level values onto related/listing products.
+  const pageLabels = extractLabelsFromPairs(snapshot.specPairs, {
+    includeUnmatchedSpec: true,
+  });
   const products = sanitizeScrapedProductList(
-    pageLabels
-      ? mergedProducts.map((product) => applyLabelFields(product, pageLabels))
-      : mergedProducts,
+    mergedProducts.map((product) => {
+      const ownsPageDetails =
+        mergedProducts.length <= 1 ||
+        sameCanonicalUrl(product.sourceUrl, snapshot.pageUrl);
+      if (!ownsPageDetails) return product;
+      const labeledProduct = applyLabelFields(product, pageLabels);
+      const enriched = enrichProductWithPageText(
+        labeledProduct,
+        snapshot.pageText ?? "",
+        snapshot.specPairs,
+      );
+      return {
+        ...enriched,
+        catalogPdfUrls: mergeCatalogPdfUrls(
+          enriched.catalogPdfUrls,
+          snapshot.pagePdfUrls,
+        ),
+      };
+    }),
     snapshot.pageUrl,
   );
   return { products, diagnostics };
@@ -2735,6 +2746,7 @@ function _enrichProductWithPageText(
   specPairs?: ReadonlyArray<{ label: string; value: string }>,
 ): ScrapedShopProduct {
   const labels = extractProductLabels(pageText);
+  const price = extractPriceFromText(pageText);
   // Prefer structured spec rows from the detail page over flattened-text regex.
   const pairLabels = extractLabelsFromPairs(specPairs, {
     includeUnmatchedSpec: true,
@@ -2751,6 +2763,12 @@ function _enrichProductWithPageText(
       product.manufacturer ?? pairLabels.manufacturer ?? labels.manufacturer,
     originCountry:
       product.originCountry ?? pairLabels.originCountry ?? labels.originCountry,
+    price: product.price ?? price.price,
+    priceText: product.priceText ?? price.priceText,
+    currency:
+      product.price != null || product.priceText
+        ? product.currency
+        : (detectCurrency(price.priceText) ?? product.currency),
     sku: product.sku ?? pairLabels.sku ?? labels.sku,
     model: product.model ?? pairLabels.model ?? labels.model,
     availability:

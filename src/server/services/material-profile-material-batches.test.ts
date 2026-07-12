@@ -28,21 +28,27 @@ const complete: ProfileMaterialProposal = {
 };
 
 describe("material profile save batch policy", () => {
-  it("blocks records missing any required save field", () => {
+  it("allows optional enrichment fields to be missing", () => {
     expect(incompleteProfileMaterialFields(complete)).toEqual([]);
     expect(
       incompleteProfileMaterialFields({
         ...complete,
         manufacturer: "",
+        originCountry: "",
+        defaultUnitPrice: null,
         catalogPdfUrls: [],
       }),
-    ).toEqual(["nhà sản xuất", "URL catalog"]);
+    ).toEqual([]);
+  });
+
+  it("blocks records missing required material fields", () => {
     expect(
       incompleteProfileMaterialFields({
         ...complete,
-        catalogPdfUrls: unionProfileCatalogUrls(["không-phải-url"]),
+        code: "",
+        sourceUrl: "",
       }),
-    ).toContain("URL catalog");
+    ).toEqual(["mã vật tư", "URL nguồn"]);
   });
 
   it("uses the 85% fuzzy target threshold", () => {
