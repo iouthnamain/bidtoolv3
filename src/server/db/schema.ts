@@ -1012,6 +1012,18 @@ export const searchAuditLogs = pgTable(
       }>()
       .notNull()
       .default({ boostDomains: [], penaltyDomains: [], blockDomains: [] }),
+    qualitySummaryJson: jsonb("quality_summary_json")
+      .$type<{
+        pipelineMode: "legacy" | "guarded";
+        primaryCount: number;
+        weakCount: number;
+        rejectedCount: number;
+        unsafeRejectedCount: number;
+        feedbackRejectedCount: number;
+        aiPromotedCount: number;
+        initialLinksMs: number;
+      } | null>()
+      .default(null),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1026,6 +1038,46 @@ export const searchAuditLogs = pgTable(
       table.status,
       table.createdAt,
     ),
+  }),
+);
+
+export const materialSearchFeedback = pgTable(
+  "material_search_feedback",
+  {
+    id: serial("id").primaryKey(),
+    materialSignature: text("material_signature").notNull(),
+    normalizedUrl: text("normalized_url").notNull(),
+    domain: text("domain").notNull(),
+    title: text("title").notNull().default(""),
+    sourceFeature: text("source_feature").notNull().default("profile_search"),
+    workspaceId: integer("workspace_id").references(() => excelWorkspaces.id, {
+      onDelete: "set null",
+    }),
+    itemId: integer("item_id").references(() => excelWorkspaceItems.id, {
+      onDelete: "set null",
+    }),
+    rejectedAt: timestamp("rejected_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    restoredAt: timestamp("restored_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    signatureUrlUnique: uniqueIndex(
+      "material_search_feedback_signature_url_unique",
+    ).on(table.materialSignature, table.normalizedUrl),
+    signatureRestoredIdx: index(
+      "material_search_feedback_signature_restored_idx",
+    ).on(table.materialSignature, table.restoredAt),
+    rejectedAtIdx: index("material_search_feedback_rejected_at_idx").on(
+      table.rejectedAt,
+    ),
+    domainIdx: index("material_search_feedback_domain_idx").on(table.domain),
   }),
 );
 

@@ -7,6 +7,12 @@ import {
   type FillableField,
   type MatchScoreBreakdown,
 } from "~/lib/materials/excel-enrich-fields";
+import {
+  createMaterialSearchIdentity,
+  normalizeMaterialSearchText,
+  type MaterialSearchIdentity,
+  type MaterialSearchIdentityInput,
+} from "~/lib/materials/material-search-identity";
 
 export type MatchBand = "high" | "medium";
 
@@ -25,6 +31,29 @@ export type MatchAssessment = {
   dimensions: MatchDimensions;
   reasons: string[];
   warnings: string[];
+};
+
+export type MaterialSearchHardReject =
+  | "unsafe"
+  | "operator_rejected"
+  | "identifier_conflict"
+  | "dimension_conflict"
+  | "product_family_conflict"
+  | "identity_missing";
+
+export type MaterialSearchAssessment = {
+  score: number;
+  tier: "primary" | "weak" | "rejected";
+  dimensions: {
+    identity: number;
+    specification: number;
+    sourceTrust: number;
+    retrievalConsensus: number;
+  };
+  reasons: string[];
+  conflicts: string[];
+  hardRejects: MaterialSearchHardReject[];
+  aiOverrideEligible: boolean;
 };
 
 export const MATCH_THRESHOLDS = {
@@ -178,6 +207,169 @@ function sourceTrustFromUrl(
   if (/(shopee|lazada|tiki|facebook|youtube|tiktok)/i.test(value))
     score -= 0.25;
   return clampMatchScore(score);
+}
+
+const PRODUCT_FAMILIES = [
+  ["tu dien", ["tu lanh", "tu quan ao", "wardrobe", "refrigerator"]],
+  ["ong", ["google play", "apple store", "ung dung"]],
+  ["cap dien", ["cap quang", "day deo", "cable tie"]],
+] as const;
+
+function familyConflict(identityText: string, resultText: string) {
+  for (const [family, conflicts] of PRODUCT_FAMILIES) {
+    if (!identityText.includes(family)) continue;
+    const conflict = conflicts.find((term) => resultText.includes(term));
+    if (conflict) return conflict;
+  }
+  return null;
+}
+
+function normalizedRrfConsensus(rrfScore: number | undefined) {
+  if (!rrfScore || !Number.isFinite(rrfScore)) return 0;
+  // Three rank-1 occurrences are already near full retrieval consensus.
+  return clampMatchScore(rrfScore / (3 / 61));
+}
+
+function identifierEvidence(identity: MaterialSearchIdentity, text: string) {
+  const matches = identity.identifiers.filter((value) => text.includes(value));
+  const resultIdentifiers = new Set(
+    text.match(/\b(?=[a-z0-9./-]*\d)[a-z0-9]+(?:[./-][a-z0-9]+)*\b/g) ?? [],
+  );
+  const conflicts = identity.identifiers.filter((expected) => {
+    if (matches.includes(expected)) return false;
+    const alpha = expected.replace(/\d+/g, "");
+    return [...resultIdentifiers].some(
+      (candidate) => alpha && candidate.replace(/\d+/g, "") === alpha,
+    );
+  });
+  return { matches, conflicts };
+}
+
+export function assessMaterialSearchCandidate(input: {
+  identity: MaterialSearchIdentity | MaterialSearchIdentityInput;
+  candidate: Pick<
+    WebLinkResult,
+    "title" | "url" | "domain" | "snippet" | "rrfScore"
+  >;
+  unsafe?: boolean;
+  operatorRejected?: boolean;
+}): MaterialSearchAssessment {
+  const identity =
+    "signature" in input.identity
+      ? input.identity
+      : createMaterialSearchIdentity(input.identity);
+  const text = normalizeMaterialSearchText(
+    `${input.candidate.title} ${input.candidate.snippet} ${input.candidate.url}`,
+  );
+  const nameForward = tokenOverlap(identity.normalizedName, text);
+  const nameBackward = tokenOverlap(text, identity.normalizedName);
+  const fullNameMatch = Number(text.includes(identity.normalizedName));
+  const phraseMatch = identity.productPhrase
+    ? Number(text.includes(identity.productPhrase))
+    : 0;
+  const manufacturerMatch = identity.manufacturer
+    ? tokenOverlap(identity.manufacturer, text)
+    : 0.5;
+  const identifiers = identifierEvidence(identity, text);
+  const dimensionsMatched = identity.compositeDimensions.filter((dimension) =>
+    text.includes(dimension),
+  );
+  const identityScore = clampMatchScore(
+    Math.max(fullNameMatch, Math.min(nameForward, nameBackward)) * 0.35 +
+      phraseMatch * 0.3 +
+      manufacturerMatch * 0.1 +
+      (identity.identifiers.length
+        ? identifiers.matches.length / identity.identifiers.length
+        : 0.5) *
+        0.25,
+  );
+  const matchedSpecs = identity.highSignalSpecTokens.filter((token) =>
+    text.includes(token),
+  );
+  const specification = identity.highSignalSpecTokens.length
+    ? clampMatchScore(
+        matchedSpecs.length / identity.highSignalSpecTokens.length +
+          (dimensionsMatched.length > 0 ? 0.25 : 0),
+      )
+    : Math.max(0.25, specQuality(input.candidate.snippet) * 0.5);
+  const sourceTrust = sourceTrustFromUrl(
+    input.candidate.url,
+    input.candidate.domain,
+  );
+  const retrievalConsensus = normalizedRrfConsensus(input.candidate.rrfScore);
+  const hardRejects: MaterialSearchHardReject[] = [];
+  const conflicts: string[] = [];
+  if (input.unsafe) hardRejects.push("unsafe");
+  if (input.operatorRejected) hardRejects.push("operator_rejected");
+  if (identifiers.conflicts.length > 0) {
+    hardRejects.push("identifier_conflict");
+    conflicts.push(`Khác mã: ${identifiers.conflicts.join(", ")}`);
+  }
+  if (
+    identity.compositeDimensions.length > 0 &&
+    dimensionsMatched.length === 0 &&
+    /\b\d+(?:x\d+){1,3}\b/.test(text)
+  ) {
+    hardRejects.push("dimension_conflict");
+    conflicts.push("Kích thước không tương thích");
+  }
+  const family = familyConflict(identity.normalizedName, text);
+  if (family) {
+    hardRejects.push("product_family_conflict");
+    conflicts.push(`Sai nhóm sản phẩm: ${family}`);
+  }
+  if (identityScore < 0.18) hardRejects.push("identity_missing");
+
+  let score = clampMatchScore(
+    identityScore * 0.55 +
+      specification * 0.25 +
+      sourceTrust * 0.1 +
+      retrievalConsensus * 0.1,
+  );
+  if (hardRejects.length > 0) score = Math.min(score, 0.749);
+  const nonOverridable = hardRejects.some((reject) =>
+    ["unsafe", "operator_rejected"].includes(reject),
+  );
+  const tier =
+    score < 0.2 || hardRejects.length > 0
+      ? "rejected"
+      : score >= 0.75
+        ? "primary"
+        : "weak";
+  const reasons = compactReasons([
+    phraseMatch ? "Khớp cụm sản phẩm" : "",
+    identifiers.matches.length
+      ? `Khớp mã: ${identifiers.matches.join(", ")}`
+      : "",
+    manufacturerMatch >= 0.7 ? "Khớp nhà sản xuất" : "",
+    matchedSpecs.length
+      ? `Khớp thông số: ${matchedSpecs.slice(0, 3).join(", ")}`
+      : "",
+  ]);
+
+  return {
+    score,
+    tier,
+    dimensions: {
+      identity: identityScore,
+      specification,
+      sourceTrust,
+      retrievalConsensus,
+    },
+    reasons,
+    conflicts,
+    hardRejects: [...new Set(hardRejects)],
+    aiOverrideEligible:
+      !nonOverridable &&
+      hardRejects.some((reject) =>
+        [
+          "identifier_conflict",
+          "dimension_conflict",
+          "product_family_conflict",
+          "identity_missing",
+        ].includes(reject),
+      ),
+  };
 }
 
 function specQuality(specText: string | undefined): number {

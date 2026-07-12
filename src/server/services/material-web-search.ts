@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import {
+  getAppSettingsRevision,
   resolveEnrichmentSearchCacheTtlMs,
   resolveEnrichmentWebConcurrency,
   resolveSearchDomainPolicy,
@@ -21,6 +24,7 @@ import {
   type SearchAuditFeature,
   type SearchAuditStatus,
 } from "~/server/services/search-audit";
+import type { SearchQuery } from "~/server/services/excel-research/query-builder";
 
 const log = createLogger("material-web-search");
 
@@ -39,12 +43,20 @@ export type WebSearchResult = {
   rankScore: number;
   rankReasons?: string[];
   provider?: WebSearchProvider;
+  matchedQueries?: Array<{
+    query: string;
+    intent: SearchQuery["intent"];
+    rank: number;
+  }>;
+  rrfScore?: number;
+  fetchStatus?: "verified" | "unverified" | "failed";
 };
 
 export type WebSearchResponse = {
   results: WebSearchResult[];
   warnings: string[];
   domainPolicy?: SearchDomainPolicy;
+  unsafeRejectedUrls?: string[];
 };
 
 type ProviderSearchResponse = WebSearchResponse & {
@@ -55,6 +67,20 @@ type SearchOptions = {
   feature?: SearchAuditFeature;
   overrideEngines?: string[];
 };
+
+const EXPLICIT_CONTENT_DOMAIN_PATTERN =
+  /(?:^|\.)(?:pornhub|xvideos|xnxx|redtube|youporn|spankbang|onlyfans)\./i;
+const EXPLICIT_CONTENT_TEXT_PATTERN =
+  /(?:^|[\s/_-])(?:porn|xxx|sex video|adult video|phim sex|khiêu dâm)(?:$|[\s/_-])/i;
+
+export function isUnsafeSearchResult(
+  result: Pick<WebSearchResult, "domain" | "title" | "url">,
+) {
+  return (
+    EXPLICIT_CONTENT_DOMAIN_PATTERN.test(result.domain) ||
+    EXPLICIT_CONTENT_TEXT_PATTERN.test(`${result.title} ${result.url}`)
+  );
+}
 
 const DEFAULT_DOMAIN_POLICY: SearchDomainPolicy = {
   boostDomains: DEFAULT_SEARCH_BOOST_DOMAINS,
@@ -77,6 +103,56 @@ let webLimiter = createAsyncLimiter(12);
 
 function normalizeCacheKey(query: string) {
   return query.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function compactFingerprint(value: unknown) {
+  return createHash("sha256")
+    .update(JSON.stringify(value))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+export function createWebSearchConfigurationFingerprint(
+  resolvedConfig: SearxngSearchConfig,
+  policy: SearchDomainPolicy,
+  options?: SearchOptions,
+) {
+  const config = {
+    baseUrl: resolvedConfig.baseUrl,
+    engines: options?.overrideEngines?.length
+      ? options.overrideEngines
+      : resolvedConfig.engines,
+    language: resolvedConfig.language,
+    safeSearch:
+      options?.feature === "profile_search" ? 2 : resolvedConfig.safeSearch,
+    timeRange: resolvedConfig.timeRange,
+    requestTimeoutMs: resolvedConfig.requestTimeoutMs,
+    htmlFallback: resolvedConfig.htmlFallback,
+    resultLimitPerQuery: resolvedConfig.resultLimitPerQuery,
+  };
+  return compactFingerprint({ config, policy });
+}
+
+async function searchConfigurationFingerprint(options?: SearchOptions) {
+  const [resolvedConfig, policy] = await Promise.all([
+    resolveSearxngSearchConfig(),
+    resolveSearchDomainPolicy(),
+  ]);
+  return createWebSearchConfigurationFingerprint(
+    resolvedConfig,
+    policy,
+    options,
+  );
+}
+
+async function stableSearchConfigurationSnapshot(options?: SearchOptions) {
+  while (true) {
+    const revision = getAppSettingsRevision();
+    const fingerprint = await searchConfigurationFingerprint(options);
+    if (revision === getAppSettingsRevision()) {
+      return { fingerprint, revision };
+    }
+  }
 }
 
 async function runWithWebLimit<T>(task: () => Promise<T>): Promise<T> {
@@ -130,6 +206,21 @@ function extractDomain(url: string) {
     return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
   } catch {
     return "";
+  }
+}
+
+function normalizeResultUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(?:utm_.+|fbclid|gclid)$/i.test(key)) url.searchParams.delete(key);
+    }
+    url.searchParams.sort();
+    return url.toString();
+  } catch {
+    return value.trim();
   }
 }
 
@@ -271,7 +362,8 @@ export function applyDomainPolicy(
 ) {
   return results.filter(
     (result) =>
-      !result.domain || !domainMatchesAny(result.domain, policy.blockDomains),
+      !isUnsafeSearchResult(result) &&
+      (!result.domain || !domainMatchesAny(result.domain, policy.blockDomains)),
   );
 }
 
@@ -324,6 +416,9 @@ async function searchSearxngQuery(
     options?.overrideEngines && options.overrideEngines.length > 0
       ? { ...resolvedConfig, engines: options.overrideEngines }
       : resolvedConfig;
+  // Safety is not a ranking behavior and remains strict in both guarded and
+  // legacy profile modes.
+  if (options?.feature === "profile_search") config.safeSearch = 2;
   const policy = await resolveSearchDomainPolicy();
   const feature = options?.feature ?? "interactive";
   const warnings: string[] = [];
@@ -396,6 +491,13 @@ async function searchSearxngQuery(
       }
     }
 
+    const unsafeRejectedUrls = [
+      ...new Set(
+        collected
+          .filter(isUnsafeSearchResult)
+          .map((result) => normalizeResultUrl(result.url)),
+      ),
+    ];
     const filtered = applyDomainPolicy(collected, policy).slice(
       0,
       config.resultLimitPerQuery,
@@ -422,6 +524,7 @@ async function searchSearxngQuery(
       warnings,
       status,
       domainPolicy: policy,
+      unsafeRejectedUrls,
     };
   } catch (error) {
     const message =
@@ -579,6 +682,7 @@ async function _searchQueryWithFallback(
       results: primary.results,
       warnings: primary.warnings,
       domainPolicy: primary.domainPolicy,
+      unsafeRejectedUrls: primary.unsafeRejectedUrls,
     };
   }
 
@@ -591,6 +695,7 @@ async function _searchQueryWithFallback(
       results: primary.results,
       warnings: primary.warnings,
       domainPolicy: primary.domainPolicy,
+      unsafeRejectedUrls: primary.unsafeRejectedUrls,
     };
   }
 
@@ -617,6 +722,12 @@ async function _searchQueryWithFallback(
     results: rescue.results,
     warnings: [...primaryWarnings, retryWarning, ...rescueWarnings],
     domainPolicy: rescue.domainPolicy ?? primary.domainPolicy,
+    unsafeRejectedUrls: [
+      ...new Set([
+        ...(primary.unsafeRejectedUrls ?? []),
+        ...(rescue.unsafeRejectedUrls ?? []),
+      ]),
+    ],
   };
 }
 
@@ -637,24 +748,35 @@ function uniqueWarnings(warnings: string[]) {
 }
 
 async function _searchWebForProduct(
-  queries: string[],
+  queries: Array<string | SearchQuery>,
   signal?: AbortSignal,
   options?: SearchOptions,
 ): Promise<WebSearchResponse> {
   const uniqueQueries = [
-    ...new Set(queries.map((query) => query.trim()).filter(Boolean)),
+    ...new Map(
+      queries
+        .map((entry) =>
+          typeof entry === "string"
+            ? { query: entry.trim(), intent: "general" as const }
+            : { ...entry, query: entry.query.trim() },
+        )
+        .filter((entry) => entry.query)
+        .map((entry) => [entry.query, entry]),
+    ).values(),
   ];
   const merged: WebSearchResult[] = [];
-  const seenUrls = new Set<string>();
+  const byUrl = new Map<string, WebSearchResult>();
   const warnings: string[] = [];
   let domainPolicy: SearchDomainPolicy | undefined;
+  const unsafeRejectedUrls = new Set<string>();
 
   const responses = await Promise.all(
-    uniqueQueries.map(async (query) => {
+    uniqueQueries.map(async ({ query, intent }) => {
       throwIfAborted(signal);
-      return runWithWebLimit(() =>
+      const response = await runWithWebLimit(() =>
         searchQueryWithCache(query, signal, options),
       );
+      return { ...response, query, intent };
     }),
   );
 
@@ -662,16 +784,34 @@ async function _searchWebForProduct(
     results,
     warnings: queryWarnings,
     domainPolicy: policy,
+    unsafeRejectedUrls: queryUnsafeRejectedUrls,
+    query,
+    intent,
   } of responses) {
     warnings.push(...queryWarnings);
     domainPolicy ??= policy;
+    for (const url of queryUnsafeRejectedUrls ?? []) {
+      unsafeRejectedUrls.add(url);
+    }
 
-    for (const result of results) {
-      if (seenUrls.has(result.url)) {
+    for (const [index, result] of results.entries()) {
+      const occurrence = { query, intent, rank: index + 1 };
+      const existing = byUrl.get(result.url);
+      if (existing) {
+        existing.matchedQueries = [
+          ...(existing.matchedQueries ?? []),
+          occurrence,
+        ];
+        existing.rrfScore = (existing.rrfScore ?? 0) + 1 / (60 + index + 1);
         continue;
       }
-      seenUrls.add(result.url);
-      merged.push(result);
+      const fused = {
+        ...result,
+        matchedQueries: [occurrence],
+        rrfScore: 1 / (60 + index + 1),
+      };
+      byUrl.set(result.url, fused);
+      merged.push(fused);
     }
   }
 
@@ -680,7 +820,12 @@ async function _searchWebForProduct(
     log.warn("web_search_no_results", { warnings: dedupedWarnings });
   }
 
-  return { results: merged, warnings: dedupedWarnings, domainPolicy };
+  return {
+    results: merged,
+    warnings: dedupedWarnings,
+    domainPolicy,
+    unsafeRejectedUrls: [...unsafeRejectedUrls],
+  };
 }
 
 async function searchQueryWithCache(
@@ -688,7 +833,10 @@ async function searchQueryWithCache(
   signal?: AbortSignal,
   options?: SearchOptions,
 ): Promise<WebSearchResponse> {
-  const key = `${options?.feature ?? "search"}:${normalizeCacheKey(query)}`;
+  const configurationSnapshot =
+    await stableSearchConfigurationSnapshot(options);
+  const configurationFingerprint = configurationSnapshot.fingerprint;
+  const key = `${options?.feature ?? "search"}:${configurationFingerprint}:${normalizeCacheKey(query)}`;
   const ttlMs = await resolveEnrichmentSearchCacheTtlMs();
   const now = Date.now();
   const cached = searchCache.get(key);
@@ -702,6 +850,9 @@ async function searchQueryWithCache(
             penaltyDomains: [...cached.response.domainPolicy.penaltyDomains],
             blockDomains: [...cached.response.domainPolicy.blockDomains],
           }
+        : undefined,
+      unsafeRejectedUrls: cached.response.unsafeRejectedUrls
+        ? [...cached.response.unsafeRejectedUrls]
         : undefined,
     };
   }
@@ -717,7 +868,15 @@ async function searchQueryWithCache(
 
   try {
     const response = await promise;
-    if (ttlMs > 0 && options?.feature !== "test") {
+    const currentConfigurationSnapshot =
+      await stableSearchConfigurationSnapshot(options);
+    if (
+      ttlMs > 0 &&
+      options?.feature !== "test" &&
+      currentConfigurationSnapshot.revision ===
+        configurationSnapshot.revision &&
+      currentConfigurationSnapshot.fingerprint === configurationFingerprint
+    ) {
       searchCache.set(key, {
         expiresAt: now + ttlMs,
         response: {
@@ -729,6 +888,9 @@ async function searchQueryWithCache(
                 penaltyDomains: [...response.domainPolicy.penaltyDomains],
                 blockDomains: [...response.domainPolicy.blockDomains],
               }
+            : undefined,
+          unsafeRejectedUrls: response.unsafeRejectedUrls
+            ? [...response.unsafeRejectedUrls]
             : undefined,
         },
       });
@@ -1026,7 +1188,7 @@ async function _enrichSearchResultsWithFetchedContent(
         options?.signal,
       );
       if (!fetched?.snippet.trim()) {
-        return result;
+        return { ...result, fetchStatus: "failed" as const };
       }
       return {
         ...result,
@@ -1042,11 +1204,22 @@ async function _enrichSearchResultsWithFetchedContent(
             ...(fetched.rankReasons ?? []),
           ]),
         ],
+        fetchStatus: "verified" as const,
       };
     }),
   );
 
-  return [...enriched, ...rest];
+  const policy = await resolveSearchDomainPolicy();
+  return applyDomainPolicy(
+    [
+      ...enriched,
+      ...rest.map((result) => ({
+        ...result,
+        fetchStatus: result.fetchStatus ?? ("unverified" as const),
+      })),
+    ],
+    policy,
+  );
 }
 
 export const enrichSearchResultsWithFetchedContent = traceFn(

@@ -13,6 +13,7 @@ import {
   writeEnrichedWorkbook,
 } from "~/server/services/excel-enrich";
 import { buildSearchQueries } from "~/server/services/excel-research/query-builder";
+import { buildProfileSearchQueryWaves } from "~/server/services/excel-research/query-builder";
 import {
   parseWorkbookBase64,
   rebuildSheetWithHeaderRow,
@@ -20,6 +21,8 @@ import {
   type ParsedWorkbookSheet,
 } from "~/server/services/excel-workbook";
 import { enrichProfileRowSearch } from "~/server/services/enrich-profile-row-search";
+import { searchProfileRowWebLinks } from "~/server/services/enrich-profile-row-search";
+import { rerankAmbiguousMaterialLinks } from "~/server/services/material-search-ai-reranker";
 import {
   enrichRowFromWeb,
   enrichRowFromWebResults,
@@ -35,22 +38,63 @@ import {
 import { selectWorkbookSheet } from "~/server/api/routers/material/workbook";
 
 const enrichWebRowInput = z.object({
-  name: z.string().trim().min(1),
-  code: z.string().trim().optional(),
-  manufacturer: z.string().trim().optional(),
-  specText: z.string().trim().optional(),
-  unit: z.string().trim().optional(),
-  category: z.string().trim().optional(),
-  originCountry: z.string().trim().optional(),
+  name: z.string().trim().min(1).max(500),
+  code: z.string().trim().max(200).optional(),
+  manufacturer: z.string().trim().max(300).optional(),
+  specText: z.string().trim().max(2_000).optional(),
+  unit: z.string().trim().max(100).optional(),
+  category: z.string().trim().max(300).optional(),
+  originCountry: z.string().trim().max(200).optional(),
 });
 
 const webSearchResultInput = z.object({
-  title: z.string().trim().min(1),
-  url: z.string().trim().min(1),
-  domain: z.string().trim(),
-  snippet: z.string(),
-  query: z.string().optional(),
+  title: z.string().trim().min(1).max(500),
+  url: z.string().trim().url().max(2_048),
+  domain: z.string().trim().max(253),
+  snippet: z.string().max(4_000),
+  query: z.string().max(1_000).optional(),
   rankScore: z.number().optional(),
+});
+
+const materialAssessmentInput = z.object({
+  score: z.number().min(0).max(1),
+  tier: z.enum(["primary", "weak", "rejected"]),
+  dimensions: z.object({
+    identity: z.number(),
+    specification: z.number(),
+    sourceTrust: z.number(),
+    retrievalConsensus: z.number(),
+  }),
+  reasons: z.array(z.string().max(500)).max(16),
+  conflicts: z.array(z.string().max(500)).max(16),
+  hardRejects: z.array(
+    z.enum([
+      "unsafe",
+      "operator_rejected",
+      "identifier_conflict",
+      "dimension_conflict",
+      "product_family_conflict",
+      "identity_missing",
+    ]),
+  ),
+  aiOverrideEligible: z.boolean(),
+});
+
+const guardedCandidateInput = webSearchResultInput.extend({
+  baseRankScore: z.number().optional(),
+  rrfScore: z.number().optional(),
+  matchedQueries: z
+    .array(
+      z.object({
+        query: z.string().max(1_000),
+        intent: z.string().max(100),
+        rank: z.number().int().positive(),
+      }),
+    )
+    .max(16)
+    .optional(),
+  assessment: materialAssessmentInput.optional(),
+  fetchStatus: z.enum(["verified", "unverified", "failed"]).optional(),
 });
 
 export const materialEnrichmentProcedures = {
@@ -273,6 +317,33 @@ export const materialEnrichmentProcedures = {
     .input(enrichWebRowInput)
     .mutation(async ({ input }) => {
       return enrichProfileRowSearch(input);
+    }),
+
+  enrichProfileSearchRowLinks: protectedProcedure
+    .input(enrichWebRowInput)
+    .mutation(({ input }) => searchProfileRowWebLinks(input)),
+
+  enrichProfileRerankLinks: protectedProcedure
+    .input(
+      z.object({
+        row: enrichWebRowInput,
+        candidates: z.array(guardedCandidateInput).min(1).max(5),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      // Re-run the guarded retrieval server-side and only accept URLs that are
+      // still present; client-provided snippets/assessments are not trusted.
+      const fresh = await searchProfileRowWebLinks(input.row);
+      const requested = new Set(
+        input.candidates.map((candidate) => candidate.url),
+      );
+      return rerankAmbiguousMaterialLinks({
+        identity:
+          fresh.identity ?? buildProfileSearchQueryWaves(input.row).identity,
+        candidates: fresh.webLinkResults.filter((candidate) =>
+          requested.has(candidate.url),
+        ),
+      });
     }),
 
   enrichAiSearchRow: protectedProcedure

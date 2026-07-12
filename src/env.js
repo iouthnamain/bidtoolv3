@@ -63,6 +63,7 @@ const envSchema = createEnv({
     SEARCH_BOOST_DOMAINS: z.string().optional(),
     SEARCH_PENALTY_DOMAINS: z.string().optional(),
     SEARCH_BLOCK_DOMAINS: z.string().optional(),
+    SEARCH_RELEVANCE_PIPELINE_MODE: z.enum(["guarded", "legacy"]).optional(),
     SEARCH_ENABLE_SITE_VN_VARIANTS: z.enum(["true", "false"]).optional(),
     SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS: z
       .enum(["true", "false"])
@@ -156,6 +157,7 @@ const envSchema = createEnv({
     SEARCH_BOOST_DOMAINS: process.env.SEARCH_BOOST_DOMAINS,
     SEARCH_PENALTY_DOMAINS: process.env.SEARCH_PENALTY_DOMAINS,
     SEARCH_BLOCK_DOMAINS: process.env.SEARCH_BLOCK_DOMAINS,
+    SEARCH_RELEVANCE_PIPELINE_MODE: process.env.SEARCH_RELEVANCE_PIPELINE_MODE,
     SEARCH_ENABLE_SITE_VN_VARIANTS: process.env.SEARCH_ENABLE_SITE_VN_VARIANTS,
     SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS:
       process.env.SEARCH_ENABLE_NEGATIVE_MARKETPLACE_VARIANTS,

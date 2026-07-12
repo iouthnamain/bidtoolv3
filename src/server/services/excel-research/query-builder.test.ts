@@ -91,7 +91,7 @@ describe("buildSearchQueries", () => {
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
-  it("keeps profile constrained variants within the six-query cap", () => {
+  it("keeps bare and normalized identity queries within the six-query cap", () => {
     const queries = buildSearchQueries(
       {
         name: "Dây cáp điện Cadivi CVV 2x2.5",
@@ -116,13 +116,14 @@ describe("buildSearchQueries", () => {
     );
 
     const joined = queries.map((query) => query.query).join("\n");
-    expect(joined).toContain("site:.vn");
+    expect(queries[0]?.query).toBe("Dây cáp điện Cadivi CVV 2x2.5");
+    expect(joined).toContain("day cap cvv Cadivi 2x2.5");
     expect(joined).toContain("-site:shopee.vn");
-    expect(joined).toContain("đại lý nhà phân phối");
+    expect(joined).toContain("thông số kỹ thuật catalog");
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
-  it("keeps profile supplier filters when no explicit code is present", () => {
+  it("keeps normalized specs when no explicit code is present", () => {
     const queries = buildSearchQueries(
       {
         name: "Dây điện VCm 0.5mm2",
@@ -146,13 +147,14 @@ describe("buildSearchQueries", () => {
     );
 
     const joined = queries.map((query) => query.query).join("\n");
-    expect(joined).toContain("site:.vn");
+    expect(queries[0]?.query).toBe("Dây điện VCm 0.5mm2");
+    expect(joined).toContain("Dây điện VCm 0.5mm²");
     expect(joined).toContain("-site:shopee.vn");
-    expect(joined).toContain("đại lý nhà phân phối");
+    expect(joined).not.toContain(" Cái");
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
-  it("leads profile search with product, seller, and public-price discovery", () => {
+  it("leads profile search with bare, normalized, and compact identity queries", () => {
     const queries = buildSearchQueries(
       {
         name: "Ống PVC D90",
@@ -177,14 +179,12 @@ describe("buildSearchQueries", () => {
       },
     );
 
+    expect(queries[0]?.query).toBe("Ống PVC D90");
     expect(queries.slice(0, 3).map((query) => query.intent)).toEqual([
-      "vn_product",
-      "vn_supplier",
-      "vn_price",
+      "general",
+      "official",
+      "vn_spec",
     ]);
-    expect(queries[0]?.query).toContain("sản phẩm");
-    expect(queries[1]?.query).toContain("đại lý nhà phân phối");
-    expect(queries[2]?.query).toContain("giá bán");
     expect(
       queries
         .slice(0, 3)
@@ -248,7 +248,7 @@ describe("buildSearchQueries", () => {
     expect(queries).toHaveLength(4);
   });
 
-  it("keeps complete material context in profile seller queries", () => {
+  it("does not pollute profile identity queries with broad row fields", () => {
     const queries = buildSearchQueries(
       {
         name: "Van bướm điều khiển điện",
@@ -263,16 +263,33 @@ describe("buildSearchQueries", () => {
       { context: "profile_search" },
     );
 
-    const sellerQueries = queries.filter((query) =>
-      ["vn_product", "vn_supplier", "vn_price"].includes(query.intent),
+    expect(queries[0]?.query).toBe("Van bướm điều khiển điện");
+    expect(
+      queries.some(({ query }) => query.toLowerCase().includes("ke-050")),
+    ).toBe(true);
+    expect(
+      queries.slice(0, 3).every(({ query }) => !query.includes("cái")),
+    ).toBe(true);
+    expect(
+      queries.slice(0, 3).every(({ query }) => !query.includes("Hàn Quốc")),
+    ).toBe(true);
+  });
+
+  it("puts row-7 bare and normalized enclosure names first", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Tủ điện treo tường 600x400x200mm",
+        unit: "Cái",
+        category: "Điện",
+        specText: "Thép sơn tĩnh điện",
+        maxQueries: 6,
+      },
+      { context: "profile_search" },
     );
-    expect(sellerQueries).toHaveLength(3);
-    for (const { query } of sellerQueries) {
-      expect(query).toContain("KE-050");
-      expect(query).toContain("DN50 PN16 220V");
-      expect(query).toContain("Van công nghiệp");
-      expect(query).toContain("cái");
-      expect(query).toContain("Hàn Quốc");
-    }
+    expect(queries[0]?.query).toBe("Tủ điện treo tường 600x400x200mm");
+    expect(queries[1]?.query).toBe("Tủ điện treo tường 600x400x200");
+    expect(
+      queries.slice(0, 3).every(({ query }) => !query.includes(" Cái")),
+    ).toBe(true);
   });
 });

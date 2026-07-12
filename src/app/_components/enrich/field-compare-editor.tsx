@@ -127,6 +127,9 @@ export type FieldCompareEditorProps = {
   selectedSearchCandidateKey?: string | null;
   onChooseSearchCandidate?: (key: string) => void;
   onCaptureSearchCandidate?: (key: string) => void;
+  onRejectSearchCandidate?: (key: string) => void;
+  rejectingSearchCandidateKey?: string | null;
+  rejectSearchCandidateDisabled?: boolean;
   capturingSearchCandidateKey?: string | null;
   captureSearchCandidateDisabled?: boolean;
   captureSearchCandidateStatus?: string;
@@ -275,6 +278,9 @@ export function FieldCompareEditor({
   selectedSearchCandidateKey = null,
   onChooseSearchCandidate,
   onCaptureSearchCandidate,
+  onRejectSearchCandidate,
+  rejectingSearchCandidateKey = null,
+  rejectSearchCandidateDisabled = false,
   capturingSearchCandidateKey = null,
   captureSearchCandidateDisabled = false,
   captureSearchCandidateStatus,
@@ -359,6 +365,7 @@ export function FieldCompareEditor({
       });
     }
     for (const candidate of searchSourceCandidates) {
+      if (candidate.tier === "weak") continue;
       entries.push({
         kind: "search",
         candidate,
@@ -508,68 +515,81 @@ export function FieldCompareEditor({
             }
           >
             {unifiedCandidateGrid ? (
-              unifiedGridEntries.map((entry, index) => {
-                const isTopReady =
-                  index === 0 &&
-                  (entry.kind === "catalog" ||
-                    (entry.kind === "search" &&
-                      entry.candidate.status !== "pending" &&
-                      entry.candidate.status !== "error"));
-                if (entry.kind === "catalog") {
+              unifiedGridEntries
+                .filter(
+                  (entry) =>
+                    entry.kind === "catalog" || entry.candidate.tier !== "weak",
+                )
+                .map((entry, index) => {
+                  const isTopReady =
+                    index === 0 &&
+                    (entry.kind === "catalog" ||
+                      (entry.kind === "search" &&
+                        entry.candidate.status !== "pending" &&
+                        entry.candidate.status !== "error"));
+                  if (entry.kind === "catalog") {
+                    return (
+                      <ProductCandidateCard
+                        key={entry.key}
+                        candidate={entry.candidate}
+                        isSelected={
+                          selectedSearchCandidateKey == null &&
+                          entry.candidate.materialId === selectedMaterialId
+                        }
+                        isRecommended={!showingSearch && isTopReady}
+                        fillCount={entry.fillCount}
+                        onChoose={() => onChoose?.(entry.candidate)}
+                      />
+                    );
+                  }
                   return (
-                    <ProductCandidateCard
+                    <SearchSourceCandidateCard
                       key={entry.key}
-                      candidate={entry.candidate}
+                      candidate={{
+                        ...entry.candidate,
+                        isRecommended: isTopReady,
+                      }}
                       isSelected={
-                        selectedSearchCandidateKey == null &&
-                        entry.candidate.materialId === selectedMaterialId
+                        selectedSearchCandidateKey === entry.candidate.key
                       }
-                      isRecommended={!showingSearch && isTopReady}
-                      fillCount={entry.fillCount}
-                      onChoose={() => onChoose?.(entry.candidate)}
+                      onChoose={() =>
+                        onChooseSearchCandidate?.(entry.candidate.key)
+                      }
+                      onCapture={
+                        onCaptureSearchCandidate
+                          ? () => onCaptureSearchCandidate(entry.candidate.key)
+                          : undefined
+                      }
+                      onReject={
+                        onRejectSearchCandidate
+                          ? () => onRejectSearchCandidate(entry.candidate.key)
+                          : undefined
+                      }
+                      isRejectPending={
+                        rejectingSearchCandidateKey === entry.candidate.key
+                      }
+                      isRejectDisabled={rejectSearchCandidateDisabled}
+                      isCapturePending={
+                        capturingSearchCandidateKey === entry.candidate.key
+                      }
+                      isCaptureDisabled={
+                        captureSearchCandidateDisabled ||
+                        capturingSearchCandidateKey != null
+                      }
+                      captureStatusText={
+                        capturingSearchCandidateKey === entry.candidate.key
+                          ? captureSearchCandidateStatus
+                          : undefined
+                      }
+                      inlineLayer={
+                        selectedSearchCandidateKey === entry.candidate.key
+                          ? selectedSourceInlineLayer
+                          : undefined
+                      }
                       hotkeyIndex={index + 1}
                     />
                   );
-                }
-                return (
-                  <SearchSourceCandidateCard
-                    key={entry.key}
-                    candidate={{
-                      ...entry.candidate,
-                      isRecommended: isTopReady,
-                    }}
-                    isSelected={
-                      selectedSearchCandidateKey === entry.candidate.key
-                    }
-                    onChoose={() =>
-                      onChooseSearchCandidate?.(entry.candidate.key)
-                    }
-                    onCapture={
-                      onCaptureSearchCandidate
-                        ? () => onCaptureSearchCandidate(entry.candidate.key)
-                        : undefined
-                    }
-                    isCapturePending={
-                      capturingSearchCandidateKey === entry.candidate.key
-                    }
-                    isCaptureDisabled={
-                      captureSearchCandidateDisabled ||
-                      capturingSearchCandidateKey != null
-                    }
-                    captureStatusText={
-                      capturingSearchCandidateKey === entry.candidate.key
-                        ? captureSearchCandidateStatus
-                        : undefined
-                    }
-                    inlineLayer={
-                      selectedSearchCandidateKey === entry.candidate.key
-                        ? selectedSourceInlineLayer
-                        : undefined
-                    }
-                    hotkeyIndex={index + 1}
-                  />
-                );
-              })
+                })
             ) : (
               <>
                 {candidates.map((candidate, index) => (
@@ -608,6 +628,15 @@ export function FieldCompareEditor({
                         ? () => onCaptureSearchCandidate(candidate.key)
                         : undefined
                     }
+                    onReject={
+                      onRejectSearchCandidate
+                        ? () => onRejectSearchCandidate(candidate.key)
+                        : undefined
+                    }
+                    isRejectPending={
+                      rejectingSearchCandidateKey === candidate.key
+                    }
+                    isRejectDisabled={rejectSearchCandidateDisabled}
                     isCapturePending={
                       capturingSearchCandidateKey === candidate.key
                     }
@@ -631,6 +660,59 @@ export function FieldCompareEditor({
               </>
             )}
           </div>
+          {unifiedCandidateGrid &&
+          searchSourceCandidates.some(
+            (candidate) => candidate.tier === "weak",
+          ) ? (
+            <details className="rounded border border-amber-300 bg-amber-50/50 p-2">
+              <summary className="focus-visible:ring-ring flex min-h-10 cursor-pointer items-center font-semibold text-amber-900 focus-visible:ring-2 focus-visible:outline-none">
+                Kết quả độ liên quan thấp (
+                {
+                  searchSourceCandidates.filter(
+                    (candidate) => candidate.tier === "weak",
+                  ).length
+                }
+                )
+              </summary>
+              <p className="mt-1 text-xs text-amber-900">
+                Các nguồn này chỉ để kiểm tra thủ công và không được đề xuất tự
+                động.
+              </p>
+              <div className="profile-candidate-grid mt-2">
+                {searchSourceCandidates
+                  .filter((candidate) => candidate.tier === "weak")
+                  .map((candidate) => (
+                    <SearchSourceCandidateCard
+                      key={candidate.key}
+                      candidate={candidate}
+                      isSelected={selectedSearchCandidateKey === candidate.key}
+                      onChoose={() => onChooseSearchCandidate?.(candidate.key)}
+                      onCapture={
+                        onCaptureSearchCandidate
+                          ? () => onCaptureSearchCandidate(candidate.key)
+                          : undefined
+                      }
+                      onReject={
+                        onRejectSearchCandidate
+                          ? () => onRejectSearchCandidate(candidate.key)
+                          : undefined
+                      }
+                      isRejectPending={
+                        rejectingSearchCandidateKey === candidate.key
+                      }
+                      isRejectDisabled={rejectSearchCandidateDisabled}
+                      isCapturePending={
+                        capturingSearchCandidateKey === candidate.key
+                      }
+                      isCaptureDisabled={
+                        captureSearchCandidateDisabled ||
+                        capturingSearchCandidateKey != null
+                      }
+                    />
+                  ))}
+              </div>
+            </details>
+          ) : null}
         </div>
       )}
     </div>

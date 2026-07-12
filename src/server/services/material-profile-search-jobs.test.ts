@@ -436,6 +436,7 @@ import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
 import {
   cancelMaterialProfileSearchJob,
   completeMaterialProfileSearchJob,
+  createAutoProfileSearchConfigurationFingerprint,
   getMaterialProfileSearchJob,
   listMaterialProfileSearchRuns,
   MAX_AUTO_MATERIAL_PROFILE_JOB_ITEMS,
@@ -501,6 +502,55 @@ describe("material profile search jobs", () => {
       recommendedCandidateKey: "ai:0",
       warnings: [],
     });
+  });
+
+  it("invalidates auto cache identity when AI provider or model changes", () => {
+    const config = {
+      ai: { provider: "openrouter", model: "model-a" },
+      mode: "guarded" as const,
+      searxng: { baseUrl: "http://searxng.test", safeSearch: 2 },
+      domainPolicy: { blockDomains: [] },
+      queryControls: { interactiveMaxQueries: 4 },
+    };
+
+    const original = createAutoProfileSearchConfigurationFingerprint(config);
+    expect(
+      createAutoProfileSearchConfigurationFingerprint({
+        ...config,
+        ai: { provider: "openrouter", model: "model-b" },
+      }),
+    ).not.toBe(original);
+    expect(
+      createAutoProfileSearchConfigurationFingerprint({
+        ...config,
+        ai: {
+          provider: "openai_compatible",
+          model: "model-a",
+          baseUrl: "http://ai.test/v1",
+        },
+      }),
+    ).not.toBe(original);
+  });
+
+  it("does not include the SearXNG API key in auto cache identity", () => {
+    const config = {
+      ai: { provider: "openrouter", model: "model-a" },
+      mode: "guarded" as const,
+      searxng: {
+        baseUrl: "http://searxng.test",
+        apiKey: "secret-a",
+        safeSearch: 2,
+      },
+      domainPolicy: { blockDomains: [] },
+      queryControls: { interactiveMaxQueries: 4 },
+    };
+
+    expect(createAutoProfileSearchConfigurationFingerprint(config)).toBe(
+      createAutoProfileSearchConfigurationFingerprint({
+        ...config,
+        searxng: { ...config.searxng, apiKey: "secret-b" },
+      }),
+    );
   });
 
   it("stores web links only for web jobs", async () => {

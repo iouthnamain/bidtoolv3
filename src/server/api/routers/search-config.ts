@@ -10,6 +10,7 @@ import {
   OperationalSettingError,
   resetOperationalSetting,
   resolveSearchDomainPolicy,
+  resolveSearchRelevancePipelineMode,
   resolveSearxngSearchConfig,
   SETTING_KEYS,
   setOperationalSetting,
@@ -26,6 +27,10 @@ import {
   searchWebForProduct,
 } from "~/server/services/material-web-search";
 import { buildSearchProbeQueries } from "~/server/services/excel-research/query-builder";
+import {
+  listMaterialSearchFeedback,
+  restoreMaterialSearchResult,
+} from "~/server/services/material-search-feedback";
 
 const searchSettingKeys = [
   "searxngBaseUrl",
@@ -38,6 +43,7 @@ const searchSettingKeys = [
   "searchBoostDomains",
   "searchPenaltyDomains",
   "searchBlockDomains",
+  "searchRelevancePipelineMode",
   "searchEnableSiteVnVariants",
   "searchEnableNegativeMarketplaceVariants",
   "searchMaterialJobMaxQueries",
@@ -71,7 +77,10 @@ function toTrpcError(error: unknown): TRPCError {
 }
 
 async function getSearchConfig() {
-  const allSettings = await getAllOperationalSettingConfigs();
+  const [allSettings, searxngConfig] = await Promise.all([
+    getAllOperationalSettingConfigs(),
+    resolveSearxngSearchConfig(),
+  ]);
   const settings = Object.fromEntries(
     searchSettingKeys.map((key) => [key, allSettings[key]]),
   ) as Pick<typeof allSettings, (typeof searchSettingKeys)[number]>;
@@ -79,6 +88,8 @@ async function getSearchConfig() {
   return {
     settings,
     searxngApiKey: await getSearxngApiKeyConfig(),
+    effectiveSafeSearch: searxngConfig.safeSearch,
+    pipelineMode: await resolveSearchRelevancePipelineMode(),
   };
 }
 
@@ -229,4 +240,17 @@ export const searchConfigRouter = createTRPCRouter({
   cleanupSearchAuditLogs: requirePermission("settings:manage").mutation(() =>
     cleanupSearchAuditLogs(),
   ),
+
+  listSearchFeedback: requirePermission("settings:manage")
+    .input(
+      z.object({
+        active: z.boolean().optional(),
+        limit: z.number().int().min(1).max(200).default(50),
+      }),
+    )
+    .query(({ input }) => listMaterialSearchFeedback(input)),
+
+  restoreSearchResult: requirePermission("settings:manage")
+    .input(z.object({ feedbackId: z.number().int().positive() }))
+    .mutation(({ input }) => restoreMaterialSearchResult(input.feedbackId)),
 });

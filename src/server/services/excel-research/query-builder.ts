@@ -4,6 +4,10 @@ import type {
   SearchQueryControls,
 } from "~/server/services/app-settings";
 import { DEFAULT_SEARCH_PENALTY_DOMAINS } from "~/server/services/search-domain-policy";
+import {
+  compactMaterialIdentityQuery,
+  createMaterialSearchIdentity,
+} from "~/lib/materials/material-search-identity";
 const log = createLogger("services-excel-research-query-builder");
 
 export type SearchQuery = {
@@ -21,6 +25,12 @@ export type SearchQuery = {
     | "vn_supplier"
     | "vn_price"
     | "negative_marketplace";
+};
+
+export type ProfileSearchQueryWaves = {
+  identity: ReturnType<typeof createMaterialSearchIdentity>;
+  wave1: SearchQuery[];
+  wave2: SearchQuery[];
 };
 
 function textOverlap(a: string, b: string): number {
@@ -79,6 +89,106 @@ function negativeMarketplaceSuffix(policy?: SearchDomainPolicy) {
       ? policy.penaltyDomains
       : DEFAULT_SEARCH_PENALTY_DOMAINS;
   return domains.map((domain) => `-site:${domain}`).join(" ");
+}
+
+export function buildProfileSearchQueryWaves(
+  input: {
+    name: string;
+    manufacturer?: string | null;
+    code?: string | null;
+    specText?: string | null;
+    unit?: string | null;
+    category?: string | null;
+    originCountry?: string | null;
+  },
+  options?: {
+    domainPolicy?: SearchDomainPolicy;
+    queryControls?: SearchQueryControls;
+  },
+): ProfileSearchQueryWaves {
+  const identity = createMaterialSearchIdentity(input);
+  const wave1: SearchQuery[] = [];
+  const wave2: SearchQuery[] = [];
+  const push = (
+    target: SearchQuery[],
+    query: string | null | undefined,
+    intent: SearchQuery["intent"],
+  ) => {
+    const normalized = query?.replace(/\s+/g, " ").trim();
+    if (!normalized || normalized.length < 3) return;
+    if (
+      target.some(
+        (item) => item.query.toLowerCase() === normalized.toLowerCase(),
+      )
+    )
+      return;
+    target.push({ query: normalized, intent });
+  };
+
+  // Wave 1 is deliberately identity-only: no category, unit, origin or full spec.
+  push(wave1, input.name.replace(/[“”"]/g, " "), "general");
+  push(wave1, identity.name, "vn_product");
+  push(wave1, compactMaterialIdentityQuery(identity), "official");
+
+  const signal = identity.highSignalSpecTokens[0];
+  push(wave2, signal ? `${identity.name} ${signal}` : null, "vn_spec");
+  push(
+    wave2,
+    `${identity.name} ${identity.manufacturer ?? ""} thông số kỹ thuật catalog`,
+    "datasheet",
+  );
+  if (options?.queryControls?.enableNegativeMarketplaceVariants ?? true) {
+    push(
+      wave2,
+      `${identity.name} giá ${negativeMarketplaceSuffix(options?.domainPolicy)}`,
+      "negative_marketplace",
+    );
+  } else {
+    push(wave2, `${identity.name} giá`, "vn_price");
+  }
+
+  return { identity, wave1: wave1.slice(0, 3), wave2: wave2.slice(0, 3) };
+}
+
+export function buildLegacyProfileSearchQueries(
+  input: Parameters<typeof buildProfileSearchQueryWaves>[0],
+  options?: Parameters<typeof buildProfileSearchQueryWaves>[1],
+) {
+  const base = [
+    input.name,
+    input.manufacturer,
+    input.code,
+    input.category,
+    input.unit,
+    input.originCountry,
+    input.specText?.replace(/\s+/g, " ").trim().slice(0, 80),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const suffix = negativeMarketplaceSuffix(options?.domainPolicy);
+  return [
+    { query: `${base} sản phẩm`, intent: "vn_product" as const },
+    { query: `${base} đại lý nhà phân phối`, intent: "vn_supplier" as const },
+    { query: `${base} giá bán`, intent: "vn_price" as const },
+    ...((options?.queryControls?.enableSiteVnVariants ?? true)
+      ? [{ query: `${base} site:.vn`, intent: "site_vn" as const }]
+      : []),
+    ...((options?.queryControls?.enableNegativeMarketplaceVariants ?? true)
+      ? [
+          {
+            query: `${base} sản phẩm ${suffix}`,
+            intent: "negative_marketplace" as const,
+          },
+        ]
+      : []),
+    {
+      query:
+        input.manufacturer && input.code
+          ? `${input.manufacturer} ${input.code} datasheet filetype:pdf`
+          : `${base} catalog datasheet`,
+      intent: "datasheet" as const,
+    },
+  ].slice(0, 6);
 }
 
 function stripAccents(value: string) {
@@ -299,6 +409,11 @@ function _buildSearchQueries(
   const allowConstrainedVariants = options?.context !== "interactive";
   const queries: SearchQuery[] = [];
 
+  if (isProfileSearch) {
+    const waves = buildProfileSearchQueryWaves(input, options);
+    return [...waves.wave1, ...waves.wave2].slice(0, maxQueries);
+  }
+
   const push = (
     query: string | null | undefined,
     intent: SearchQuery["intent"],
@@ -342,63 +457,10 @@ function _buildSearchQueries(
       );
     }
   };
-  const profileQueryBase = [
-    name,
-    brand,
-    identifier,
-    category,
-    unit,
-    origin,
-    input.specText?.replace(/\s+/g, " ").trim().slice(0, 80),
-  ]
-    .filter((value): value is string => Boolean(value))
-    .filter(
-      (value, index, values) =>
-        values.findIndex(
-          (candidate) => candidate.toLowerCase() === value.toLowerCase(),
-        ) === index,
-    )
-    .join(" ");
-  const pushProfileDiscoveryQueries = () => {
-    // The profile search budget is intentionally led by sources that can sell
-    // the material, before catalog/PDF queries used for validation.
-    push(`${profileQueryBase} sản phẩm`, "vn_product", true);
-    push(`${profileQueryBase} đại lý nhà phân phối`, "vn_supplier", true);
-    push(`${profileQueryBase} giá bán`, "vn_price", true);
-  };
-  const pushProfileConstrainedVariants = () => {
-    if (enableSiteVnVariants) {
-      push(`${profileQueryBase} site:.vn`, "site_vn", true);
-    }
-
-    if (enableNegativeMarketplaceVariants) {
-      const suffix = negativeMarketplaceSuffix(options?.domainPolicy);
-      push(
-        `${profileQueryBase} sản phẩm ${suffix}`,
-        "negative_marketplace",
-        true,
-      );
-    }
-  };
-  const pushProfileValidationQuery = () => {
-    // Retain one bounded slot for an authoritative catalog/spec source. Without
-    // it, the six-query profile budget would contain seller discovery only.
-    if (brand && identifier) {
-      push(`${brand} ${identifier} datasheet filetype:pdf`, "pdf", true);
-      return;
-    }
-    push(`${profileQueryBase} catalog datasheet`, "datasheet", true);
-  };
   const modelSpec = extractModelSpecPhrase(name, identifier);
   const modelSpecVariants = specSpacingVariants(modelSpec);
   const nameVariants = specSpacingVariants(name);
   const relaxedNames = relaxedSpecNameVariants(name);
-
-  if (isProfileSearch) {
-    pushProfileDiscoveryQueries();
-    pushProfileConstrainedVariants();
-    pushProfileValidationQuery();
-  }
 
   if (brand && !identifier) {
     for (const variant of relaxedNames.slice(0, 2)) {
@@ -433,9 +495,7 @@ function _buildSearchQueries(
     );
   }
 
-  if (!isProfileSearch) {
-    pushConstrainedVariants();
-  }
+  pushConstrainedVariants();
 
   if (identifier) {
     push(brand ? `${identifier} ${brand}` : identifier, "official");

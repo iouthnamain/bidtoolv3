@@ -92,6 +92,12 @@ const CONNECTION_FIELDS: FieldDef[] = [
 
 const DOMAIN_FIELDS: FieldDef[] = [
   {
+    key: "searchRelevancePipelineMode",
+    label: "Pipeline độ liên quan",
+    helper:
+      "Guarded là mặc định; Legacy chỉ dùng làm fallback chẩn đoán. Cả hai luôn lọc an toàn nghiêm ngặt.",
+  },
+  {
     key: "searchBoostDomains",
     label: "Domain ưu tiên",
     helper: "Những domain nhà sản xuất, đại lý hoặc shop vật tư đáng tin.",
@@ -192,6 +198,10 @@ export function SearchSettingsSection() {
   const [auditFeature, setAuditFeature] = useState<AuditFeature | "all">("all");
   const { data: config, isLoading } = api.searchConfig.getConfig.useQuery();
   const { data: summary } = api.searchConfig.getSearchAuditSummary.useQuery();
+  const { data: feedback } = api.searchConfig.listSearchFeedback.useQuery({
+    active: true,
+    limit: 50,
+  });
   const { data: logs, isLoading: logsLoading } =
     api.searchConfig.listSearchAuditLogs.useQuery({
       limit: 25,
@@ -202,6 +212,9 @@ export function SearchSettingsSection() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [apiKey, setApiKey] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [restoringFeedbackId, setRestoringFeedbackId] = useState<number | null>(
+    null,
+  );
   const [testQuery, setTestQuery] = useState(
     "Ống nhựa Bình Minh D90 thông số kỹ thuật",
   );
@@ -300,6 +313,18 @@ export function SearchSettingsSection() {
     },
     onError: (mutationError) => error(mutationError.message),
   });
+  const restoreFeedbackMutation =
+    api.searchConfig.restoreSearchResult.useMutation({
+      onSuccess: async () => {
+        await Promise.all([
+          utils.searchConfig.listSearchFeedback.invalidate(),
+          utils.materialProfile.get.invalidate(),
+        ]);
+        success("Đã khôi phục kết quả tìm kiếm.");
+      },
+      onError: (mutationError) => error(mutationError.message),
+      onSettled: () => setRestoringFeedbackId(null),
+    });
 
   const saveField = (field: FieldDef) => {
     const value = (drafts[field.key] ?? "").trim();
@@ -333,7 +358,23 @@ export function SearchSettingsSection() {
           htmlFor={`search-setting-${field.key}`}
           helper={helper}
         >
-          {entry?.type === "boolean" ? (
+          {field.key === "searchRelevancePipelineMode" ? (
+            <select
+              id={`search-setting-${field.key}`}
+              value={drafts[field.key] ?? "guarded"}
+              disabled={!canEdit || isLoading}
+              onChange={(event) =>
+                setDrafts((prev) => ({
+                  ...prev,
+                  [field.key]: event.target.value,
+                }))
+              }
+              className="h-11 w-full rounded border border-slate-500 bg-white px-3 text-sm text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none disabled:bg-slate-100"
+            >
+              <option value="guarded">Guarded (mặc định)</option>
+              <option value="legacy">Legacy (chẩn đoán)</option>
+            </select>
+          ) : entry?.type === "boolean" ? (
             <select
               id={`search-setting-${field.key}`}
               value={drafts[field.key] ?? ""}
@@ -513,6 +554,58 @@ export function SearchSettingsSection() {
         <div className="grid gap-5 p-2 lg:grid-cols-2">
           {DOMAIN_FIELDS.map(renderField)}
         </div>
+        <div className="border-line border-t p-3 text-sm">
+          <Badge tone="success">Safe search hiệu lực: 2 · Strict</Badge>
+          <span className="text-ink-3 ml-2">
+            Chế độ hiện tại: {config?.pipelineMode ?? "guarded"}
+          </span>
+        </div>
+      </section>
+
+      <section className="panel overflow-hidden">
+        <SettingsSectionHeader
+          eyebrow="Phản hồi"
+          title="Kết quả đã đánh dấu không liên quan"
+          description="Phản hồi áp dụng cho cùng chữ ký vật tư và URL cho đến khi được khôi phục."
+          icon={RotateCcw}
+          iconClassName="bg-rose-100 text-rose-700"
+        />
+        <div className="space-y-2 p-2">
+          {(feedback ?? []).length === 0 ? (
+            <p className="text-ink-3 rounded border border-dashed p-4 text-sm">
+              Chưa có phản hồi đang hoạt động.
+            </p>
+          ) : (
+            feedback?.map((record) => (
+              <div
+                key={record.id}
+                className="border-line flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-ink-1 truncate text-sm font-semibold">
+                    {record.title || record.domain}
+                  </p>
+                  <p className="text-ink-3 truncate text-xs">
+                    {record.normalizedUrl}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setRestoringFeedbackId(record.id);
+                    restoreFeedbackMutation.mutate({ feedbackId: record.id });
+                  }}
+                  disabled={restoreFeedbackMutation.isPending}
+                  isLoading={restoringFeedbackId === record.id}
+                  leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                >
+                  Khôi phục
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="panel overflow-hidden">
@@ -566,10 +659,13 @@ export function SearchSettingsSection() {
                 <span className="text-sm text-slate-600">
                   engines: {testMutation.data.effectiveConfig.engines.join(",")}
                 </span>
-                {testMutation.data.effectiveConfig.fallbackEngines.length > 0 ? (
+                {testMutation.data.effectiveConfig.fallbackEngines.length >
+                0 ? (
                   <span className="text-sm text-slate-600">
                     fallback:{" "}
-                    {testMutation.data.effectiveConfig.fallbackEngines.join(",")}
+                    {testMutation.data.effectiveConfig.fallbackEngines.join(
+                      ",",
+                    )}
                   </span>
                 ) : null}
               </div>
@@ -632,7 +728,7 @@ export function SearchSettingsSection() {
           }
         />
         <div className="space-y-4 p-2">
-          <div className="grid gap-2 sm:grid-cols-6">
+          <div className="grid gap-2 sm:grid-cols-5 lg:grid-cols-10">
             {[
               ["24h", summary?.total24h ?? 0],
               ["OK", summary?.success24h ?? 0],
@@ -640,6 +736,10 @@ export function SearchSettingsSection() {
               ["Lỗi", summary?.errors24h ?? 0],
               ["Median ms", summary?.medianDurationMs24h ?? 0],
               ["Avg ms", summary?.avgDurationMs24h ?? 0],
+              ["Primary", summary?.primary24h ?? 0],
+              ["Weak", summary?.weak24h ?? 0],
+              ["Rejected", summary?.rejected24h ?? 0],
+              ["AI promoted", summary?.aiPromoted24h ?? 0],
             ].map(([label, value]) => (
               <div
                 key={label}
