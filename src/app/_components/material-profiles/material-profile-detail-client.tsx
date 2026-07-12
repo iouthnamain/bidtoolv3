@@ -567,9 +567,8 @@ function CleanExportStep({
               Một sheet sạch, sẵn sàng gửi đi
             </h2>
             <p className="text-ink-2 mt-2 text-sm leading-6">
-              File xuất chỉ có 11 cột chuẩn. Mỗi dòng phải có mã, tên, ĐVT,
-              thông số, nhà sản xuất, xuất xứ, đơn giá, nguồn và URL catalog hợp
-              lệ — không còn bản xem trước nào có thể làm lệch file tải về.
+              File xuất giữ 11 cột chuẩn. Dòng còn thiếu dữ liệu vẫn được xuất
+              với ô trống và trạng thái “Cần xác minh” để tiếp tục xử lý.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -589,7 +588,7 @@ function CleanExportStep({
               title={
                 canExport
                   ? "Tải danh mục vật tư chuẩn"
-                  : "Hoàn thiện các dòng còn thiếu trước khi xuất"
+                  : "Chưa có dòng vật tư hiện tại để xuất"
               }
             >
               Tải danh mục chuẩn
@@ -618,7 +617,7 @@ function CleanExportStep({
                   : "border-line bg-surface-2 text-ink-2"
               }`}
             >
-              <p className="font-bold">Cần hoàn thiện</p>
+              <p className="font-bold">Có cảnh báo</p>
               <p className="mt-1 text-2xl font-extrabold tabular-nums">
                 {incompleteRows.toLocaleString("vi-VN")}
               </p>
@@ -635,10 +634,10 @@ function CleanExportStep({
 
       {preview && incompleteRows > 0 ? (
         <div className="panel border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-          <p className="font-bold">Chưa thể tạo file chuẩn</p>
+          <p className="font-bold">File sẽ được tạo kèm cảnh báo</p>
           <p className="mt-1 leading-6">
-            Hệ thống không xuất dòng thiếu trường bắt buộc. Hãy quay lại bước tự
-            tìm & điền để xử lý các dòng sau.
+            Các dòng dưới đây vẫn được xuất. Trường chưa có dữ liệu sẽ để trống
+            và trạng thái dòng là “Cần xác minh”.
           </p>
           <ul className="mt-3 space-y-1 text-xs leading-5">
             {preview.issues.slice(0, 8).map((issue) => (
@@ -1349,7 +1348,7 @@ export function MaterialProfileDetailClient({
         bundle.unresolvedReviewCount > 0
       ) {
         toast.warning(
-          `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
+          `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.warnings.length.toLocaleString("vi-VN")} cảnh báo cần kiểm tra.`,
         );
       } else {
         toast.success(`Đã lưu file xuất: ${saved.label}`);

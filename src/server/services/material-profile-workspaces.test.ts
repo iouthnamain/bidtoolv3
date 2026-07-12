@@ -7,6 +7,7 @@ import {
   assertExportDirWritable,
   buildOpenFolderCommand,
   buildMaterialProfileOutputPrefix,
+  canExportMaterialProfileCleanItems,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
   isMaterialProfileExportRowDeleted,
   MaterialProfileWorkspaceError,
@@ -83,6 +84,15 @@ describe("material profile workspace helpers", () => {
       rows[0],
       rows[1],
     ]);
+  });
+
+  it("allows clean export when current rows have validation warnings", () => {
+    expect(
+      canExportMaterialProfileCleanItems([
+        { promotable: false, reasons: ["Thiếu dữ liệu"] },
+      ]),
+    ).toBe(true);
+    expect(canExportMaterialProfileCleanItems([])).toBe(false);
   });
 
   it("builds a platform-specific open-folder command", () => {

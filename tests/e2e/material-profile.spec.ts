@@ -393,7 +393,7 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   await refreshed;
   await expect(
     page.getByRole("button", { name: "Tải danh mục chuẩn" }),
-  ).toBeVisible();
+  ).toBeEnabled();
 });
 
 test("staged review uses action colors, compare fields, and responsive stacking", async ({

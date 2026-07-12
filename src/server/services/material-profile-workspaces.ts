@@ -2379,7 +2379,7 @@ function materialProfileConfidenceForItem(
 }
 
 /**
- * The one canonical completeness gate for local matches and clean export.
+ * The canonical completeness assessment for local matches and clean export.
  * A materialId alone is never proof that the required profile output exists.
  */
 function materialProfileResolutionForItem(
@@ -2593,6 +2593,10 @@ export function selectMaterialProfileCleanExportItems<
   return items.filter((item) => !item.isStale);
 }
 
+export function canExportMaterialProfileCleanItems(items: unknown[]) {
+  return items.length > 0;
+}
+
 /** Lightweight preview of the exact single-sheet format produced by export. */
 export async function previewMaterialProfileCleanExport(
   db: AppDb,
@@ -2634,7 +2638,7 @@ export async function previewMaterialProfileCleanExport(
     totalRows: entries.length,
     completeRows: entries.length - incomplete.length,
     incompleteRows: incomplete.length,
-    canExport: entries.length > 0 && incomplete.length === 0,
+    canExport: canExportMaterialProfileCleanItems(entries),
     emptyReason:
       entries.length === 0
         ? "Chưa có dòng vật tư hiện tại để xuất. Hãy map và tự xử lý workbook trước."
@@ -2786,7 +2790,7 @@ async function buildMaterialProfileExportBundle(
     .where(eq(excelWorkspaceItems.workspaceId, workspace.id))
     .orderBy(excelWorkspaceItems.sortOrder);
   const exportItems = selectMaterialProfileCleanExportItems(items);
-  if (exportItems.length === 0) {
+  if (!canExportMaterialProfileCleanItems(exportItems)) {
     throw new MaterialProfileWorkspaceError(
       "BAD_REQUEST",
       "Chưa có dòng vật tư hiện tại để xuất danh mục chuẩn. Hãy map và tự xử lý workbook trước.",
@@ -2810,19 +2814,6 @@ async function buildMaterialProfileExportBundle(
   const incompleteRows = cleanExportRows.filter(
     (entry) => !entry.resolution.promotable,
   );
-  if (incompleteRows.length > 0) {
-    const examples = incompleteRows
-      .slice(0, 5)
-      .map(
-        (entry) =>
-          `dòng ${entry.item.originalRowIndex}: ${entry.resolution.reasons.join(" ")}`,
-      )
-      .join(" ");
-    throw new MaterialProfileWorkspaceError(
-      "BAD_REQUEST",
-      `Chưa thể xuất danh mục chuẩn: ${incompleteRows.length.toLocaleString("vi-VN")} dòng chưa đủ dữ liệu bắt buộc. Hãy chạy «Tự tìm & điền» hoặc hoàn thiện dòng đó. ${examples}`,
-    );
-  }
 
   const noticeNumber = workspace.noticeNumber ?? workspace.name;
   const prefix = buildMaterialProfileOutputPrefix(noticeNumber);
@@ -2831,7 +2822,13 @@ async function buildMaterialProfileExportBundle(
   const usedCatalogNames = new Set<string>();
   const catalogBuffersByFileName = new Map<string, Buffer>();
   const missingRows: Array<Array<string | number | null>> = [];
-  const warnings: string[] = [...reviewReadiness.warnings];
+  const warnings: string[] = [
+    ...reviewReadiness.warnings,
+    ...incompleteRows.map(
+      (entry) =>
+        `Dòng ${entry.item.originalRowIndex} · ${entry.item.productName}: ${entry.resolution.reasons.join(" ")}`,
+    ),
+  ];
 
   if (includeCatalogFiles) {
     for (const { item, material, docs } of cleanExportRows) {
