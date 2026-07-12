@@ -453,7 +453,7 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   ).toBeEnabled();
 });
 
-test("staged review uses action colors, compare fields, and responsive stacking", async ({
+test("staged review saves all compare fields without checkboxes and stacks responsively", async ({
   page,
   profileSeed,
 }) => {
@@ -468,13 +468,13 @@ test("staged review uses action colors, compare fields, and responsive stacking"
   ).toBeVisible();
   await expect(
     page.getByRole("checkbox", { name: "Chấp nhận Tên vật tư" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("checkbox", { name: "Chấp nhận Ảnh sản phẩm" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("checkbox", { name: "Chấp nhận URL catalog" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 
   const actionMetrics = await page.evaluate(() => {
     const findButton = (text: string) =>

@@ -9,17 +9,18 @@ import {
   effectiveAcceptedFieldValues,
   isExportableDecision,
   mergeWebGapFill,
+  profileAcceptedFields,
   webFieldsAfterGapFill,
   type RowDecisionLike,
 } from "~/lib/materials/enrich-gap-fill";
 
 describe("mergeWebGapFill", () => {
   it("fills all web fields when no catalog candidate", () => {
-    const merged = mergeWebGapFill(
-      { unit: "" },
-      null,
-      { unit: "m", manufacturer: "CADIVI", category: "Cáp" },
-    );
+    const merged = mergeWebGapFill({ unit: "" }, null, {
+      unit: "m",
+      manufacturer: "CADIVI",
+      category: "Cáp",
+    });
     expect(merged).toEqual({
       unit: "m",
       manufacturer: "CADIVI",
@@ -39,11 +40,10 @@ describe("mergeWebGapFill", () => {
   });
 
   it("does not overwrite sheet code with web code", () => {
-    const merged = mergeWebGapFill(
-      { code: "ABC-123" },
-      null,
-      { code: "WEB-999", unit: "cái" },
-    );
+    const merged = mergeWebGapFill({ code: "ABC-123" }, null, {
+      code: "WEB-999",
+      unit: "cái",
+    });
     expect(merged.code).toBeUndefined();
     expect(merged.unit).toBe("cái");
   });
@@ -145,7 +145,12 @@ describe("applyWebSearchToDecision", () => {
       {
         fields: { unit: "m", specText: "4x6", manufacturer: "CADIVI" },
         evidence: [
-          { field: "unit", value: "m", snippet: "ĐVT: m", sourceUrl: "https://x" },
+          {
+            field: "unit",
+            value: "m",
+            snippet: "ĐVT: m",
+            sourceUrl: "https://x",
+          },
         ],
       },
     );
@@ -204,16 +209,23 @@ describe("applySavedMaterialToDecision", () => {
 
 describe("effectiveAcceptedFieldValues", () => {
   it("returns post-fill values for accepted fields only", () => {
-    const values = effectiveAcceptedFieldValues(
-      { unit: "" },
-      null,
-      {
-        acceptedFields: new Set(["unit"]),
-        editedValues: { unit: "m" },
-        webProposedFields: {},
-      },
-    );
+    const values = effectiveAcceptedFieldValues({ unit: "" }, null, {
+      acceptedFields: new Set(["unit"]),
+      editedValues: { unit: "m" },
+      webProposedFields: {},
+    });
     expect(values.unit).toBe("m");
+  });
+});
+
+describe("profileAcceptedFields", () => {
+  it("accepts every non-empty proposed or edited value", () => {
+    expect(
+      profileAcceptedFields({ unit: "m", category: "" }, null, {
+        editedValues: { manufacturer: "CADIVI" },
+        webProposedFields: { specText: "VCm 0.5 mm2" },
+      }),
+    ).toEqual(new Set(["specText", "manufacturer"]));
   });
 });
 

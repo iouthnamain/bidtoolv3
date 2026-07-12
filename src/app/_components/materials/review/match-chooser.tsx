@@ -21,6 +21,7 @@ import {
   applyAllProposedFieldsWithCurrency,
   applySavedMaterialToDecision,
   effectiveAcceptedFieldValues,
+  profileAcceptedFields,
   profileEffectiveFieldValues,
   webFieldsAfterGapFill,
 } from "~/lib/materials/enrich-gap-fill";
@@ -360,8 +361,8 @@ export function MatchChooser({
       decision?.scrapeResults,
       decision?.selectedScrapeProductKey,
     ) ?? null;
-  const accepted = decision?.acceptedFields ?? new Set<FillableField>();
-  const acceptedProfileFields =
+  const storedAccepted = decision?.acceptedFields ?? new Set<FillableField>();
+  const storedAcceptedProfileFields =
     decision?.acceptedProfileFields ?? new Set<"name" | "imageUrl">();
   const overwrite = decision?.overwriteFields ?? new Set<FillableField>();
   const editedValues = decision?.editedValues ?? {};
@@ -416,6 +417,18 @@ export function MatchChooser({
     selectedWebScrape?.imageUrl ??
     selectedCandidate?.imageUrl ??
     "";
+  const accepted = isProfileSplit
+    ? profileAcceptedFields(sheetFields, catalogFields, {
+        editedValues,
+        webProposedFields: editorProposedFields,
+      })
+    : storedAccepted;
+  const acceptedProfileFields = isProfileSplit
+    ? new Set<"name" | "imageUrl">([
+        "name",
+        ...(profileImageAfter.trim() ? (["imageUrl"] as const) : []),
+      ])
+    : storedAcceptedProfileFields;
   const sourceProvenance =
     decision?.selectedSource === "web" && selectedWebScrape
       ? "Scrape"
@@ -1184,13 +1197,6 @@ export function MatchChooser({
         .filter(Boolean),
     ),
   ];
-  const profileCatalogPdfUrls = [
-    ...new Set(
-      [...catalogPdfUrlsBefore, ...(decision?.catalogPdfUrls ?? [])]
-        .map((url) => url.trim())
-        .filter(Boolean),
-    ),
-  ];
   const proposedCatalogPdfUrls = selectedWebScrape
     ? selectedWebScrape.catalogPdfUrls
     : selectedAiCandidate
@@ -1199,12 +1205,18 @@ export function MatchChooser({
           /\.pdf(?:$|[?#])/i.test(selectedSearchCandidate.sourceUrl)
         ? [selectedSearchCandidate.sourceUrl]
         : [];
-  const catalogPdfAccepted = (decision?.catalogPdfUrls?.length ?? 0) > 0;
-  const toggleCatalogPdfUrls = () => {
-    editCatalogPdfUrls(
-      catalogPdfAccepted ? "" : proposedCatalogPdfUrls.join("\n"),
-    );
-  };
+  const profileCatalogPdfUrls = [
+    ...new Set(
+      [
+        ...catalogPdfUrlsBefore,
+        ...(decision?.catalogPdfUrls ?? []),
+        ...proposedCatalogPdfUrls,
+      ]
+        .map((url) => url.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const catalogPdfAccepted = profileCatalogPdfUrls.length > 0;
   const catalogPdfWasEdited =
     catalogPdfAccepted &&
     proposedCatalogPdfUrls.length > 0 &&
@@ -1369,9 +1381,19 @@ export function MatchChooser({
         return;
       }
       try {
+        const decisionForSave: RowDecision = {
+          ...decision,
+          acceptedFields: accepted,
+          overwriteFields: new Set(),
+          acceptedProfileFields,
+          catalogPdfUrls:
+            profileCatalogPdfUrls.length > 0
+              ? profileCatalogPdfUrls
+              : undefined,
+        };
         await persistReviewDecision.mutateAsync({
           itemId: row.key,
-          decision: serializeRowDecision(decision),
+          decision: serializeRowDecision(decisionForSave),
         });
         const preview = await createSavePreview.mutateAsync({
           workspaceId,
@@ -1853,9 +1875,6 @@ export function MatchChooser({
         catalogPdfUrlsBefore={catalogPdfUrlsBefore}
         catalogPdfProvenance={catalogPdfProvenance}
         catalogPdfAccepted={catalogPdfAccepted}
-        onToggleCatalogPdfUrls={
-          isProfileSplit ? toggleCatalogPdfUrls : undefined
-        }
         onEditCatalogPdfUrls={isProfileSplit ? editCatalogPdfUrls : undefined}
         profileExtraFields={
           isProfileSplit
@@ -1933,7 +1952,9 @@ export function MatchChooser({
                     : "Chọn ít nhất một trường để lưu"
               }
             >
-              Lưu vào /materials
+              {isProfileSplit
+                ? "Lưu tất cả vào /materials"
+                : "Lưu vào /materials"}
             </Button>
             {isProfileSplit ? (
               <p

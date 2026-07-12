@@ -33,8 +33,8 @@ import type { ProfileExtraField } from "~/lib/materials/profile-scrape-types";
  * Shared side-by-side compare + per-field edit panel. Extracted from the step-2
  * `MatchChooser` so the Excel-research review (step 3) and the material-enrich
  * dialog can present the same UX: sheet/current values on the left, the
- * proposed/found values per field, accept checkboxes, a "Ghi đè" overwrite
- * toggle for populated cells, and optional inline editing of the proposed value.
+ * proposed/found values per field, optional accept checkboxes, a "Ghi đè"
+ * overwrite toggle for populated cells, and inline editing of proposed values.
  *
  * It is purely presentational — it fetches nothing. The host owns the decision
  * state (`accepted`/`overwrite`/`editedValues`), the catalog search query, and
@@ -103,7 +103,7 @@ export type FieldCompareEditorProps = {
   compareLayout?: "inline" | "sideBySide";
   /** Label for the proposed-value column in side-by-side mode. */
   afterColumnLabel?: string;
-  /** Profile review: every field row is editable regardless of fill plan. */
+  /** Profile review: every field is editable and included without checkboxes. */
   alwaysEditableFields?: boolean;
   /** Catalog PDF URLs extracted from web/AI search. */
   catalogPdfUrls?: string[];
@@ -801,12 +801,14 @@ export function FieldCompareEditor({
                   </caption>
                   <thead>
                     <tr className="border-b border-slate-300 text-left text-slate-600">
-                      <th
-                        scope="col"
-                        className="profile-decision-check-column py-2 pr-2"
-                      >
-                        <span className="sr-only">Chọn trường</span>
-                      </th>
+                      {!alwaysEditableFields ? (
+                        <th
+                          scope="col"
+                          className="profile-decision-check-column py-2 pr-2"
+                        >
+                          <span className="sr-only">Chọn trường</span>
+                        </th>
+                      ) : null}
                       <th
                         scope="col"
                         className="profile-decision-field-column py-2 pr-2 font-semibold"
@@ -839,21 +841,23 @@ export function FieldCompareEditor({
                               key={field}
                               className="border-b border-slate-100 bg-slate-50/80"
                             >
-                              <td className="py-2 pr-2 align-top">
-                                <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
-                                  <input
-                                    type="checkbox"
-                                    className="size-4"
-                                    checked={profileExtraFields.accepted.has(
-                                      field,
-                                    )}
-                                    onChange={() =>
-                                      onToggleProfileField?.(field)
-                                    }
-                                    aria-label={`Chấp nhận ${label}`}
-                                  />
-                                </label>
-                              </td>
+                              {!alwaysEditableFields ? (
+                                <td className="py-2 pr-2 align-top">
+                                  <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
+                                    <input
+                                      type="checkbox"
+                                      className="size-4"
+                                      checked={profileExtraFields.accepted.has(
+                                        field,
+                                      )}
+                                      onChange={() =>
+                                        onToggleProfileField?.(field)
+                                      }
+                                      aria-label={`Chấp nhận ${label}`}
+                                    />
+                                  </label>
+                                </td>
+                              ) : null}
                               <th
                                 scope="row"
                                 className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
@@ -949,18 +953,20 @@ export function FieldCompareEditor({
                             isFillable ? "bg-slate-50/80" : "opacity-60"
                           }`}
                         >
-                          <td className="py-2 pr-2 align-top">
-                            <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500 has-[:disabled]:cursor-not-allowed">
-                              <input
-                                type="checkbox"
-                                className="size-4"
-                                disabled={!isFillable}
-                                checked={isFillable && accepted.has(field)}
-                                onChange={() => onToggleField(field)}
-                                aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
-                              />
-                            </label>
-                          </td>
+                          {!alwaysEditableFields ? (
+                            <td className="py-2 pr-2 align-top">
+                              <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500 has-[:disabled]:cursor-not-allowed">
+                                <input
+                                  type="checkbox"
+                                  className="size-4"
+                                  disabled={!isFillable}
+                                  checked={isFillable && accepted.has(field)}
+                                  onChange={() => onToggleField(field)}
+                                  aria-label={`Chấp nhận ${FIELD_LABELS[field]}`}
+                                />
+                              </label>
+                            </td>
+                          ) : null}
                           <th
                             scope="row"
                             className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
@@ -1004,21 +1010,23 @@ export function FieldCompareEditor({
                     })}
                     {onEditCatalogPdfUrls ? (
                       <tr className="border-b border-slate-100 bg-slate-50/80">
-                        <td className="py-2 pr-2 align-top">
-                          <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
-                            <input
-                              type="checkbox"
-                              className="size-4"
-                              checked={
-                                catalogPdfAccepted ??
-                                (catalogPdfUrls?.length ?? 0) > 0
-                              }
-                              onChange={onToggleCatalogPdfUrls}
-                              readOnly={!onToggleCatalogPdfUrls}
-                              aria-label="Chấp nhận URL catalog"
-                            />
-                          </label>
-                        </td>
+                        {!alwaysEditableFields ? (
+                          <td className="py-2 pr-2 align-top">
+                            <label className="inline-flex size-6 cursor-pointer items-center justify-center rounded focus-within:ring-2 focus-within:ring-blue-500">
+                              <input
+                                type="checkbox"
+                                className="size-4"
+                                checked={
+                                  catalogPdfAccepted ??
+                                  (catalogPdfUrls?.length ?? 0) > 0
+                                }
+                                onChange={onToggleCatalogPdfUrls}
+                                readOnly={!onToggleCatalogPdfUrls}
+                                aria-label="Chấp nhận URL catalog"
+                              />
+                            </label>
+                          </td>
+                        ) : null}
                         <th
                           scope="row"
                           className="min-w-0 py-2 pr-2 text-left align-top font-semibold break-words text-slate-600"
