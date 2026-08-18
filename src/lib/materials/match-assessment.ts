@@ -150,6 +150,13 @@ function normalizeText(value: string): string {
     .trim();
 }
 
+function containsNormalizedPhrase(text: string, phrase: string): boolean {
+  const normalizedText = normalizeMaterialSearchText(text);
+  const normalizedPhrase = normalizeMaterialSearchText(phrase);
+  if (!normalizedText || !normalizedPhrase) return false;
+  return ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
+}
+
 function compactCode(value: string | undefined): string {
   return normalizeText(value ?? "").replace(/\s+/g, "");
 }
@@ -271,7 +278,7 @@ export function assessMaterialSearchCandidate(input: {
     ? normalizeMaterialSearchText(identity.searchPhrase)
     : "";
   const searchPhraseMatch = searchPhrase
-    ? Number(text.includes(searchPhrase))
+    ? Number(containsNormalizedPhrase(text, searchPhrase))
     : 0;
   const manufacturerMatch = identity.manufacturer
     ? tokenOverlap(identity.manufacturer, text)

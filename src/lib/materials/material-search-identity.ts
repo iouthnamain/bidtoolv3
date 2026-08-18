@@ -128,11 +128,20 @@ function dedupePhraseTokens(value: string) {
     .join(" ");
 }
 
+function isStandaloneNumericToken(token: string) {
+  return /^\d+(?:[.,]\d+)?$/.test(token);
+}
+
+function isSearchSpecMarker(token: string) {
+  return /^(?:phi|d|dn|pn|mm|mm²|m²)$/i.test(token);
+}
+
 /**
  * Return a broad query for providers that perform poorly with long model
- * strings. Keep the human-readable product words, but stop before the first
- * numeric/model suffix. Parenthesized aliases are preferred when they carry
- * more useful words than the outer name (for example, "Xăng (xăng thơm)").
+ * strings. Keep semantic numeric product words such as "1 chiều", but stop
+ * before model/spec suffixes such as "M5" or "600x400x200". Parenthesized
+ * aliases are preferred when they carry more useful words than the outer name
+ * (for example, "Xăng (xăng thơm)").
  */
 function extractSearchPhrase(name: string): string | null {
   const canonical = normalizeMaterialSearchQueryVariant(name);
@@ -146,12 +155,40 @@ function extractSearchPhrase(name: string): string | null {
         .replace(/[()[\]{};,]+/g, " ")
         .split(/\s+/)
         .filter(Boolean);
-      const firstModelToken = tokens.findIndex((token) => /\d/.test(token));
+      const firstNumericToken = tokens.findIndex((token) => /\d/.test(token));
+      if (firstNumericToken < 0) return dedupePhraseTokens(tokens.join(" "));
+
+      const firstToken = tokens[firstNumericToken] ?? "";
+      const leadingTokens = tokens.slice(0, firstNumericToken);
+      const hadSearchSpecMarker = isSearchSpecMarker(
+        leadingTokens.at(-1) ?? "",
+      );
+      if (hadSearchSpecMarker) {
+        leadingTokens.pop();
+      }
+
+      // A standalone number can be part of the human-readable family name
+      // when the prefix would otherwise be generic (for example, "Van").
+      // Preserve an already-specific prefix such as "Van tiết lưu" so broad
+      // educational/product-family sources remain discoverable.
       const phraseTokens =
-        firstModelToken > 0 ? tokens.slice(0, firstModelToken) : tokens;
+        isStandaloneNumericToken(firstToken) &&
+        !hadSearchSpecMarker &&
+        leadingTokens.length < 2
+          ? [...leadingTokens, firstToken]
+          : leadingTokens;
+      if (phraseTokens.length > leadingTokens.length) {
+        for (const token of tokens.slice(firstNumericToken + 1)) {
+          if (/\d/.test(token) || isSearchSpecMarker(token)) break;
+          phraseTokens.push(token);
+        }
+      }
+
       return dedupePhraseTokens(phraseTokens.join(" "));
     })
-    .filter((candidate) => candidate.length >= 3);
+    // A one-token phrase is too generic to drive broad recovery (for example,
+    // "Van" matches both valve and vehicle/footwear pages).
+    .filter((candidate) => candidate.split(/\s+/).filter(Boolean).length >= 2);
 
   return (
     candidates.sort((left, right) => {

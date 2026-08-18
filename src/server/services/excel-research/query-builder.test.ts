@@ -200,6 +200,23 @@ describe("buildSearchQueries", () => {
     ).toBe(true);
   });
 
+  it("uses the specific valve-family recovery query in profile search", () => {
+    const queries = buildSearchQueries(
+      {
+        name: "Van 1 chiều M5 Φ4 SL4-M5",
+        maxQueries: 6,
+      },
+      { context: "profile_search" },
+    );
+
+    expect(
+      queries.some(
+        ({ query, intent }) => query === "Van 1 chiều" && intent === "general",
+      ),
+    ).toBe(true);
+    expect(queries.some(({ query }) => query === "Van")).toBe(false);
+  });
+
   it("keeps non-profile query ordering unchanged", () => {
     const queries = buildSearchQueries(
       {

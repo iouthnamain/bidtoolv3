@@ -44,4 +44,26 @@ describe("material search identity", () => {
       expect.arrayContaining(["2p", "32a", "6ka", "sl4-m5", "d90"]),
     );
   });
+
+  it("keeps semantic numeric words in a specific product-family phrase", () => {
+    const identity = createMaterialSearchIdentity({
+      name: "Van 1 chiều M5 Φ4 SL4-M5",
+    });
+
+    expect(identity.searchPhrase).toBe("Van 1 chiều");
+  });
+
+  it("does not expose a one-token phrase for broad recovery", () => {
+    const identity = createMaterialSearchIdentity({
+      name: "Van M5 Φ4 SL4-M5",
+    });
+
+    expect(identity.searchPhrase).toBeNull();
+  });
+
+  it("does not turn a diameter or pressure marker into a broad phrase", () => {
+    for (const name of ["Van Φ4", "Van DN25", "Van PN16"]) {
+      expect(createMaterialSearchIdentity({ name }).searchPhrase).toBeNull();
+    }
+  });
 });

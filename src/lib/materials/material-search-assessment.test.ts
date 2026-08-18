@@ -64,6 +64,42 @@ describe("guarded material assessment", () => {
     expect(assessment.hardRejects).not.toContain("identity_missing");
   });
 
+  it("keeps valve-family evidence and rejects vans or vehicle pages", () => {
+    const valveIdentity = createMaterialSearchIdentity({
+      name: "Van 1 chiều M5 Φ4 SL4-M5",
+    });
+
+    expect(valveIdentity.searchPhrase).toBe("Van 1 chiều");
+
+    const relevant = assessMaterialSearchCandidate({
+      identity: valveIdentity,
+      candidate: {
+        title: "Van 1 chiều M5 phi 4 SL4-M5",
+        url: "https://example.vn/van-1-chieu",
+        domain: "example.vn",
+        snippet: "Van một chiều dùng cho đường khí nén.",
+      },
+    });
+    expect(relevant.tier).not.toBe("rejected");
+
+    for (const title of [
+      "Vans Việt Nam - giày thời trang chính hãng",
+      "Giá xe tải van mới nhất",
+    ]) {
+      const unrelated = assessMaterialSearchCandidate({
+        identity: valveIdentity,
+        candidate: {
+          title,
+          url: "https://example.vn/item",
+          domain: "example.vn",
+          snippet: "Thông tin sản phẩm và bảng giá.",
+        },
+      });
+      expect(unrelated.tier).toBe("rejected");
+      expect(unrelated.hardRejects).toContain("identity_missing");
+    }
+  });
+
   it("never makes safety and operator rejects AI-overridable", () => {
     for (const key of ["unsafe", "operatorRejected"] as const) {
       const assessment = assessMaterialSearchCandidate({
