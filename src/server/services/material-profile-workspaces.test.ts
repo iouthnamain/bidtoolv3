@@ -203,7 +203,9 @@ describe("material profile workspace helpers", () => {
   });
 
   it("accepts writable export directories and creates missing folders", async () => {
-    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bidtool-export-"));
+    const tempParent =
+      process.platform === "darwin" ? os.homedir() : os.tmpdir();
+    const tempRoot = await mkdtemp(path.join(tempParent, "bidtool-export-"));
     const targetDir = path.join(tempRoot, "nested", "export");
 
     await expect(assertExportDirWritable(targetDir)).resolves.toBe(targetDir);

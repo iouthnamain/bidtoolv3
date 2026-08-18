@@ -647,7 +647,7 @@ test("changing a different material does not jump back to the deep-linked first 
     await refreshed;
     await expect(
       page.getByRole("button", { name: `Chọn nguồn web ${second.pdfTitle}` }),
-    ).toBeHidden();
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(secondRow).toHaveAttribute("aria-pressed", "true");
   } finally {
     await page.close();

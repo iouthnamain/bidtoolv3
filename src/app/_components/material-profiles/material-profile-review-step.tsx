@@ -177,6 +177,7 @@ export function MaterialProfileReviewStep({
   const previousActiveSearchJobIdRef = useRef<string | null>(null);
   const invalidatedTerminalSearchJobKeyRef = useRef<string | null>(null);
   const selectedWorkspaceIdRef = useRef<number | null>(null);
+  const seededRowsKeyRef = useRef<string | null>(null);
   const decisionsRef = useRef(decisions);
   decisionsRef.current = decisions;
 
@@ -349,8 +350,18 @@ export function MaterialProfileReviewStep({
   }, [activeSearchRunsQuery.data, reviewRowByIndex]);
 
   useEffect(() => {
-    setDecisions(seedDecisionsFromItems(reviewItems));
-  }, [reviewItems]);
+    const seedKey = `${workspaceId}:${rowIndicesKey}`;
+    if (seededRowsKeyRef.current === seedKey) return;
+    seededRowsKeyRef.current = seedKey;
+    const seeded = seedDecisionsFromItems(reviewItems);
+    setDecisions((current) => {
+      const next = new Map<number, RowDecision>();
+      for (const [rowIndex, decision] of seeded) {
+        next.set(rowIndex, current.get(rowIndex) ?? decision);
+      }
+      return next;
+    });
+  }, [reviewItems, rowIndicesKey, workspaceId]);
 
   useEffect(() => {
     const rowIndices = rowIndicesKey

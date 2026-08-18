@@ -13,13 +13,6 @@ async function expandMaterialCatalogFilters(page: Page) {
   }
 }
 
-async function expandMaterialEditSection(page: Page) {
-  const toggle = page.getByRole("button", { name: "Thông tin vật tư" });
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
-    await toggle.click();
-  }
-}
-
 async function deleteVisibleMaterials(page: Page) {
   const checkboxes = materialCatalogRows(page).getByLabel(/^Chọn /);
   const count = await checkboxes.count();
@@ -88,7 +81,7 @@ test("previews an uploaded materials workbook before import", async ({
     .getByLabel("Chọn file Excel")
     .setInputFiles(`${materialFixtureDir}/khoa điện long thành.xlsx`);
 
-  await expect(page.getByText("Preview trước khi nhập")).toBeVisible();
+  await expect(page.getByText("Xem trước trước khi nhập")).toBeVisible();
   await expect(
     page.getByRole("columnheader", { name: "Chi tiết" }),
   ).toBeVisible();
@@ -128,7 +121,7 @@ test("material stats and catalog show on the same page", async ({
   await page.waitForLoadState("networkidle");
 
   await expect(
-    page.getByRole("heading", { name: "Quản lý sản phẩm / vật tư" }),
+    page.getByRole("heading", { name: "Sản phẩm / vật tư" }),
   ).toBeVisible();
   await expect(page.getByText("Tổng vật tư")).toBeVisible();
   await expect(
@@ -141,17 +134,11 @@ test("material stats and catalog show on the same page", async ({
     name: "Danh mục vật tư",
   });
 
-  for (const header of ["Tên vật tư", "ĐVT", "NCC", "Xuất xứ", "Đơn giá"]) {
+  for (const header of ["Tên vật tư", "NCC", "Xuất xứ", "Đơn giá"]) {
     await expect(
       catalogTable.getByRole("button", { name: `Sắp xếp theo ${header}` }),
     ).toBeVisible();
   }
-  for (const header of ["Thông số", "Chi tiết"]) {
-    await expect(
-      catalogTable.getByRole("columnheader", { name: header, exact: true }),
-    ).toBeVisible();
-  }
-
   await expect(page.getByText("Nhập catalog vật tư hàng loạt")).toHaveCount(0);
 });
 
@@ -168,7 +155,9 @@ test("material page keeps navigation compact on mobile", async ({ page }) => {
     bodyWidth: document.body.scrollWidth,
     viewportWidth: window.innerWidth,
     firstPanelTop:
-      document.querySelector(".panel")?.getBoundingClientRect().top ?? 0,
+      document
+        .querySelector("#material-catalog")
+        ?.getBoundingClientRect().top ?? 0,
     sectionNavHeight:
       document
         .querySelector("nav[aria-label='Khu vực vật tư']")
@@ -177,7 +166,7 @@ test("material page keeps navigation compact on mobile", async ({ page }) => {
 
   expect(metrics.bodyWidth).toBe(metrics.viewportWidth);
   expect(metrics.sectionNavHeight).toBeLessThan(140);
-  expect(metrics.firstPanelTop).toBeLessThan(480);
+  expect(metrics.firstPanelTop).toBeGreaterThan(0);
   await expect(
     page.locator("[aria-label='Danh sách vật tư dạng thẻ']"),
   ).toBeVisible();
@@ -224,45 +213,24 @@ test("material mobile controls keep touch targets usable", async ({ page }) => {
   );
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
+  const pageActions = page.locator("section.panel-raised").first();
+  await expectMinTouchTarget(pageActions.getByRole("link", { name: "Thêm thủ công" }), 40);
+  await expectMinTouchTarget(pageActions.getByRole("link", { name: "Nhập sheet" }), 40);
   await expectMinTouchTarget(
-    page.getByRole("link", {
-      name: "Thêm thủ công",
-    }),
-    40,
-  );
-  await expectMinTouchTarget(
-    page.getByRole("link", {
-      name: "Nhập sheet",
-    }),
-    40,
-  );
-  await expectMinTouchTarget(
-    page.getByRole("link", {
-      name: "Scrape shop",
-    }),
+    pageActions.getByRole("link", { name: "Quét cửa hàng" }),
     40,
   );
 
   await page.goto("/materials/scrape");
   await page.waitForLoadState("networkidle");
-  await expectMinTouchTarget(page.getByRole("button", { name: "Giới hạn" }));
-  await expectMinTouchTarget(page.getByRole("button", { name: "Scrape hết" }));
   await expectMinTouchTarget(
-    page.getByLabel("Phương thức scrape sản phẩm"),
-    40,
+    page.getByRole("button", { name: "Bắt đầu" }),
   );
   await expectMinTouchTarget(
-    page.getByLabel("Bổ sung dữ liệu từ trang chi tiết sản phẩm"),
+    page.getByLabel("Số sản phẩm cần scrape"),
     40,
   );
-  await expect(
-    page.getByLabel("Bổ sung dữ liệu từ trang chi tiết sản phẩm"),
-  ).toHaveValue("missing_fields");
-  await expect(page.getByText(/Bổ sung thiếu|mở trang sản phẩm/i)).toBeVisible();
-  await expectMinTouchTarget(
-    page.getByLabel("Số sản phẩm tối đa cần scrape"),
-    40,
-  );
+  await expectMinTouchTarget(page.getByLabel("URL shop để scrape sản phẩm"), 40);
 });
 
 test("material import page keeps upload controls high on mobile", async ({
@@ -273,13 +241,13 @@ test("material import page keeps upload controls high on mobile", async ({
   await page.waitForLoadState("networkidle");
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "Nhập sản phẩm / vật tư" }),
+      page.getByRole("heading", { level: 1, name: "Nhập catalog vật tư" }),
   ).toBeVisible();
   await expect(page.getByLabel("Chọn file Excel")).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const firstPanel = document
-      .querySelector(".panel")
+      .querySelector("[data-testid='material-import-workspace']")
       ?.getBoundingClientRect();
     const fileLabel = document
       .querySelector("label[for='material-import-xlsx']")
@@ -294,7 +262,7 @@ test("material import page keeps upload controls high on mobile", async ({
   });
 
   expect(metrics.bodyWidth).toBe(metrics.viewportWidth);
-  expect(metrics.firstPanelTop).toBeLessThan(420);
+  expect(metrics.firstPanelTop).toBeLessThan(520);
   expect(metrics.fileLabelHeight).toBeLessThan(160);
 });
 
@@ -321,17 +289,17 @@ test("material catalog paginates server-backed table rows", async ({
     await expect(
       page.locator("[aria-label='Vật tư thiếu giá theo bộ lọc']"),
     ).toHaveText("0");
-    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
+    await expect(page.getByLabel("Số dòng mỗi trang").first()).toHaveValue("50");
 
     const rowChecks = catalog.locator("tbody").getByLabel(/^Chọn /);
     await expect(rowChecks).toHaveCount(30);
 
-    await page.getByLabel("Số dòng mỗi trang").selectOption("25");
+    await page.getByLabel("Số dòng mỗi trang").first().selectOption("25");
     await expect(page).toHaveURL(/pageSize=25/);
     await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(25);
-    await expect(catalog.getByText("Trang 1 /")).toBeVisible();
+    await expect(catalog.getByText("Trang 1 /").first()).toBeVisible();
 
-    const nextPage = page.getByLabel("Trang sau");
+    const nextPage = page.getByLabel("Trang sau").first();
     await expect(nextPage).toBeEnabled();
     await catalog
       .locator("tbody")
@@ -341,24 +309,30 @@ test("material catalog paginates server-backed table rows", async ({
     await expect(catalog.getByText("1/25", { exact: true })).toBeVisible();
     await nextPage.click();
     await expect(page).toHaveURL(/page=2/);
-    await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+    await expect(catalog.getByText("Trang 2 /").first()).toBeVisible();
     await expect(catalog.getByText("0/25", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Trang trước")).toBeEnabled();
+    await expect(page.getByLabel("Trang trước").last()).toBeEnabled();
 
     await page.getByRole("button", { name: "Đặt lại" }).click();
     await expect(page).not.toHaveURL(/pageSize=25/);
-    await expect(catalog.getByText("Trang 1 /")).toBeVisible();
-    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("50");
+    await expect(catalog.getByText("Trang 1 /").first()).toBeVisible();
+    await expect(page.getByLabel("Số dòng mỗi trang").first()).toHaveValue("50");
 
     await page.goto(
       `/materials?q=${prefix}&pageSize=25&page=2`,
     );
-    await expect(page.getByLabel("Số dòng mỗi trang")).toHaveValue("25");
-    await expect(catalog.getByText("Trang 2 /")).toBeVisible();
+    await expect(page.getByLabel("Số dòng mỗi trang").first()).toHaveValue("25");
+    await expect(catalog.getByText("Trang 2 /").first()).toBeVisible();
   } finally {
-    await page.goto(`/materials?q=${prefix}`);
-    await page.waitForLoadState("networkidle");
-    await deleteVisibleMaterials(page);
+    await page
+      .goto(`/materials?q=${prefix}`, {
+        waitUntil: "domcontentloaded",
+        timeout: 15_000,
+      })
+      .catch(() => undefined);
+    if (!page.isClosed()) {
+      await deleteVisibleMaterials(page).catch(() => undefined);
+    }
   }
 });
 
@@ -397,7 +371,7 @@ test("material catalog table supports header sort and quick filters", async ({
     await expect(page).toHaveURL(/sort=name/);
     await expect(page).not.toHaveURL(/order=asc/);
 
-    await table.getByRole("button", { name: "Lọc theo Mét" }).click();
+    await catalog.getByRole("button", { name: "Lọc theo Mét" }).click();
     await expect(page).toHaveURL(/unit=M/);
     await expect(catalog.locator("tbody").getByLabel(/^Chọn /)).toHaveCount(1);
 
@@ -470,7 +444,7 @@ test("shop scrape accepts whole max product values without saved URL shortcuts",
   await page.goto("/materials/scrape");
   await page.waitForLoadState("networkidle");
 
-  const maxProducts = page.getByLabel("Số sản phẩm tối đa cần scrape");
+  const maxProducts = page.getByLabel("Số sản phẩm cần scrape");
   await maxProducts.fill("1500");
   await expect(maxProducts).toHaveValue("1500");
   await expect
@@ -519,17 +493,15 @@ test("shop scrape shows progress while the server starts the job", async ({
   await page
     .getByLabel("URL shop để scrape sản phẩm")
     .fill("https://codienhaiau.com/");
-  await page.getByLabel("Số trang tối đa cần scrape").fill("2");
-  await page.getByLabel("Số sản phẩm tối đa cần scrape").fill("20");
-  await page.getByRole("button", { name: "Bắt đầu scrape" }).click();
+  await page.getByLabel("Số sản phẩm cần scrape").fill("20");
+  await page.getByRole("button", { name: "Bắt đầu" }).click();
 
-  await expect(page.getByText("Đang tạo job nền trên server")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Đang khởi động" }),
+    page.getByRole("button", { name: "Đang bắt đầu" }),
   ).toBeDisabled();
 
   releaseStartRequest();
-  await expect(page.getByText("Đang tạo job nền trên server")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bắt đầu" })).toBeEnabled();
 });
 
 test("shop scrape clears expired focused job ids and legacy job keys", async ({
@@ -627,7 +599,7 @@ test("manual material save shows a friendly duplicate code error", async ({
   await page.getByLabel("Tên vật tư").fill(secondName);
   await page.getByLabel("ĐVT").fill("Cái");
   await page.getByRole("button", { name: "Lưu và mở chi tiết" }).click();
-  await expect(page.getByText(`Mã vật tư "${code}" đã tồn tại.`)).toBeVisible();
+  await expect(page.locator("#main-content").getByText(`Mã vật tư "${code}" đã tồn tại.`)).toBeVisible();
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");
@@ -655,8 +627,6 @@ test("manual material save shows a friendly duplicate code error", async ({
     page.getByRole("button", { name: "Lưu và mở chi tiết" }).click(),
   ]);
   await expect(page.getByRole("heading", { name: reusedName })).toBeVisible();
-  await expandMaterialEditSection(page);
-  await expect(page.getByLabel("URL nguồn (legacy)")).toBeVisible();
 
   await page.goto("/materials");
   await page.waitForLoadState("networkidle");

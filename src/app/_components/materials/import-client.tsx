@@ -443,7 +443,7 @@ export function MaterialImportClient() {
         </section>
       ) : null}
 
-      <section className="grid gap-2">
+      <section data-testid="material-import-workspace" className="grid gap-2">
         <article className="panel overflow-hidden">
           <div className="border-b border-blue-200 bg-blue-50 px-4 py-3">
             <div className="flex items-center gap-2">

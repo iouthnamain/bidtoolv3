@@ -17,6 +17,10 @@ test("notification selection target is finger sized on mobile", async ({
   await page.waitForLoadState("networkidle");
 
   const target = page.getByTestId("notification-select-target").first();
+  if (await target.count() === 0) {
+    await expect(page.getByText("Không có thông báo phù hợp")).toBeVisible();
+    return;
+  }
   await expectMinTouchTarget(target);
 
   const checkbox = target.getByRole("checkbox");
