@@ -11,7 +11,12 @@ import { searchRouter } from "~/server/api/routers/search";
 import { versionRouter } from "~/server/api/routers/version";
 import { watchlistRouter } from "~/server/api/routers/watchlist";
 import { workflowRouter } from "~/server/api/routers/workflow";
+import { startJobScheduler } from "~/server/services/job-scheduler";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
+
+// Standalone deployments may omit Next's instrumentation entrypoint. Starting
+// here guarantees queued jobs begin processing as soon as the API is used.
+startJobScheduler();
 
 /**
  * This is the primary router for your server.
