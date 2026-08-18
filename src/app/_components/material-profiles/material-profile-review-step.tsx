@@ -332,6 +332,16 @@ export function MaterialProfileReviewStep({
             );
             const currentDecision = previous.get(item.originalRowIndex);
             if (currentDecision !== requestedDecision) continue;
+            if (
+              currentDecision &&
+              (currentDecision.selectedSearchCandidateKey ?? null) !==
+                (remoteDecision.selectedSearchCandidateKey ?? null)
+            ) {
+              // A source selection may have been persisted while this terminal
+              // snapshot was in flight. Keep the newer local choice; the
+              // mutation response and the next workspace query are authoritative.
+              continue;
+            }
             next.set(item.originalRowIndex, remoteDecision);
           }
           return next;
