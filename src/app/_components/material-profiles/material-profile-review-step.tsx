@@ -21,6 +21,7 @@ import {
 } from "~/lib/materials/profile-review-bulk-apply";
 import {
   deriveReviewRowStatus,
+  deserializeRowDecision,
   seedDecisionsFromItems,
   serializeRowDecision,
   type RowDecision,
@@ -315,7 +316,30 @@ export function MaterialProfileReviewStep({
     }
     previousActiveSearchJobIdRef.current = null;
     invalidatedTerminalSearchJobKeyRef.current = terminalSearchJobKey;
-    void utils.materialProfile.get.invalidate({ workspaceId });
+    const decisionsAtRequest = new Map(decisionsRef.current);
+    void utils.materialProfile.get
+      .fetch({ workspaceId })
+      .then((workspace) => {
+        setDecisions((previous) => {
+          const next = new Map(previous);
+          for (const item of workspace.items) {
+            const remoteDecision = deserializeRowDecision(
+              item.reviewDecisionJson,
+            );
+            if (!remoteDecision) continue;
+            const requestedDecision = decisionsAtRequest.get(
+              item.originalRowIndex,
+            );
+            const currentDecision = previous.get(item.originalRowIndex);
+            if (currentDecision !== requestedDecision) continue;
+            next.set(item.originalRowIndex, remoteDecision);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        // The search-run history remains available if the refresh fails.
+      });
   }, [
     activeProfileSearchJobId,
     latestProfileSearchJob?.id,
