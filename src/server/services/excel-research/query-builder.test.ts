@@ -154,7 +154,7 @@ describe("buildSearchQueries", () => {
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
-  it("leads profile search with bare, normalized, and compact identity queries", () => {
+  it("leads profile search with identity and broad recovery queries", () => {
     const queries = buildSearchQueries(
       {
         name: "Ống PVC D90",
@@ -183,8 +183,9 @@ describe("buildSearchQueries", () => {
     expect(queries.slice(0, 3).map((query) => query.intent)).toEqual([
       "general",
       "official",
-      "vn_spec",
+      "general",
     ]);
+    expect(queries[2]?.query).toBe("Ống PVC");
     expect(
       queries
         .slice(0, 3)

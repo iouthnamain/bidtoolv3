@@ -43,6 +43,27 @@ describe("guarded material assessment", () => {
     expect(assessment.score).toBeGreaterThanOrEqual(0.75);
   });
 
+  it("keeps a strong broad product-family source visible as weak", () => {
+    const broadIdentity = createMaterialSearchIdentity({
+      name: "Van tiết lưu 1 chiều M5 Φ4 (SL4-M5)",
+      manufacturer: "OEM",
+      specText: "M5, phi 4, 30x19",
+    });
+    const assessment = assessMaterialSearchCandidate({
+      identity: broadIdentity,
+      candidate: {
+        title: "Van tiết lưu là gì? Nguyên lý, phân loại và ứng dụng",
+        url: "https://example.vn/van-tiet-luu",
+        domain: "example.vn",
+        snippet: "Tìm hiểu van tiết lưu và các loại van tiết lưu.",
+      },
+    });
+
+    expect(broadIdentity.searchPhrase).toBe("Van tiết lưu");
+    expect(assessment.tier).toBe("weak");
+    expect(assessment.hardRejects).not.toContain("identity_missing");
+  });
+
   it("never makes safety and operator rejects AI-overridable", () => {
     for (const key of ["unsafe", "operatorRejected"] as const) {
       const assessment = assessMaterialSearchCandidate({

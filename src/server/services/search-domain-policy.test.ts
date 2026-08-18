@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_SEARXNG_ENGINES,
   domainMatches,
   normalizeDomainList,
   normalizeEngineList,
@@ -28,5 +29,9 @@ describe("search-domain-policy", () => {
       "bing",
       "duckduckgo",
     ]);
+  });
+
+  it("defaults to the engine enabled by the bundled SearXNG config", () => {
+    expect(DEFAULT_SEARXNG_ENGINES).toEqual(["bing"]);
   });
 });

@@ -130,8 +130,9 @@ export function buildProfileSearchQueryWaves(
   push(wave1, identity.name, "vn_product");
   push(wave1, compactMaterialIdentityQuery(identity), "official");
 
-  const signal = identity.highSignalSpecTokens[0];
-  push(wave2, signal ? `${identity.name} ${signal}` : null, "vn_spec");
+  // A broad product phrase gives providers a useful recovery query when the
+  // full model/spec identity is interpreted poorly.
+  push(wave2, identity.searchPhrase, "general");
   push(
     wave2,
     `${identity.name} ${identity.manufacturer ?? ""} thông số kỹ thuật catalog`,
@@ -146,6 +147,11 @@ export function buildProfileSearchQueryWaves(
   } else {
     push(wave2, `${identity.name} giá`, "vn_price");
   }
+  // Keep the more constrained spec probe available after the recovery queries;
+  // the bounded wave budget will prefer the broad, catalog, and marketplace
+  // safe-query variants above.
+  const signal = identity.highSignalSpecTokens[0];
+  push(wave2, signal ? `${identity.name} ${signal}` : null, "vn_spec");
 
   return { identity, wave1: wave1.slice(0, 3), wave2: wave2.slice(0, 3) };
 }

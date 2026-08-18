@@ -184,6 +184,7 @@ export function MatchChooser({
   isAiSearchPending,
   isSearchBusy = false,
   onCapturePendingChange,
+  onFlushCurrentDecision,
 }: {
   row: ReviewRow;
   workspaceId?: number;
@@ -198,6 +199,7 @@ export function MatchChooser({
   isAiSearchPending?: boolean;
   isSearchBusy?: boolean;
   onCapturePendingChange?: (pending: boolean) => void;
+  onFlushCurrentDecision?: () => void | Promise<void>;
 }) {
   const toast = useToast();
   const materialSaveHintId = useId();
@@ -1579,7 +1581,11 @@ export function MatchChooser({
     onChange(next);
   };
 
-  const persistCurrentDecision = async () => {
+  const flushCurrentDecision = async () => {
+    if (onFlushCurrentDecision) {
+      await onFlushCurrentDecision();
+      return;
+    }
     if (!decision) return;
     await persistReviewDecision.mutateAsync({
       itemId: row.key,
@@ -1594,10 +1600,10 @@ export function MatchChooser({
     if (workspaceId == null) return;
     setPendingProductKey(item.productKey);
     try {
-      if (decision?.selectedScrapeProductKey) {
-        await persistCurrentDecision();
-      }
-      if (item.productIndex != null && run) {
+      // Finish the debounced parent save before switching the whole decision.
+      // Product activation persists a new decision and must not race that save.
+      await flushCurrentDecision();
+      if (!item.retained && item.productIndex != null && run) {
         const serialized = await selectScrapedProduct.mutateAsync({
           workspaceId,
           runId: run.id,
@@ -1628,7 +1634,7 @@ export function MatchChooser({
     if (workspaceId == null) return;
     setRemovingProductKey(productKey);
     try {
-      await persistCurrentDecision();
+      await flushCurrentDecision();
       const serialized = await removeScrapedProduct.mutateAsync({
         workspaceId,
         itemId: row.key,

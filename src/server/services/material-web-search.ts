@@ -690,7 +690,12 @@ async function _searchQueryWithFallback(
   const hasBing = config.engines.some(
     (engine) => engine.trim().toLowerCase() === "bing",
   );
-  if (!config.baseUrl || hasBing) {
+  // A multi-engine request can fail before Bing contributes anything (for
+  // example when another configured engine is suspended). Retry explicitly
+  // with Bing based on the empty observed response, not merely on Bing being
+  // present in the configured list.
+  const canRetryWithBing = config.engines.length > 1 || !hasBing;
+  if (!config.baseUrl || !canRetryWithBing) {
     return {
       results: primary.results,
       warnings: primary.warnings,

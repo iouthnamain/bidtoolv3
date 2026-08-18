@@ -12,6 +12,8 @@ export type MaterialSearchIdentity = {
   signature: string;
   name: string;
   normalizedName: string;
+  /** A broad, search-friendly product phrase without model/spec suffixes. */
+  searchPhrase: string | null;
   productPhrase: string | null;
   manufacturer: string | null;
   identifiers: string[];
@@ -112,6 +114,54 @@ function cleanOptional(value: string | null | undefined) {
   return trimmed || null;
 }
 
+function dedupePhraseTokens(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => {
+      const key = normalizeMaterialSearchText(token);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+}
+
+/**
+ * Return a broad query for providers that perform poorly with long model
+ * strings. Keep the human-readable product words, but stop before the first
+ * numeric/model suffix. Parenthesized aliases are preferred when they carry
+ * more useful words than the outer name (for example, "Xăng (xăng thơm)").
+ */
+function extractSearchPhrase(name: string): string | null {
+  const canonical = normalizeMaterialSearchQueryVariant(name);
+  const parenthetical = [...canonical.matchAll(/\(([^)]*)\)/g)].map(
+    (match) => match[1] ?? "",
+  );
+  const outer = canonical.replace(/\([^)]*\)/g, " ");
+  const candidates = [outer, ...parenthetical]
+    .map((candidate) => {
+      const tokens = candidate
+        .replace(/[()[\]{};,]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+      const firstModelToken = tokens.findIndex((token) => /\d/.test(token));
+      const phraseTokens =
+        firstModelToken > 0 ? tokens.slice(0, firstModelToken) : tokens;
+      return dedupePhraseTokens(phraseTokens.join(" "));
+    })
+    .filter((candidate) => candidate.length >= 3);
+
+  return (
+    candidates.sort((left, right) => {
+      const tokenDifference =
+        right.split(/\s+/).length - left.split(/\s+/).length;
+      return tokenDifference || right.length - left.length;
+    })[0] ?? null
+  );
+}
+
 export function createMaterialSearchIdentity(
   input: MaterialSearchIdentityInput,
 ): MaterialSearchIdentity {
@@ -134,6 +184,7 @@ export function createMaterialSearchIdentity(
       .filter((token) => /\d/.test(token) && token.length >= 2),
   ]);
   const normalizedName = normalizeMaterialSearchText(name);
+  const searchPhrase = extractSearchPhrase(input.name);
   const manufacturer = cleanOptional(input.manufacturer);
   const unit = cleanOptional(input.unit);
   const manufacturerNormalized = normalizeMaterialSearchText(
@@ -157,6 +208,7 @@ export function createMaterialSearchIdentity(
     signature: signatureParts.join("|"),
     name,
     normalizedName,
+    searchPhrase,
     productPhrase,
     manufacturer,
     identifiers,

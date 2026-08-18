@@ -879,7 +879,7 @@ export function validateOperationalSettingValue(
         const engines = normalizeEngineList(trimmed);
         if (engines.length === 0) {
           throw new OperationalSettingError(
-            "Nhập ít nhất một engine hợp lệ, ví dụ google,bing,duckduckgo.",
+            "Nhập ít nhất một engine hợp lệ, ví dụ bing.",
           );
         }
         return engines.join(",");

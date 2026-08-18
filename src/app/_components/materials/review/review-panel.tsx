@@ -362,11 +362,29 @@ export function ReviewPanel({
       return;
     }
     syncedScrapeJobRef.current = `${job.id}:${job.updatedAt}`;
+    // Do not let a workspace snapshot that started before a product switch
+    // replace the newer local decision when the request resolves.
+    const decisionsAtRequest = new Map(decisions);
     void utils.materialProfile.get.fetch({ workspaceId }).then((workspace) => {
       applyDecisions((previous) => {
         const next = new Map(previous);
         for (const item of workspace.items) {
           const decision = deserializeRowDecision(item.reviewDecisionJson);
+          const requestedDecision = decisionsAtRequest.get(
+            item.originalRowIndex,
+          );
+          const currentDecision = previous.get(item.originalRowIndex);
+          if (currentDecision !== requestedDecision) continue;
+          if (
+            currentDecision &&
+            (currentDecision.selectedScrapeProductKey ?? null) !==
+              (decision?.selectedScrapeProductKey ?? null)
+          ) {
+            // A terminal-job snapshot can be older than a product activation
+            // that has already completed. Preserve the local product choice;
+            // the activation response is the freshest decision we have.
+            continue;
+          }
           if (decision) next.set(item.originalRowIndex, decision);
         }
         return next;
@@ -375,6 +393,7 @@ export function ReviewPanel({
   }, [
     activeScrapeJobQuery.data,
     applyDecisions,
+    decisions,
     utils.materialProfile.get,
     workspaceId,
   ]);
@@ -1704,6 +1723,12 @@ export function ReviewPanel({
                 }
                 isSearchBusy={profileSearchBusy || bulkScrapeIsActive}
                 onCapturePendingChange={handleCapturePendingChange}
+                onFlushCurrentDecision={
+                  onFlushDecisionsForRows
+                    ? () =>
+                        onFlushDecisionsForRows([selectedRow.originalRowIndex])
+                    : undefined
+                }
               />
 
               {isProfileSplit ? (

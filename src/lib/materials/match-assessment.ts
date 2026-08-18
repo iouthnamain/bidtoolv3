@@ -267,6 +267,12 @@ export function assessMaterialSearchCandidate(input: {
   const phraseMatch = identity.productPhrase
     ? Number(text.includes(identity.productPhrase))
     : 0;
+  const searchPhrase = identity.searchPhrase
+    ? normalizeMaterialSearchText(identity.searchPhrase)
+    : "";
+  const searchPhraseMatch = searchPhrase
+    ? Number(text.includes(searchPhrase))
+    : 0;
   const manufacturerMatch = identity.manufacturer
     ? tokenOverlap(identity.manufacturer, text)
     : 0.5;
@@ -274,14 +280,24 @@ export function assessMaterialSearchCandidate(input: {
   const dimensionsMatched = identity.compositeDimensions.filter((dimension) =>
     text.includes(dimension),
   );
-  const identityScore = clampMatchScore(
+  const identityBaseScore =
     Math.max(fullNameMatch, Math.min(nameForward, nameBackward)) * 0.35 +
-      phraseMatch * 0.3 +
-      manufacturerMatch * 0.1 +
-      (identity.identifiers.length
-        ? identifiers.matches.length / identity.identifiers.length
-        : 0.5) *
-        0.25,
+    phraseMatch * 0.3 +
+    manufacturerMatch * 0.1 +
+    (identity.identifiers.length
+      ? identifiers.matches.length / identity.identifiers.length
+      : 0.5) *
+      0.25;
+  // Long model/spec strings can make a provider miss an otherwise relevant
+  // product-family page. A strong broad-phrase match is enough for a weak
+  // result, but never overrides identifier, dimension, family, or safety
+  // conflicts below.
+  const broadIdentityScore =
+    searchPhraseMatch >= 0.75
+      ? searchPhraseMatch * 0.45 + manufacturerMatch * 0.1
+      : 0;
+  const identityScore = clampMatchScore(
+    Math.max(identityBaseScore, broadIdentityScore),
   );
   const matchedSpecs = identity.highSignalSpecTokens.filter((token) =>
     text.includes(token),
@@ -318,7 +334,9 @@ export function assessMaterialSearchCandidate(input: {
     hardRejects.push("product_family_conflict");
     conflicts.push(`Sai nhóm sản phẩm: ${family}`);
   }
-  if (identityScore < 0.18) hardRejects.push("identity_missing");
+  if (identityScore < 0.18 && searchPhraseMatch < 0.75) {
+    hardRejects.push("identity_missing");
+  }
 
   let score = clampMatchScore(
     identityScore * 0.55 +
@@ -337,7 +355,7 @@ export function assessMaterialSearchCandidate(input: {
         ? "primary"
         : "weak";
   const reasons = compactReasons([
-    phraseMatch ? "Khớp cụm sản phẩm" : "",
+    phraseMatch || searchPhraseMatch >= 0.75 ? "Khớp cụm sản phẩm" : "",
     identifiers.matches.length
       ? `Khớp mã: ${identifiers.matches.join(", ")}`
       : "",

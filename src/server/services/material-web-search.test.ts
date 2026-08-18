@@ -243,6 +243,50 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries Bing when a multi-engine response is empty even if Bing is configured", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_ENGINES", "google,bing,duckduckgo");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(requestUrl(input));
+      const engines = url.searchParams.get("engines");
+      if (engines === "google,bing,duckduckgo") {
+        return new Response(
+          JSON.stringify({
+            results: [],
+            unresponsive_engines: [["duckduckgo", "Suspended: access denied"]],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (engines === "bing") {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Van tiết lưu",
+                url: "https://example.vn/van-tiet-luu",
+                content: "Thông tin van tiết lưu",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected engines: ${engines}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const { results, warnings } = await searchQueryWithFallback("van tiết lưu");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.url).toBe("https://example.vn/van-tiet-luu");
+    expect(warnings.join(" ")).toContain("đã thử lại bằng Bing");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("returns empty results without throwing when all providers fail", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "");
     vi.stubGlobal(

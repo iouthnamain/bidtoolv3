@@ -749,9 +749,23 @@ test("persisted scrape retains multiple products and restores separate drafts", 
 
       const manufacturer = page.getByLabel("Sau (Scrape) Nhà sản xuất");
       await manufacturer.fill(`Nhà sản xuất A ${seed.marker}`);
+      const activatedB = page.waitForResponse(
+        (response) =>
+          response.url().includes("activateScrapedProduct") &&
+          response.status() === 200,
+      );
       await productB.getByRole("button", { name: "Xem kết quả" }).click();
+      await activatedB;
+      await expect(productB).toContainText("Đang xem");
+      await expect(productA).toContainText("Đã chọn");
       await manufacturer.fill(`Nhà sản xuất B ${seed.marker}`);
+      const activatedA = page.waitForResponse(
+        (response) =>
+          response.url().includes("activateScrapedProduct") &&
+          response.status() === 200,
+      );
       await productA.getByRole("button", { name: "Xem kết quả" }).click();
+      await activatedA;
       await expect(manufacturer).toHaveValue(`Nhà sản xuất A ${seed.marker}`);
 
       await page.reload();
@@ -875,6 +889,7 @@ test("bulk preview is editable, commits explicitly, and can be undone", async ({
     .toBe(1);
 });
 
-test.afterAll(async () => {
-  await sql.end();
-});
+// The worker owns this client for the entire serial suite. Do not call sql.end
+// here: a timed-out test can still have cleanup/poll work unwinding while
+// Playwright tears down fixtures, which turns harmless fallout into
+// CONNECTION_ENDED failures.
