@@ -43,8 +43,6 @@ ENV BIDTOOL_PACKAGE_VERSION="${BIDTOOL_APP_VERSION}"
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/.next/server/instrumentation.js ./.next/server/instrumentation.js
-COPY --from=builder /app/.next/server/instrumentation ./.next/server/instrumentation
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=deps /app/node_modules ./node_modules
