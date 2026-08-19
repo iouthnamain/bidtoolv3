@@ -427,9 +427,6 @@ async function _searchProfileRowWebLinks(
     };
   };
   let { ranked, assessed } = await enrichAndAssess(plausible);
-  const hasSearxngCandidate = mergedResults.some(
-    (result) => result.provider !== "bing",
-  );
   const allCandidatesIdentityRejected = assessed.every(
     ({ assessment }) => assessment.tier === "rejected",
   );
@@ -439,7 +436,6 @@ async function _searchProfileRowWebLinks(
   if (
     pipelineMode === "guarded" &&
     mergedResults.length > 0 &&
-    hasSearxngCandidate &&
     allCandidatesIdentityRejected &&
     uncoveredBingQueries.length > 0 &&
     !searchSignal.aborted

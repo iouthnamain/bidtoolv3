@@ -372,6 +372,53 @@ describe("searchProfileRowWebLinks query budget", () => {
     );
   });
 
+  it("still tries direct Bing when SearXNG labels its engine results as Bing", async () => {
+    vi.mocked(resolveSearchQueryControls).mockResolvedValue({
+      enableSiteVnVariants: true,
+      enableNegativeMarketplaceVariants: true,
+      materialJobMaxQueries: 6,
+      interactiveMaxQueries: 1,
+      excelResearchMaxQueries: 6,
+    });
+    vi.mocked(searchWebForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Tin bóng đá mới nhất",
+          url: "https://news.example/bong-da",
+          domain: "news.example",
+          snippet: "Kết quả thi đấu hôm nay",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          // SearXNG exposes the underlying engine label here. This does not
+          // mean the guarded direct-Bing fallback has already run.
+          provider: "bing",
+        },
+      ],
+      warnings: [],
+      providers: ["searxng"],
+      directBingQueries: [],
+    });
+    vi.mocked(searchBingForProduct).mockResolvedValue({
+      results: [],
+      warnings: [],
+      providers: ["bing"],
+      directBingQueries: [],
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+    vi.mocked(enrichSearchResultsWithFetchedContent).mockImplementation(
+      async (results) =>
+        results.map((result) => ({ ...result, fetchStatus: "verified" })),
+    );
+
+    await searchProfileRowWebLinks({
+      name: "Ống PVC D50 Bình Minh",
+      manufacturer: "Bình Minh",
+      specText: "D50 PN10",
+    });
+
+    expect(searchBingForProduct).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps irrelevant direct Bing results rejected after the rescue attempt", async () => {
     vi.mocked(resolveSearchQueryControls).mockResolvedValue({
       enableSiteVnVariants: true,
@@ -444,6 +491,7 @@ describe("searchProfileRowWebLinks query budget", () => {
       ],
       warnings: [],
       providers: ["searxng", "bing"],
+      directBingQueries: ["ống pvc d50 bình minh"],
     });
     vi.mocked(rankSearchResults).mockImplementation((results) => results);
 
