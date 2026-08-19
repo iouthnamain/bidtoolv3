@@ -768,14 +768,50 @@ export function MaterialProfileReviewStep({
 
   return (
     <div className="space-y-3">
-      <section className="panel bg-surface-2 p-4">
-        <p className="section-title">Quy trình theo giai đoạn</p>
-        <p className="text-ink-1 mt-1 text-sm font-semibold">
-          Tìm nguồn web → chọn nguồn → scrape → so sánh → lưu /materials
-        </p>
-        <p className="text-ink-2 mt-1 text-sm">
-          AI là thao tác tùy chọn riêng. Scrape không tự chạy AI và không tự lưu
-          vào danh mục vật tư.
+      <section
+        className="panel bg-surface-2 p-4"
+        aria-labelledby="review-guide-title"
+      >
+        <p className="section-title">Cách duyệt một dòng</p>
+        <h2
+          id="review-guide-title"
+          className="text-ink-1 mt-1 text-sm font-semibold"
+        >
+          Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu
+        </h2>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {[
+            ["1", "Chọn dòng", "Ưu tiên bộ lọc “Chưa khớp” hoặc “Cần duyệt”."],
+            [
+              "2",
+              "Kiểm tra nguồn",
+              "Mở nguồn, chọn ứng viên phù hợp rồi scrape.",
+            ],
+            [
+              "3",
+              "Xác nhận",
+              "So sánh trường cần điền trước khi lưu hoặc qua bước 4.",
+            ],
+          ].map(([number, title, description]) => (
+            <div
+              key={number}
+              className="border-line bg-surface-1 flex items-start gap-2 rounded border px-3 py-2"
+            >
+              <span className="bg-brand inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white">
+                {number}
+              </span>
+              <div className="min-w-0">
+                <p className="text-ink-1 text-xs font-bold">{title}</p>
+                <p className="text-ink-2 mt-0.5 text-xs leading-5">
+                  {description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-ink-3 mt-2 text-xs leading-5">
+          AI là tùy chọn. Scrape không tự chạy AI và không tự lưu vào danh mục
+          vật tư.
         </p>
       </section>
 
@@ -838,7 +874,7 @@ export function MaterialProfileReviewStep({
             isLoading={isFlushing || batchUpdateReviewDecisions.isPending}
             onClick={() => void handleContinue()}
           >
-            Sang xem trước file xuất
+            Kiểm tra file xuất
           </Button>
         }
       />

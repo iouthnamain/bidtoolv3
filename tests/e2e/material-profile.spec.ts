@@ -283,9 +283,9 @@ async function openReview(page: Page, seed: ProfileSeed) {
   await page.goto(`/material-profiles/${seed.workspaceId}`);
   await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
   await expect(
-    page.getByText(
-      "Tìm nguồn web → chọn nguồn → scrape → so sánh → lưu /materials",
-    ),
+    page.getByRole("heading", {
+      name: "Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu",
+    }),
   ).toBeVisible();
 }
 
@@ -422,19 +422,36 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Tải lên Excel/ }).click();
-  await expect(page.getByText("Chọn workbook làm việc")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Đổi file Excel" }),
+  ).toBeVisible();
+  await expect(page.getByText("Dữ liệu đã nhận")).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveAttribute(
     "accept",
     ".xlsx",
   );
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "khong-phai-excel.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Tên vật tư,ĐVT"),
+  });
+  await expect(
+    page.getByText("Chỉ nhận file Excel định dạng .xlsx."),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: /Kiểm tra dữ liệu/ }).click();
+  await page
+    .getByRole("button", { name: "Kiểm tra dữ liệu", exact: true })
+    .click();
   await expect(
     page.getByRole("combobox", { name: "Sheet vật tư" }),
   ).toHaveValue("Sheet1");
   await expect(
     page.getByRole("spinbutton", { name: "Dòng tiêu đề" }),
   ).toHaveValue("1");
+  await expect(page.getByText("Cột bắt buộc", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Cột bổ sung (tùy chọn)", { exact: true }),
+  ).toBeVisible();
   const saved = page.waitForResponse(
     (response) =>
       response.url().includes("materialProfile.updateState") &&
@@ -445,9 +462,9 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
 
   await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
   await expect(
-    page.getByText(
-      "Tìm nguồn web → chọn nguồn → scrape → so sánh → lưu /materials",
-    ),
+    page.getByRole("heading", {
+      name: "Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu",
+    }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Tải file chuẩn/ }).click();
@@ -459,8 +476,39 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   await page.getByRole("button", { name: "Làm mới kiểm tra" }).click();
   await refreshed;
   await expect(
-    page.getByRole("button", { name: "Tải danh mục chuẩn" }),
+    page.getByRole("button", { name: "Tải file Excel" }),
   ).toBeEnabled();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const stepNavigation = page.getByRole("navigation", {
+    name: "Các bước hồ sơ vật tư",
+  });
+  const phoneSteps = [
+    { name: /Tải lên Excel/, heading: "Đổi file Excel" },
+    {
+      name: /Kiểm tra dữ liệu/,
+      heading: "Ánh xạ cột vật tư và chỉnh ô",
+    },
+    {
+      name: /Tự tìm & điền/,
+      heading: "Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu",
+    },
+    {
+      name: /Tải file chuẩn/,
+      heading: "Một sheet sạch, sẵn sàng gửi đi",
+    },
+  ];
+  for (const step of phoneSteps) {
+    await stepNavigation.getByRole("button", { name: step.name }).click();
+    await expect(
+      page.getByRole("heading", { name: step.heading }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
 });
 
 test("staged review saves all compare fields without checkboxes and stacks responsively", async ({

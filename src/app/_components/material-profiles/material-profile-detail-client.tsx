@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Check,
+  CheckCircle2,
   Download,
   FileSpreadsheet,
   Loader2,
@@ -28,6 +31,7 @@ import {
   saveMaterialProfileExportBundleInBrowser,
   setLastMaterialProfileExportDir,
 } from "~/lib/material-profile-export-dir";
+import { materialProfileActionMessage } from "~/lib/materials/profile-user-message";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type WorkspaceDetail = RouterOutputs["materialProfile"]["get"];
@@ -40,13 +44,32 @@ type ExportEditState = PreviewResult["exportEditState"];
 type CellEdits = Record<string, Record<string, string>>;
 type MaterialProfileStep = 1 | 2 | 3 | 4;
 
-const materialProfileSteps: Array<{ id: MaterialProfileStep; label: string }> =
-  [
-    { id: 1, label: "Tải lên Excel" },
-    { id: 2, label: "Kiểm tra dữ liệu" },
-    { id: 3, label: "Tự tìm & điền" },
-    { id: 4, label: "Tải file chuẩn" },
-  ];
+const materialProfileSteps: Array<{
+  id: MaterialProfileStep;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: 1,
+    label: "Tải lên Excel",
+    description: "Chọn workbook .xlsx để giữ nguyên dữ liệu và bố cục gốc.",
+  },
+  {
+    id: 2,
+    label: "Kiểm tra dữ liệu",
+    description: "Xác nhận sheet, dòng tiêu đề và ba cột bắt buộc.",
+  },
+  {
+    id: 3,
+    label: "Tự tìm & điền",
+    description: "Tìm nguồn, thu thập dữ liệu và duyệt từng dòng vật tư.",
+  },
+  {
+    id: 4,
+    label: "Tải file chuẩn",
+    description: "Rà cảnh báo, xem đúng nội dung rồi tải file Excel.",
+  },
+];
 
 const mappingFields = [
   { key: "materialName", label: "Tên vật tư", required: true },
@@ -76,14 +99,6 @@ function fileToBase64(file: File) {
       reject(reader.error ?? new Error("Không đọc được file Excel."));
     reader.readAsDataURL(file);
   });
-}
-
-function profileActionError(error: unknown, fallback: string) {
-  const detail = error instanceof Error ? error.message.trim() : "";
-  if (!detail || /^(?:INTERNAL_SERVER_ERROR|UNKNOWN_ERROR)$/i.test(detail)) {
-    return fallback;
-  }
-  return `${fallback} ${detail}`;
 }
 
 function cellKey(rowIndex: number, colIndex: number) {
@@ -121,8 +136,8 @@ function MaterialProfileStepHeader({
   maxReached: MaterialProfileStep;
   onJump: (step: MaterialProfileStep) => void;
 }) {
-  const progressPercent =
-    ((current - 1) / (materialProfileSteps.length - 1)) * 100;
+  const progressPercent = (current / materialProfileSteps.length) * 100;
+  const currentStep = materialProfileSteps[current - 1];
 
   return (
     <nav
@@ -143,20 +158,37 @@ function MaterialProfileStepHeader({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 p-2 sm:gap-1 sm:p-3">
-        {materialProfileSteps.map((step, index) => {
+      <div className="border-line bg-surface-2 flex items-start gap-3 border-b px-3 py-3 sm:px-4">
+        <span className="bg-brand inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white tabular-nums">
+          {current}
+        </span>
+        <div className="min-w-0">
+          <p className="text-ink-3 text-xs font-semibold tracking-[0.1em] uppercase">
+            Bước {current}/{materialProfileSteps.length}
+          </p>
+          <p className="text-ink-1 mt-0.5 text-sm font-bold">
+            {currentStep?.label}
+          </p>
+          <p className="text-ink-2 mt-0.5 text-xs leading-5">
+            {currentStep?.description}
+          </p>
+        </div>
+      </div>
+
+      <ol className="grid grid-cols-4 gap-1 p-2 sm:p-3">
+        {materialProfileSteps.map((step) => {
           const isCurrent = step.id === current;
           const isDone = step.id < current;
           const isReachable = step.id <= maxReached;
 
           return (
-            <div key={step.id} className="flex items-center gap-1 sm:gap-2">
+            <li key={step.id} className="min-w-0">
               <button
                 type="button"
                 disabled={!isReachable}
                 onClick={() => isReachable && onJump(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
-                className={`focus-visible:ring-ring focus-visible:ring-offset-surface-1 inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-panel)] px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed motion-reduce:transition-none md:min-h-10 ${
+                className={`focus-visible:ring-ring focus-visible:ring-offset-surface-1 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] px-1.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed motion-reduce:transition-none sm:px-2.5 md:min-h-11 ${
                   isCurrent
                     ? "bg-brand text-white"
                     : isReachable
@@ -175,18 +207,15 @@ function MaterialProfileStepHeader({
                 >
                   {isDone ? <Check className="h-3 w-3" aria-hidden /> : step.id}
                 </span>
-                <span className="hidden text-balance sm:inline">
+                <span className="hidden min-w-0 text-balance min-[480px]:inline">
                   {step.label}
                 </span>
-                <span className="sr-only sm:hidden">{step.label}</span>
+                <span className="sr-only min-[480px]:hidden">{step.label}</span>
               </button>
-              {index < materialProfileSteps.length - 1 ? (
-                <span className="bg-line h-px w-3 sm:w-6" aria-hidden />
-              ) : null}
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ol>
     </nav>
   );
 }
@@ -284,7 +313,6 @@ function UploadStep({
   onContinue: () => void;
 }) {
   const checklist = [
-    { label: "Đã tạo hồ sơ từ Số TBMT", done: Boolean(workspace.noticeNumber) },
     { label: "Đã tải file Excel", done: Boolean(workspace.sourceFileName) },
     {
       label: sheets.length > 0 ? `${sheets.length} sheet` : "Chưa đọc sheet",
@@ -298,39 +326,74 @@ function UploadStep({
       done: workspace.rowCount > 0,
     },
   ];
+  const readyCount = checklist.filter((item) => item.done).length;
+  const hasWorkbook = sheets.length > 0;
 
   return (
-    <section className="grid gap-2 lg:grid-cols-[0.9fr_1.1fr]">
+    <section className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
       <div className="panel p-4">
-        <p className="section-title">Tải file Excel</p>
+        <p className="section-title">Workbook nguồn</p>
         <h2 className="text-ink-1 mt-1 text-base font-semibold">
-          Chọn workbook làm việc
+          {hasWorkbook ? "Đổi file Excel" : "Chọn file Excel để bắt đầu"}
         </h2>
         <p className="text-ink-2 mt-2 text-sm leading-6">
-          File gốc được lưu lại để các bước sau có thể ánh xạ vật tư, xem trước
-          kết quả và xuất file giữ nguyên bố cục.
+          BidTool đọc file gốc để bạn kiểm tra cột, đối chiếu vật tư và xuất lại
+          đúng dữ liệu. Chỉ nhận định dạng <strong>.xlsx</strong>.
         </p>
-        <label className="border-brand bg-surface-2 text-brand hover:bg-surface-3 focus-within:ring-ring mt-4 flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--radius-panel)] border border-dashed px-4 py-2 text-center transition-colors focus-within:ring-2 motion-reduce:transition-none">
+        <label
+          className={`border-brand bg-surface-2 text-brand focus-within:ring-ring mt-4 flex min-h-40 flex-col items-center justify-center gap-2 rounded-[var(--radius-panel)] border border-dashed px-4 py-4 text-center transition-colors focus-within:ring-2 motion-reduce:transition-none ${
+            isUploading
+              ? "cursor-wait opacity-70"
+              : "hover:bg-surface-3 cursor-pointer"
+          }`}
+          aria-busy={isUploading}
+        >
           {isUploading ? (
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
           ) : (
             <Upload className="h-6 w-6" aria-hidden />
           )}
-          <span className="text-sm font-bold">Tải file Excel</span>
-          <span className="text-ink-2 max-w-full truncate text-xs font-medium">
-            {workspace.sourceFileName ?? ".xlsx"}
+          <span className="text-sm font-bold">
+            {isUploading
+              ? "Đang đọc workbook…"
+              : hasWorkbook
+                ? "Chọn file khác"
+                : "Chọn file từ máy"}
+          </span>
+          <span className="text-ink-2 max-w-full text-xs font-medium break-all">
+            {workspace.sourceFileName ?? "Tối đa một workbook .xlsx mỗi hồ sơ"}
           </span>
           <input
             type="file"
             accept=".xlsx"
+            disabled={isUploading}
             className="sr-only"
-            onChange={(event) => onFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              onFile(event.target.files?.[0] ?? null);
+              event.currentTarget.value = "";
+            }}
           />
         </label>
+        {hasWorkbook ? (
+          <p className="text-ink-3 mt-3 text-xs leading-5">
+            Tải file khác sẽ thay workbook nguồn và bạn cần kiểm tra lại ánh xạ
+            trước khi tiếp tục.
+          </p>
+        ) : null}
       </div>
 
       <aside className="panel p-4">
-        <p className="section-title">Checklist</p>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="section-title">Sẵn sàng kiểm tra</p>
+            <h2 className="text-ink-1 mt-1 text-base font-semibold">
+              Dữ liệu đã nhận
+            </h2>
+          </div>
+          <span className="text-ink-2 text-sm font-bold tabular-nums">
+            {readyCount}/{checklist.length}
+          </span>
+        </div>
         <div className="mt-3 grid gap-2">
           {checklist.map((item) => (
             <div
@@ -352,12 +415,24 @@ function UploadStep({
             </div>
           ))}
         </div>
+        {workspace.noticeNumber ? (
+          <div className="border-line bg-surface-2 text-ink-2 mt-3 rounded border px-3 py-2 text-xs">
+            Số TBMT:{" "}
+            <strong className="text-ink-1">{workspace.noticeNumber}</strong>
+          </div>
+        ) : (
+          <p className="text-ink-3 mt-3 text-xs leading-5">
+            Số TBMT là thông tin tùy chọn và không ảnh hưởng đến việc xử lý
+            file.
+          </p>
+        )}
         <Button
-          className="mt-4"
-          disabled={sheets.length === 0}
+          className="mt-4 w-full"
+          disabled={!hasWorkbook}
           onClick={onContinue}
+          rightIcon={<ArrowRight className="h-4 w-4" />}
         >
-          Tiếp tục ánh xạ sheet
+          Kiểm tra dữ liệu
         </Button>
       </aside>
     </section>
@@ -409,12 +484,18 @@ function WorkbookMappingStep({
     (field) =>
       !("required" in field && field.required) && Boolean(mapping[field.key]),
   ).length;
+  const optionalFields = mappingFields.filter(
+    (field) => !("required" in field && field.required),
+  );
+  const missingRequiredLabels = requiredFields
+    .filter((field) => !mapping[field.key])
+    .map((field) => field.label);
 
   return (
     <section className="panel overflow-hidden">
       <div className="border-line bg-surface-1 border-b px-4 py-4">
         <p className="section-title">Ánh xạ & chỉnh workbook</p>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-1">
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-ink-1 text-base font-semibold">
               Ánh xạ cột vật tư và chỉnh ô
@@ -426,7 +507,7 @@ function WorkbookMappingStep({
               sung.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
             <Button
               variant="secondary"
               onClick={onSave}
@@ -436,20 +517,25 @@ function WorkbookMappingStep({
               Lưu thay đổi
             </Button>
             <Button
+              variant={canContinueToReview ? "secondary" : "primary"}
               disabled={!hasRequiredColumns}
               onClick={onRunMatch}
               isLoading={isMatching}
               leftIcon={<Search className="h-4 w-4" />}
             >
-              Kiểm tra & đối chiếu
+              {canContinueToReview
+                ? "Chạy lại đối chiếu"
+                : "Kiểm tra & đối chiếu"}
             </Button>
-            <Button
-              variant="primary"
-              disabled={!canContinueToReview}
-              onClick={onContinueToReview}
-            >
-              Tiếp tục tự xử lý
-            </Button>
+            {canContinueToReview ? (
+              <Button
+                variant="primary"
+                onClick={onContinueToReview}
+                rightIcon={<ArrowRight className="h-4 w-4" />}
+              >
+                Mở kết quả đối chiếu
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -460,10 +546,10 @@ function WorkbookMappingStep({
             className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
             role="alert"
           >
-            Chưa thể tự xử lý: hãy ánh xạ đủ <strong>Tên vật tư</strong>,
-            <strong> ĐVT</strong> và <strong> Thông số kỹ thuật</strong>. Dòng
-            thiếu giá trị ở các cột này sẽ được giữ lại để sửa, không bị gửi đi
-            tìm kiếm.
+            Còn thiếu ánh xạ:{" "}
+            <strong>{missingRequiredLabels.join(", ")}</strong>. Chọn đủ ba cột
+            bắt buộc để chạy đối chiếu. Dòng thiếu giá trị vẫn được giữ lại để
+            bạn sửa.
           </div>
         ) : null}
         <div className="grid gap-1 lg:grid-cols-3">
@@ -497,42 +583,103 @@ function WorkbookMappingStep({
               className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-10 rounded-[var(--radius-panel)] border px-3 text-sm shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
             />
           </label>
-          <div className="border-line bg-surface-2 text-ink-2 rounded-[var(--radius-panel)] border px-3 py-2 text-xs">
-            <p className="text-ink-1 font-semibold">Điều kiện qua bước</p>
+          <div
+            className={`rounded-[var(--radius-panel)] border px-3 py-2 text-xs ${
+              hasRequiredColumns
+                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                : "border-line bg-surface-2 text-ink-2"
+            }`}
+          >
+            <p className="font-semibold">
+              {hasRequiredColumns
+                ? "Đã đủ cột bắt buộc"
+                : "Điều kiện đối chiếu"}
+            </p>
             <p className="mt-1">
-              Cần ánh xạ Tên vật tư, ĐVT, Thông số kỹ thuật, chạy kiểm tra rồi
-              bấm «Tiếp tục tự xử lý» để sang bước 3.
+              {hasRequiredColumns
+                ? "Bấm “Kiểm tra & đối chiếu” để tạo danh sách duyệt ở bước 3."
+                : "Cần Tên vật tư, ĐVT và Thông số kỹ thuật."}
             </p>
           </div>
         </div>
 
-        <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-5">
-          {mappingFields.map((field) => (
-            <label key={field.key} className="flex flex-col gap-1">
-              <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
-                {field.label}
-                {"required" in field && field.required ? (
-                  <span className="text-rose-500"> *</span>
-                ) : null}
-              </span>
-              <select
-                value={mapping[field.key] ?? ""}
-                onChange={(event) =>
-                  onMappingChange(field.key, event.target.value || null)
-                }
-                className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-9 rounded-[var(--radius-panel)] border px-2 text-xs shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
-              >
-                <option value="">Không ánh xạ</option>
-                {activeSheet.headers.map((header) => (
-                  <option key={`${field.key}-${header}`} value={header}>
-                    {header}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-ink-1 text-sm font-semibold">Cột bắt buộc</p>
+            <span className="text-ink-3 text-xs tabular-nums">
+              {requiredFields.length - missingRequiredLabels.length}/
+              {requiredFields.length} đã chọn
+            </span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {requiredFields.map((field) => (
+              <label key={field.key} className="flex flex-col gap-1">
+                <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
+                  {field.label} <span className="text-rose-500">*</span>
+                </span>
+                <select
+                  value={mapping[field.key] ?? ""}
+                  onChange={(event) =>
+                    onMappingChange(field.key, event.target.value || null)
+                  }
+                  className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-10 rounded-[var(--radius-panel)] border px-2 text-sm shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <option value="">Chọn cột…</option>
+                  {activeSheet.headers.map((header) => (
+                    <option key={`${field.key}-${header}`} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
         </div>
 
+        <details
+          className="border-line rounded-[var(--radius-panel)] border"
+          open={optionalMapped > 0 || undefined}
+        >
+          <summary className="focus-visible:ring-ring flex min-h-11 cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm font-semibold focus-visible:ring-2 focus-visible:outline-none">
+            <span>Cột bổ sung (tùy chọn)</span>
+            <span className="text-ink-3 text-xs font-medium tabular-nums">
+              {optionalMapped}/{optionalFields.length} đã chọn
+            </span>
+          </summary>
+          <div className="border-line grid gap-2 border-t p-3 sm:grid-cols-2 lg:grid-cols-4">
+            {optionalFields.map((field) => (
+              <label key={field.key} className="flex flex-col gap-1">
+                <span className="text-ink-3 text-xs font-semibold tracking-[0.12em] uppercase">
+                  {field.label}
+                </span>
+                <select
+                  value={mapping[field.key] ?? ""}
+                  onChange={(event) =>
+                    onMappingChange(field.key, event.target.value || null)
+                  }
+                  className="border-line-strong bg-surface-1 text-ink-1 focus-visible:ring-ring h-9 rounded-[var(--radius-panel)] border px-2 text-xs shadow-[var(--shadow-flat)] focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  <option value="">Không ánh xạ</option>
+                  {activeSheet.headers.map((header) => (
+                    <option key={`${field.key}-${header}`} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </details>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-ink-2 text-xs leading-5">
+            Có thể sửa trực tiếp tên cột hoặc giá trị trong bảng. Nhớ lưu trước
+            khi rời hồ sơ.
+          </p>
+          <Badge tone={hasRequiredColumns ? "success" : "warning"}>
+            {hasRequiredColumns ? "Sẵn sàng đối chiếu" : "Chưa đủ ánh xạ"}
+          </Badge>
+        </div>
         <WorkbookGrid sheet={activeSheet} edits={edits} onEdit={onEdit} />
       </div>
     </section>
@@ -542,6 +689,7 @@ function WorkbookMappingStep({
 function CleanExportStep({
   preview,
   isLoading,
+  errorMessage,
   isExporting,
   onRefresh,
   onExport,
@@ -549,6 +697,7 @@ function CleanExportStep({
 }: {
   preview: CleanExportPreview | undefined;
   isLoading: boolean;
+  errorMessage?: string;
   isExporting: boolean;
   onRefresh: () => void;
   onExport: () => void;
@@ -571,9 +720,10 @@ function CleanExportStep({
               với ô trống và trạng thái “Cần xác minh” để tiếp tục xử lý.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
             <Button
               variant="secondary"
+              className="flex-1 sm:flex-none"
               onClick={onRefresh}
               isLoading={isLoading}
               leftIcon={<RefreshCw className="h-4 w-4" />}
@@ -581,6 +731,7 @@ function CleanExportStep({
               Làm mới kiểm tra
             </Button>
             <Button
+              className="flex-1 sm:flex-none"
               onClick={onExport}
               disabled={!canExport}
               isLoading={isExporting}
@@ -590,8 +741,9 @@ function CleanExportStep({
                   ? "Tải danh mục vật tư chuẩn"
                   : "Chưa có dòng vật tư hiện tại để xuất"
               }
+              rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              Tải danh mục chuẩn
+              Tải file Excel
             </Button>
           </div>
         </div>
@@ -624,7 +776,46 @@ function CleanExportStep({
             </div>
           </div>
         ) : null}
+
+        {preview?.canExport ? (
+          <div
+            className={`mt-3 flex items-start gap-2 rounded border px-3 py-2 text-sm ${
+              incompleteRows > 0
+                ? "border-amber-300 bg-amber-50 text-amber-950"
+                : "border-emerald-200 bg-emerald-50 text-emerald-950"
+            }`}
+            role="status"
+          >
+            {incompleteRows > 0 ? (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            )}
+            <p>
+              {incompleteRows > 0
+                ? "Có thể tải file ngay. Các dòng cần xác minh được giữ lại và đánh dấu rõ trong file."
+                : "Dữ liệu đã sẵn sàng. Bạn có thể tải file Excel chuẩn ngay."}
+            </p>
+          </div>
+        ) : null}
       </div>
+
+      {errorMessage && !preview ? (
+        <div className="panel p-4">
+          <EmptyState
+            title="Không kiểm tra được file xuất"
+            description={materialProfileActionMessage(
+              errorMessage,
+              "Kiểm tra kết nối rồi thử làm mới bản xem trước.",
+            )}
+            cta={
+              <Button variant="secondary" onClick={onRefresh}>
+                Thử lại
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
 
       {isLoading && !preview ? (
         <div className="panel text-ink-2 p-4 text-sm" aria-live="polite">
@@ -1137,8 +1328,8 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) =>
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error.message,
           "Không thể tải workbook. Kiểm tra file .xlsx rồi thử lại.",
         ),
       ),
@@ -1150,8 +1341,8 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) =>
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error.message,
           "Không thể lưu ánh xạ. Kiểm tra các cột bắt buộc rồi thử lại.",
         ),
       ),
@@ -1164,8 +1355,8 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) =>
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error.message,
           "Không thể đối chiếu vật tư. Kiểm tra ánh xạ rồi thử lại.",
         ),
       ),
@@ -1188,8 +1379,8 @@ export function MaterialProfileDetailClient({
     },
     onError: (error) =>
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error.message,
           "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
         ),
       ),
@@ -1198,8 +1389,8 @@ export function MaterialProfileDetailClient({
     api.materialProfile.exportDownloadBundle.useMutation({
       onError: (error) =>
         toast.error(
-          profileActionError(
-            error,
+          materialProfileActionMessage(
+            error.message,
             "Không thể tạo file tải xuống. Thử lại sau ít phút.",
           ),
         ),
@@ -1276,13 +1467,17 @@ export function MaterialProfileDetailClient({
 
   const handleFile = async (file: File | null) => {
     if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      toast.warning("Chỉ nhận file Excel định dạng .xlsx.");
+      return;
+    }
     try {
       const workbookBase64 = await fileToBase64(file);
       upload.mutate({ workspaceId, fileName: file.name, workbookBase64 });
     } catch (error) {
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error instanceof Error ? error.message : undefined,
           "Không thể đọc file .xlsx. Chọn lại file rồi thử lại.",
         ),
       );
@@ -1358,8 +1553,8 @@ export function MaterialProfileDetailClient({
         return;
       }
       toast.error(
-        profileActionError(
-          error,
+        materialProfileActionMessage(
+          error instanceof Error ? error.message : undefined,
           "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
         ),
       );
@@ -1371,7 +1566,10 @@ export function MaterialProfileDetailClient({
       <section className="panel p-4">
         <EmptyState
           title="Không tải được hồ sơ vật tư"
-          description={`Kiểm tra kết nối rồi tải lại hồ sơ. Nếu lỗi vẫn lặp lại, quay lại danh sách và mở lại hồ sơ này. ${query.error.message}`}
+          description={materialProfileActionMessage(
+            query.error.message,
+            "Kiểm tra kết nối rồi tải lại hồ sơ. Nếu lỗi vẫn lặp lại, quay lại danh sách và mở lại hồ sơ này.",
+          )}
           cta={
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="secondary" onClick={() => void query.refetch()}>
@@ -1485,6 +1683,7 @@ export function MaterialProfileDetailClient({
         <CleanExportStep
           preview={cleanExportPreviewQuery.data}
           isLoading={cleanExportPreviewQuery.isLoading}
+          errorMessage={cleanExportPreviewQuery.error?.message}
           isExporting={
             exportWorkspace.isPending || exportDownloadBundle.isPending
           }

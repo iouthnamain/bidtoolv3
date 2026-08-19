@@ -118,6 +118,11 @@ export function SearchSourceCandidateCard({
   const isCompleted = !isPending && !isError;
   const tone = confidenceTone(band);
   const priceLabel = priceStateLabel(candidate);
+  const priceTone = candidate.priceLabel?.trim()
+    ? "text-good"
+    : candidate.priceStatus === "not_found"
+      ? "text-warning"
+      : "text-ink-3";
   const isPdf = candidate.sourceUrl
     ? /\.pdf(?:$|[?#])/i.test(candidate.sourceUrl)
     : false;
@@ -207,7 +212,9 @@ export function SearchSourceCandidateCard({
               {candidate.title}
             </p>
             {isCompleted ? (
-              <p className="text-warning mt-0.5 text-xs font-semibold break-words tabular-nums">
+              <p
+                className={`${priceTone} mt-0.5 text-xs font-semibold break-words tabular-nums`}
+              >
                 {priceLabel}
               </p>
             ) : null}

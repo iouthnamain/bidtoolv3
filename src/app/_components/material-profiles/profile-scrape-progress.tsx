@@ -4,6 +4,10 @@ import Link from "next/link";
 import { RotateCcw, Square } from "lucide-react";
 
 import { Button } from "~/app/_components/ui";
+import {
+  materialProfileScrapeFailureMessage,
+  shouldHideMaterialProfileTechnicalDetail,
+} from "~/lib/materials/profile-user-message";
 
 type ProgressJob = {
   status: string;
@@ -66,6 +70,14 @@ export function ProfileScrapeProgress({
     (job.startedAt
       ? Math.max(0, Date.now() - new Date(job.startedAt).getTime())
       : 0);
+  const rawError =
+    run?.errorMessage ??
+    (job.failed > 0 ? (job.childShopJob?.message ?? job.message) : null);
+  const statusMessage = rawError
+    ? materialProfileScrapeFailureMessage(rawError)
+    : (job.childShopJob?.message ?? job.message);
+  const hasHiddenTechnicalDetail =
+    rawError != null && shouldHideMaterialProfileTechnicalDetail(rawError);
   return (
     <section className="border-line bg-surface-2 grid gap-2 rounded-[var(--radius-panel)] border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -147,14 +159,22 @@ export function ProfileScrapeProgress({
           ? `${job.childShopJob.pagesVisited.length} trang · ${job.childShopJob.productCount} sản phẩm · ${Math.round(elapsedMs / 1_000)} giây · job gốc ${shopStatusLabel(job.childShopJob.status)}`
           : `${Math.round(elapsedMs / 1_000)} giây`}
       </p>
-      <p
-        className={
-          run?.errorMessage ? "text-critical text-xs" : "text-ink-2 text-xs"
-        }
-        role={run?.errorMessage ? "alert" : undefined}
-      >
-        {run?.errorMessage ?? job.childShopJob?.message ?? job.message}
-      </p>
+      {statusMessage ? (
+        <p
+          className={rawError ? "text-critical text-xs" : "text-ink-2 text-xs"}
+          role={rawError ? "alert" : undefined}
+        >
+          {statusMessage}
+        </p>
+      ) : null}
+      {hasHiddenTechnicalDetail ? (
+        <details className="border-line text-ink-3 rounded border px-2 py-1 text-xs">
+          <summary className="focus-visible:ring-ring min-h-8 cursor-pointer py-1 font-semibold focus-visible:ring-2 focus-visible:outline-none">
+            Chi tiết kỹ thuật
+          </summary>
+          <p className="mt-1 break-words whitespace-pre-wrap">{rawError}</p>
+        </details>
+      ) : null}
     </section>
   );
 }

@@ -810,11 +810,6 @@ export function MatchChooser({
     }
     if (latestRun?.status === "failed") {
       setExpandedScrapeSourceKey(candidateKey);
-      retryScrapeRuns.mutate({
-        workspaceId,
-        jobId: latestRun.jobId,
-        runIds: [latestRun.id],
-      });
       return;
     }
     setStartingCandidateKeys((current) => new Set(current).add(candidateKey));
@@ -1694,7 +1689,7 @@ export function MatchChooser({
           : run?.status === "awaiting_product_selection"
             ? "Chọn sản phẩm"
             : run?.status === "failed"
-              ? "Thử lại"
+              ? "Xem lỗi"
               : run?.status === "cancelled" || run?.status === "skipped"
                 ? "Scrape lại"
                 : run?.status === "completed" || products.length > 0
