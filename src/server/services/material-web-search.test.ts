@@ -4,6 +4,8 @@ vi.mock("~/server/services/search-audit", () => ({
   recordSearchAuditLog: vi.fn(),
 }));
 
+import { recordSearchAuditLog } from "~/server/services/search-audit";
+
 function requestUrl(input: RequestInfo | URL) {
   if (typeof input === "string") {
     return input;
@@ -14,6 +16,14 @@ function requestUrl(input: RequestInfo | URL) {
   return input.url;
 }
 
+function bingHtml(input: {
+  title: string;
+  url: string;
+  snippet: string;
+}) {
+  return `<ol id="b_results"><li class="b_algo"><h2><a href="${input.url}">${input.title}</a></h2><div class="b_caption"><p>${input.snippet}</p></div></li></ol>`;
+}
+
 describe("searchQueryWithFallback", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -21,7 +31,7 @@ describe("searchQueryWithFallback", () => {
     vi.resetModules();
   });
 
-  it("uses SearXNG results when configured and DuckDuckGo is not called", async () => {
+  it("uses primary SearXNG results without calling direct Bing", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -40,26 +50,23 @@ describe("searchQueryWithFallback", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url.includes("127.0.0.1:8888") || url.includes("localhost:8888")) {
-        return new Response(JSON.stringify({ results: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      throw new Error("DuckDuckGo should not be called");
+      throw new Error("Direct Bing should not be called");
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { searchQueryWithFallback } = await import("./material-web-search");
-    const { results, warnings } = await searchQueryWithFallback("ống PVC");
+    const response = await searchQueryWithFallback("ống PVC");
+    const { results, warnings } = response;
 
     expect(results).toHaveLength(1);
     expect(results[0]?.url).toBe("https://example.com/spec.pdf");
     expect(warnings).toEqual([]);
+    expect(response.providers).toEqual(["searxng"]);
+    expect(response.directBingQueries).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not call DuckDuckGo when SearXNG fails", async () => {
+  it("falls back to direct Bing when SearXNG errors", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -67,20 +74,46 @@ describe("searchQueryWithFallback", () => {
       if (url.includes("searxng.test")) {
         throw new Error("fetch failed");
       }
+      if (url.includes("bing.com/search")) {
+        return new Response(
+          bingHtml({
+            title: "Ống PVC Bình Minh D90",
+            url: "https://binhminhplastic.com.vn/ong-pvc-d90",
+            snippet: "Ống nhựa PVC D90 chính hãng Bình Minh",
+          }),
+          { status: 200, headers: { "Content-Type": "text/html" } },
+        );
+      }
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { searchQueryWithFallback } = await import("./material-web-search");
-    const { results, warnings } = await searchQueryWithFallback("ống PVC");
+    const response = await searchQueryWithFallback("ống PVC");
+    const { results, warnings } = response;
 
-    expect(results).toEqual([]);
+    expect(results).toEqual([
+      expect.objectContaining({
+        title: "Ống PVC Bình Minh D90",
+        url: "https://binhminhplastic.com.vn/ong-pvc-d90",
+        provider: "bing",
+      }),
+    ]);
     expect(warnings.some((warning) => warning.includes("SearXNG"))).toBe(true);
+    expect(response.providers).toEqual(["searxng", "bing"]);
+    expect(response.directBingQueries).toEqual(["ống pvc"]);
+    expect(recordSearchAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "bing_html",
+        status: "success",
+        resultCount: 1,
+      }),
+    );
     expect(
       fetchMock.mock.calls.some(([url]) =>
-        new URL(requestUrl(url)).hostname.includes("duckduckgo"),
+        new URL(requestUrl(url)).hostname.includes("bing.com"),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("falls back to SearXNG HTML when JSON API returns 403", async () => {
@@ -142,7 +175,7 @@ describe("searchQueryWithFallback", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not fall back to HTML when disabled", async () => {
+  it("skips SearXNG HTML when disabled before using direct Bing", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
     vi.stubEnv("SEARXNG_ENGINES", "bing");
     vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
@@ -152,6 +185,16 @@ describe("searchQueryWithFallback", () => {
       if (url.includes("format=json")) {
         return new Response("Forbidden", { status: 403 });
       }
+      if (url.includes("bing.com/search")) {
+        return new Response(
+          bingHtml({
+            title: "Ống PVC",
+            url: "https://example.vn/ong-pvc",
+            snippet: "Thông tin ống PVC",
+          }),
+          { status: 200, headers: { "Content-Type": "text/html" } },
+        );
+      }
       throw new Error(`unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -159,9 +202,9 @@ describe("searchQueryWithFallback", () => {
     const { searchQueryWithFallback } = await import("./material-web-search");
     const { results, warnings } = await searchQueryWithFallback("ống PVC");
 
-    expect(results).toEqual([]);
+    expect(results).toHaveLength(1);
     expect(warnings.some((warning) => warning.includes("403"))).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("reports SearXNG engine failures when no results are returned", async () => {
@@ -194,15 +237,15 @@ describe("searchQueryWithFallback", () => {
     expect(warnings.join(" ")).toContain("không có kết quả");
   });
 
-  it("retries with Bing through SearXNG when configured engines return no results", async () => {
+  it("uses direct Bing when configured SearXNG engines return no results", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
     vi.stubEnv("SEARXNG_ENGINES", "google,duckduckgo");
     vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(requestUrl(input));
-      const engines = url.searchParams.get("engines");
-      if (engines === "google,duckduckgo") {
+      if (url.hostname === "searxng.test") {
+        expect(url.searchParams.get("engines")).toBe("google,duckduckgo");
         return new Response(
           JSON.stringify({
             results: [],
@@ -214,22 +257,17 @@ describe("searchQueryWithFallback", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (engines === "bing") {
+      if (url.hostname.endsWith("bing.com")) {
         return new Response(
-          JSON.stringify({
-            results: [
-              {
-                title: "Sản phẩm - Công ty Cổ phần Nhựa Bình Minh",
-                url: "https://binhminhplastic.com.vn/san-pham",
-                content: "Ống nhựa PVC Bình Minh",
-                score: 1,
-              },
-            ],
+          bingHtml({
+            title: "Sản phẩm - Công ty Cổ phần Nhựa Bình Minh",
+            url: "https://binhminhplastic.com.vn/san-pham",
+            snippet: "Ống nhựa PVC Bình Minh",
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
+          { status: 200, headers: { "Content-Type": "text/html" } },
         );
       }
-      throw new Error(`unexpected engines: ${engines}`);
+      throw new Error(`unexpected URL: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -240,19 +278,22 @@ describe("searchQueryWithFallback", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.domain).toBe("binhminhplastic.com.vn");
-    expect(warnings.join(" ")).toContain("đã thử lại bằng Bing");
+    expect(results[0]?.provider).toBe("bing");
+    expect(warnings.join(" ")).toContain("Bing trực tiếp");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("retries Bing when a multi-engine response is empty even if Bing is configured", async () => {
+  it("still uses direct Bing when Bing is configured inside an empty SearXNG response", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
     vi.stubEnv("SEARXNG_ENGINES", "google,bing,duckduckgo");
     vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(requestUrl(input));
-      const engines = url.searchParams.get("engines");
-      if (engines === "google,bing,duckduckgo") {
+      if (url.hostname === "searxng.test") {
+        expect(url.searchParams.get("engines")).toBe(
+          "google,bing,duckduckgo",
+        );
         return new Response(
           JSON.stringify({
             results: [],
@@ -261,21 +302,17 @@ describe("searchQueryWithFallback", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (engines === "bing") {
+      if (url.hostname.endsWith("bing.com")) {
         return new Response(
-          JSON.stringify({
-            results: [
-              {
-                title: "Van tiết lưu",
-                url: "https://example.vn/van-tiet-luu",
-                content: "Thông tin van tiết lưu",
-              },
-            ],
+          bingHtml({
+            title: "Van tiết lưu",
+            url: "https://example.vn/van-tiet-luu",
+            snippet: "Thông tin van tiết lưu",
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
+          { status: 200, headers: { "Content-Type": "text/html" } },
         );
       }
-      throw new Error(`unexpected engines: ${engines}`);
+      throw new Error(`unexpected URL: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -284,8 +321,33 @@ describe("searchQueryWithFallback", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.url).toBe("https://example.vn/van-tiet-luu");
-    expect(warnings.join(" ")).toContain("đã thử lại bằng Bing");
+    expect(results[0]?.provider).toBe("bing");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses direct Bing when SearXNG is unconfigured", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(requestUrl(input));
+      expect(url.hostname).toBe("www.bing.com");
+      return new Response(
+        bingHtml({
+          title: "Cáp điện CADIVI",
+          url: "https://cadivi.vn/cap-dien",
+          snippet: "Thông tin sản phẩm cáp điện CADIVI",
+        }),
+        { status: 200, headers: { "Content-Type": "text/html" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const response = await searchQueryWithFallback("cáp điện CADIVI");
+
+    expect(response.results[0]).toEqual(
+      expect.objectContaining({ provider: "bing", domain: "cadivi.vn" }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns empty results without throwing when all providers fail", async () => {
@@ -396,6 +458,84 @@ describe("searchQueryWithFallback", () => {
     expect(first.results).toHaveLength(1);
     expect(second.results).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps direct Bing searches isolated from the SearXNG primary cache", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("ENRICHMENT_SEARCH_CACHE_TTL_MS", "60000");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(requestUrl(input));
+      if (url.hostname === "searxng.test") {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: "Kết quả không liên quan",
+                url: "https://irrelevant.example/news",
+                content: "Tin tức tổng hợp",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        bingHtml({
+          title: "Ống PVC D90 Bình Minh",
+          url: "https://binhminhplastic.com.vn/ong-pvc-d90",
+          snippet: "Sản phẩm ống PVC D90 Bình Minh",
+        }),
+        { status: 200, headers: { "Content-Type": "text/html" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchBingForProduct, searchWebForProduct } = await import(
+      "./material-web-search"
+    );
+    const primary = await searchWebForProduct(["Ống PVC D90"]);
+    const rescue = await searchBingForProduct(["Ống PVC D90"]);
+    const cachedRescue = await searchBingForProduct(["  Ống   PVC D90  "]);
+
+    expect(primary.results[0]?.provider).toBe("searxng");
+    expect(rescue.results[0]?.provider).toBe("bing");
+    expect(primary.directBingQueries).toEqual([]);
+    expect(rescue.directBingQueries).toEqual(["ống pvc d90"]);
+    expect(cachedRescue.directBingQueries).toEqual(["ống pvc d90"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels an in-flight direct Bing request", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    const controller = new AbortController();
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        markStarted?.();
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+            { once: true },
+          );
+        });
+      }),
+    );
+
+    const { searchBingForProduct } = await import("./material-web-search");
+    const pending = searchBingForProduct(
+      ["Ống PVC D90"],
+      controller.signal,
+      { feature: "test" },
+    );
+    await started;
+    controller.abort();
+
+    await expect(pending).rejects.toThrow("Đã hủy tìm kiếm web.");
   });
 
   it("misses the product-search cache when relevant configuration changes", async () => {

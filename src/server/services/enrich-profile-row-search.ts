@@ -36,7 +36,9 @@ import { extractProductFromSources } from "~/server/services/material-enrichment
 import {
   enrichSearchResultsWithFetchedContent,
   fetchUrlAsSearchResult,
+  normalizeWebSearchQuery,
   rankSearchResults,
+  searchBingForProduct,
   searchWebForProduct,
   type WebSearchResult,
 } from "~/server/services/material-web-search";
@@ -305,22 +307,25 @@ async function _searchProfileRowWebLinks(
     feature: "profile_search",
   });
   warnings.push(...searchResponse.warnings);
+  const directBingQueries = new Set(searchResponse.directBingQueries ?? []);
   const unsafeRejectedUrls = new Set(searchResponse.unsafeRejectedUrls ?? []);
   const rejectedUrls = await activeRejectedUrls(waves.identity.signature);
   const feedbackRejectedUrls = new Set<string>();
-  const feedbackFiltered = searchResponse.results.filter((result) => {
-    try {
-      const normalizedUrl = normalizeMaterialSearchUrl(result.url);
-      if (rejectedUrls.has(normalizedUrl)) {
-        feedbackRejectedUrls.add(normalizedUrl);
+  const filterFeedbackResults = (results: WebSearchResult[]) =>
+    results.filter((result) => {
+      try {
+        const normalizedUrl = normalizeMaterialSearchUrl(result.url);
+        if (rejectedUrls.has(normalizedUrl)) {
+          feedbackRejectedUrls.add(normalizedUrl);
+          return false;
+        }
+        return true;
+      } catch {
+        feedbackRejectedUrls.add(result.url.trim());
         return false;
       }
-      return true;
-    } catch {
-      feedbackRejectedUrls.add(result.url.trim());
-      return false;
-    }
-  });
+    });
+  const feedbackFiltered = filterFeedbackResults(searchResponse.results);
   const coarse = feedbackFiltered.map((candidate) => ({
     candidate,
     assessment: assessMaterialSearchCandidate({
@@ -348,22 +353,13 @@ async function _searchProfileRowWebLinks(
       feature: "profile_search",
     });
     warnings.push(...wave2.warnings);
+    for (const query of wave2.directBingQueries ?? []) {
+      directBingQueries.add(query);
+    }
     for (const url of wave2.unsafeRejectedUrls ?? []) {
       unsafeRejectedUrls.add(url);
     }
-    const wave2FeedbackFiltered = wave2.results.filter((result) => {
-      try {
-        const normalizedUrl = normalizeMaterialSearchUrl(result.url);
-        if (rejectedUrls.has(normalizedUrl)) {
-          feedbackRejectedUrls.add(normalizedUrl);
-          return false;
-        }
-        return true;
-      } catch {
-        feedbackRejectedUrls.add(result.url.trim());
-        return false;
-      }
-    });
+    const wave2FeedbackFiltered = filterFeedbackResults(wave2.results);
     mergedResults = mergeWaveResults(feedbackFiltered, wave2FeedbackFiltered);
   }
 
@@ -378,12 +374,12 @@ async function _searchProfileRowWebLinks(
     sourceUrl: null,
     profileSearch: true,
   };
-  const initialRanked = rankSearchResults(
+  let initialRanked = rankSearchResults(
     mergedResults,
     rankingInput,
     searchResponse.domainPolicy ?? domainPolicy,
   );
-  const plausible =
+  let plausible =
     pipelineMode === "legacy"
       ? initialRanked
       : initialRanked.filter((candidate) => {
@@ -398,33 +394,91 @@ async function _searchProfileRowWebLinks(
       .filter((candidate) => !plausible.includes(candidate))
       .map((candidate) => candidate.url),
   );
-  let fetchedRanked = plausible;
-  try {
-    fetchedRanked = await enrichSearchResultsWithFetchedContent(plausible, {
-      fetchCount: 8,
-      signal: searchSignal,
-    });
-  } catch {
-    warnings.push("Một số nguồn chưa được xác minh nội dung trong 15 giây.");
-  }
-  const ranked = rankSearchResults(
-    fetchedRanked,
-    rankingInput,
-    searchResponse.domainPolicy ?? domainPolicy,
-  );
-  const assessed = ranked.map((hit) => {
-    const assessment = assessMaterialSearchCandidate({
-      identity: waves.identity,
-      candidate: hit,
-    });
+  const enrichAndAssess = async (candidates: WebSearchResult[]) => {
+    let fetched = candidates;
+    try {
+      fetched = await enrichSearchResultsWithFetchedContent(candidates, {
+        fetchCount: 8,
+        signal: searchSignal,
+      });
+    } catch {
+      warnings.push("Một số nguồn chưa được xác minh nội dung trong 15 giây.");
+    }
+    const rankedCandidates = rankSearchResults(
+      fetched,
+      rankingInput,
+      searchResponse.domainPolicy ?? domainPolicy,
+    );
     return {
-      hit,
-      assessment:
-        hit.fetchStatus === "verified" || assessment.tier === "rejected"
-          ? assessment
-          : { ...assessment, tier: "weak" as const },
+      ranked: rankedCandidates,
+      assessed: rankedCandidates.map((hit) => {
+        const assessment = assessMaterialSearchCandidate({
+          identity: waves.identity,
+          candidate: hit,
+        });
+        return {
+          hit,
+          assessment:
+            hit.fetchStatus === "verified" || assessment.tier === "rejected"
+              ? assessment
+              : { ...assessment, tier: "weak" as const },
+        };
+      }),
     };
-  });
+  };
+  let { ranked, assessed } = await enrichAndAssess(plausible);
+  const hasSearxngCandidate = mergedResults.some(
+    (result) => result.provider !== "bing",
+  );
+  const allCandidatesIdentityRejected = assessed.every(
+    ({ assessment }) => assessment.tier === "rejected",
+  );
+  const uncoveredBingQueries = executedQueries.filter(
+    ({ query }) => !directBingQueries.has(normalizeWebSearchQuery(query)),
+  );
+  if (
+    pipelineMode === "guarded" &&
+    mergedResults.length > 0 &&
+    hasSearxngCandidate &&
+    allCandidatesIdentityRejected &&
+    uncoveredBingQueries.length > 0 &&
+    !searchSignal.aborted
+  ) {
+    const bing = await searchBingForProduct(
+      uncoveredBingQueries,
+      searchSignal,
+      { feature: "profile_search" },
+    );
+    warnings.push(
+      "SearXNG không có ứng viên khớp nhận dạng; đã thử Bing trực tiếp.",
+      ...bing.warnings,
+    );
+    for (const url of bing.unsafeRejectedUrls ?? []) {
+      unsafeRejectedUrls.add(url);
+    }
+    mergedResults = mergeWaveResults(
+      mergedResults,
+      filterFeedbackResults(bing.results),
+    );
+    initialRanked = rankSearchResults(
+      mergedResults,
+      rankingInput,
+      searchResponse.domainPolicy ?? bing.domainPolicy ?? domainPolicy,
+    );
+    plausible = initialRanked.filter((candidate) => {
+      const assessment = assessMaterialSearchCandidate({
+        identity: waves.identity,
+        candidate,
+      });
+      return assessment.score >= 0.2 || assessment.aiOverrideEligible;
+    });
+    for (const candidate of initialRanked) {
+      if (!plausible.includes(candidate)) {
+        deterministicRejectedUrls.add(candidate.url);
+      }
+    }
+    ({ ranked, assessed } = await enrichAndAssess(plausible));
+  }
   const primaryResults = assessed
     .filter(({ assessment }) => assessment.tier === "primary")
     .slice(0, PROFILE_TOP_LINKS)
