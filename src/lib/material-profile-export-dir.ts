@@ -23,6 +23,29 @@ export type MaterialProfileExportDownloadBundle = {
   warnings: string[];
 };
 
+export type MaterialProfileExportRevisionDownload = {
+  revision: {
+    id: string;
+    workspaceId: number;
+    revisionNumber: number;
+    excelFileName: string;
+    summary: {
+      totalRows: number;
+      ready: number;
+      needs_review: number;
+      skipped: number;
+      excluded: number;
+    };
+    createdAt: string;
+  };
+  zipFileName: string;
+  files: Array<{
+    fileName: string;
+    encoding: "base64" | "utf8";
+    content: string;
+  }>;
+};
+
 export function getLastMaterialProfileExportDir() {
   if (typeof window === "undefined") {
     return null;
@@ -82,6 +105,37 @@ function downloadBlob(fileName: string, blob: Blob) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function buildMaterialProfileRevisionZip(
+  bundle: MaterialProfileExportRevisionDownload,
+) {
+  const zip = new JSZip();
+  for (const file of bundle.files) {
+    zip.file(
+      file.fileName,
+      file.encoding === "base64"
+        ? base64ToUint8Array(file.content)
+        : file.content,
+      file.encoding === "base64" ? { binary: true } : undefined,
+    );
+  }
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+export async function downloadMaterialProfileRevisionZip(
+  bundle: MaterialProfileExportRevisionDownload,
+) {
+  const bytes = await buildMaterialProfileRevisionZip(bundle);
+  const arrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  downloadBlob(
+    bundle.zipFileName,
+    new Blob([arrayBuffer], { type: "application/zip" }),
+  );
+  return { label: bundle.zipFileName };
 }
 
 async function writeBase64File(

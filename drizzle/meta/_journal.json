@@ -281,6 +281,13 @@
       "when": 1783816978989,
       "tag": "0039_thick_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787177646302,
+      "tag": "0040_lying_maestro",
+      "breakpoints": true
     }
   ]
 }

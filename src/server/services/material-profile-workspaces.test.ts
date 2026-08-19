@@ -10,6 +10,7 @@ import {
   canExportMaterialProfileCleanItems,
   MATERIAL_PROFILE_EXPORT_COLUMNS,
   isMaterialProfileExportRowDeleted,
+  lockMaterialProfileReviewDecisionRows,
   MaterialProfileWorkspaceError,
   parseMaterialProfileExportEditState,
   resolveDefaultDownloadsDir,
@@ -24,6 +25,41 @@ import {
 } from "~/server/services/material-profile-workspaces";
 
 describe("material profile workspace helpers", () => {
+  it("locks the workspace before Step 3 decision rows in stable order", async () => {
+    const executed: unknown[] = [];
+    const db = {
+      execute: async (query: unknown) => {
+        executed.push(query);
+        return [];
+      },
+    };
+
+    await lockMaterialProfileReviewDecisionRows(db as never, 12, [9, 3, 7]);
+
+    expect(executed).toHaveLength(2);
+    const queryInfo = executed.map((query) => {
+      const sqlQuery = query as {
+        usedTables?: string[];
+        queryChunks?: Array<{ value?: string[]; name?: string }>;
+      };
+      return {
+        tables: sqlQuery.usedTables ?? [],
+        columns: (sqlQuery.queryChunks ?? [])
+          .map((chunk) => chunk.name)
+          .filter((name): name is string => typeof name === "string"),
+        text: (sqlQuery.queryChunks ?? [])
+          .flatMap((chunk) => chunk.value ?? [])
+          .join(""),
+      };
+    });
+    expect(queryInfo[0]?.tables).toEqual(["excel_workspaces"]);
+    expect(queryInfo[0]?.text).toContain("for update");
+    expect(queryInfo[1]?.tables).toEqual(["excel_workspace_items"]);
+    expect(queryInfo[1]?.columns).toContain("workspace_id");
+    expect(queryInfo[1]?.text).toContain("order by");
+    expect(queryInfo[1]?.text).toContain("for update");
+  });
+
   it("sanitizes path segments without dropping Vietnamese text", () => {
     expect(
       sanitizeMaterialProfilePathSegment("IB2600190527-00", "fallback"),

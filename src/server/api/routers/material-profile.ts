@@ -13,14 +13,11 @@ import {
   bulkUpdateMaterialProfileItems,
   createMaterialProfileWorkspace,
   deleteMaterialProfileWorkspace,
-  exportMaterialProfileDownloadBundle,
-  exportMaterialProfileWorkspace,
   getMaterialProfileWorkspace,
   listMaterialProfileWorkspaces,
   matchMaterialProfileWorkspace,
   MaterialProfileWorkspaceError,
   openMaterialProfileOutputFolder,
-  previewMaterialProfileCleanExport,
   previewMaterialProfileExportWorkbook,
   resolveDefaultDownloadsDir,
   undoLastMaterialProfileBulkApply,
@@ -33,6 +30,13 @@ import {
   updateMaterialProfileWorkspaceState,
   uploadMaterialProfileWorkbook,
 } from "~/server/services/material-profile-workspaces";
+import {
+  createMaterialProfileExportRevision,
+  downloadMaterialProfileExportRevision,
+  listMaterialProfileExportRevisions,
+  MaterialProfileExportRevisionError,
+  previewMaterialProfileExportRevisionDraft,
+} from "~/server/services/material-profile-export-revisions";
 import {
   cancelMaterialProfileSearchJob,
   getMaterialProfileSearchJob,
@@ -72,6 +76,17 @@ import {
 } from "~/server/services/material-search-feedback";
 
 function mapMaterialProfileError(error: unknown): never {
+  if (error instanceof MaterialProfileExportRevisionError) {
+    throw new TRPCError({
+      code:
+        error.code === "NOT_FOUND"
+          ? "NOT_FOUND"
+          : error.code === "CONFLICT"
+            ? "CONFLICT"
+            : "BAD_REQUEST",
+      message: error.message,
+    });
+  }
   if (error instanceof MaterialProfileMaterialBatchError) {
     throw new TRPCError({
       code:
@@ -804,30 +819,6 @@ export const materialProfileRouter = createTRPCRouter({
       ),
     ),
 
-  export: requirePermission("material:write")
-    .input(
-      workspaceIdInput.extend({
-        outputDirPath: z.string().trim().min(1),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      withMaterialProfileErrors(() =>
-        exportMaterialProfileWorkspace(
-          ctx.db,
-          input.workspaceId,
-          input.outputDirPath,
-        ),
-      ),
-    ),
-
-  exportDownloadBundle: requirePermission("material:write")
-    .input(workspaceIdInput)
-    .mutation(({ ctx, input }) =>
-      withMaterialProfileErrors(() =>
-        exportMaterialProfileDownloadBundle(ctx.db, input.workspaceId),
-      ),
-    ),
-
   getDefaultExportDir: protectedProcedure.query(() => ({
     path: resolveDefaultDownloadsDir(),
   })),
@@ -844,7 +835,35 @@ export const materialProfileRouter = createTRPCRouter({
     .input(workspaceIdInput)
     .query(({ ctx, input }) =>
       withMaterialProfileErrors(() =>
-        previewMaterialProfileCleanExport(ctx.db, input.workspaceId),
+        previewMaterialProfileExportRevisionDraft(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  createExportRevision: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        createMaterialProfileExportRevision(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  listExportRevisions: requirePermission("material:write")
+    .input(workspaceIdInput)
+    .query(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        listMaterialProfileExportRevisions(ctx.db, input.workspaceId),
+      ),
+    ),
+
+  downloadExportRevision: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        revisionId: z.string().uuid(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      withMaterialProfileErrors(() =>
+        downloadMaterialProfileExportRevision(ctx.db, input),
       ),
     ),
 
