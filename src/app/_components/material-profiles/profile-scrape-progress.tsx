@@ -8,6 +8,10 @@ import {
   materialProfileScrapeFailureMessage,
   shouldHideMaterialProfileTechnicalDetail,
 } from "~/lib/materials/profile-user-message";
+import {
+  isMaterialProfileScrapeProducerActive,
+  materialProfileScrapeElapsedMs,
+} from "~/lib/materials/profile-scrape-progress";
 
 type ProgressJob = {
   status: string;
@@ -21,6 +25,9 @@ type ProgressJob = {
   currentProductName: string | null;
   message: string | null;
   startedAt?: string | null;
+  finishedAt?: string | null;
+  lastProgressAt?: string | null;
+  updatedAt?: string | null;
   childShopJob?: {
     status: string;
     pagesVisited: string[];
@@ -34,6 +41,9 @@ type ProgressRun = {
   status: string;
   shopScrapeJobId: string | null;
   errorMessage: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  updatedAt?: string | null;
 };
 
 function shopStatusLabel(status: string) {
@@ -60,16 +70,13 @@ export function ProfileScrapeProgress({
   cancelling?: boolean;
   retrying?: boolean;
 }) {
-  const active =
-    job.status === "queued" ||
-    job.status === "running" ||
-    job.status === "awaiting_review";
+  const producerActive = isMaterialProfileScrapeProducerActive(job.status);
   const pct = job.total > 0 ? Math.round((job.processed / job.total) * 100) : 0;
-  const elapsedMs =
-    job.childShopJob?.durationMs ??
-    (job.startedAt
-      ? Math.max(0, Date.now() - new Date(job.startedAt).getTime())
-      : 0);
+  const elapsedMs = materialProfileScrapeElapsedMs({
+    job,
+    run,
+    childDurationMs: job.childShopJob?.durationMs,
+  });
   const rawError =
     run?.errorMessage ??
     (job.failed > 0 ? (job.childShopJob?.message ?? job.message) : null);
@@ -97,7 +104,7 @@ export function ProfileScrapeProgress({
               Mở job scrape gốc
             </Link>
           ) : null}
-          {active && onCancel ? (
+          {producerActive && onCancel ? (
             <Button
               variant="warning"
               size="sm"

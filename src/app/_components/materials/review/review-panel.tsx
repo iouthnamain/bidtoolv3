@@ -247,6 +247,7 @@ export function ReviewPanel({
   onProfileCancelSearchJob,
   onProfileUseSearchRun,
   onCapturePendingChange,
+  onBeforeNavigate,
 }: {
   workspaceId?: number;
   rows: ReviewRow[];
@@ -290,6 +291,7 @@ export function ReviewPanel({
   onProfileCancelSearchJob?: () => void | Promise<void>;
   onProfileUseSearchRun?: (runId: number) => void | Promise<void>;
   onCapturePendingChange?: (pending: boolean) => void;
+  onBeforeNavigate?: () => void | Promise<void>;
 }) {
   const toast = useToast();
   const router = useRouter();
@@ -1151,7 +1153,7 @@ export function ReviewPanel({
   const activeBulkScrape = activeScrapeJobQuery.data;
   const bulkScrapeIsActive = Boolean(
     activeBulkScrape &&
-    ["queued", "running", "awaiting_review"].includes(activeBulkScrape.status),
+    ["queued", "running"].includes(activeBulkScrape.status),
   );
   const activeBulkScrapeRuns = activeScrapeRunsQuery.data ?? [];
   const bulkActionReason = (kind: "search" | "scrape" | "save") => {
@@ -1193,6 +1195,7 @@ export function ReviewPanel({
   };
   const openSavePreview = async () => {
     if (workspaceId == null) return;
+    await onBeforeNavigate?.();
     const rowIndices = bulkTargetRows.map((row) => row.originalRowIndex);
     await onFlushDecisionsForRows?.(rowIndices);
     const preview = await createSavePreview.mutateAsync({
@@ -1469,11 +1472,15 @@ export function ReviewPanel({
             job={activeBulkScrape}
             run={
               activeBulkScrapeRuns.find(
+                (run) => run.status === "awaiting_product_selection",
+              ) ??
+              activeBulkScrapeRuns.find(
                 (run) =>
                   run.status === "running" ||
                   run.status === "queued" ||
                   run.status === "failed",
-              ) ?? null
+              ) ??
+              null
             }
             onCancel={
               bulkScrapeIsActive

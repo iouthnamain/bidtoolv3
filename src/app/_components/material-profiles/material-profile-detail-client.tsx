@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -32,6 +33,7 @@ import {
   setLastMaterialProfileExportDir,
 } from "~/lib/material-profile-export-dir";
 import { materialProfileActionMessage } from "~/lib/materials/profile-user-message";
+import { restoredMaterialProfileStep } from "~/lib/materials/profile-workflow-step";
 import { api, type RouterOutputs } from "~/trpc/react";
 
 type WorkspaceDetail = RouterOutputs["materialProfile"]["get"];
@@ -131,10 +133,12 @@ function MaterialProfileStepHeader({
   current,
   maxReached,
   onJump,
+  isTransitioning = false,
 }: {
   current: MaterialProfileStep;
   maxReached: MaterialProfileStep;
   onJump: (step: MaterialProfileStep) => void;
+  isTransitioning?: boolean;
 }) {
   const progressPercent = (current / materialProfileSteps.length) * 100;
   const currentStep = materialProfileSteps[current - 1];
@@ -185,7 +189,7 @@ function MaterialProfileStepHeader({
             <li key={step.id} className="min-w-0">
               <button
                 type="button"
-                disabled={!isReachable}
+                disabled={!isReachable || isTransitioning}
                 onClick={() => isReachable && onJump(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
                 className={`focus-visible:ring-ring focus-visible:ring-offset-surface-1 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-panel)] px-1.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed motion-reduce:transition-none sm:px-2.5 md:min-h-11 ${
@@ -1286,6 +1290,7 @@ export function MaterialProfileDetailClient({
   workspaceId: number;
 }) {
   const toast = useToast();
+  const router = useRouter();
   const utils = api.useUtils();
   const query = api.materialProfile.get.useQuery(
     { workspaceId },
@@ -1297,7 +1302,9 @@ export function MaterialProfileDetailClient({
   const [headerRowIndex, setHeaderRowIndex] = useState(1);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [edits, setEdits] = useState<CellEdits>({});
+  const [isStepTransitioning, setIsStepTransitioning] = useState(false);
   const initializedWorkspaceId = useRef<number | null>(null);
+  const reviewFlushRef = useRef<(() => Promise<void>) | null>(null);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -1410,6 +1417,70 @@ export function MaterialProfileDetailClient({
       },
     );
 
+  const handleReviewFlushReady = useCallback(
+    (flushDecisions: (() => Promise<void>) | null) => {
+      reviewFlushRef.current = flushDecisions;
+    },
+    [],
+  );
+
+  const goToStep = useCallback(
+    async (
+      nextStep: MaterialProfileStep,
+      flushOverride?: () => Promise<void>,
+    ) => {
+      if (nextStep === step || isStepTransitioning) return;
+      setIsStepTransitioning(true);
+      try {
+        if (step === 3) {
+          const flushDecisions = flushOverride ?? reviewFlushRef.current;
+          if (!flushDecisions) {
+            throw new Error("Chưa thể chuẩn bị dữ liệu duyệt để lưu.");
+          }
+          await flushDecisions();
+        }
+        if (nextStep === 4) {
+          await utils.materialProfile.previewCleanExport.invalidate({
+            workspaceId,
+          });
+          await utils.materialProfile.previewCleanExport.fetch({ workspaceId });
+        }
+        reach(nextStep);
+      } catch {
+        toast.error(
+          nextStep === 4
+            ? "Không thể lưu quyết định và làm mới file xuất. Bạn vẫn ở Bước 3; hãy thử lại."
+            : "Không thể lưu quyết định trước khi rời Bước 3. Hãy thử lại.",
+        );
+      } finally {
+        setIsStepTransitioning(false);
+      }
+    },
+    [isStepTransitioning, reach, step, toast, utils, workspaceId],
+  );
+
+  const leaveReview = useCallback(async () => {
+    if (step !== 3) {
+      router.push("/material-profiles");
+      return;
+    }
+    if (isStepTransitioning) return;
+    setIsStepTransitioning(true);
+    try {
+      const flushDecisions = reviewFlushRef.current;
+      if (!flushDecisions) {
+        throw new Error("Chưa thể chuẩn bị dữ liệu duyệt để lưu.");
+      }
+      await flushDecisions();
+      router.push("/material-profiles");
+    } catch {
+      toast.error(
+        "Không thể lưu quyết định trước khi rời Bước 3. Hãy thử lại.",
+      );
+      setIsStepTransitioning(false);
+    }
+  }, [isStepTransitioning, router, step, toast]);
+
   useEffect(() => {
     if (detail?.workspace.id !== workspaceId) return;
     const nextSheet =
@@ -1421,12 +1492,12 @@ export function MaterialProfileDetailClient({
     setHeaderRowIndex(sheet?.activeHeaderRowIndex ?? 1);
     setMapping(detail.workspace.columnMappingJson);
     setEdits(detail.workspace.editStateJson);
-    const reachableStep: MaterialProfileStep =
-      detail.workbook.sheets.length === 0
-        ? 1
-        : detail.items.length === 0
-          ? 2
-          : 4;
+    const reachableStep = restoredMaterialProfileStep({
+      sheetCount: detail.workbook.sheets.length,
+      itemCount: detail.items.length,
+      unresolvedReviewCount: detail.reviewReadiness.unresolvedRows,
+      workspaceStatus: detail.workspace.status,
+    });
 
     if (initializedWorkspaceId.current !== workspaceId) {
       initializedWorkspaceId.current = workspaceId;
@@ -1435,8 +1506,14 @@ export function MaterialProfileDetailClient({
       return;
     }
 
-    setMaxReached(reachableStep);
-    setStep((current) => (current > reachableStep ? reachableStep : current));
+    if (reachableStep < 3) {
+      setMaxReached(reachableStep);
+      setStep((current) => (current > reachableStep ? reachableStep : current));
+      return;
+    }
+    setMaxReached((current) =>
+      current > reachableStep ? current : reachableStep,
+    );
   }, [detail, workspaceId]);
 
   const saveState = async () => {
@@ -1599,6 +1676,11 @@ export function MaterialProfileDetailClient({
       <div className="flex flex-wrap items-center justify-between gap-1">
         <Link
           href="/material-profiles"
+          onClick={(event) => {
+            if (step !== 3) return;
+            event.preventDefault();
+            void leaveReview();
+          }}
           className="text-brand focus-visible:ring-ring inline-flex min-h-11 items-center gap-1.5 rounded-[var(--radius-panel)] px-1 text-sm font-semibold hover:underline focus-visible:ring-2 focus-visible:outline-none motion-reduce:transition-none sm:min-h-10"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -1617,7 +1699,8 @@ export function MaterialProfileDetailClient({
       <MaterialProfileStepHeader
         current={step}
         maxReached={maxReached}
-        onJump={setStep}
+        onJump={(nextStep) => void goToStep(nextStep)}
+        isTransitioning={isStepTransitioning}
       />
 
       {step === 1 ? (
@@ -1675,7 +1758,8 @@ export function MaterialProfileDetailClient({
           bulkApplyUndoAvailable={hasLastBulkApply(
             workspace.templateConfigJson,
           )}
-          onContinue={() => reach(4)}
+          onContinue={(flushDecisions) => goToStep(4, flushDecisions)}
+          onFlushReady={handleReviewFlushReady}
         />
       ) : null}
 
@@ -1689,7 +1773,7 @@ export function MaterialProfileDetailClient({
           }
           onRefresh={() => void cleanExportPreviewQuery.refetch()}
           onExport={() => void handleExportClick()}
-          onBackToReview={() => reach(3)}
+          onBackToReview={() => void goToStep(3)}
         />
       ) : null}
     </div>

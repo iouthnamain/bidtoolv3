@@ -128,11 +128,13 @@ export function MaterialProfileReviewStep({
   workspaceId,
   bulkApplyUndoAvailable = false,
   onContinue,
+  onFlushReady,
 }: {
   items: WorkspaceItem[];
   workspaceId: number;
   bulkApplyUndoAvailable?: boolean;
-  onContinue: () => void;
+  onContinue: (flushDecisions: () => Promise<void>) => void | Promise<void>;
+  onFlushReady?: (flushDecisions: (() => Promise<void>) | null) => void;
 }) {
   const rowIndicesKey = useMemo(
     () => items.map((item) => item.originalRowIndex).join(","),
@@ -176,6 +178,7 @@ export function MaterialProfileReviewStep({
   const persistTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const pendingDecisionSavesRef = useRef<Set<Promise<unknown>>>(new Set());
   const previousActiveSearchJobIdRef = useRef<string | null>(null);
   const invalidatedTerminalSearchJobKeyRef = useRef<string | null>(null);
   const selectedWorkspaceIdRef = useRef<number | null>(null);
@@ -438,10 +441,14 @@ export function MaterialProfileReviewStep({
         rowIndex,
         setTimeout(() => {
           persistTimers.current.delete(rowIndex);
-          updateReviewDecision.mutate({
+          const pendingSave = updateReviewDecision.mutateAsync({
             itemId,
             decision: serializeRowDecision(decision),
           });
+          pendingDecisionSavesRef.current.add(pendingSave);
+          void pendingSave
+            .catch(() => undefined)
+            .finally(() => pendingDecisionSavesRef.current.delete(pendingSave));
         }, 500),
       );
     },
@@ -469,6 +476,7 @@ export function MaterialProfileReviewStep({
           });
         }
       }
+      await Promise.allSettled([...pendingDecisionSavesRef.current]);
       if (payload.length === 0) return;
       await batchUpdateReviewDecisions.mutateAsync({
         workspaceId,
@@ -556,6 +564,8 @@ export function MaterialProfileReviewStep({
     }
     persistTimers.current.clear();
 
+    await Promise.allSettled([...pendingDecisionSavesRef.current]);
+
     const payload = items
       .map((item) => {
         const decision =
@@ -577,6 +587,11 @@ export function MaterialProfileReviewStep({
       decisions: payload,
     });
   }, [batchUpdateReviewDecisions, items, workspaceId]);
+
+  useEffect(() => {
+    onFlushReady?.(flushDecisions);
+    return () => onFlushReady?.(null);
+  }, [flushDecisions, onFlushReady]);
 
   const applyDecisions = useCallback(
     (updater: (prev: Map<number, RowDecision>) => Map<number, RowDecision>) => {
@@ -720,8 +735,7 @@ export function MaterialProfileReviewStep({
     }
     setIsFlushing(true);
     try {
-      await flushDecisions();
-      onContinue();
+      await onContinue(flushDecisions);
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -860,6 +874,7 @@ export function MaterialProfileReviewStep({
         onProfileCancelSearchJob={handleCancelProfileSearchJob}
         onProfileUseSearchRun={handleUseSearchRun}
         onCapturePendingChange={setIsProfileCapturePending}
+        onBeforeNavigate={flushDecisions}
         emptyTitle="Chưa có kết quả match"
         emptyDescription="Quay lại bước 2, lưu mapping rồi chạy match để tạo danh sách duyệt."
         headerActions={
