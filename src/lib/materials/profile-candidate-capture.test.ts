@@ -164,6 +164,31 @@ describe("profile candidate shop scrape", () => {
     ).toBe(2);
   });
 
+  it("activates a newly retained web product with its product profile", () => {
+    const stored = storeProfileCandidateCapture(
+      {
+        ...baseDecision,
+        selectedSource: "web",
+        acceptedProfileFields: new Set(["name"]),
+        editedProfileValues: { name: "Tên fallback chưa được chấp nhận" },
+      },
+      source,
+      product,
+    )!;
+    const activated = activateProfileCandidateCapture(
+      stored.decision,
+      stored.productKey,
+    )!;
+
+    expect(activated.acceptedProfileFields).toContain("name");
+    const activeProduct = activated.scrapeResults?.find(
+      (result) => result.productKey === activated.selectedScrapeProductKey,
+    );
+    const effectiveName =
+      activated.editedProfileValues?.name ?? activeProduct?.name;
+    expect(effectiveName).toBe(product.name);
+  });
+
   it("stores background results without stealing active focus", () => {
     const active = mergeProfileCandidateCapture(baseDecision, source, product)!;
     const background = storeProfileCandidateCapture(

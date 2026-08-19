@@ -52,7 +52,7 @@ import {
   materialProfileDecisionsForItems,
 } from "~/server/services/material-profile-review-decisions";
 
-const ACTIVE_JOB_STATUSES = ["queued", "running", "awaiting_review"];
+const ACTIVE_JOB_STATUSES = ["queued", "running"];
 const ACTIVE_RUN_STATUSES = ["queued", "running", "awaiting_product_selection"];
 const TERMINAL_RUN_STATUSES = ["completed", "skipped", "failed", "cancelled"];
 const MAX_BATCH_ITEMS = 500;
@@ -99,6 +99,27 @@ export function isMaterialProfileScrapeInputCurrent(input: {
     (!("materialId" in snapshot) ||
       input.currentMaterialId === snapshot.materialId)
   );
+}
+
+export function isMaterialProfileScrapeProducerJobStatus(status: string) {
+  return ACTIVE_JOB_STATUSES.includes(status);
+}
+
+export function materialProfileScrapeProducerFinishedAt(
+  runs: Array<{
+    finishedAt?: string | null;
+    updatedAt?: string | null;
+  }>,
+  fallback: string,
+) {
+  let latest = 0;
+  for (const run of runs) {
+    const value = run.finishedAt ?? run.updatedAt;
+    if (!value) continue;
+    const valueMs = new Date(value).getTime();
+    if (Number.isFinite(valueMs) && valueMs > latest) latest = valueMs;
+  }
+  return latest > 0 ? new Date(latest).toISOString() : fallback;
 }
 
 function runOwnsChild(run: ScrapeRunRow) {
@@ -658,6 +679,7 @@ async function refreshParent(job: ScrapeJobRow) {
     status = "running";
   }
   const now = new Date().toISOString();
+  const producerFinishedAt = materialProfileScrapeProducerFinishedAt(runs, now);
   await db
     .update(materialProfileScrapeJobs)
     .set({
@@ -679,12 +701,10 @@ async function refreshParent(job: ScrapeJobRow) {
               : status === "failed"
                 ? "Không scrape được nguồn web đã chọn."
                 : "Đang scrape nguồn web.",
-      lastProgressAt: now,
-      finishedAt: ["completed", "partial", "failed", "cancelled"].includes(
-        status,
-      )
-        ? (job.finishedAt ?? now)
-        : null,
+      lastProgressAt: pending
+        ? now
+        : (job.lastProgressAt ?? producerFinishedAt),
+      finishedAt: pending ? null : (job.finishedAt ?? producerFinishedAt),
       expiresAt: expiresAt(now),
       updatedAt: now,
     })
@@ -790,6 +810,10 @@ export async function getActiveMaterialProfileScrapeJob(workspaceId: number) {
     )
     .limit(1);
   if (!job) return null;
+  if (job.status === "awaiting_review" && !job.finishedAt) {
+    await refreshParent(job);
+    return getMaterialProfileScrapeJob(job.id, workspaceId);
+  }
   const [currentRun] = await db
     .select({ shopScrapeJobId: materialProfileScrapeRuns.shopScrapeJobId })
     .from(materialProfileScrapeRuns)

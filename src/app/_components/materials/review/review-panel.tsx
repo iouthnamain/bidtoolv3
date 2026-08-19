@@ -247,6 +247,7 @@ export function ReviewPanel({
   onProfileCancelSearchJob,
   onProfileUseSearchRun,
   onCapturePendingChange,
+  onBeforeNavigate,
 }: {
   workspaceId?: number;
   rows: ReviewRow[];
@@ -290,6 +291,7 @@ export function ReviewPanel({
   onProfileCancelSearchJob?: () => void | Promise<void>;
   onProfileUseSearchRun?: (runId: number) => void | Promise<void>;
   onCapturePendingChange?: (pending: boolean) => void;
+  onBeforeNavigate?: () => void | Promise<void>;
 }) {
   const toast = useToast();
   const router = useRouter();
@@ -1151,7 +1153,7 @@ export function ReviewPanel({
   const activeBulkScrape = activeScrapeJobQuery.data;
   const bulkScrapeIsActive = Boolean(
     activeBulkScrape &&
-    ["queued", "running", "awaiting_review"].includes(activeBulkScrape.status),
+    ["queued", "running"].includes(activeBulkScrape.status),
   );
   const activeBulkScrapeRuns = activeScrapeRunsQuery.data ?? [];
   const bulkActionReason = (kind: "search" | "scrape" | "save") => {
@@ -1193,6 +1195,7 @@ export function ReviewPanel({
   };
   const openSavePreview = async () => {
     if (workspaceId == null) return;
+    await onBeforeNavigate?.();
     const rowIndices = bulkTargetRows.map((row) => row.originalRowIndex);
     await onFlushDecisionsForRows?.(rowIndices);
     const preview = await createSavePreview.mutateAsync({
@@ -1275,12 +1278,18 @@ export function ReviewPanel({
           </p>
         </div>
         {headerActions ? (
-          <div className="flex flex-wrap gap-2">{headerActions}</div>
+          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
+            {headerActions}
+          </div>
         ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 px-4 py-2">
-        <div className="flex flex-wrap gap-1.5">
+        <div
+          className="flex flex-wrap gap-1.5"
+          role="group"
+          aria-label="Bộ lọc trạng thái"
+        >
           {filters.map((filter) => (
             <button
               key={filter.id}
@@ -1297,66 +1306,8 @@ export function ReviewPanel({
             </button>
           ))}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          {isProfileSplit ? (
-            <>
-              {bulkProgress ? (
-                <span className="text-xs text-slate-600">
-                  {bulkProgress.kind === "web"
-                    ? "Tìm nguồn web"
-                    : "Trích xuất AI"}
-                  : {bulkProgress.completed}/{bulkProgress.total}
-                </span>
-              ) : null}
-              <Button
-                variant="search"
-                size="sm"
-                disabled={Boolean(bulkSearchReason) || isBulkRunning}
-                title={bulkSearchReason}
-                onClick={() => void runBulkSearch("web")}
-              >
-                <Globe className="h-4 w-4" aria-hidden />
-                Tìm nguồn web ({bulkTargetCount.toLocaleString("vi-VN")})
-              </Button>
-              <Button
-                variant="scrape"
-                size="sm"
-                disabled={
-                  Boolean(bulkScrapeReason) || startBulkScrape.isPending
-                }
-                title={bulkScrapeReason}
-                isLoading={startBulkScrape.isPending}
-                onClick={() => void runBulkScrape()}
-              >
-                Scrape nguồn điểm cao nhất (
-                {selectedRowsWithScrapeSource.length.toLocaleString("vi-VN")})
-              </Button>
-              <Button
-                variant="ai"
-                size="sm"
-                disabled={Boolean(bulkSearchReason) || isBulkRunning}
-                title={bulkSearchReason}
-                onClick={() => void runBulkSearch("ai")}
-              >
-                <Sparkles className="h-4 w-4" aria-hidden />
-                Trích xuất AI ({bulkTargetCount.toLocaleString("vi-VN")})
-              </Button>
-              <Button
-                variant="save"
-                size="sm"
-                disabled={
-                  Boolean(bulkSaveReason) || createSavePreview.isPending
-                }
-                title={bulkSaveReason}
-                isLoading={createSavePreview.isPending}
-                onClick={() => void openSavePreview()}
-              >
-                Xem trước & lưu /materials (
-                {selectedCompleteRows.length.toLocaleString("vi-VN")})
-              </Button>
-            </>
-          ) : null}
-          {!isProfileSplit ? (
+        {!isProfileSplit ? (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
             <Button
               variant="primary"
               size="sm"
@@ -1365,66 +1316,154 @@ export function ReviewPanel({
             >
               Xác nhận tất cả ≥ 85%
             </Button>
-          ) : null}
-          <Button
-            variant="warning"
-            size="sm"
-            disabled={pendingUnmatched === 0 || isBulkRunning}
-            onClick={skipAllUnmatched}
-          >
-            Bỏ qua chưa khớp
-            {pendingUnmatched > 0
-              ? ` (${pendingUnmatched.toLocaleString("vi-VN")})`
-              : ""}
-          </Button>
-        </div>
+            <Button
+              variant="warning"
+              size="sm"
+              disabled={pendingUnmatched === 0 || isBulkRunning}
+              onClick={skipAllUnmatched}
+            >
+              Bỏ qua chưa khớp
+              {pendingUnmatched > 0
+                ? ` (${pendingUnmatched.toLocaleString("vi-VN")})`
+                : ""}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      {isProfileSplit && bulkUnavailableMessages.length > 0 ? (
-        <div
-          className="text-ink-3 border-b border-slate-400 bg-white px-4 py-2 text-xs"
-          role="status"
-          aria-live="polite"
-        >
-          {bulkUnavailableMessages.join(" ")}
-        </div>
-      ) : null}
-
       {isProfileSplit ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-400 bg-white px-4 py-2 text-xs text-slate-700">
-          <span className="font-semibold tabular-nums">
-            Đã chọn {checkedRows.size.toLocaleString("vi-VN")} dòng
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={filtered.length === 0}
-            onClick={selectFilteredRows}
+        <section className="border-b border-slate-400 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">
+                Dòng áp dụng thao tác
+              </h4>
+              <p className="mt-0.5 text-xs text-slate-600 tabular-nums">
+                Đã chọn {checkedRows.size.toLocaleString("vi-VN")} dòng
+              </p>
+            </div>
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Chọn dòng hàng loạt"
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={filtered.length === 0}
+                onClick={selectFilteredRows}
+              >
+                Chọn tất cả trong bộ lọc
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={filteredNeedsReviewCount === 0}
+                onClick={selectRowsNeedingReview}
+              >
+                Chọn dòng cần duyệt (
+                {filteredNeedsReviewCount.toLocaleString("vi-VN")})
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={checkedRows.size === 0}
+                onClick={clearCheckedRows}
+              >
+                Bỏ chọn
+              </Button>
+              <Button
+                variant="warning"
+                size="sm"
+                disabled={pendingUnmatched === 0 || isBulkRunning}
+                onClick={skipAllUnmatched}
+              >
+                Bỏ qua chưa khớp
+                {pendingUnmatched > 0
+                  ? ` (${pendingUnmatched.toLocaleString("vi-VN")})`
+                  : ""}
+              </Button>
+            </div>
+          </div>
+
+          <div
+            className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4"
+            role="group"
+            aria-label="Thao tác hàng loạt"
           >
-            Chọn tất cả trong bộ lọc
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={filteredNeedsReviewCount === 0}
-            onClick={selectRowsNeedingReview}
-          >
-            Chọn dòng cần duyệt (
-            {filteredNeedsReviewCount.toLocaleString("vi-VN")})
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={checkedRows.size === 0}
-            onClick={clearCheckedRows}
-          >
-            Bỏ chọn
-          </Button>
-          <span className="text-slate-600">
-            AI dùng nguồn web của dòng; nếu chưa có nguồn, hệ thống sẽ tìm nguồn
-            trước.
-          </span>
-        </div>
+            <Button
+              className="w-full"
+              variant="search"
+              size="sm"
+              disabled={Boolean(bulkSearchReason) || isBulkRunning}
+              title={bulkSearchReason}
+              onClick={() => void runBulkSearch("web")}
+            >
+              <Globe className="h-4 w-4" aria-hidden />
+              Tìm nguồn web ({bulkTargetCount.toLocaleString("vi-VN")})
+            </Button>
+            <Button
+              className="w-full"
+              variant="scrape"
+              size="sm"
+              disabled={Boolean(bulkScrapeReason) || startBulkScrape.isPending}
+              title={bulkScrapeReason}
+              isLoading={startBulkScrape.isPending}
+              onClick={() => void runBulkScrape()}
+            >
+              Scrape nguồn điểm cao nhất (
+              {selectedRowsWithScrapeSource.length.toLocaleString("vi-VN")})
+            </Button>
+            <Button
+              className="w-full"
+              variant="ai"
+              size="sm"
+              disabled={Boolean(bulkSearchReason) || isBulkRunning}
+              title={bulkSearchReason}
+              onClick={() => void runBulkSearch("ai")}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              Trích xuất AI ({bulkTargetCount.toLocaleString("vi-VN")})
+            </Button>
+            <Button
+              className="w-full"
+              variant="save"
+              size="sm"
+              disabled={Boolean(bulkSaveReason) || createSavePreview.isPending}
+              title={bulkSaveReason}
+              isLoading={createSavePreview.isPending}
+              onClick={() => void openSavePreview()}
+            >
+              Xem trước & lưu /materials (
+              {selectedCompleteRows.length.toLocaleString("vi-VN")})
+            </Button>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-2 text-xs text-slate-600">
+            <span>
+              AI dùng nguồn web của dòng; nếu chưa có nguồn, hệ thống sẽ tìm
+              nguồn trước.
+            </span>
+            {bulkProgress ? (
+              <span className="font-semibold tabular-nums" role="status">
+                {bulkProgress.kind === "web"
+                  ? "Tìm nguồn web"
+                  : "Trích xuất AI"}
+                : {bulkProgress.completed}/{bulkProgress.total}
+              </span>
+            ) : null}
+          </div>
+
+          {bulkUnavailableMessages.length > 0 ? (
+            <p
+              className="text-ink-3 mt-2 text-xs"
+              role="status"
+              aria-live="polite"
+            >
+              {bulkUnavailableMessages.join(" ")}
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {isProfileSplit && activeBulkScrape && workspaceId ? (
@@ -1433,11 +1472,15 @@ export function ReviewPanel({
             job={activeBulkScrape}
             run={
               activeBulkScrapeRuns.find(
+                (run) => run.status === "awaiting_product_selection",
+              ) ??
+              activeBulkScrapeRuns.find(
                 (run) =>
                   run.status === "running" ||
                   run.status === "queued" ||
                   run.status === "failed",
-              ) ?? null
+              ) ??
+              null
             }
             onCancel={
               bulkScrapeIsActive

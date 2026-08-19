@@ -425,6 +425,11 @@ export function storeProfileCandidateCapture(
     current.selectedSearchCandidateKey === candidateKey
       ? {
           ...reviewDraftFromDecision(current),
+          acceptedProfileFields: [
+            "name" as const,
+            ...(storedProduct.imageUrl ? (["imageUrl"] as const) : []),
+          ],
+          editedProfileValues: undefined,
           catalogPdfUrls: uniqueNonEmpty([
             ...(current.catalogPdfUrls ?? []),
             ...scrapedCatalogPdfUrls,

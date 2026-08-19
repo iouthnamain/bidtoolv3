@@ -252,7 +252,13 @@ async function addSecondProfileItem(seed: ProfileSeed) {
 }
 
 async function seedCurrentSearchRun(seed: ProfileSeed) {
-  const decision = serializedDecision(seed, { catalogAttached: false });
+  const decision = {
+    ...serializedDecision(seed, { catalogAttached: false }),
+    acceptedFields: [] as string[],
+    acceptedProfileFields: [] as string[],
+    editedValues: {},
+  };
+  Reflect.deleteProperty(decision, "editedProfileValues");
   const searchJobId = randomUUID();
   const now = new Date().toISOString();
   await sql`
@@ -299,13 +305,7 @@ function scrapedProductCard(page: Page, name: string) {
 async function seedAwaitingProductSelection(seed: ProfileSeed) {
   const jobId = randomUUID();
   const runId = randomUUID();
-  const decision = {
-    ...serializedDecision(seed, { catalogAttached: false }),
-    acceptedFields: [] as string[],
-    acceptedProfileFields: [] as string[],
-    editedValues: {},
-  };
-  Reflect.deleteProperty(decision, "editedProfileValues");
+  const decision = serializedDecision(seed, { catalogAttached: false });
   const searchGeneration = JSON.stringify({
     webLinksStatus: "done",
     aiSearchStatus: "idle",
@@ -352,7 +352,13 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
     },
   ];
   const now = new Date().toISOString();
+  const startedAt = new Date(Date.now() - 20_600).toISOString();
   const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
+  await sql`
+    update excel_workspaces
+    set status = 'matched'
+    where id = ${seed.workspaceId}
+  `;
   await sql`
     insert into material_profile_scrape_jobs (
       id, workspace_id, status, requested_item_ids, total, needs_review,
@@ -361,7 +367,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
     ) values (
       ${jobId}, ${seed.workspaceId}, 'awaiting_review', ${sql.json([seed.itemId])},
       1, 1, ${seed.itemId}, 2, ${`Máy bơm ${seed.marker}`},
-      'Hãy chọn sản phẩm đã scrape.', ${now}, ${now}, ${expiresAt}, ${now}
+      'Hãy chọn sản phẩm đã scrape.', ${startedAt}, ${now}, ${expiresAt}, ${now}
     )
   `;
   await sql`
@@ -380,7 +386,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
         searchGeneration,
         materialId: null,
       })},
-      ${seed.sourceFingerprint}, ${sql.json(products)}, ${now}, ${now}
+      ${seed.sourceFingerprint}, ${sql.json(products)}, ${startedAt}, ${now}
     )
   `;
   await sql`
@@ -511,6 +517,87 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   }
 });
 
+test("step 3 navigation flushes decisions before loading a fresh step 4 preview", async ({
+  page,
+  profileSeed,
+}) => {
+  await openReview(page, profileSeed);
+  const procedures: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/trpc/")) procedures.push(request.url());
+  });
+
+  const codeInput = page.getByLabel(/Sau.*Mã vật tư/);
+  const directCode = `${profileSeed.code}-DIRECT`;
+  await codeInput.fill(directCode);
+  const directPreviewResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("previewCleanExport") &&
+      response.status() === 200,
+  );
+  await page.getByRole("button", { name: /Tải file chuẩn/ }).click();
+  await directPreviewResponse;
+  await expect(
+    page.getByRole("heading", { name: "Một sheet sạch, sẵn sàng gửi đi" }),
+  ).toBeVisible();
+
+  const directFlushIndex = procedures.findIndex((url) =>
+    url.includes("batchUpdateItemReviewDecisions"),
+  );
+  const directPreviewIndex = procedures.findIndex((url) =>
+    url.includes("previewCleanExport"),
+  );
+  expect(directFlushIndex).toBeGreaterThanOrEqual(0);
+  expect(directPreviewIndex).toBeGreaterThan(directFlushIndex);
+  const [directItem] = await sql<
+    { review_decision_json: { editedValues?: { code?: string } } }[]
+  >`
+    select review_decision_json
+    from excel_workspace_items
+    where id = ${profileSeed.itemId}
+  `;
+  expect(directItem?.review_decision_json.editedValues?.code).toBe(directCode);
+
+  await page.getByRole("button", { name: /Tự tìm & điền/ }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu",
+    }),
+  ).toBeVisible();
+  await expect(codeInput).toHaveValue(directCode);
+  procedures.length = 0;
+  const continueCode = `${profileSeed.code}-CONTINUE`;
+  await codeInput.fill(continueCode);
+  const continuePreviewResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("previewCleanExport") &&
+      response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Kiểm tra file xuất" }).click();
+  await continuePreviewResponse;
+  await expect(
+    page.getByRole("heading", { name: "Một sheet sạch, sẵn sàng gửi đi" }),
+  ).toBeVisible();
+
+  const continueFlushIndex = procedures.findIndex((url) =>
+    url.includes("batchUpdateItemReviewDecisions"),
+  );
+  const continuePreviewIndex = procedures.findIndex((url) =>
+    url.includes("previewCleanExport"),
+  );
+  expect(continueFlushIndex).toBeGreaterThanOrEqual(0);
+  expect(continuePreviewIndex).toBeGreaterThan(continueFlushIndex);
+
+  const [item] = await sql<
+    { review_decision_json: { editedValues?: { code?: string } } }[]
+  >`
+    select review_decision_json
+    from excel_workspace_items
+    where id = ${profileSeed.itemId}
+  `;
+  expect(item?.review_decision_json.editedValues?.code).toBe(continueCode);
+});
+
 test("staged review saves all compare fields without checkboxes and stacks responsively", async ({
   page,
   profileSeed,
@@ -560,6 +647,46 @@ test("staged review saves all compare fields without checkboxes and stacks respo
     expect(metric.color).toBe(metric.expected);
     expect(metric.height).toBeGreaterThanOrEqual(44);
   }
+
+  const toolbarLayout = await page.evaluate(() => {
+    const bounds = (label: string) => {
+      const element = document.querySelector<HTMLElement>(
+        `[role="group"][aria-label="${label}"]`,
+      );
+      const rect = element?.getBoundingClientRect();
+      return rect
+        ? { top: rect.top, bottom: rect.bottom, width: rect.width }
+        : null;
+    };
+    const actionGroup = document.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Thao tác hàng loạt"]',
+    );
+    const actionButtons = actionGroup
+      ? [...actionGroup.querySelectorAll("button")].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { top: rect.top, width: rect.width };
+        })
+      : [];
+    return {
+      filters: bounds("Bộ lọc trạng thái"),
+      selection: bounds("Chọn dòng hàng loạt"),
+      actions: bounds("Thao tác hàng loạt"),
+      actionButtons,
+    };
+  });
+  expect(toolbarLayout.filters).not.toBeNull();
+  expect(toolbarLayout.selection).not.toBeNull();
+  expect(toolbarLayout.actions).not.toBeNull();
+  expect(toolbarLayout.selection!.top).toBeGreaterThan(
+    toolbarLayout.filters!.top,
+  );
+  expect(toolbarLayout.actions!.top).toBeGreaterThan(
+    toolbarLayout.selection!.top,
+  );
+  expect(toolbarLayout.actionButtons).toHaveLength(4);
+  expect(
+    new Set(toolbarLayout.actionButtons.map((button) => button.top)).size,
+  ).toBe(1);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -579,6 +706,20 @@ test("staged review saves all compare fields without checkboxes and stacks respo
         : false;
     });
   expect(stacked).toBe(true);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const phoneActionRows = await page
+    .getByRole("group", { name: "Thao tác hàng loạt" })
+    .getByRole("button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().top),
+    );
+  expect(new Set(phoneActionRows).size).toBe(4);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("PDF source attaches catalog evidence without invoking AI", async ({
@@ -761,7 +902,42 @@ test("persisted scrape retains multiple products and restores separate drafts", 
   try {
     await test.step("khôi phục picker từ job đang chờ duyệt", async () => {
       await seedAwaitingProductSelection(seed);
-      await openReview(page, seed);
+      await addSecondProfileItem(seed);
+      await page.goto(`/material-profiles/${seed.workspaceId}`);
+      await expect(
+        page.getByRole("heading", {
+          name: "Chọn dòng → tìm nguồn → thu thập → xác nhận dữ liệu",
+        }),
+      ).toBeVisible();
+      const scrapeProgress = page
+        .locator("section")
+        .filter({ hasText: "Tiến độ scrape" })
+        .first();
+      await expect(scrapeProgress).toContainText("21 giây");
+      await expect(
+        scrapeProgress.getByRole("button", { name: "Hủy", exact: true }),
+      ).toHaveCount(0);
+
+      await page.getByRole("checkbox", { name: "Chọn dòng 3" }).check();
+      await expect(
+        page.getByRole("button", { name: "Tìm nguồn web (1)" }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", {
+          name: "Scrape nguồn điểm cao nhất (1)",
+        }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", { name: "Trích xuất AI (1)" }),
+      ).toBeEnabled();
+      await expect(
+        page.getByRole("button", {
+          name: "Xem trước & lưu /materials (1)",
+        }),
+      ).toBeEnabled();
+      await page.waitForTimeout(1_100);
+      await expect(scrapeProgress).toContainText("21 giây");
+      await page.getByRole("checkbox", { name: "Chọn dòng 3" }).uncheck();
       await page.getByRole("button", { name: "Chọn sản phẩm" }).click();
       await expect(
         page.getByText(`Máy bơm ${seed.marker} B`, { exact: true }),
@@ -786,6 +962,49 @@ test("persisted scrape retains multiple products and restores separate drafts", 
         .getByRole("button", { name: "Chọn sản phẩm này" })
         .click();
       await selected;
+      await expect
+        .poll(async () => {
+          const [item] = await sql<
+            { review_decision_json: Record<string, unknown> }[]
+          >`
+            select review_decision_json
+            from excel_workspace_items
+            where id = ${seed.itemId}
+          `;
+          const decision = item?.review_decision_json;
+          if (typeof decision?.selectedScrapeProductKey !== "string") {
+            return null;
+          }
+          const editedProfileValues = decision.editedProfileValues as
+            | { name?: string }
+            | undefined;
+          const results = Array.isArray(decision.scrapeResults)
+            ? (decision.scrapeResults as Array<Record<string, unknown>>)
+            : [];
+          const active = results.find(
+            (result) =>
+              result.productKey === decision.selectedScrapeProductKey,
+          );
+          return {
+            acceptedProfileFields: Array.isArray(
+              decision.acceptedProfileFields,
+            )
+              ? decision.acceptedProfileFields
+                  .filter(
+                    (field): field is string => typeof field === "string",
+                  )
+                  .sort()
+              : decision.acceptedProfileFields,
+            editedName: editedProfileValues?.name ?? null,
+            activeName:
+              typeof active?.name === "string" ? active.name : null,
+          };
+        })
+        .toEqual({
+          acceptedProfileFields: ["imageUrl", "name"],
+          editedName: null,
+          activeName: `Máy bơm ${seed.marker} B`,
+        });
       await expect(
         page.getByRole("columnheader", { name: "Sau (Scrape)" }),
       ).toBeVisible();
@@ -956,7 +1175,13 @@ test("bulk preview is editable, commits explicitly, and can be undone", async ({
     })
     .toBe(1);
 
+  const undone = page.waitForResponse(
+    (response) =>
+      response.url().includes("undoMaterialSaveBatch") &&
+      response.status() === 200,
+  );
   await page.getByRole("button", { name: "Hoàn tác đợt lưu" }).click();
+  await undone;
   await expect(page.getByText("Đã hoàn tác 1 dòng.")).toBeVisible();
   await expect
     .poll(async () => {

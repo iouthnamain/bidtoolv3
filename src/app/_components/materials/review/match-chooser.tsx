@@ -1573,6 +1573,7 @@ export function MatchChooser({
   const applySerializedDecision = (serialized: unknown) => {
     const next = deserializeRowDecision(serialized);
     if (!next) throw new Error("Máy chủ không trả về quyết định hợp lệ.");
+    decisionRef.current = next;
     onChange(next);
   };
 
@@ -1599,6 +1600,9 @@ export function MatchChooser({
       // Product activation persists a new decision and must not race that save.
       await flushCurrentDecision();
       if (!item.retained && item.productIndex != null && run) {
+        // This transition is applied from the mutation response below. Do not
+        // let the completed-run background merge restore the pre-click focus.
+        handledCaptureRunIdsRef.current.add(run.id);
         const serialized = await selectScrapedProduct.mutateAsync({
           workspaceId,
           runId: run.id,
