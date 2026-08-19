@@ -28,11 +28,12 @@ RUN bun run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-RUN apk add --no-cache tini
+RUN apk add --no-cache chromium tini
 
 ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV="production"
 ENV PORT="3000"
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE="/usr/bin/chromium"
 ARG BIDTOOL_APP_VERSION=0.1.0
 ARG BIDTOOL_BUILD_METADATA=""
 ARG BIDTOOL_DEPLOYMENT_SURFACE=onprem
