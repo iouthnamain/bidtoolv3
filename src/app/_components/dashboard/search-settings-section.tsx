@@ -53,7 +53,7 @@ const CONNECTION_FIELDS: FieldDef[] = [
     key: "searxngEngines",
     label: "Engines",
     helper: "Danh sách engine gửi vào SearXNG.",
-    placeholder: "bing,duckduckgo",
+    placeholder: "bing,yep",
   },
   {
     key: "searxngLanguage",

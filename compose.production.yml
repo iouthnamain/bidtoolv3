@@ -42,7 +42,7 @@ services:
       BIDTOOL_GITHUB_REPO: "${BIDTOOL_GITHUB_REPO:-iouthnamain/bidtoolv3}"
       SEARXNG_BASE_URL: "${SEARXNG_BASE_URL:-http://searxng:8080}"
       SEARXNG_API_KEY: "${SEARXNG_API_KEY:-}"
-      SEARXNG_ENGINES: "${SEARXNG_ENGINES:-bing,duckduckgo}"
+      SEARXNG_ENGINES: "${SEARXNG_ENGINES:-bing,yep}"
       SEARXNG_LANGUAGE: "${SEARXNG_LANGUAGE:-vi-VN}"
       SEARXNG_SAFE_SEARCH: "${SEARXNG_SAFE_SEARCH:-0}"
       SEARXNG_TIME_RANGE: "${SEARXNG_TIME_RANGE:-}"
@@ -85,7 +85,7 @@ services:
     environment:
       SEARXNG_BASE_URL: "${SEARXNG_PUBLIC_BASE_URL:-http://searxng:8080/}"
       SEARXNG_SECRET_KEY: "${SEARXNG_SECRET_KEY:-change-me}"
-      SEARXNG_ENGINES: "${SEARXNG_ENGINES:-bing,duckduckgo}"
+      SEARXNG_ENGINES: "${SEARXNG_ENGINES:-bing,yep}"
     cap_drop:
       - ALL
     cap_add:
@@ -96,7 +96,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          'python -c "import os, urllib.parse, urllib.request; query=urllib.parse.urlencode({''q'': ''test'', ''format'': ''json'', ''engines'': os.environ.get(''SEARXNG_ENGINES'', ''bing,duckduckgo'')}); urllib.request.urlopen(''http://127.0.0.1:8080/search?'' + query, timeout=5)"',
+          'python -c "import os, urllib.parse, urllib.request; query=urllib.parse.urlencode({''q'': ''test'', ''format'': ''json'', ''engines'': os.environ.get(''SEARXNG_ENGINES'', ''bing,yep'')}); urllib.request.urlopen(''http://127.0.0.1:8080/search?'' + query, timeout=5)"',
         ]
       interval: 30s
       timeout: 10s

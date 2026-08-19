@@ -13,7 +13,7 @@ export const DEFAULT_SEARCH_PENALTY_DOMAINS = [
   "sendo.vn",
 ];
 
-export const DEFAULT_SEARXNG_ENGINES = ["bing", "duckduckgo"];
+export const DEFAULT_SEARXNG_ENGINES = ["bing", "yep"];
 
 function normalizeHostname(value: string): string | null {
   const trimmed = value.trim().toLowerCase();

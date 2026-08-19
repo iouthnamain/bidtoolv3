@@ -16,7 +16,7 @@ Use `SEARXNG_BASE_URL=http://localhost:8888` when the Next.js app runs on the ho
 
 ```env
 SEARXNG_BASE_URL=http://searxng:8080
-SEARXNG_ENGINES=bing,duckduckgo
+SEARXNG_ENGINES=bing,yep
 SEARXNG_LANGUAGE=vi-VN
 ```
 
@@ -63,4 +63,4 @@ Then open `/settings/search` and run test query:
 Ống nhựa Bình Minh D90 thông số kỹ thuật
 ```
 
-Check that engines are `bing,duckduckgo`, language is `vi-VN`, ranking reasons show VN/domain/spec signals, and an audit row is created.
+Check that engines are `bing,yep`, language is `vi-VN`, ranking reasons show VN/domain/spec signals, and an audit row is created.

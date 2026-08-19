@@ -32,6 +32,6 @@ describe("search-domain-policy", () => {
   });
 
   it("defaults to the primary and fallback engines enabled by the bundled config", () => {
-    expect(DEFAULT_SEARXNG_ENGINES).toEqual(["bing", "duckduckgo"]);
+    expect(DEFAULT_SEARXNG_ENGINES).toEqual(["bing", "yep"]);
   });
 });
