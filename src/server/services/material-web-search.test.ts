@@ -16,11 +16,7 @@ function requestUrl(input: RequestInfo | URL) {
   return input.url;
 }
 
-function bingHtml(input: {
-  title: string;
-  url: string;
-  snippet: string;
-}) {
+function bingHtml(input: { title: string; url: string; snippet: string }) {
   return `<ol id="b_results"><li class="b_algo"><h2><a href="${input.url}">${input.title}</a></h2><div class="b_caption"><p>${input.snippet}</p></div></li></ol>`;
 }
 
@@ -44,6 +40,7 @@ describe("searchQueryWithFallback", () => {
                 title: "Catalog PDF",
                 url: "https://example.com/spec.pdf",
                 content: "Product datasheet",
+                engines: ["bing", "yep"],
               },
             ],
           }),
@@ -60,6 +57,7 @@ describe("searchQueryWithFallback", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.url).toBe("https://example.com/spec.pdf");
+    expect(results[0]?.engines).toEqual(["bing", "yep"]);
     expect(warnings).toEqual([]);
     expect(response.providers).toEqual(["searxng"]);
     expect(response.directBingQueries).toEqual([]);
@@ -114,6 +112,32 @@ describe("searchQueryWithFallback", () => {
         new URL(requestUrl(url)).hostname.includes("bing.com"),
       ),
     ).toBe(true);
+  });
+
+  it("lets the guarded profile pipeline defer direct Bing rescue", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes("searxng.test")) {
+        return new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected direct fallback: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const response = await searchQueryWithFallback("ống PVC", undefined, {
+      feature: "profile_search",
+      allowDirectBingFallback: false,
+    });
+
+    expect(response.results).toEqual([]);
+    expect(response.providers).toEqual(["searxng"]);
+    expect(response.directBingQueries).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to SearXNG HTML when JSON API returns 403", async () => {
@@ -291,9 +315,7 @@ describe("searchQueryWithFallback", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(requestUrl(input));
       if (url.hostname === "searxng.test") {
-        expect(url.searchParams.get("engines")).toBe(
-          "google,bing,duckduckgo",
-        );
+        expect(url.searchParams.get("engines")).toBe("google,bing,duckduckgo");
         return new Response(
           JSON.stringify({
             results: [],
@@ -490,9 +512,8 @@ describe("searchQueryWithFallback", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { searchBingForProduct, searchWebForProduct } = await import(
-      "./material-web-search"
-    );
+    const { searchBingForProduct, searchWebForProduct } =
+      await import("./material-web-search");
     const primary = await searchWebForProduct(["Ống PVC D90"]);
     const rescue = await searchBingForProduct(["Ống PVC D90"]);
     const cachedRescue = await searchBingForProduct(["  Ống   PVC D90  "]);
@@ -527,11 +548,9 @@ describe("searchQueryWithFallback", () => {
     );
 
     const { searchBingForProduct } = await import("./material-web-search");
-    const pending = searchBingForProduct(
-      ["Ống PVC D90"],
-      controller.signal,
-      { feature: "test" },
-    );
+    const pending = searchBingForProduct(["Ống PVC D90"], controller.signal, {
+      feature: "test",
+    });
     await started;
     controller.abort();
 

@@ -43,6 +43,8 @@ export type WebSearchResult = {
   rankScore: number;
   rankReasons?: string[];
   provider?: WebSearchProvider;
+  /** Engines reported by an aggregator for this individual result. */
+  engines?: string[];
   matchedQueries?: Array<{
     query: string;
     intent: SearchQuery["intent"];
@@ -71,6 +73,10 @@ type SearchOptions = {
   feature?: SearchAuditFeature;
   overrideEngines?: string[];
   providerMode?: "primary" | "bing";
+  /** Let a higher-level guarded pipeline decide whether Bing rescue is needed. */
+  allowDirectBingFallback?: boolean;
+  /** Explicit reruns must not reuse a stale in-memory search response. */
+  bypassCache?: boolean;
 };
 
 const EXPLICIT_CONTENT_DOMAIN_PATTERN =
@@ -331,9 +337,10 @@ function parseBingHtml(html: string, query: string): WebSearchResult[] {
 
   for (const match of html.matchAll(resultPattern)) {
     const block = match[1] ?? "";
-    const anchor = /<h2[^>]*>[\s\S]*?<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(
-      block,
-    );
+    const anchor =
+      /<h2[^>]*>[\s\S]*?<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(
+        block,
+      );
     const rawUrl = decodeHtmlEntities(anchor?.[1]?.trim() ?? "");
     const title = stripHtmlTags(anchor?.[2] ?? "");
     const snippet = stripHtmlTags(
@@ -374,6 +381,8 @@ function mapSearxngJsonResults(
     url?: string;
     content?: string;
     score?: number;
+    engine?: string;
+    engines?: string[];
   }>,
   query: string,
 ): WebSearchResult[] {
@@ -391,6 +400,12 @@ function mapSearxngJsonResults(
       rankScore: typeof item.score === "number" ? item.score : 0,
       rankReasons: [],
       provider: "searxng",
+      engines: [
+        ...new Set([
+          ...(Array.isArray(item.engines) ? item.engines : []),
+          ...(item.engine ? [item.engine] : []),
+        ]),
+      ].filter(Boolean),
     });
   }
   return results;
@@ -814,7 +829,11 @@ async function _searchQueryWithFallback(
   options?: SearchOptions,
 ): Promise<WebSearchResponse> {
   const primary = await searchSearxngQuery(query, signal, options);
-  if (primary.results.length > 0 || signal?.aborted) {
+  if (
+    primary.results.length > 0 ||
+    signal?.aborted ||
+    options?.allowDirectBingFallback === false
+  ) {
     return {
       results: primary.results,
       warnings: primary.warnings,
@@ -989,7 +1008,7 @@ async function searchQueryWithCache(
   const ttlMs = await resolveEnrichmentSearchCacheTtlMs();
   const now = Date.now();
   const cached = searchCache.get(key);
-  if (cached && cached.expiresAt > now) {
+  if (!options?.bypassCache && cached && cached.expiresAt > now) {
     return {
       results: cached.response.results.map((result) => ({ ...result })),
       warnings: [...cached.response.warnings],
@@ -1012,7 +1031,7 @@ async function searchQueryWithCache(
     };
   }
 
-  if (!signal && inFlightSearches.has(key)) {
+  if (!options?.bypassCache && !signal && inFlightSearches.has(key)) {
     return inFlightSearches.get(key)!;
   }
 
@@ -1027,7 +1046,7 @@ async function searchQueryWithCache(
           unsafeRejectedUrls: response.unsafeRejectedUrls,
         }))
       : searchQueryWithFallback(query, signal, options);
-  if (!signal) {
+  if (!options?.bypassCache && !signal) {
     inFlightSearches.set(key, promise);
   }
 
@@ -1036,6 +1055,7 @@ async function searchQueryWithCache(
     const currentConfigurationSnapshot =
       await stableSearchConfigurationSnapshot(options);
     if (
+      !options?.bypassCache &&
       ttlMs > 0 &&
       options?.feature !== "test" &&
       currentConfigurationSnapshot.revision ===

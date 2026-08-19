@@ -44,6 +44,8 @@ export type ScrapedProductStoredResult = {
   evidence: MaterialEnrichmentEvidence[];
   catalogPdfUrls: string[];
   productMatchScore: number | null;
+  /** Immutable capture time used when reviewing time-sensitive price evidence. */
+  capturedAt?: string;
   reviewDraft?: ScrapedProductReviewDraft;
 };
 

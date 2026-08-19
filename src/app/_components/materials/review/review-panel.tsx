@@ -41,14 +41,31 @@ import {
 } from "~/lib/materials/review-decision";
 import {
   findProfileCandidateCapture,
-  highestProfileScrapeSource,
+  findProfileCandidateCaptureByProductKey,
+  isProfilePdfSource,
   missingProfileMaterialSaveFields,
 } from "~/lib/materials/profile-scrape-capture";
 import { runWithConcurrency } from "~/lib/run-with-concurrency";
 import { api } from "~/trpc/react";
 
-function rowHasScrapeSource(decision: RowDecision | undefined) {
-  return Boolean(highestProfileScrapeSource(decision?.webLinkResults ?? []));
+function rowHasSelectedScrapeSource(decision: RowDecision | undefined) {
+  const selectedKey = decision?.selectedSearchCandidateKey;
+  if (!selectedKey?.startsWith("web:")) return false;
+  const selectedUrl = selectedKey.slice("web:".length);
+  return Boolean(
+    decision?.webLinkResults?.some(
+      (link) => link.url === selectedUrl && !isProfilePdfSource(link.url),
+    ),
+  );
+}
+
+function rowHasSelectedCapture(decision: RowDecision | undefined) {
+  return Boolean(
+    findProfileCandidateCaptureByProductKey(
+      decision?.scrapeResults,
+      decision?.selectedScrapeProductKey,
+    ),
+  );
 }
 
 function rowCompleteForMaterialSave(
@@ -287,6 +304,7 @@ export function ReviewPanel({
   onProfileSearchJob?: (
     kind: "web" | "ai",
     rowIndices: number[],
+    options?: { customQueries?: string[]; fresh?: boolean },
   ) => void | Promise<void>;
   onProfileCancelSearchJob?: () => void | Promise<void>;
   onProfileUseSearchRun?: (runId: number) => void | Promise<void>;
@@ -330,9 +348,7 @@ export function ReviewPanel({
   const startBulkScrape = api.materialProfile.startScrapeJob.useMutation({
     onSuccess: () => {
       void activeScrapeJobQuery.refetch();
-      toast.success(
-        "Đã xếp hàng scrape nguồn điểm cao nhất của các dòng đã chọn.",
-      );
+      toast.success("Đã xếp hàng scrape đúng nguồn đã chọn của từng dòng.");
     },
     onError: (error) =>
       toast.error(error.message || "Không tạo được job scrape."),
@@ -992,6 +1008,7 @@ export function ReviewPanel({
   const startProfileSearchForRows = async (
     kind: "web" | "ai",
     targets: ReviewRow[],
+    options?: { customQueries?: string[]; fresh?: boolean },
   ) => {
     if (isCapturePending) {
       toast.warning("Chờ thu thập nguồn hiện tại hoàn tất trước khi tìm lại.");
@@ -1012,12 +1029,19 @@ export function ReviewPanel({
     await onProfileSearchJob(
       kind,
       targets.map((row) => row.originalRowIndex),
+      options,
     );
   };
 
-  const runWebLinksAction = async (row: ReviewRow) => {
+  const runWebLinksAction = async (
+    row: ReviewRow,
+    options?: { customQueries?: string[] },
+  ) => {
     if (isProfileSplit && onProfileSearchJob) {
-      await startProfileSearchForRows("web", [row]);
+      await startProfileSearchForRows("web", [row], {
+        ...options,
+        fresh: true,
+      });
       return;
     }
     await runWebLinksForRow(row);
@@ -1031,21 +1055,48 @@ export function ReviewPanel({
     await runAiSearchForRow(row);
   };
 
-  const runBulkSearch = async (kind: "web" | "ai") => {
+  const runBulkSearch = async (
+    kind: "web" | "ai",
+    options?: { includeResolved?: boolean },
+  ) => {
     if (checkedRows.size === 0) {
       toast.warning("Chọn ít nhất một dòng ở danh sách bên trái.");
       return;
     }
 
-    const targets = resolveTargetRows().filter((row) => row.name.trim());
+    const selectedTargets = resolveTargetRows().filter((row) =>
+      row.name.trim(),
+    );
+    const targets = selectedTargets.filter((row) => {
+      const decision = decisions.get(row.originalRowIndex);
+      if (kind === "ai") return rowHasSelectedCapture(decision);
+      return options?.includeResolved === true || rowNeedsReview(row);
+    });
     if (targets.length === 0) {
-      toast.warning("Không có dòng hợp lệ trong các dòng đã chọn.");
+      toast.warning(
+        kind === "ai"
+          ? "Chưa có dòng nào đã chọn và hoàn tất scrape nguồn."
+          : options?.includeResolved
+            ? "Không có dòng hợp lệ trong các dòng đã chọn."
+            : "Các dòng đã chọn đã được xử lý; dùng “Tìm lại nguồn” nếu cần chạy lại.",
+      );
+      return;
+    }
+
+    if (
+      kind === "ai" &&
+      !window.confirm(
+        `AI sẽ chỉ đọc bản chụp đã scrape của ${targets.length.toLocaleString("vi-VN")} dòng đã chọn. Tiếp tục?`,
+      )
+    ) {
       return;
     }
 
     if (onProfileSearchJob) {
       try {
-        await startProfileSearchForRows(kind, targets);
+        await startProfileSearchForRows(kind, targets, {
+          fresh: kind === "web",
+        });
       } catch {
         toast.error(
           kind === "web"
@@ -1139,9 +1190,17 @@ export function ReviewPanel({
     : 0;
   const selectedRowsWithScrapeSource = isProfileSplit
     ? bulkTargetRows.filter((row) =>
-        rowHasScrapeSource(decisions.get(row.originalRowIndex)),
+        rowHasSelectedScrapeSource(decisions.get(row.originalRowIndex)),
       )
     : [];
+  const selectedRowsWithCapturedSource = isProfileSplit
+    ? bulkTargetRows.filter((row) =>
+        rowHasSelectedCapture(decisions.get(row.originalRowIndex)),
+      )
+    : [];
+  const selectedRowsNeedingSearch = isProfileSplit
+    ? bulkTargetRows.filter(rowNeedsReview)
+    : bulkTargetRows;
   const selectedCompleteRows = isProfileSplit
     ? bulkTargetRows.filter((row) =>
         rowCompleteForMaterialSave(row, decisions.get(row.originalRowIndex)),
@@ -1152,11 +1211,12 @@ export function ReviewPanel({
   );
   const activeBulkScrape = activeScrapeJobQuery.data;
   const bulkScrapeIsActive = Boolean(
-    activeBulkScrape &&
-    ["queued", "running"].includes(activeBulkScrape.status),
+    activeBulkScrape && ["queued", "running"].includes(activeBulkScrape.status),
   );
   const activeBulkScrapeRuns = activeScrapeRunsQuery.data ?? [];
-  const bulkActionReason = (kind: "search" | "scrape" | "save") => {
+  const bulkActionReason = (
+    kind: "search" | "rerun" | "scrape" | "ai" | "save",
+  ) => {
     if (checkedRows.size === 0) return "Chọn ít nhất một dòng.";
     if (bulkTargetCount === 0) return "Các dòng đã chọn đang thiếu tên vật tư.";
     if (conflictingSaveBatch)
@@ -1169,27 +1229,37 @@ export function ReviewPanel({
       if (selectedMissingWebResults === bulkTargetRows.length) {
         return "Các dòng đã chọn chưa có kết quả web.";
       }
-      return "Các dòng đã chọn không có nguồn HTML để scrape.";
+      return "Hãy chọn rõ một nguồn HTML cho ít nhất một dòng.";
     }
+    if (kind === "ai" && selectedRowsWithCapturedSource.length === 0) {
+      return "Hãy hoàn tất scrape và chọn bản chụp cho ít nhất một dòng.";
+    }
+    if (kind === "search" && selectedRowsNeedingSearch.length === 0)
+      return "Các dòng đã chọn đã được xử lý; dùng “Tìm lại nguồn”.";
     if (kind === "save" && selectedCompleteRows.length === 0)
       return "Không có dòng hoàn chỉnh để lưu.";
     return undefined;
   };
   const bulkSearchReason = bulkActionReason("search");
+  const bulkRerunReason = bulkActionReason("rerun");
   const bulkScrapeReason = bulkActionReason("scrape");
+  const bulkAiReason = bulkActionReason("ai");
   const bulkSaveReason = bulkActionReason("save");
   const bulkUnavailableMessages = [
-    bulkSearchReason ? `Tìm nguồn web / AI: ${bulkSearchReason}` : null,
+    bulkSearchReason ? `Tìm nguồn: ${bulkSearchReason}` : null,
     bulkScrapeReason ? `Scrape: ${bulkScrapeReason}` : null,
+    bulkAiReason ? `AI: ${bulkAiReason}` : null,
     bulkSaveReason ? `Lưu /materials: ${bulkSaveReason}` : null,
   ].filter((message): message is string => message != null);
   const runBulkScrape = async () => {
     if (workspaceId == null) return;
-    const rowIndices = bulkTargetRows.map((row) => row.originalRowIndex);
+    const rowIndices = selectedRowsWithScrapeSource.map(
+      (row) => row.originalRowIndex,
+    );
     await onFlushDecisionsForRows?.(rowIndices);
     startBulkScrape.mutate({
       workspaceId,
-      itemIds: bulkTargetRows.map((row) => row.key),
+      itemIds: selectedRowsWithScrapeSource.map((row) => row.key),
       interactive: false,
     });
   };
@@ -1387,20 +1457,34 @@ export function ReviewPanel({
           </div>
 
           <div
-            className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4"
+            className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5"
             role="group"
             aria-label="Thao tác hàng loạt"
           >
             <Button
-              className="w-full"
-              variant="search"
+              className="min-h-11 w-full"
+              variant="primary"
               size="sm"
               disabled={Boolean(bulkSearchReason) || isBulkRunning}
               title={bulkSearchReason}
               onClick={() => void runBulkSearch("web")}
             >
               <Globe className="h-4 w-4" aria-hidden />
-              Tìm nguồn web ({bulkTargetCount.toLocaleString("vi-VN")})
+              Tìm nguồn phù hợp (
+              {selectedRowsNeedingSearch.length.toLocaleString("vi-VN")})
+            </Button>
+            <Button
+              className="min-h-11 w-full"
+              variant="secondary"
+              size="sm"
+              disabled={Boolean(bulkRerunReason) || isBulkRunning}
+              title={bulkRerunReason}
+              onClick={() =>
+                void runBulkSearch("web", { includeResolved: true })
+              }
+            >
+              <Globe className="h-4 w-4" aria-hidden />
+              Tìm lại nguồn ({bulkTargetCount.toLocaleString("vi-VN")})
             </Button>
             <Button
               className="w-full"
@@ -1411,19 +1495,20 @@ export function ReviewPanel({
               isLoading={startBulkScrape.isPending}
               onClick={() => void runBulkScrape()}
             >
-              Scrape nguồn điểm cao nhất (
+              Scrape nguồn đã chọn (
               {selectedRowsWithScrapeSource.length.toLocaleString("vi-VN")})
             </Button>
             <Button
               className="w-full"
               variant="ai"
               size="sm"
-              disabled={Boolean(bulkSearchReason) || isBulkRunning}
-              title={bulkSearchReason}
+              disabled={Boolean(bulkAiReason) || isBulkRunning}
+              title={bulkAiReason}
               onClick={() => void runBulkSearch("ai")}
             >
               <Sparkles className="h-4 w-4" aria-hidden />
-              Trích xuất AI ({bulkTargetCount.toLocaleString("vi-VN")})
+              Trích xuất AI (
+              {selectedRowsWithCapturedSource.length.toLocaleString("vi-VN")})
             </Button>
             <Button
               className="w-full"
@@ -1434,20 +1519,20 @@ export function ReviewPanel({
               isLoading={createSavePreview.isPending}
               onClick={() => void openSavePreview()}
             >
-              Xem trước & lưu /materials (
+              Lưu riêng vào /materials (
               {selectedCompleteRows.length.toLocaleString("vi-VN")})
             </Button>
           </div>
 
           <div className="mt-2 flex flex-wrap items-start justify-between gap-2 text-xs text-slate-600">
             <span>
-              AI dùng nguồn web của dòng; nếu chưa có nguồn, hệ thống sẽ tìm
-              nguồn trước.
+              Tìm nguồn chỉ xếp hạng URL. Scrape dùng đúng nguồn đã chọn; AI chỉ
+              đọc bản chụp scrape đã chọn và không tự tìm thêm.
             </span>
             {bulkProgress ? (
               <span className="font-semibold tabular-nums" role="status">
                 {bulkProgress.kind === "web"
-                  ? "Tìm nguồn web"
+                  ? "Tìm nguồn phù hợp"
                   : "Trích xuất AI"}
                 : {bulkProgress.completed}/{bulkProgress.total}
               </span>
@@ -1749,7 +1834,9 @@ export function ReviewPanel({
                 }
                 searchMode={searchMode}
                 onWebSearch={() => handleWebSearch(selectedRow)}
-                onWebLinksSearch={() => void runWebLinksAction(selectedRow)}
+                onWebLinksSearch={(options) =>
+                  void runWebLinksAction(selectedRow, options)
+                }
                 onAiSearch={() => void runAiSearchAction(selectedRow)}
                 isWebLinksPending={
                   isProfileSplit

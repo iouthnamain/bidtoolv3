@@ -54,6 +54,12 @@ describe("review-decision", () => {
           snippet: "Specs here",
           query: "widget",
           rankScore: 0.9,
+          baseRankScore: 0.7,
+          rrfScore: 0.031,
+          fetchStatus: "verified",
+          provider: "searxng",
+          engines: ["bing", "yep"],
+          matchedQueries: [{ query: "widget", intent: "general", rank: 1 }],
         },
       ],
       webLinksStatus: "done",
@@ -113,6 +119,13 @@ describe("review-decision", () => {
       ],
     });
     expect(restored?.webLinkResults?.[0]?.url).toBe("https://example.com/p");
+    expect(restored?.webLinkResults?.[0]).toMatchObject({
+      provider: "searxng",
+      engines: ["bing", "yep"],
+      fetchStatus: "verified",
+      rrfScore: 0.031,
+      matchedQueries: [{ query: "widget", intent: "general", rank: 1 }],
+    });
     expect(restored?.webLinksStatus).toBe("done");
     expect(restored?.aiSearchResult?.fields.manufacturer).toBe("Acme");
     expect(restored?.aiSearchCandidates?.length).toBe(2);

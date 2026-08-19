@@ -11,6 +11,8 @@ describe("Vietnamese guarded material benchmark", () => {
     let relevantTotal = 0;
     let relevantRetrieved = 0;
     let falseRecommendations = 0;
+    let recommendations = 0;
+    let relevantRecommendations = 0;
     let unsafeVisible = 0;
 
     for (const fixture of vnMaterialSearchCases) {
@@ -50,6 +52,10 @@ describe("Vietnamese guarded material benchmark", () => {
       if (primary[0] && primary[0].label !== "relevant") {
         falseRecommendations += 1;
       }
+      if (primary[0]) {
+        recommendations += 1;
+        if (primary[0].label === "relevant") relevantRecommendations += 1;
+      }
       unsafeVisible += visible.filter(
         (candidate) => candidate.label === "unsafe",
       ).length;
@@ -59,15 +65,20 @@ describe("Vietnamese guarded material benchmark", () => {
     const recallAt8 = relevantTotal ? relevantRetrieved / relevantTotal : 1;
     const falseRecommendationRate =
       falseRecommendations / vnMaterialSearchCases.length;
+    const recommendationPrecision = recommendations
+      ? relevantRecommendations / recommendations
+      : 1;
 
     console.info("guarded-material-benchmark", {
       cases: vnMaterialSearchCases.length,
       precisionAt3,
       recallAt8,
       falseRecommendationRate,
+      recommendationPrecision,
       unsafeVisible,
     });
-    expect(vnMaterialSearchCases).toHaveLength(55);
+    expect(vnMaterialSearchCases).toHaveLength(100);
+    expect(recommendationPrecision).toBeGreaterThanOrEqual(0.95);
     expect(precisionAt3).toBeGreaterThanOrEqual(0.9);
     expect(recallAt8).toBeGreaterThanOrEqual(0.85);
     expect(falseRecommendationRate).toBeLessThan(0.02);

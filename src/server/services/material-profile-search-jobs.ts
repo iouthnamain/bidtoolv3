@@ -23,6 +23,7 @@ import {
   deserializeRowDecision,
   type WebSearchStatus,
 } from "~/lib/materials/review-decision";
+import { findProfileCandidateCaptureByProductKey } from "~/lib/materials/profile-candidate-capture";
 import {
   RELIABLE_SEARCH_MATCH_THRESHOLD,
   webLinkMatchChips,
@@ -54,9 +55,12 @@ import { parseOptionalNumber } from "~/server/services/excel-workbook";
 import type { EnrichWebRowInput } from "~/server/services/enrich-web-row";
 import { runWithConcurrency } from "~/server/services/concurrency";
 import {
+  createManualProfileWebLink,
+  extractProfileCapturedScrapeAiCandidate,
   extractProfileRowAiCandidates,
   searchProfileRowWebLinks,
 } from "~/server/services/enrich-profile-row-search";
+import { materialProfileDecisionForItem } from "~/server/services/material-profile-review-decisions";
 import {
   filterActiveRejectedAiCandidates,
   filterActiveRejectedWebLinks,
@@ -462,13 +466,18 @@ function inputFromWorkspaceItem(item: WorkspaceItemRow): EnrichWebRowInput {
   };
 }
 
-function inputSnapshot(item: WorkspaceItemRow): Record<string, unknown> {
+function inputSnapshot(
+  item: WorkspaceItemRow,
+  options?: { fresh?: boolean; customQueries?: string[] },
+): Record<string, unknown> {
   const input = inputFromWorkspaceItem(item);
   return {
     ...input,
     itemId: item.id,
     workspaceId: item.workspaceId,
     originalRowIndex: item.originalRowIndex,
+    fresh: options?.fresh === true,
+    customQueries: options?.customQueries ?? [],
   };
 }
 
@@ -723,6 +732,8 @@ async function _startMaterialProfileSearchJob(input: {
   workspaceId: number;
   itemIds: number[];
   mode: MaterialProfileSearchMode;
+  fresh?: boolean;
+  customQueries?: string[];
 }) {
   const itemIds = [
     ...new Set(input.itemIds.map((id) => Math.trunc(id))),
@@ -842,7 +853,10 @@ async function _startMaterialProfileSearchJob(input: {
         sortOrder: index,
         mode: input.mode,
         status: "queued",
-        inputSnapshotJson: inputSnapshot(item),
+        inputSnapshotJson: inputSnapshot(item, {
+          fresh: input.fresh,
+          customQueries: input.customQueries,
+        }),
         createdAt: now,
         updatedAt: now,
       })),
@@ -857,6 +871,42 @@ async function _startMaterialProfileSearchJob(input: {
 async function _getMaterialProfileSearchJob(jobId: string) {
   const job = await getJobRow(jobId);
   return job ? toJobSnapshot(job) : null;
+}
+
+async function _inspectManualMaterialProfileSource(input: {
+  workspaceId: number;
+  itemId: number;
+  url: string;
+}) {
+  const [item] = await db
+    .select()
+    .from(excelWorkspaceItems)
+    .where(
+      and(
+        eq(excelWorkspaceItems.id, input.itemId),
+        eq(excelWorkspaceItems.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!item) {
+    throw new MaterialProfileSearchJobError(
+      "NOT_FOUND",
+      "Không tìm thấy dòng vật tư trong hồ sơ này.",
+    );
+  }
+  try {
+    return await createManualProfileWebLink(
+      inputFromWorkspaceItem(item),
+      input.url,
+    );
+  } catch (error) {
+    throw new MaterialProfileSearchJobError(
+      "BAD_REQUEST",
+      error instanceof Error
+        ? error.message
+        : "URL nguồn không an toàn hoặc không hợp lệ.",
+    );
+  }
 }
 
 async function _listMaterialProfileSearchJobs(input: {
@@ -1641,7 +1691,11 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
 
   try {
     if (job.mode === "web") {
-      const web = await searchProfileRowWebLinks(input, signal);
+      const snapshot = asRecord(run.inputSnapshotJson);
+      const web = await searchProfileRowWebLinks(input, signal, {
+        bypassCache: snapshot.fresh === true,
+        customQueries: parseStringArray(snapshot.customQueries),
+      });
       const status: MaterialProfileSearchRunStatus =
         web.webLinkResults.length > 0 ? "completed" : "failed";
       return updateRunWithResult({
@@ -1658,6 +1712,83 @@ async function processRun(job: JobRow, run: RunRow, signal?: AbortSignal) {
             ? (web.warnings.find((warning) => warning.trim()) ??
               "Không tìm thấy liên kết web.")
             : null,
+      });
+    }
+
+    if (job.mode === "ai") {
+      const [item] = await db
+        .select()
+        .from(excelWorkspaceItems)
+        .where(
+          and(
+            eq(excelWorkspaceItems.id, run.itemId),
+            eq(excelWorkspaceItems.workspaceId, run.workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!item) {
+        throw new MaterialProfileSearchJobError(
+          "NOT_FOUND",
+          "Không tìm thấy dòng vật tư để trích xuất AI.",
+        );
+      }
+      const decision = await materialProfileDecisionForItem(item);
+      const capture = findProfileCandidateCaptureByProductKey(
+        decision.scrapeResults,
+        decision.selectedScrapeProductKey,
+      );
+      if (!capture) {
+        return updateRunWithResult({
+          run,
+          status: "skipped",
+          webLinksStatus: decision.webLinkResults?.length ? "done" : "idle",
+          aiSearchStatus: "error",
+          webLinkResults: decision.webLinkResults ?? [],
+          aiSearchCandidates: [],
+          queries: [],
+          warnings: ["Hãy chọn nguồn và hoàn tất scrape trước khi chạy AI."],
+          errorMessage:
+            "AI chỉ đọc bản chụp của nguồn đã scrape và đang được chọn.",
+        });
+      }
+      let ai: Awaited<
+        ReturnType<typeof extractProfileCapturedScrapeAiCandidate>
+      >;
+      try {
+        ai = await extractProfileCapturedScrapeAiCandidate(
+          input,
+          capture,
+          signal,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Không cấu hình AI.";
+        return updateRunWithResult({
+          run,
+          status: "partial",
+          webLinksStatus: decision.webLinkResults?.length ? "done" : "idle",
+          aiSearchStatus: "error",
+          webLinkResults: decision.webLinkResults ?? [],
+          aiSearchCandidates: [],
+          queries: [],
+          warnings: [message],
+          errorMessage: message,
+        });
+      }
+      const hasCandidates = ai.aiSearchCandidates.length > 0;
+      return updateRunWithResult({
+        run,
+        status: hasCandidates ? "completed" : "partial",
+        webLinksStatus: decision.webLinkResults?.length ? "done" : "idle",
+        aiSearchStatus: hasCandidates ? "done" : "error",
+        webLinkResults: decision.webLinkResults ?? [],
+        aiSearchCandidates: ai.aiSearchCandidates,
+        queries: [],
+        recommendedCandidateKey: ai.recommendedCandidateKey,
+        warnings: ai.warnings,
+        errorMessage: hasCandidates
+          ? null
+          : "AI không trích xuất được dữ liệu từ bản chụp đã chọn.",
       });
     }
 
@@ -1987,6 +2118,11 @@ export const getMaterialProfileSearchJob = traceFn(
   log,
   "getMaterialProfileSearchJob",
   _getMaterialProfileSearchJob,
+);
+export const inspectManualMaterialProfileSource = traceFn(
+  log,
+  "inspectManualMaterialProfileSource",
+  _inspectManualMaterialProfileSource,
 );
 export const listMaterialProfileSearchJobs = traceFn(
   log,

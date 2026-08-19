@@ -505,7 +505,7 @@ export function FieldCompareEditor({
         <p className="rounded border border-dashed border-slate-400 bg-slate-50 px-3 py-6 text-center text-xs text-slate-700">
           {showingSearch
             ? "Không tìm thấy sản phẩm phù hợp."
-            : "Không có ứng viên ghép tự động — hãy tìm thủ công hoặc chạy Tìm nguồn web / Trích xuất AI."}
+            : "Không có ứng viên ghép tự động — hãy tìm nguồn phù hợp hoặc thêm URL thủ công."}
         </p>
       ) : (
         <div className="space-y-2">
@@ -697,7 +697,7 @@ export function FieldCompareEditor({
           ) ? (
             <details className="rounded border border-amber-300 bg-amber-50/50 p-2">
               <summary className="focus-visible:ring-ring flex min-h-10 cursor-pointer items-center font-semibold text-amber-900 focus-visible:ring-2 focus-visible:outline-none">
-                Kết quả độ liên quan thấp (
+                Kết quả cần kiểm tra (
                 {
                   searchSourceCandidates.filter(
                     (candidate) => candidate.tier === "weak",

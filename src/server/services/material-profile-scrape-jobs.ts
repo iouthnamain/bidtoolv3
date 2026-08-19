@@ -17,7 +17,6 @@ import {
 
 import { normalizeCatalogPdfUrl } from "~/lib/materials/catalog-pdf";
 import {
-  highestProfileScrapeSource,
   isProfilePdfSource,
   activateProfileCandidateCapture,
   profileCandidateSearchGeneration,
@@ -126,6 +125,30 @@ function runOwnsChild(run: ScrapeRunRow) {
   return run.childOwned;
 }
 
+export function selectedProfileScrapeSource(
+  decision: RowDecision,
+  options: {
+    explicitSourceUrl?: string;
+    explicitSourceCandidateKey?: string;
+  },
+) {
+  const links = [...(decision.webLinkResults ?? [])].sort(
+    (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
+  );
+  const explicitUrl = options.explicitSourceUrl?.trim();
+  const selectedKey = options.explicitSourceCandidateKey?.trim();
+  const selectedUrl = [
+    explicitUrl,
+    selectedKey?.startsWith("web:") ? selectedKey.slice(4) : undefined,
+    decision.selectedSearchCandidateKey?.startsWith("web:")
+      ? decision.selectedSearchCandidateKey.slice(4)
+      : undefined,
+  ].find(Boolean);
+  return selectedUrl
+    ? links.find((link) => link.url === selectedUrl)
+    : undefined;
+}
+
 function sourceForDecision(
   decision: RowDecision,
   options: {
@@ -134,25 +157,7 @@ function sourceForDecision(
     interactive: boolean;
   },
 ) {
-  const links = [...(decision.webLinkResults ?? [])].sort(
-    (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
-  );
-  const explicitUrl = options.explicitSourceUrl?.trim();
-  const selectedKey = options.interactive
-    ? options.explicitSourceCandidateKey?.trim()
-    : undefined;
-  const selectedUrl = options.interactive
-    ? [
-        explicitUrl,
-        selectedKey?.startsWith("web:") ? selectedKey.slice(4) : undefined,
-        decision.selectedSearchCandidateKey?.startsWith("web:")
-          ? decision.selectedSearchCandidateKey.slice(4)
-          : undefined,
-      ].find(Boolean)
-    : undefined;
-  const source = selectedUrl
-    ? links.find((link) => link.url === selectedUrl)
-    : highestProfileScrapeSource(links);
+  const source = selectedProfileScrapeSource(decision, options);
 
   if (!source) {
     return {

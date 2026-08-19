@@ -40,6 +40,7 @@ import {
 import {
   cancelMaterialProfileSearchJob,
   getMaterialProfileSearchJob,
+  inspectManualMaterialProfileSource,
   listMaterialProfileSearchJobs,
   listMaterialProfileSearchRuns,
   MaterialProfileSearchJobError,
@@ -209,6 +210,8 @@ const webLinkResultSchema = z.object({
     .optional(),
   assessment: z.record(z.unknown()).optional(),
   aiDecision: z.record(z.unknown()).optional(),
+  provider: z.enum(["searxng", "bing", "known_source", "manual"]).optional(),
+  engines: z.array(z.string()).optional(),
 });
 
 const aiSearchStoredResultSchema = z.object({
@@ -255,6 +258,7 @@ const scrapedProductStoredResultSchema = z.object({
   evidence: z.array(materialEnrichmentEvidenceSchema),
   catalogPdfUrls: z.array(z.string()),
   productMatchScore: z.number().nullable(),
+  capturedAt: z.string().datetime().optional(),
   reviewDraft: z
     .object({
       acceptedFields: z.array(z.string()),
@@ -519,6 +523,11 @@ export const materialProfileRouter = createTRPCRouter({
       workspaceIdInput.extend({
         itemIds: z.array(z.number().int().positive()).min(1).max(5_000),
         mode: searchModeInput,
+        fresh: z.boolean().default(false),
+        customQueries: z
+          .array(z.string().trim().min(1).max(500))
+          .max(6)
+          .optional(),
       }),
     )
     .mutation(({ input }) =>
@@ -527,7 +536,22 @@ export const materialProfileRouter = createTRPCRouter({
           workspaceId: input.workspaceId,
           itemIds: input.itemIds,
           mode: input.mode,
+          fresh: input.fresh,
+          customQueries: input.customQueries,
         }),
+      ),
+    ),
+
+  inspectManualSource: requirePermission("material:write")
+    .input(
+      workspaceIdInput.extend({
+        itemId: z.number().int().positive(),
+        url: z.string().url().max(2_000),
+      }),
+    )
+    .mutation(({ input }) =>
+      withMaterialProfileErrors(() =>
+        inspectManualMaterialProfileSource(input),
       ),
     ),
 

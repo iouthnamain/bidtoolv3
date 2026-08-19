@@ -426,9 +426,12 @@ vi.mock("~/server/services/job-scheduler", () => ({
 vi.mock("~/server/services/enrich-profile-row-search", () => ({
   searchProfileRowWebLinks: vi.fn(),
   extractProfileRowAiCandidates: vi.fn(),
+  extractProfileCapturedScrapeAiCandidate: vi.fn(),
+  createManualProfileWebLink: vi.fn(),
 }));
 
 import {
+  extractProfileCapturedScrapeAiCandidate,
   extractProfileRowAiCandidates,
   searchProfileRowWebLinks,
 } from "~/server/services/enrich-profile-row-search";
@@ -467,6 +470,49 @@ const aiCandidate: AiSearchStoredResult = {
   rankScore: 0.88,
 };
 
+const capturedDecision = {
+  materialId: null,
+  acceptedFields: ["sourceUrl"],
+  selectedSource: "web",
+  selectedSearchCandidateKey: `web:${webLink.url}`,
+  selectedScrapeProductKey: "scrape:test",
+  webLinkResults: [webLink],
+  webLinksStatus: "done",
+  scrapeResults: [
+    {
+      productKey: "scrape:test",
+      jobId: "scrape-job",
+      shopScrapeJobId: "shop-job",
+      sourceCandidateKey: `web:${webLink.url}`,
+      sourceUrl: webLink.url,
+      sourceScore: 0.91,
+      product: {
+        name: "Ống PVC D50",
+        unit: "m",
+        category: "Ống PVC",
+        specText: "D50",
+        manufacturer: null,
+        originCountry: null,
+        price: null,
+        priceText: null,
+        currency: "VND",
+        sourceUrl: webLink.url,
+        imageUrl: null,
+        sku: null,
+        model: null,
+        shopCategory: null,
+        catalogPdfUrls: [],
+      },
+      fields: { unit: "m", specText: "D50", sourceUrl: webLink.url },
+      name: "Ống PVC D50",
+      evidence: [],
+      catalogPdfUrls: [],
+      productMatchScore: 0.9,
+      capturedAt: "2026-07-02T00:00:00.000Z",
+    },
+  ],
+};
+
 async function startAndProcess(mode: "web" | "ai") {
   const job = await startMaterialProfileSearchJob({
     workspaceId: 1,
@@ -488,8 +534,10 @@ async function startAndProcess(mode: "web" | "ai") {
 describe("material profile search jobs", () => {
   beforeEach(() => {
     dbMock.reset();
+    dbMock.state.items[0]!.reviewDecisionJson = capturedDecision;
     vi.mocked(searchProfileRowWebLinks).mockReset();
     vi.mocked(extractProfileRowAiCandidates).mockReset();
+    vi.mocked(extractProfileCapturedScrapeAiCandidate).mockReset();
     vi.mocked(abortMaterialProfileSearchJob).mockReset();
 
     vi.mocked(searchProfileRowWebLinks).mockResolvedValue({
@@ -498,6 +546,11 @@ describe("material profile search jobs", () => {
       warnings: [],
     });
     vi.mocked(extractProfileRowAiCandidates).mockResolvedValue({
+      aiSearchCandidates: [aiCandidate],
+      recommendedCandidateKey: "ai:0",
+      warnings: [],
+    });
+    vi.mocked(extractProfileCapturedScrapeAiCandidate).mockResolvedValue({
       aiSearchCandidates: [aiCandidate],
       recommendedCandidateKey: "ai:0",
       warnings: [],
@@ -567,6 +620,27 @@ describe("material profile search jobs", () => {
     expect(runs[0]?.webLinkResults).toEqual([webLink]);
     expect(runs[0]?.aiSearchCandidates).toEqual([]);
     expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
+  });
+
+  it("passes one-run queries and cache bypass to an explicit web rerun", async () => {
+    const job = await startMaterialProfileSearchJob({
+      workspaceId: 1,
+      itemIds: [101],
+      mode: "web",
+      fresh: true,
+      customQueries: ["ống PVC D50 catalogue", "site:example.com D50"],
+    });
+
+    await processMaterialProfileSearchJob(job.id);
+
+    expect(searchProfileRowWebLinks).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Ống PVC D50" }),
+      undefined,
+      {
+        bypassCache: true,
+        customQueries: ["ống PVC D50 catalogue", "site:example.com D50"],
+      },
+    );
   });
 
   it("rejects auto jobs above the dedicated bulk limit before querying the database", async () => {
@@ -641,13 +715,17 @@ describe("material profile search jobs", () => {
     });
   });
 
-  it("auto-runs web first for AI jobs without current web links", async () => {
+  it("runs AI only from the selected retained scrape snapshot", async () => {
     const { job, runs } = await startAndProcess("ai");
 
-    expect(searchProfileRowWebLinks).toHaveBeenCalledTimes(1);
-    expect(extractProfileRowAiCandidates).toHaveBeenCalledWith(
+    expect(searchProfileRowWebLinks).not.toHaveBeenCalled();
+    expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
+    expect(extractProfileCapturedScrapeAiCandidate).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Ống PVC D50" }),
-      [webLink],
+      expect.objectContaining({
+        productKey: "scrape:test",
+        sourceUrl: webLink.url,
+      }),
       undefined,
     );
     expect(runs[0]).toMatchObject({
@@ -671,7 +749,28 @@ describe("material profile search jobs", () => {
     expect(job.found).toBe(1);
   });
 
-  it("reuses an existing current web run for AI jobs", async () => {
+  it("skips AI when no selected scrape snapshot exists", async () => {
+    dbMock.state.items[0]!.reviewDecisionJson = {
+      materialId: null,
+      acceptedFields: [],
+      webLinkResults: [webLink],
+      webLinksStatus: "done",
+    };
+
+    const { runs } = await startAndProcess("ai");
+
+    expect(searchProfileRowWebLinks).not.toHaveBeenCalled();
+    expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
+    expect(extractProfileCapturedScrapeAiCandidate).not.toHaveBeenCalled();
+    expect(runs[0]).toMatchObject({
+      status: "skipped",
+      aiSearchStatus: "error",
+      errorMessage:
+        "AI chỉ đọc bản chụp của nguồn đã scrape và đang được chọn.",
+    });
+  });
+
+  it("does not use an existing web run as AI input", async () => {
     dbMock.addCompletedRun({
       id: 80,
       itemId: 101,
@@ -688,14 +787,10 @@ describe("material profile search jobs", () => {
     const { runs } = await startAndProcess("ai");
 
     expect(searchProfileRowWebLinks).not.toHaveBeenCalled();
-    expect(extractProfileRowAiCandidates).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Ống PVC D50" }),
-      [webLink],
-      undefined,
-    );
+    expect(extractProfileRowAiCandidates).not.toHaveBeenCalled();
+    expect(extractProfileCapturedScrapeAiCandidate).toHaveBeenCalledTimes(1);
     expect(runs[0]).toMatchObject({
       status: "completed",
-      sourceWebRunId: 80,
       webLinkResults: [webLink],
     });
   });
@@ -769,23 +864,6 @@ describe("material profile search jobs", () => {
         warnings: ["Không tìm thấy liên kết web."],
       };
     });
-    vi.mocked(extractProfileRowAiCandidates).mockImplementation(
-      async (input) => {
-        if (input.name === "Ống PVC D50") {
-          return {
-            aiSearchCandidates: [aiCandidate],
-            recommendedCandidateKey: "ai:0",
-            warnings: [],
-          };
-        }
-        return {
-          aiSearchCandidates: [],
-          recommendedCandidateKey: undefined,
-          warnings: ["Không có ứng viên AI."],
-        };
-      },
-    );
-
     const job = await startMaterialProfileSearchJob({
       workspaceId: 1,
       itemIds: [101, 102, 103, 104],
@@ -797,9 +875,9 @@ describe("material profile search jobs", () => {
     expect(processedJob).toMatchObject({
       processed: 4,
       found: 1,
-      partial: 1,
-      failed: 1,
-      skipped: 1,
+      partial: 0,
+      failed: 0,
+      skipped: 3,
     });
 
     await completeMaterialProfileSearchJob(job.id);
@@ -807,9 +885,9 @@ describe("material profile search jobs", () => {
     expect(completedJob).toMatchObject({
       processed: 4,
       found: 1,
-      partial: 1,
-      failed: 1,
-      skipped: 1,
+      partial: 0,
+      failed: 0,
+      skipped: 3,
     });
     const runs = await listMaterialProfileSearchRuns({
       workspaceId: 1,
@@ -818,14 +896,14 @@ describe("material profile search jobs", () => {
     });
     expect(runs.map((run) => run.status).sort()).toEqual([
       "completed",
-      "failed",
-      "partial",
+      "skipped",
+      "skipped",
       "skipped",
     ]);
   });
 
   it("stores below-threshold AI candidates without counting them as found", async () => {
-    vi.mocked(extractProfileRowAiCandidates).mockResolvedValueOnce({
+    vi.mocked(extractProfileCapturedScrapeAiCandidate).mockResolvedValueOnce({
       aiSearchCandidates: [aiCandidate],
       recommendedCandidateKey: undefined,
       warnings: ["Có kết quả nhưng chưa đạt ngưỡng tin cậy 75%."],
@@ -845,7 +923,7 @@ describe("material profile search jobs", () => {
   });
 
   it("keeps web links and marks AI partial when the AI provider fails", async () => {
-    vi.mocked(extractProfileRowAiCandidates).mockRejectedValueOnce(
+    vi.mocked(extractProfileCapturedScrapeAiCandidate).mockRejectedValueOnce(
       new Error("Thiếu cấu hình AI."),
     );
 
@@ -864,7 +942,7 @@ describe("material profile search jobs", () => {
   });
 
   it("sanitizes stored AI candidate text before persisting JSON", async () => {
-    vi.mocked(extractProfileRowAiCandidates).mockResolvedValueOnce({
+    vi.mocked(extractProfileCapturedScrapeAiCandidate).mockResolvedValueOnce({
       aiSearchCandidates: [
         {
           ...aiCandidate,

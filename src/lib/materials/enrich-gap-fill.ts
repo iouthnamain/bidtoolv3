@@ -34,6 +34,10 @@ export type WebLinkResult = {
   assessment?: MaterialSearchAssessment;
   fetchStatus?: "verified" | "unverified" | "failed";
   aiDecision?: AiRelevanceDecision;
+  /** Search transport that produced the URL. Kept for operator provenance. */
+  provider?: "searxng" | "bing" | "known_source" | "manual";
+  /** Engines reported by SearXNG for this individual result. */
+  engines?: string[];
 };
 
 export type AiSearchStoredResult = {

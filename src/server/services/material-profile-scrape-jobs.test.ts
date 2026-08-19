@@ -4,6 +4,7 @@ import {
   isMaterialProfileScrapeInputCurrent,
   isMaterialProfileScrapeProducerJobStatus,
   materialProfileScrapeProducerFinishedAt,
+  selectedProfileScrapeSource,
 } from "~/server/services/material-profile-scrape-jobs";
 
 describe("material profile scrape input snapshot", () => {
@@ -42,6 +43,50 @@ describe("material profile scrape input snapshot", () => {
         currentSearchGeneration: "web-run-4",
       }),
     ).toBe(false);
+  });
+});
+
+describe("material profile scrape source selection", () => {
+  const high = {
+    title: "Điểm cao",
+    url: "https://example.com/high",
+    domain: "example.com",
+    snippet: "",
+    rankScore: 0.95,
+  };
+  const selected = {
+    title: "Người dùng chọn",
+    url: "https://example.com/selected",
+    domain: "example.com",
+    snippet: "",
+    rankScore: 0.72,
+  };
+
+  it("never falls back to the highest-scored source", () => {
+    expect(
+      selectedProfileScrapeSource(
+        {
+          materialId: null,
+          acceptedFields: new Set(),
+          webLinkResults: [high, selected],
+        },
+        {},
+      ),
+    ).toBeUndefined();
+  });
+
+  it("uses the explicitly selected source even when it scores lower", () => {
+    expect(
+      selectedProfileScrapeSource(
+        {
+          materialId: null,
+          acceptedFields: new Set(),
+          webLinkResults: [high, selected],
+          selectedSearchCandidateKey: `web:${selected.url}`,
+        },
+        {},
+      ),
+    ).toEqual(selected);
   });
 });
 

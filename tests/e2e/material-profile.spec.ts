@@ -576,7 +576,7 @@ test("step 3 navigation flushes decisions before loading a fresh step 4 preview"
       response.url().includes("previewCleanExport") &&
       response.status() === 200,
   );
-  await page.getByRole("button", { name: "Kiểm tra file xuất" }).click();
+  await page.getByRole("button", { name: "Tiếp tục bước 4" }).click();
   await continuePreviewResponse;
   await expect(
     page.getByRole("heading", { name: "Kiểm tra trước khi tạo bản xuất" }),
@@ -712,10 +712,10 @@ test("staged review saves all compare fields without checkboxes and stacks respo
       );
     return (
       [
-        ["Tìm nguồn web", "rgb(3, 105, 161)"],
-        ["Scrape nguồn điểm cao nhất", "rgb(15, 118, 110)"],
+        ["Tìm nguồn phù hợp (", "rgb(15, 118, 110)"],
+        ["Scrape nguồn đã chọn", "rgb(15, 118, 110)"],
         ["Trích xuất AI", "rgb(109, 40, 217)"],
-        ["Xem trước & lưu /materials", "rgb(4, 120, 87)"],
+        ["Lưu riêng vào /materials", "rgb(4, 120, 87)"],
       ] as const
     ).map(([label, expected]) => {
       const button = findButton(label);
@@ -1004,19 +1004,19 @@ test("persisted scrape retains multiple products and restores separate drafts", 
 
       await page.getByRole("checkbox", { name: "Chọn dòng 3" }).check();
       await expect(
-        page.getByRole("button", { name: "Tìm nguồn web (1)" }),
+        page.getByRole("button", { name: "Tìm lại nguồn (1)" }),
       ).toBeEnabled();
       await expect(
         page.getByRole("button", {
-          name: "Scrape nguồn điểm cao nhất (1)",
+          name: "Scrape nguồn đã chọn (1)",
         }),
       ).toBeEnabled();
       await expect(
-        page.getByRole("button", { name: "Trích xuất AI (1)" }),
-      ).toBeEnabled();
+        page.getByRole("button", { name: "Trích xuất AI (0)" }),
+      ).toBeDisabled();
       await expect(
         page.getByRole("button", {
-          name: "Xem trước & lưu /materials (1)",
+          name: "Lưu riêng vào /materials (1)",
         }),
       ).toBeEnabled();
       await page.waitForTimeout(1_100);
@@ -1207,7 +1207,7 @@ test("bulk preview is editable, commits explicitly, and can be undone", async ({
   await openReview(page, profileSeed);
   await page.getByRole("checkbox", { name: "Chọn dòng 2" }).check();
   await page
-    .getByRole("button", { name: "Xem trước & lưu /materials (1)" })
+    .getByRole("button", { name: "Lưu riêng vào /materials (1)" })
     .click();
   await expect(page).toHaveURL(
     new RegExp(

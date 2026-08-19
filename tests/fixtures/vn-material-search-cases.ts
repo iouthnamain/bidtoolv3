@@ -79,6 +79,70 @@ const rows: Array<[string, string, string?, string?]> = [
   ["safety-02", "Găng tay chống cắt cấp 5", undefined, "EN388"],
   ["safety-03", "Dây đai an toàn toàn thân 2 móc", undefined, "CE"],
   ["safety-04", "Bình chữa cháy CO2 MT3", undefined, "3kg"],
+  // lighting (5)
+  ["lighting-01", "Đèn LED panel âm trần 600x600", "Rạng Đông", "48W 6500K"],
+  ["lighting-02", "Đèn đường LED 150W", undefined, "IP66 220V"],
+  ["lighting-03", "Đèn pha LED 100W", undefined, "Ánh sáng trắng"],
+  ["lighting-04", "Bộ máng đèn chống thấm 1m2", undefined, "IP65"],
+  ["lighting-05", "Đèn exit hai mặt", undefined, "Pin dự phòng 2 giờ"],
+  // fire protection (5)
+  ["fire-01", "Đầu phun sprinkler hướng xuống K80", undefined, "68°C"],
+  ["fire-02", "Tủ trung tâm báo cháy 8 kênh", "Hochiki", "24VDC"],
+  ["fire-03", "Cuộn vòi chữa cháy D50 20m", undefined, "TCVN"],
+  ["fire-04", "Trụ tiếp nước chữa cháy 2 cửa", undefined, "DN100"],
+  ["fire-05", "Van góc chữa cháy D50", undefined, "Đồng PN16"],
+  // fasteners (5)
+  ["fastener-01", "Bu lông inox 304 M12x60", undefined, "Ren suốt"],
+  ["fastener-02", "Tắc kê nở sắt M10x100", undefined, "Mạ kẽm"],
+  ["fastener-03", "Vít tự khoan đầu lục giác 5.5x25", undefined, "Mạ kẽm"],
+  ["fastener-04", "Đai treo ống D90", undefined, "Thép mạ kẽm"],
+  ["fastener-05", "Que hàn E6013 D3.2", undefined, "Hộp 5kg"],
+  // insulation (5)
+  [
+    "insulation-01",
+    "Bông thủy tinh cách nhiệt dày 50mm",
+    undefined,
+    "Tỷ trọng 32kg/m3",
+  ],
+  ["insulation-02", "Tấm xốp XPS dày 25mm", undefined, "Khổ 600x1200"],
+  ["insulation-03", "Ống bảo ôn cao su D34", "Superlon", "Dày 19mm"],
+  ["insulation-04", "Băng keo nhôm 50mm", undefined, "Cuộn 50m"],
+  ["insulation-05", "Tấm cách âm cao su non 10mm", undefined, "Khổ 1m"],
+  // roofing / waterproofing (5)
+  ["roofing-01", "Tôn lạnh màu dày 0.45mm", "Hoa Sen", "Khổ 1070mm"],
+  ["roofing-02", "Màng chống thấm bitum 3mm", "Sika", "Khò nóng"],
+  ["roofing-03", "Tấm lợp polycarbonate đặc 5mm", undefined, "Trong suốt"],
+  ["roofing-04", "Keo chống thấm polyurethane 600ml", undefined, "Màu xám"],
+  ["roofing-05", "Máng xối inox 304 dày 1mm", undefined, "Rộng 300mm"],
+  // sanitary (5)
+  ["sanitary-01", "Bồn cầu hai khối Cotto C170", "Cotto", "Xả 6 lít"],
+  ["sanitary-02", "Lavabo treo tường L280", "Inax", "Sứ trắng"],
+  ["sanitary-03", "Vòi rửa lavabo nóng lạnh", undefined, "Đồng mạ chrome"],
+  ["sanitary-04", "Phễu thu sàn inox D90", undefined, "Inox 304"],
+  ["sanitary-05", "Bồn nước inox đứng 1000L", "Sơn Hà", "SUS 304"],
+  // instrumentation (5)
+  ["instrument-01", "Đồng hồ áp suất 0-10 bar", "Wise", "Mặt D100"],
+  [
+    "instrument-02",
+    "Đồng hồ đo lưu lượng nước DN50",
+    undefined,
+    "Mặt bích PN16",
+  ],
+  ["instrument-03", "Cảm biến nhiệt độ PT100", undefined, "Dải -50 đến 200°C"],
+  ["instrument-04", "Công tắc áp suất KP36", "Danfoss", "2-14 bar"],
+  ["instrument-05", "Biến tần 3 pha 5.5kW", "Delta", "380V"],
+  // networking / ELV (5)
+  ["network-01", "Cáp mạng Cat6 UTP 305m", "Commscope", "23AWG"],
+  ["network-02", "Tủ rack 20U D600", undefined, "Cửa kính"],
+  ["network-03", "Patch panel Cat6 24 port", undefined, "19 inch"],
+  ["network-04", "Camera IP dome 4MP", "Hikvision", "PoE IP67"],
+  ["network-05", "Switch PoE 16 port Gigabit", undefined, "Công suất 250W"],
+  // chemicals / consumables (5)
+  ["chemical-01", "Keo silicone trung tính 300ml", "Dow", "Màu trong"],
+  ["chemical-02", "Dầu thủy lực ISO VG 46", "Shell", "Phuy 209L"],
+  ["chemical-03", "Mỡ bôi trơn chịu nhiệt NLGI 2", undefined, "Hộp 1kg"],
+  ["chemical-04", "Dung dịch tẩy gỉ kim loại 5L", undefined, "Gốc acid"],
+  ["chemical-05", "Sơn chống rỉ epoxy hai thành phần", undefined, "Bộ 20kg"],
 ];
 
 const normalCases: VnMaterialSearchCase[] = rows.map(
@@ -147,7 +211,7 @@ const adversarial: VnMaterialSearchCase[] = [
   ],
 })) as VnMaterialSearchCase[];
 
-/** 55 frozen Vietnamese cases: 45 category cases + 10 adversarial/no-result. */
+/** 100 frozen Vietnamese cases: 90 category cases + 10 adversarial/no-result. */
 export const vnMaterialSearchCases: VnMaterialSearchCase[] = [
   ...normalCases,
   ...adversarial,

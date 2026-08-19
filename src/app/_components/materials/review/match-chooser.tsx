@@ -103,6 +103,18 @@ function trimmedOrUndefined(value: string | undefined) {
   return trimmed;
 }
 
+function formattedCaptureTime(value: string | undefined) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function profileScrapedProduct(value: unknown): ProfileScrapedProduct | null {
   if (!value || typeof value !== "object") return null;
   const product = value as Partial<ProfileScrapedProduct>;
@@ -192,7 +204,7 @@ export function MatchChooser({
   onChange: (next: RowDecision) => void;
   searchMode?: ReviewSearchMode;
   onWebSearch?: () => void;
-  onWebLinksSearch?: () => void;
+  onWebLinksSearch?: (options?: { customQueries?: string[] }) => void;
   onAiSearch?: () => void;
   isWebSearchPending?: boolean;
   isWebLinksPending?: boolean;
@@ -205,6 +217,8 @@ export function MatchChooser({
   const materialSaveHintId = useId();
   const utils = api.useUtils();
   const [searchTerm, setSearchTerm] = useState("");
+  const [manualSourceUrl, setManualSourceUrl] = useState("");
+  const [customQueriesText, setCustomQueriesText] = useState("");
   const [debounced, setDebounced] = useState("");
   const [startingCandidateKeys, setStartingCandidateKeys] = useState(
     () => new Set<string>(),
@@ -251,6 +265,8 @@ export function MatchChooser({
     api.materialProfile.rejectSearchResult.useMutation();
   const restoreSearchResult =
     api.materialProfile.restoreSearchResult.useMutation();
+  const inspectManualSource =
+    api.materialProfile.inspectManualSource.useMutation();
   const createSavePreview =
     api.materialProfile.createMaterialSavePreview.useMutation();
   const commitSaveBatch =
@@ -503,12 +519,25 @@ export function MatchChooser({
               ? "available"
               : "not_found"
             : "unchecked",
+          capturedAt: formattedCaptureTime(linkedScrape?.capturedAt),
           isCaptured:
             (linkedScrape != null && hasCapturedProductDetails(linkedScrape)) ||
             (/\.pdf(?:$|[?#])/i.test(link.url) &&
               Boolean(decision?.catalogPdfUrls?.includes(link.url))),
           isRecommended: false,
           tier: link.assessment?.tier === "weak" ? "weak" : "primary",
+          providerLabel:
+            link.provider === "bing"
+              ? "Bing cứu hộ"
+              : link.provider === "manual"
+                ? "URL thủ công"
+                : link.provider === "known_source"
+                  ? "nguồn đã biết"
+                  : link.engines?.length
+                    ? `SearXNG · ${link.engines.join(", ")}`
+                    : link.provider === "searxng"
+                      ? "SearXNG"
+                      : undefined,
           debug: link.assessment ? (
             <>
               <p>
@@ -589,6 +618,10 @@ export function MatchChooser({
           sourceUrl: candidate.url ?? candidate.sourceUrls[0],
           priceLabel,
           priceStatus: priceLabel ? "available" : "not_found",
+          capturedAt:
+            candidate.url === selectedWebScrape?.sourceUrl
+              ? formattedCaptureTime(selectedWebScrape?.capturedAt)
+              : undefined,
           isRecommended: false,
           debug: candidate.relevanceDecision ? (
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap">
@@ -633,6 +666,8 @@ export function MatchChooser({
     isProfileSplit,
     profileSearchRunning,
     row.name,
+    selectedWebScrape?.capturedAt,
+    selectedWebScrape?.sourceUrl,
     sheetFields,
   ]);
 
@@ -720,6 +755,11 @@ export function MatchChooser({
         toast.warning("Chưa có liên kết web để chọn.");
         return;
       }
+      if (link.assessment?.tier === "weak") {
+        toast.warning(
+          "Nguồn này cần kiểm tra thủ công vì độ liên quan còn thấp.",
+        );
+      }
 
       const nextEdited: Partial<Record<FillableField, string>> = {
         sourceUrl: link.url,
@@ -761,7 +801,7 @@ export function MatchChooser({
       webEvidence: aiResult.evidence,
       webSearchStatus,
       ...profileFields,
-      selectedScrapeProductKey: null,
+      selectedScrapeProductKey: decision?.selectedScrapeProductKey ?? null,
       catalogPdfUrls: [
         ...new Set([
           ...(decision?.catalogPdfUrls ?? []),
@@ -928,6 +968,60 @@ export function MatchChooser({
         },
       },
     );
+  };
+
+  const addManualSource = async () => {
+    if (workspaceId == null) {
+      toast.error("Thiếu mã hồ sơ vật tư.");
+      return;
+    }
+    const url = manualSourceUrl.trim();
+    if (!url) {
+      toast.warning("Nhập URL nguồn cần kiểm tra.");
+      return;
+    }
+    try {
+      const link = await inspectManualSource.mutateAsync({
+        workspaceId,
+        itemId: row.key,
+        url,
+      });
+      const current = decisionRef.current ?? {
+        materialId: null,
+        acceptedFields: new Set<FillableField>(),
+      };
+      onChange({
+        ...current,
+        webLinkResults: [
+          link,
+          ...(current.webLinkResults ?? []).filter(
+            (candidate) => candidate.url !== link.url,
+          ),
+        ],
+        webLinksStatus: "done",
+      });
+      setManualSourceUrl("");
+      toast.success("Đã thêm URL an toàn vào danh sách nguồn.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "URL nguồn không an toàn hoặc không hợp lệ.",
+      );
+    }
+  };
+
+  const runCustomQuerySearch = () => {
+    const customQueries = customQueriesText
+      .split("\n")
+      .map((query) => query.trim().replace(/\s+/g, " "))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (customQueries.length === 0) {
+      toast.warning("Nhập ít nhất một truy vấn, mỗi dòng một truy vấn.");
+      return;
+    }
+    onWebLinksSearch?.({ customQueries });
   };
 
   const isSkipped = decision?.skipped === true;
@@ -1792,7 +1886,7 @@ export function MatchChooser({
             <Button
               variant="search"
               size="sm"
-              onClick={onWebLinksSearch}
+              onClick={() => onWebLinksSearch?.()}
               disabled={[
                 isWebLinksPending,
                 rowNameMissing,
@@ -1805,7 +1899,9 @@ export function MatchChooser({
               ) : (
                 <Globe className="h-4 w-4" aria-hidden />
               )}
-              Tìm nguồn web
+              {decision?.webLinkResults?.length
+                ? "Tìm lại nguồn"
+                : "Tìm nguồn phù hợp"}
             </Button>
             <Button
               variant="ai"
@@ -1816,7 +1912,13 @@ export function MatchChooser({
                 rowNameMissing,
                 isSearchBusy,
                 capturingSearchCandidateKey != null,
+                selectedWebScrape == null,
               ].some(Boolean)}
+              title={
+                selectedWebScrape == null
+                  ? "Chọn nguồn và hoàn tất scrape trước khi chạy AI."
+                  : "AI chỉ đọc bản chụp scrape đang chọn."
+              }
             >
               {isAiSearchPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -1847,6 +1949,75 @@ export function MatchChooser({
           </Button>
         )}
       </div>
+
+      {isProfileSplit ? (
+        <details className="border-line bg-surface-2 rounded border px-3 py-2">
+          <summary className="focus-visible:ring-ring flex min-h-10 cursor-pointer items-center text-xs font-semibold focus-visible:ring-2 focus-visible:outline-none">
+            Nguồn thủ công & truy vấn nâng cao
+          </summary>
+          <div className="mt-2 grid gap-3 lg:grid-cols-2">
+            <div>
+              <label
+                htmlFor={`manual-source-${row.key}`}
+                className="text-ink-2 text-xs font-semibold"
+              >
+                Thêm URL nguồn
+              </label>
+              <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+                <input
+                  id={`manual-source-${row.key}`}
+                  type="url"
+                  value={manualSourceUrl}
+                  onChange={(event) => setManualSourceUrl(event.target.value)}
+                  placeholder="https://nhacungcap.vn/san-pham"
+                  className="border-line-strong bg-surface-1 min-h-10 min-w-0 flex-1 rounded border px-3 text-sm"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void addManualSource()}
+                  isLoading={inspectManualSource.isPending}
+                  disabled={inspectManualSource.isPending || isSearchBusy}
+                >
+                  Kiểm tra & thêm
+                </Button>
+              </div>
+              <p className="text-ink-3 mt-1 text-xs">
+                URL được kiểm tra SSRF và tên miền chặn trước khi thêm.
+              </p>
+            </div>
+            <div>
+              <label
+                htmlFor={`custom-queries-${row.key}`}
+                className="text-ink-2 text-xs font-semibold"
+              >
+                Truy vấn cho một lần chạy (tối đa 6)
+              </label>
+              <textarea
+                id={`custom-queries-${row.key}`}
+                rows={3}
+                value={customQueriesText}
+                onChange={(event) => setCustomQueriesText(event.target.value)}
+                placeholder="Mỗi dòng một truy vấn"
+                className="border-line-strong bg-surface-1 mt-1 w-full rounded border px-3 py-2 text-sm"
+              />
+              <Button
+                className="mt-2"
+                variant="secondary"
+                size="sm"
+                onClick={runCustomQuerySearch}
+                disabled={[
+                  isWebLinksPending,
+                  rowNameMissing,
+                  isSearchBusy,
+                ].some(Boolean)}
+              >
+                Chạy truy vấn này
+              </Button>
+            </div>
+          </div>
+        </details>
+      ) : null}
 
       <FieldCompareEditor
         sheetLabel={`Dòng Excel ${row.originalRowIndex}`}

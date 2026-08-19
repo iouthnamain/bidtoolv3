@@ -10,6 +10,7 @@ import type {
   AiSearchStoredResult,
   WebLinkResult,
 } from "~/lib/materials/enrich-gap-fill";
+import type { ScrapedProductStoredResult } from "~/lib/materials/profile-scrape-types";
 import {
   ENRICHABLE_FIELDS,
   ENRICHABLE_TO_FILLABLE_FIELD,
@@ -36,12 +37,15 @@ import { extractProductFromSources } from "~/server/services/material-enrichment
 import {
   enrichSearchResultsWithFetchedContent,
   fetchUrlAsSearchResult,
+  isUnsafeSearchResult,
   normalizeWebSearchQuery,
   rankSearchResults,
   searchBingForProduct,
   searchWebForProduct,
   type WebSearchResult,
 } from "~/server/services/material-web-search";
+import { domainMatchesAny } from "~/server/services/search-domain-policy";
+import { assertSafeScrapeUrl } from "~/server/services/shop-material-scraper/url-safety";
 import {
   activeRejectedUrls,
   normalizeMaterialSearchUrl,
@@ -51,7 +55,7 @@ import { recordSearchAuditLog } from "~/server/services/search-audit";
 
 const log = createLogger("services-enrich-profile-row-search");
 
-const PROFILE_TOP_LINKS = 8;
+const PROFILE_TOP_LINKS = 5;
 const PROFILE_FETCH_LINKS = 6;
 const FETCH_CONCURRENCY = 3;
 const EXTRACT_CONCURRENCY = 3;
@@ -118,8 +122,15 @@ function toWebLink(
     rrfScore: result.rrfScore,
     assessment,
     fetchStatus,
+    provider: result.provider,
+    engines: result.engines,
   };
 }
+
+export type ProfileWebSearchOptions = {
+  customQueries?: string[];
+  bypassCache?: boolean;
+};
 
 export type ProfileAiCandidatesSearchResult = {
   aiSearchCandidates: AiSearchStoredResult[];
@@ -244,9 +255,158 @@ function pushAiExtractionWarning(warnings: string[], warning: string) {
   warnings.push(warning);
 }
 
+function capturedProductText(capture: ScrapedProductStoredResult) {
+  const product = capture.product;
+  const fields = Object.entries(capture.fields)
+    .filter(([, value]) => value?.trim())
+    .map(([field, value]) => `${field}: ${value}`);
+  const evidence = capture.evidence
+    .filter((item) => item.snippet.trim())
+    .map((item) => `${item.field}: ${item.snippet}`);
+  return [
+    `capturedAt: ${capture.capturedAt ?? "legacy"}`,
+    `name: ${product.name}`,
+    product.sku ? `sku: ${product.sku}` : "",
+    product.model ? `model: ${product.model}` : "",
+    product.manufacturer ? `manufacturer: ${product.manufacturer}` : "",
+    product.originCountry ? `originCountry: ${product.originCountry}` : "",
+    product.unit ? `unit: ${product.unit}` : "",
+    product.category ? `category: ${product.category}` : "",
+    product.specText ? `specText:\n${product.specText}` : "",
+    product.priceText ? `priceText: ${product.priceText}` : "",
+    product.price != null ? `price: ${product.price} ${product.currency}` : "",
+    ...fields,
+    ...evidence,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 10_000);
+}
+
+/**
+ * Run optional AI extraction strictly against one retained scraper snapshot.
+ * This function intentionally performs no search and no page fetch.
+ */
+async function _extractProfileCapturedScrapeAiCandidate(
+  input: EnrichWebRowInput,
+  capture: ScrapedProductStoredResult,
+  signal?: AbortSignal,
+): Promise<ProfileAiCandidatesSearchResult> {
+  const content = capturedProductText(capture);
+  if (!content.trim()) {
+    return {
+      aiSearchCandidates: [],
+      warnings: ["Bản chụp nguồn chưa có nội dung để AI trích xuất."],
+    };
+  }
+
+  const provider = await resolveAiProvider("enrichment");
+  const source: WebSearchResult = {
+    title: capture.name || capture.product.name || capture.sourceUrl,
+    url: capture.sourceUrl,
+    domain: (() => {
+      try {
+        return new URL(capture.sourceUrl).hostname;
+      } catch {
+        return "";
+      }
+    })(),
+    snippet: content,
+    query: "captured_scrape_snapshot",
+    rankScore: capture.sourceScore ?? capture.productMatchScore ?? 0,
+    provider: "known_source",
+    fetchStatus: "verified",
+    discoveredPdfUrls: capture.catalogPdfUrls,
+  };
+  const extracted = await extractProductFromSources(
+    enrichmentInputFromRow(input),
+    [source],
+    provider,
+    signal,
+  );
+  const mapped = mapExtractedToFillable(extracted, [capture.sourceUrl]);
+  const hasFields = Object.keys(mapped.fields).some(
+    (field) => field !== "sourceUrl",
+  );
+  const hasPdfs = mapped.catalogPdfUrls.length > 0;
+  if (!hasFields && !hasPdfs) {
+    return {
+      aiSearchCandidates: [],
+      warnings: ["AI không trích xuất thêm được dữ liệu từ bản chụp đã chọn."],
+    };
+  }
+  const candidate: AiSearchStoredResult = {
+    fields: mapped.fields,
+    sourceUrls: [capture.sourceUrl],
+    evidence: mapped.evidence,
+    catalogPdfUrls: hasPdfs ? mapped.catalogPdfUrls : undefined,
+    catalogEvidenceUrls: verifiedCatalogUrlsFromSources(mapped.catalogPdfUrls, [
+      source,
+    ]),
+    fieldConfidences: fieldConfidencesFromExtracted(extracted),
+    title: capture.name || capture.product.name,
+    url: capture.sourceUrl,
+    snippet: content.slice(0, 1_000),
+    rankScore: capture.sourceScore ?? capture.productMatchScore ?? 0,
+  };
+  const sheetFields: Partial<Record<FillableField, string>> = {
+    code: input.code,
+    manufacturer: input.manufacturer,
+    unit: input.unit,
+    category: input.category,
+    specText: input.specText,
+    originCountry: input.originCountry,
+  };
+  const score = scoreAiCandidateCompletion(candidate, sheetFields, input.name);
+  return {
+    aiSearchCandidates: [candidate],
+    recommendedCandidateKey:
+      score >= RELIABLE_SEARCH_MATCH_THRESHOLD ? "ai:0" : undefined,
+    warnings:
+      score >= RELIABLE_SEARCH_MATCH_THRESHOLD
+        ? []
+        : ["Kết quả AI cần kiểm tra trước khi áp dụng."],
+  };
+}
+
+/** Validate a user-entered source without fetching it. Scraping revalidates it. */
+export async function createManualProfileWebLink(
+  input: EnrichWebRowInput,
+  rawUrl: string,
+): Promise<WebLinkResult> {
+  const safeUrl = await assertSafeScrapeUrl(rawUrl);
+  const domain = safeUrl.hostname.toLowerCase();
+  const policy = await resolveSearchDomainPolicy();
+  const candidate: WebSearchResult = {
+    title: `Nguồn nhập thủ công · ${domain}`,
+    url: safeUrl.toString(),
+    domain,
+    snippet:
+      "URL nguồn do người dùng nhập; nội dung chỉ được đọc khi chọn scrape.",
+    query: "manual_url",
+    rankScore: 0,
+  };
+  if (
+    isUnsafeSearchResult(candidate) ||
+    domainMatchesAny(domain, policy.blockDomains)
+  ) {
+    throw new Error("Tên miền này bị chặn bởi chính sách tìm kiếm.");
+  }
+  const assessment = assessMaterialSearchCandidate({
+    identity: buildProfileSearchQueryWaves(input).identity,
+    candidate,
+  });
+  return {
+    ...toWebLink(candidate, { ...assessment, tier: "weak" }, "unverified"),
+    provider: "manual",
+    engines: [],
+  };
+}
+
 async function _searchProfileRowWebLinks(
   input: EnrichWebRowInput,
   signal?: AbortSignal,
+  options?: ProfileWebSearchOptions,
 ): Promise<ProfileWebLinksSearchResult> {
   const warnings: string[] = [];
   const startedAt = Date.now();
@@ -280,8 +440,17 @@ async function _searchProfileRowWebLinks(
     queryControls,
   });
   const queryBudget = queryControls.interactiveMaxQueries;
+  const customQueries = [...new Set(options?.customQueries ?? [])]
+    .map((query) => query.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .slice(0, queryBudget)
+    .map((query) => ({ query, intent: "general" as const }));
   const firstQueries = (
-    pipelineMode === "guarded" ? waves.wave1 : legacyQueries
+    customQueries.length > 0
+      ? customQueries
+      : pipelineMode === "guarded"
+        ? waves.wave1
+        : legacyQueries
   ).slice(0, queryBudget);
   let executedQueries: SearchQuery[] = [...firstQueries];
 
@@ -305,6 +474,8 @@ async function _searchProfileRowWebLinks(
     : budgetSignal;
   const searchResponse = await searchWebForProduct(firstQueries, searchSignal, {
     feature: "profile_search",
+    allowDirectBingFallback: false,
+    bypassCache: options?.bypassCache,
   });
   warnings.push(...searchResponse.warnings);
   const directBingQueries = new Set(searchResponse.directBingQueries ?? []);
@@ -340,6 +511,7 @@ async function _searchProfileRowWebLinks(
   let mergedResults = feedbackFiltered;
   if (
     pipelineMode === "guarded" &&
+    customQueries.length === 0 &&
     plausibleCount < 5 &&
     executedQueries.length < queryBudget &&
     !searchSignal.aborted
@@ -351,6 +523,8 @@ async function _searchProfileRowWebLinks(
     executedQueries = [...executedQueries, ...remainingQueries];
     const wave2 = await searchWebForProduct(remainingQueries, searchSignal, {
       feature: "profile_search",
+      allowDirectBingFallback: false,
+      bypassCache: options?.bypassCache,
     });
     warnings.push(...wave2.warnings);
     for (const query of wave2.directBingQueries ?? []) {
@@ -435,7 +609,6 @@ async function _searchProfileRowWebLinks(
   );
   if (
     pipelineMode === "guarded" &&
-    mergedResults.length > 0 &&
     allCandidatesIdentityRejected &&
     uncoveredBingQueries.length > 0 &&
     !searchSignal.aborted
@@ -443,7 +616,7 @@ async function _searchProfileRowWebLinks(
     const bing = await searchBingForProduct(
       uncoveredBingQueries,
       searchSignal,
-      { feature: "profile_search" },
+      { feature: "profile_search", bypassCache: options?.bypassCache },
     );
     warnings.push(
       "SearXNG không có ứng viên khớp nhận dạng; đã thử Bing trực tiếp.",
@@ -817,6 +990,11 @@ export const extractProfileRowAiCandidates = traceFn(
   log,
   "extractProfileRowAiCandidates",
   _extractProfileRowAiCandidates,
+);
+export const extractProfileCapturedScrapeAiCandidate = traceFn(
+  log,
+  "extractProfileCapturedScrapeAiCandidate",
+  _extractProfileCapturedScrapeAiCandidate,
 );
 
 export const enrichProfileRowSearch = traceFn(

@@ -158,6 +158,64 @@ function filterWebLinkResults(value: unknown): WebLinkResult[] | undefined {
         Number.isFinite(record.rankScore)
           ? record.rankScore
           : undefined,
+      baseRankScore:
+        typeof record.baseRankScore === "number" &&
+        Number.isFinite(record.baseRankScore)
+          ? record.baseRankScore
+          : undefined,
+      rrfScore:
+        typeof record.rrfScore === "number" && Number.isFinite(record.rrfScore)
+          ? record.rrfScore
+          : undefined,
+      fetchStatus:
+        record.fetchStatus === "verified" ||
+        record.fetchStatus === "unverified" ||
+        record.fetchStatus === "failed"
+          ? record.fetchStatus
+          : undefined,
+      provider:
+        record.provider === "searxng" ||
+        record.provider === "bing" ||
+        record.provider === "known_source" ||
+        record.provider === "manual"
+          ? record.provider
+          : undefined,
+      engines: Array.isArray(record.engines)
+        ? record.engines.filter(
+            (engine): engine is string =>
+              typeof engine === "string" && engine.trim().length > 0,
+          )
+        : undefined,
+      matchedQueries: Array.isArray(record.matchedQueries)
+        ? record.matchedQueries.flatMap((entry) => {
+            if (!entry || typeof entry !== "object") return [];
+            const match = entry as Record<string, unknown>;
+            if (
+              typeof match.query !== "string" ||
+              typeof match.intent !== "string" ||
+              typeof match.rank !== "number" ||
+              !Number.isInteger(match.rank) ||
+              match.rank < 1
+            ) {
+              return [];
+            }
+            return [
+              {
+                query: match.query,
+                intent: match.intent,
+                rank: match.rank,
+              },
+            ];
+          })
+        : undefined,
+      assessment:
+        record.assessment && typeof record.assessment === "object"
+          ? (record.assessment as WebLinkResult["assessment"])
+          : undefined,
+      aiDecision:
+        record.aiDecision && typeof record.aiDecision === "object"
+          ? (record.aiDecision as WebLinkResult["aiDecision"])
+          : undefined,
     });
   }
   return result.length > 0 ? result : undefined;
@@ -398,6 +456,8 @@ function filterScrapeResult(
       Number.isFinite(record.productMatchScore)
         ? record.productMatchScore
         : null,
+    capturedAt:
+      typeof record.capturedAt === "string" ? record.capturedAt : undefined,
     reviewDraft: filterScrapedProductReviewDraft(record.reviewDraft),
   };
 }

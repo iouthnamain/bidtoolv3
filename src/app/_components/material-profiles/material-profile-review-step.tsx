@@ -272,7 +272,7 @@ export function MaterialProfileReviewStep({
           ? `Đã bắt đầu job tìm web cho ${job.total} dòng.`
           : job.mode === "auto"
             ? `Đã bắt đầu thu thập & lưu ${job.total} dòng hợp lệ.`
-            : `Đã bắt đầu job tìm AI cho ${job.total} dòng.`,
+            : `Đã bắt đầu AI trên bản chụp scrape cho ${job.total} dòng.`,
       );
       await utils.materialProfile.listSearchJobs.invalidate();
       await utils.materialProfile.get.invalidate({ workspaceId });
@@ -504,7 +504,11 @@ export function MaterialProfileReviewStep({
   );
 
   const handleProfileSearchJob = useCallback(
-    async (kind: "web" | "ai", rowIndices: number[]) => {
+    async (
+      kind: "web" | "ai",
+      rowIndices: number[],
+      options?: { customQueries?: string[]; fresh?: boolean },
+    ) => {
       if (isProfileCapturePending) {
         toast.warning(
           "Chờ thu thập nguồn hiện tại hoàn tất trước khi tìm lại.",
@@ -522,6 +526,8 @@ export function MaterialProfileReviewStep({
         workspaceId,
         itemIds,
         mode: kind,
+        fresh: options?.fresh ?? kind === "web",
+        customQueries: options?.customQueries,
       });
     },
     [
@@ -891,7 +897,7 @@ export function MaterialProfileReviewStep({
             isLoading={isFlushing || batchUpdateReviewDecisions.isPending}
             onClick={() => void handleContinue()}
           >
-            Kiểm tra file xuất
+            Tiếp tục bước 4
           </Button>
         }
       />

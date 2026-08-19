@@ -63,6 +63,8 @@ export type SearchSourceCandidate = {
   /** Whether this web source already has extracted product fields or a PDF. */
   isCaptured?: boolean;
   tier?: "primary" | "weak";
+  providerLabel?: string;
+  capturedAt?: string;
   debug?: ReactNode;
 };
 
@@ -152,6 +154,11 @@ export function SearchSourceCandidateCard({
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <SourceTag source={candidate.source} />
+          {candidate.providerLabel ? (
+            <span className="text-ink-3 text-xs">
+              qua {candidate.providerLabel}
+            </span>
+          ) : null}
           {candidate.isRecommended && band != null ? (
             <span className="text-good inline-flex items-center gap-1 text-xs font-semibold">
               <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -165,7 +172,7 @@ export function SearchSourceCandidateCard({
               className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap tabular-nums ${tone.badge}`}
               aria-label={`Mức khớp ${pct}%`}
             >
-              Mức khớp {pct}%
+              {band === "high" ? "Khớp tốt" : "Cần kiểm tra"}
             </span>
           ) : null}
           {isSelected && isCompleted ? (
@@ -263,6 +270,11 @@ export function SearchSourceCandidateCard({
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 Nguồn
               </a>
+            ) : null}
+            {candidate.capturedAt ? (
+              <span className="text-ink-3 text-xs tabular-nums">
+                Chụp lúc {candidate.capturedAt}
+              </span>
             ) : null}
             {candidate.source === "web" && onReject ? (
               <Button

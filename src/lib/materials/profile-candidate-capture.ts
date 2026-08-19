@@ -456,6 +456,7 @@ export function storeProfileCandidateCapture(
       ? storedProduct.imageUrl.trim()
       : undefined,
     productMatchScore: capture.productMatchScore ?? null,
+    capturedAt: existing?.capturedAt ?? new Date().toISOString(),
     reviewDraft: existing?.reviewDraft ?? inheritedDraft,
   };
   const nextCandidates = [...candidates];
