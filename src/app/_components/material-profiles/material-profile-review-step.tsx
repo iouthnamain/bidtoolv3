@@ -22,6 +22,7 @@ import {
 import {
   deriveReviewRowStatus,
   deserializeRowDecision,
+  reconcileFetchedRowDecision,
   seedDecisionsFromItems,
   serializeRowDecision,
   type RowDecision,
@@ -322,6 +323,7 @@ export function MaterialProfileReviewStep({
       .then((workspace) => {
         setDecisions((previous) => {
           const next = new Map(previous);
+          let changed = false;
           for (const item of workspace.items) {
             const remoteDecision = deserializeRowDecision(
               item.reviewDecisionJson,
@@ -331,20 +333,17 @@ export function MaterialProfileReviewStep({
               item.originalRowIndex,
             );
             const currentDecision = previous.get(item.originalRowIndex);
-            if (currentDecision !== requestedDecision) continue;
-            if (
-              currentDecision &&
-              (currentDecision.selectedSearchCandidateKey ?? null) !==
-                (remoteDecision.selectedSearchCandidateKey ?? null)
-            ) {
-              // A source selection may have been persisted while this terminal
-              // snapshot was in flight. Keep the newer local choice; the
-              // mutation response and the next workspace query are authoritative.
-              continue;
+            const reconciled = reconcileFetchedRowDecision({
+              requested: requestedDecision,
+              current: currentDecision,
+              remote: remoteDecision,
+            });
+            if (reconciled !== currentDecision) {
+              next.set(item.originalRowIndex, reconciled);
+              changed = true;
             }
-            next.set(item.originalRowIndex, remoteDecision);
           }
-          return next;
+          return changed ? next : previous;
         });
       })
       .catch(() => {

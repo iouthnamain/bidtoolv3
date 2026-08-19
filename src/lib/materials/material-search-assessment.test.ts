@@ -43,7 +43,7 @@ describe("guarded material assessment", () => {
     expect(assessment.score).toBeGreaterThanOrEqual(0.75);
   });
 
-  it("keeps a strong broad product-family source visible as weak", () => {
+  it("requires identifier evidence before a broad product-family source can be promoted", () => {
     const broadIdentity = createMaterialSearchIdentity({
       name: "Van tiết lưu 1 chiều M5 Φ4 (SL4-M5)",
       manufacturer: "OEM",
@@ -60,6 +60,25 @@ describe("guarded material assessment", () => {
     });
 
     expect(broadIdentity.searchPhrase).toBe("Van tiết lưu");
+    expect(assessment.tier).toBe("rejected");
+    expect(assessment.hardRejects).toContain("identity_missing");
+    expect(assessment.aiOverrideEligible).toBe(true);
+  });
+
+  it("keeps broad product-family evidence weak when no identifier is expected", () => {
+    const broadIdentity = createMaterialSearchIdentity({
+      name: "Van tiết lưu khí nén",
+    });
+    const assessment = assessMaterialSearchCandidate({
+      identity: broadIdentity,
+      candidate: {
+        title: "Van tiết lưu khí nén là gì?",
+        url: "https://example.vn/van-tiet-luu",
+        domain: "example.vn",
+        snippet: "Nguyên lý và ứng dụng của van tiết lưu khí nén.",
+      },
+    });
+
     expect(assessment.tier).toBe("weak");
     expect(assessment.hardRejects).not.toContain("identity_missing");
   });

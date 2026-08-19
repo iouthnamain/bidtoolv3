@@ -214,6 +214,7 @@ describe("buildSearchQueries", () => {
         ({ query, intent }) => query === "Van 1 chiều" && intent === "general",
       ),
     ).toBe(true);
+    expect(queries.some(({ intent }) => intent === "vn_spec")).toBe(true);
     expect(queries.some(({ query }) => query === "Van")).toBe(false);
   });
 

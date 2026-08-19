@@ -27,7 +27,7 @@ engines:
     disabled: false
     timeout: 6.0
   - name: duckduckgo
-    disabled: true
+    disabled: false
   - name: google cse
     disabled: true
   - name: brave

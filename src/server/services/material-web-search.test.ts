@@ -144,6 +144,7 @@ describe("searchQueryWithFallback", () => {
 
   it("does not fall back to HTML when disabled", async () => {
     vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_ENGINES", "bing");
     vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

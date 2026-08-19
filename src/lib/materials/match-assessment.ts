@@ -135,18 +135,10 @@ function compactReasons(reasons: string[]): string[] {
   return result;
 }
 
-function stripAccents(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D");
-}
-
 function normalizeText(value: string): string {
-  return stripAccents(value)
-    .toLowerCase()
+  return normalizeMaterialSearchText(value)
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -270,16 +262,18 @@ export function assessMaterialSearchCandidate(input: {
   );
   const nameForward = tokenOverlap(identity.normalizedName, text);
   const nameBackward = tokenOverlap(text, identity.normalizedName);
-  const fullNameMatch = Number(text.includes(identity.normalizedName));
-  const phraseMatch = identity.productPhrase
-    ? Number(text.includes(identity.productPhrase))
+  const fullNameMatch = text.includes(identity.normalizedName) ? 1 : 0;
+  const productPhraseMatch = identity.productPhrase
+    ? text.includes(identity.productPhrase)
+      ? 1
+      : 0
     : 0;
   const searchPhrase = identity.searchPhrase
     ? normalizeMaterialSearchText(identity.searchPhrase)
     : "";
-  const searchPhraseMatch = searchPhrase
-    ? Number(containsNormalizedPhrase(text, searchPhrase))
-    : 0;
+  const broadPhraseMatched = Boolean(
+    searchPhrase && containsNormalizedPhrase(text, searchPhrase),
+  );
   const manufacturerMatch = identity.manufacturer
     ? tokenOverlap(identity.manufacturer, text)
     : 0.5;
@@ -289,7 +283,7 @@ export function assessMaterialSearchCandidate(input: {
   );
   const identityBaseScore =
     Math.max(fullNameMatch, Math.min(nameForward, nameBackward)) * 0.35 +
-    phraseMatch * 0.3 +
+    productPhraseMatch * 0.3 +
     manufacturerMatch * 0.1 +
     (identity.identifiers.length
       ? identifiers.matches.length / identity.identifiers.length
@@ -299,10 +293,9 @@ export function assessMaterialSearchCandidate(input: {
   // product-family page. A strong broad-phrase match is enough for a weak
   // result, but never overrides identifier, dimension, family, or safety
   // conflicts below.
-  const broadIdentityScore =
-    searchPhraseMatch >= 0.75
-      ? searchPhraseMatch * 0.45 + manufacturerMatch * 0.1
-      : 0;
+  const broadIdentityScore = broadPhraseMatched
+    ? 0.45 + manufacturerMatch * 0.1
+    : 0;
   const identityScore = clampMatchScore(
     Math.max(identityBaseScore, broadIdentityScore),
   );
@@ -341,7 +334,11 @@ export function assessMaterialSearchCandidate(input: {
     hardRejects.push("product_family_conflict");
     conflicts.push(`Sai nhóm sản phẩm: ${family}`);
   }
-  if (identityScore < 0.18 && searchPhraseMatch < 0.75) {
+  const broadPhraseNeedsIdentifier =
+    broadIdentityScore > identityBaseScore &&
+    identity.identifiers.length > 0 &&
+    identifiers.matches.length === 0;
+  if (identityScore < 0.18 || broadPhraseNeedsIdentifier) {
     hardRejects.push("identity_missing");
   }
 
@@ -362,7 +359,7 @@ export function assessMaterialSearchCandidate(input: {
         ? "primary"
         : "weak";
   const reasons = compactReasons([
-    phraseMatch || searchPhraseMatch >= 0.75 ? "Khớp cụm sản phẩm" : "",
+    productPhraseMatch || broadPhraseMatched ? "Khớp cụm sản phẩm" : "",
     identifiers.matches.length
       ? `Khớp mã: ${identifiers.matches.join(", ")}`
       : "",

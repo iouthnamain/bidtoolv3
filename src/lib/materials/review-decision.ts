@@ -510,6 +510,193 @@ export function serializeRowDecision(
   };
 }
 
+function decisionValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left instanceof Set && right instanceof Set) {
+    return (
+      left.size === right.size && [...left].every((value) => right.has(value))
+    );
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => decisionValuesEqual(value, right[index]))
+    );
+  }
+  if (
+    left == null ||
+    right == null ||
+    typeof left !== "object" ||
+    typeof right !== "object"
+  ) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = new Set([
+    ...Object.keys(leftRecord),
+    ...Object.keys(rightRecord),
+  ]);
+  return [...keys].every((key) =>
+    decisionValuesEqual(leftRecord[key], rightRecord[key]),
+  );
+}
+
+const MISSING_DECISION_VALUE = Symbol("missing-decision-value");
+
+function decisionRecord(value: unknown): Record<string, unknown> | null {
+  return value != null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !(value instanceof Set)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function recordValue(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key) &&
+    record[key] !== undefined
+    ? record[key]
+    : MISSING_DECISION_VALUE;
+}
+
+function reconcileDecisionValue(
+  requested: unknown,
+  current: unknown,
+  remote: unknown,
+): unknown {
+  if (decisionValuesEqual(current, requested)) return remote;
+  if (current === MISSING_DECISION_VALUE) return MISSING_DECISION_VALUE;
+
+  const currentRecord = decisionRecord(current);
+  const requestedRecord = decisionRecord(requested);
+  const remoteRecord = decisionRecord(remote);
+  if (
+    currentRecord &&
+    (requestedRecord || requested === MISSING_DECISION_VALUE) &&
+    (remoteRecord || remote === MISSING_DECISION_VALUE)
+  ) {
+    const base = requestedRecord ?? {};
+    const server = remoteRecord ?? {};
+    const merged: Record<string, unknown> = {};
+    const keys = new Set([
+      ...Object.keys(base),
+      ...Object.keys(currentRecord),
+      ...Object.keys(server),
+    ]);
+    for (const key of keys) {
+      const value = reconcileDecisionValue(
+        recordValue(base, key),
+        recordValue(currentRecord, key),
+        recordValue(server, key),
+      );
+      if (value !== MISSING_DECISION_VALUE) merged[key] = value;
+    }
+    return merged;
+  }
+
+  return current;
+}
+
+const SELECTION_DECISION_FIELDS = [
+  "materialId",
+  "acceptedFields",
+  "overwriteFields",
+  "editedValues",
+  "webProposedFields",
+  "webEvidence",
+  "selectedSource",
+  "selectedSearchCandidateKey",
+  "selectedScrapeProductKey",
+  "acceptedProfileFields",
+  "editedProfileValues",
+  "catalogPdfUrls",
+  "aiSearchResult",
+  "skipped",
+] as const satisfies readonly (keyof RowDecision)[];
+
+function remoteContainsSearchCandidate(
+  remote: RowDecision,
+  key: string,
+): boolean {
+  if (key.startsWith("web:")) {
+    const url = key.slice("web:".length);
+    return (
+      remote.webLinkResults?.some((candidate) => candidate.url === url) === true
+    );
+  }
+  if (key.startsWith("ai:")) {
+    const index = Number.parseInt(key.slice("ai:".length), 10);
+    return (
+      Number.isInteger(index) && remote.aiSearchCandidates?.[index] != null
+    );
+  }
+  return false;
+}
+
+function remoteContainsScrapedProduct(remote: RowDecision, key: string) {
+  return (
+    remote.scrapeResults?.some((result) => result.productKey === key) === true
+  );
+}
+
+function preserveCurrentSelectionBundle(
+  merged: RowDecision,
+  current: RowDecision,
+) {
+  const result = merged as Record<string, unknown>;
+  const local = current as Record<string, unknown>;
+  for (const field of SELECTION_DECISION_FIELDS) {
+    if (
+      Object.prototype.hasOwnProperty.call(local, field) &&
+      local[field] !== undefined
+    ) {
+      result[field] = local[field];
+    } else {
+      delete result[field];
+    }
+  }
+  return merged;
+}
+
+/**
+ * Three-way merge a fetched server decision with edits made after the request
+ * started. Server fields are refreshed unless their top-level local field
+ * changed relative to the request snapshot.
+ */
+export function reconcileFetchedRowDecision(input: {
+  requested: RowDecision | undefined;
+  current: RowDecision | undefined;
+  remote: RowDecision;
+}): RowDecision {
+  if (!input.current) return input.remote;
+  const merged = reconcileDecisionValue(
+    input.requested ?? MISSING_DECISION_VALUE,
+    input.current,
+    input.remote,
+  ) as RowDecision;
+  const currentSearchKey = input.current.selectedSearchCandidateKey;
+  const currentScrapeKey = input.current.selectedScrapeProductKey;
+  const keepCurrentSearchSelection =
+    currentSearchKey != null &&
+    currentSearchKey !== input.remote.selectedSearchCandidateKey &&
+    remoteContainsSearchCandidate(input.remote, currentSearchKey);
+  const keepCurrentScrapeSelection =
+    currentScrapeKey != null &&
+    currentScrapeKey !== input.remote.selectedScrapeProductKey &&
+    remoteContainsScrapedProduct(input.remote, currentScrapeKey);
+
+  const reconciled =
+    keepCurrentSearchSelection || keepCurrentScrapeSelection
+      ? preserveCurrentSelectionBundle(merged, input.current)
+      : merged;
+  return decisionValuesEqual(reconciled, input.current)
+    ? input.current
+    : reconciled;
+}
+
 export function deserializeRowDecision(value: unknown): RowDecision | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Partial<SerializedRowDecision>;

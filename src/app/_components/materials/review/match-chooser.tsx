@@ -1618,6 +1618,7 @@ export function MatchChooser({
         });
         applySerializedDecision(serialized);
       }
+      void utils.materialProfile.getActiveScrapeJob.invalidate({ workspaceId });
       void scrapeHistoryQuery.refetch();
     } catch (error) {
       toast.error(

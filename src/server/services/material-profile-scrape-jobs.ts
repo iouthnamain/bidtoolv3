@@ -87,7 +87,6 @@ function recordOf(value: unknown): Record<string, unknown> {
 
 export function isMaterialProfileScrapeInputCurrent(input: {
   snapshot: unknown;
-  currentUpdatedAt: string;
   currentMaterialId: number | null;
   currentSourceFingerprint: string;
   runSourceFingerprint: string;
@@ -388,7 +387,6 @@ async function applySelectedProduct(
     if (
       !isMaterialProfileScrapeInputCurrent({
         snapshot,
-        currentUpdatedAt: item.updatedAt,
         currentMaterialId: item.materialId,
         currentSourceFingerprint: item.sourceFingerprint,
         runSourceFingerprint: run.sourceFingerprint,

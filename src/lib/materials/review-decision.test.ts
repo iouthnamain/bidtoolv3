@@ -4,6 +4,7 @@ import {
   deriveMatchStatus,
   deriveReviewRowStatus,
   deserializeRowDecision,
+  reconcileFetchedRowDecision,
   seedDecisionFromItem,
   serializeRowDecision,
   type RowDecision,
@@ -124,6 +125,156 @@ describe("review-decision", () => {
     expect(restored?.aiSearchStatus).toBe("done");
     expect(restored?.selectedSource).toBe("ai");
     expect(restored?.selectedSearchCandidateKey).toBe("ai:0");
+  });
+
+  it("refreshes server fields while preserving edits made during the fetch", () => {
+    const requested: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(["sourceUrl"]),
+      editedValues: { sourceUrl: "https://old.example/product" },
+      webLinkResults: [
+        {
+          title: "Old",
+          url: "https://old.example/product",
+          domain: "old.example",
+          snippet: "Old result",
+        },
+      ],
+      selectedSearchCandidateKey: "web:https://old.example/product",
+    };
+    const current: RowDecision = {
+      ...requested,
+      editedValues: {
+        ...requested.editedValues,
+        manufacturer: "Acme local",
+      },
+    };
+    const remote: RowDecision = {
+      ...requested,
+      editedValues: {
+        sourceUrl: "https://old.example/product",
+        unit: "bộ",
+      },
+      webLinkResults: [
+        {
+          title: "New",
+          url: "https://new.example/product",
+          domain: "new.example",
+          snippet: "New result",
+        },
+      ],
+      webLinksStatus: "done",
+    };
+
+    const reconciled = reconcileFetchedRowDecision({
+      requested,
+      current,
+      remote,
+    });
+
+    expect(reconciled.editedValues?.manufacturer).toBe("Acme local");
+    expect(reconciled.editedValues?.unit).toBe("bộ");
+    expect(reconciled.webLinkResults?.[0]?.title).toBe("New");
+    expect(reconciled.webLinksStatus).toBe("done");
+    expect(reconciled.selectedSearchCandidateKey).toBe(
+      "web:https://old.example/product",
+    );
+  });
+
+  it("preserves a source switch made while server results refresh", () => {
+    const requested: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(),
+      selectedSource: "web",
+      selectedSearchCandidateKey: "web:https://old.example/product",
+    };
+    const current: RowDecision = {
+      ...requested,
+      selectedSearchCandidateKey: "web:https://local.example/product",
+    };
+    const remote: RowDecision = {
+      ...requested,
+      selectedSearchCandidateKey: "web:https://remote.example/product",
+      webLinksStatus: "done",
+    };
+
+    const reconciled = reconcileFetchedRowDecision({
+      requested,
+      current,
+      remote,
+    });
+
+    expect(reconciled.selectedSearchCandidateKey).toBe(
+      "web:https://local.example/product",
+    );
+    expect(reconciled.webLinksStatus).toBe("done");
+  });
+
+  it("keeps a valid local selection when the fetched snapshot predates persistence", () => {
+    const localUrl = "https://local.example/product";
+    const remoteUrl = "https://remote.example/product";
+    const local: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(["sourceUrl"]),
+      editedValues: { sourceUrl: localUrl },
+      webProposedFields: { sourceUrl: localUrl },
+      selectedSource: "web",
+      selectedSearchCandidateKey: `web:${localUrl}`,
+    };
+    const remote: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(["sourceUrl"]),
+      editedValues: { sourceUrl: remoteUrl },
+      webProposedFields: { sourceUrl: remoteUrl },
+      selectedSource: "web",
+      selectedSearchCandidateKey: `web:${remoteUrl}`,
+      webLinkResults: [
+        {
+          title: "Local candidate",
+          url: localUrl,
+          domain: "local.example",
+          snippet: "Local",
+        },
+        {
+          title: "Remote candidate",
+          url: remoteUrl,
+          domain: "remote.example",
+          snippet: "Remote",
+        },
+      ],
+      webLinksStatus: "done",
+    };
+
+    const reconciled = reconcileFetchedRowDecision({
+      requested: local,
+      current: local,
+      remote,
+    });
+
+    expect(reconciled.selectedSearchCandidateKey).toBe(`web:${localUrl}`);
+    expect(reconciled.editedValues?.sourceUrl).toBe(localUrl);
+    expect(reconciled.webLinkResults).toEqual(remote.webLinkResults);
+    expect(reconciled.webLinksStatus).toBe("done");
+  });
+
+  it("reuses the current decision when reconciliation makes no changes", () => {
+    const current: RowDecision = {
+      materialId: null,
+      acceptedFields: new Set(["manufacturer"]),
+      editedValues: { manufacturer: "Acme" },
+    };
+
+    const reconciled = reconcileFetchedRowDecision({
+      requested: current,
+      current,
+      remote: {
+        materialId: null,
+        acceptedFields: new Set(["manufacturer"]),
+        editedValues: { manufacturer: "Acme" },
+      },
+    });
+
+    expect(reconciled).toBe(current);
   });
 
   it("reads legacy profile AI result when candidate array is missing", () => {

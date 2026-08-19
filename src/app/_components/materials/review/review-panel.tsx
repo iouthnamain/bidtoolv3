@@ -37,6 +37,7 @@ import type { RowDecision } from "~/lib/materials/review-decision";
 import {
   deriveReviewRowStatus,
   deserializeRowDecision,
+  reconcileFetchedRowDecision,
 } from "~/lib/materials/review-decision";
 import {
   findProfileCandidateCapture,
@@ -299,7 +300,11 @@ export function ReviewPanel({
     { workspaceId: workspaceId ?? 0 },
     {
       enabled: isProfileSplit && workspaceId != null,
-      refetchInterval: (query) => (query.state.data ? 1_000 : false),
+      refetchInterval: (query) =>
+        query.state.data &&
+        ["queued", "running"].includes(query.state.data.status)
+          ? 1_000
+          : false,
       refetchOnWindowFocus: false,
     },
   );
@@ -368,26 +373,26 @@ export function ReviewPanel({
     void utils.materialProfile.get.fetch({ workspaceId }).then((workspace) => {
       applyDecisions((previous) => {
         const next = new Map(previous);
+        let changed = false;
         for (const item of workspace.items) {
           const decision = deserializeRowDecision(item.reviewDecisionJson);
           const requestedDecision = decisionsAtRequest.get(
             item.originalRowIndex,
           );
           const currentDecision = previous.get(item.originalRowIndex);
-          if (currentDecision !== requestedDecision) continue;
-          if (
-            currentDecision &&
-            (currentDecision.selectedScrapeProductKey ?? null) !==
-              (decision?.selectedScrapeProductKey ?? null)
-          ) {
-            // A terminal-job snapshot can be older than a product activation
-            // that has already completed. Preserve the local product choice;
-            // the activation response is the freshest decision we have.
-            continue;
+          if (decision) {
+            const reconciled = reconcileFetchedRowDecision({
+              requested: requestedDecision,
+              current: currentDecision,
+              remote: decision,
+            });
+            if (reconciled !== currentDecision) {
+              next.set(item.originalRowIndex, reconciled);
+              changed = true;
+            }
           }
-          if (decision) next.set(item.originalRowIndex, decision);
         }
-        return next;
+        return changed ? next : previous;
       });
     });
   }, [

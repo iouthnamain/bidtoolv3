@@ -391,7 +391,17 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
   await seedCurrentSearchRun(seed);
 }
 
-const test = base.extend<{ profileSeed: ProfileSeed }>({
+const test = base.extend<
+  { profileSeed: ProfileSeed },
+  { databaseLifecycle: undefined }
+>({
+  databaseLifecycle: [
+    async ({}, provide) => {
+      await provide(undefined);
+      await sql.end({ timeout: 5 });
+    },
+    { scope: "worker", auto: true },
+  ],
   profileSeed: async ({ page }, provide) => {
     const seed = await createProfileSeed({ catalogAttached: true });
     await provide(seed);
@@ -743,7 +753,13 @@ test("persisted scrape retains multiple products and restores separate drafts", 
     await test.step("giữ B, chọn A và khôi phục bản nháp riêng", async () => {
       const productA = scrapedProductCard(page, `Máy bơm ${seed.marker} A`);
       const productB = scrapedProductCard(page, `Máy bơm ${seed.marker} B`);
+      const selectedA = page.waitForResponse(
+        (response) =>
+          response.url().includes("selectScrapedProduct") &&
+          response.status() === 200,
+      );
       await productA.getByRole("button", { name: "Chọn sản phẩm này" }).click();
+      await selectedA;
       await expect(productA).toContainText("Đang xem");
       await expect(productB).toContainText("Đã chọn");
 
@@ -785,8 +801,24 @@ test("persisted scrape retains multiple products and restores separate drafts", 
         `Nhà sản xuất A ${seed.marker}`,
       );
 
+      const reselectedB = page.waitForResponse(
+        (response) =>
+          response.url().includes("selectScrapedProduct") &&
+          response.status() === 200,
+      );
       await productB.getByRole("button", { name: "Chọn sản phẩm này" }).click();
+      await reselectedB;
+      await expect(productB).toContainText("Đang xem");
+      await expect(productA).toContainText("Đã chọn");
+
+      const reactivatedA = page.waitForResponse(
+        (response) =>
+          response.url().includes("activateScrapedProduct") &&
+          response.status() === 200,
+      );
       await productA.getByRole("button", { name: "Xem kết quả" }).click();
+      await reactivatedA;
+      await expect(productA).toContainText("Đang xem");
       await productA.getByRole("button", { name: "Bỏ" }).click();
       await expect(
         page.getByRole("columnheader", { name: "Sau (Scrape)" }),
@@ -888,8 +920,3 @@ test("bulk preview is editable, commits explicitly, and can be undone", async ({
     })
     .toBe(1);
 });
-
-// The worker owns this client for the entire serial suite. Do not call sql.end
-// here: a timed-out test can still have cleanup/poll work unwinding while
-// Playwright tears down fixtures, which turns harmless fallout into
-// CONNECTION_ENDED failures.

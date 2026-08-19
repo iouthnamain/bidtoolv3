@@ -9,7 +9,6 @@ describe("material profile scrape input snapshot", () => {
       materialId: null,
       searchGeneration: "web-run-3",
     },
-    currentUpdatedAt: "2026-07-12T01:00:00.000Z",
     currentMaterialId: null,
     currentSourceFingerprint: "source-a",
     runSourceFingerprint: "source-a",
@@ -20,13 +19,7 @@ describe("material profile scrape input snapshot", () => {
     expect(isMaterialProfileScrapeInputCurrent(current)).toBe(true);
   });
 
-  it("accepts sibling/manual timestamp changes but rejects material, source, and search changes", () => {
-    expect(
-      isMaterialProfileScrapeInputCurrent({
-        ...current,
-        currentUpdatedAt: "2026-07-12T01:01:00.000Z",
-      }),
-    ).toBe(true);
+  it("rejects material, source, and search changes", () => {
     expect(
       isMaterialProfileScrapeInputCurrent({
         ...current,

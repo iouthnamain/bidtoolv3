@@ -133,11 +133,11 @@ export function buildProfileSearchQueryWaves(
   // A broad product phrase gives providers a useful recovery query when the
   // full model/spec identity is interpreted poorly.
   push(wave2, identity.searchPhrase, "general");
-  push(
-    wave2,
-    `${identity.name} ${identity.manufacturer ?? ""} thông số kỹ thuật catalog`,
-    "datasheet",
-  );
+  // Keep one identity + spec probe inside the bounded recovery wave. It
+  // must be queued before the lower-signal catalog/marketplace variants or it
+  // will always be truncated for identities that also have a broad phrase.
+  const signal = identity.highSignalSpecTokens[0];
+  push(wave2, signal ? `${identity.name} ${signal}` : null, "vn_spec");
   if (options?.queryControls?.enableNegativeMarketplaceVariants ?? true) {
     push(
       wave2,
@@ -147,13 +147,13 @@ export function buildProfileSearchQueryWaves(
   } else {
     push(wave2, `${identity.name} giá`, "vn_price");
   }
-  // Keep the more constrained spec probe available after the recovery queries;
-  // the bounded wave budget will prefer the broad, catalog, and marketplace
-  // safe-query variants above.
-  const signal = identity.highSignalSpecTokens[0];
-  push(wave2, signal ? `${identity.name} ${signal}` : null, "vn_spec");
+  push(
+    wave2,
+    `${identity.name} ${identity.manufacturer ?? ""} thông số kỹ thuật catalog`,
+    "datasheet",
+  );
 
-  return { identity, wave1: wave1.slice(0, 3), wave2: wave2.slice(0, 3) };
+  return { identity, wave1: wave1.slice(0, 3), wave2: wave2.slice(0, 4) };
 }
 
 export function buildLegacyProfileSearchQueries(
