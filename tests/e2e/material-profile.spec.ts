@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { expect, test as base, type Page, type Route } from "@playwright/test";
 import dotenv from "dotenv";
+import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import postgres from "postgres";
 
 if (!process.env.CI) {
@@ -424,7 +427,7 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
 }) => {
   await page.goto(`/material-profiles/${profileSeed.workspaceId}`);
   await expect(
-    page.getByRole("heading", { name: "Một sheet sạch, sẵn sàng gửi đi" }),
+    page.getByRole("heading", { name: "Kiểm tra trước khi tạo bản xuất" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Tải lên Excel/ }).click();
@@ -482,7 +485,7 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
   await page.getByRole("button", { name: "Làm mới kiểm tra" }).click();
   await refreshed;
   await expect(
-    page.getByRole("button", { name: "Tải file Excel" }),
+    page.getByRole("button", { name: "Tạo bản xuất mới" }),
   ).toBeEnabled();
 
   await page.setViewportSize({ width: 375, height: 812 });
@@ -501,7 +504,7 @@ test("workspace exposes all four workflow steps and refreshes the clean export",
     },
     {
       name: /Tải file chuẩn/,
-      heading: "Một sheet sạch, sẵn sàng gửi đi",
+      heading: "Kiểm tra trước khi tạo bản xuất",
     },
   ];
   for (const step of phoneSteps) {
@@ -538,7 +541,7 @@ test("step 3 navigation flushes decisions before loading a fresh step 4 preview"
   await page.getByRole("button", { name: /Tải file chuẩn/ }).click();
   await directPreviewResponse;
   await expect(
-    page.getByRole("heading", { name: "Một sheet sạch, sẵn sàng gửi đi" }),
+    page.getByRole("heading", { name: "Kiểm tra trước khi tạo bản xuất" }),
   ).toBeVisible();
 
   const directFlushIndex = procedures.findIndex((url) =>
@@ -576,7 +579,7 @@ test("step 3 navigation flushes decisions before loading a fresh step 4 preview"
   await page.getByRole("button", { name: "Kiểm tra file xuất" }).click();
   await continuePreviewResponse;
   await expect(
-    page.getByRole("heading", { name: "Một sheet sạch, sẵn sàng gửi đi" }),
+    page.getByRole("heading", { name: "Kiểm tra trước khi tạo bản xuất" }),
   ).toBeVisible();
 
   const continueFlushIndex = procedures.findIndex((url) =>
@@ -596,6 +599,87 @@ test("step 3 navigation flushes decisions before loading a fresh step 4 preview"
     where id = ${profileSeed.itemId}
   `;
   expect(item?.review_decision_json.editedValues?.code).toBe(continueCode);
+});
+
+test("step 4 keeps immutable export history and downloads the exact three-file package", async ({
+  page,
+  profileSeed,
+}) => {
+  await page.goto(`/material-profiles/${profileSeed.workspaceId}`);
+  await expect(
+    page.getByRole("heading", { name: "Kiểm tra trước khi tạo bản xuất" }),
+  ).toBeVisible();
+
+  const firstCreated = page.waitForResponse(
+    (response) =>
+      response.url().includes("createExportRevision") &&
+      response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Tạo bản xuất mới" }).click();
+  await firstCreated;
+  await expect(page.getByText("Bản xuất #1", { exact: true })).toBeVisible();
+
+  const [stored] = await sql<
+    { review_decision_json: Record<string, unknown> }[]
+  >`
+    select review_decision_json
+    from excel_workspace_items
+    where id = ${profileSeed.itemId}
+  `;
+  if (!stored) throw new Error("Không đọc được quyết định Bước 3.");
+  const changedName = `Tên thay đổi ${profileSeed.marker}`;
+  await sql`
+    update excel_workspace_items
+    set review_decision_json = ${sql.json({
+      ...stored.review_decision_json,
+      editedProfileValues: { name: changedName },
+    })}, updated_at = now()
+    where id = ${profileSeed.itemId}
+  `;
+
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.url().includes("previewCleanExport") &&
+      response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Làm mới kiểm tra" }).click();
+  await refreshed;
+  await expect(page.getByRole("cell", { name: changedName })).toBeVisible();
+
+  const secondCreated = page.waitForResponse(
+    (response) =>
+      response.url().includes("createExportRevision") &&
+      response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Tạo bản xuất mới" }).click();
+  await secondCreated;
+  await expect(page.getByText("Bản xuất #2", { exact: true })).toBeVisible();
+
+  const firstRevision = page
+    .getByRole("listitem")
+    .filter({ hasText: "Bản xuất #1" });
+  const downloadPromise = page.waitForEvent("download");
+  await firstRevision.getByRole("button", { name: "Tải ZIP" }).click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error("Không đọc được file ZIP đã tải.");
+  const zip = await JSZip.loadAsync(await readFile(downloadPath));
+  expect(Object.keys(zip.files).sort()).toEqual([
+    `${profileSeed.marker}-ban-xuat-001.xlsx`,
+    "manifest.json",
+    "warnings.csv",
+  ]);
+  const workbookEntry = zip.file(`${profileSeed.marker}-ban-xuat-001.xlsx`);
+  if (!workbookEntry) throw new Error("ZIP thiếu file Excel.");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(
+    (await workbookEntry.async("nodebuffer")) as unknown as Parameters<
+      typeof workbook.xlsx.load
+    >[0],
+  );
+  expect(
+    workbook.getWorksheet("Danh mục vật tư")?.getRow(2).getCell(4).value,
+  ).toBe(`Máy bơm ${profileSeed.marker}`);
 });
 
 test("staged review saves all compare fields without checkboxes and stacks responsively", async ({
@@ -982,22 +1066,16 @@ test("persisted scrape retains multiple products and restores separate drafts", 
             ? (decision.scrapeResults as Array<Record<string, unknown>>)
             : [];
           const active = results.find(
-            (result) =>
-              result.productKey === decision.selectedScrapeProductKey,
+            (result) => result.productKey === decision.selectedScrapeProductKey,
           );
           return {
-            acceptedProfileFields: Array.isArray(
-              decision.acceptedProfileFields,
-            )
+            acceptedProfileFields: Array.isArray(decision.acceptedProfileFields)
               ? decision.acceptedProfileFields
-                  .filter(
-                    (field): field is string => typeof field === "string",
-                  )
+                  .filter((field): field is string => typeof field === "string")
                   .sort()
               : decision.acceptedProfileFields,
             editedName: editedProfileValues?.name ?? null,
-            activeName:
-              typeof active?.name === "string" ? active.name : null,
+            activeName: typeof active?.name === "string" ? active.name : null,
           };
         })
         .toEqual({

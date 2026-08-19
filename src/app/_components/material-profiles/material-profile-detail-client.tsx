@@ -25,13 +25,7 @@ import {
 } from "~/app/_components/ui/button-classes";
 import { useToast } from "~/app/_components/ui/toast";
 import { MaterialProfileReviewStep } from "~/app/_components/material-profiles/material-profile-review-step";
-import {
-  getLastMaterialProfileExportDir,
-  pickMaterialProfileBrowserExportDirectory,
-  pickMaterialProfileExportDir,
-  saveMaterialProfileExportBundleInBrowser,
-  setLastMaterialProfileExportDir,
-} from "~/lib/material-profile-export-dir";
+import { downloadMaterialProfileRevisionZip } from "~/lib/material-profile-export-dir";
 import { materialProfileActionMessage } from "~/lib/materials/profile-user-message";
 import { restoredMaterialProfileStep } from "~/lib/materials/profile-workflow-step";
 import { api, type RouterOutputs } from "~/trpc/react";
@@ -41,6 +35,8 @@ type Sheet = WorkspaceDetail["workbook"]["sheets"][number];
 type PreviewResult = RouterOutputs["materialProfile"]["previewExportWorkbook"];
 type CleanExportPreview =
   RouterOutputs["materialProfile"]["previewCleanExport"];
+type ExportRevision =
+  RouterOutputs["materialProfile"]["listExportRevisions"][number];
 type PreviewSheet = PreviewResult["sheets"][number];
 type ExportEditState = PreviewResult["exportEditState"];
 type CellEdits = Record<string, Record<string, string>>;
@@ -692,19 +688,27 @@ function WorkbookMappingStep({
 
 function CleanExportStep({
   preview,
+  revisions,
   isLoading,
+  isHistoryLoading,
   errorMessage,
-  isExporting,
+  isCreatingRevision,
+  downloadingRevisionId,
   onRefresh,
-  onExport,
+  onCreateRevision,
+  onDownloadRevision,
   onBackToReview,
 }: {
   preview: CleanExportPreview | undefined;
+  revisions: ExportRevision[];
   isLoading: boolean;
+  isHistoryLoading: boolean;
   errorMessage?: string;
-  isExporting: boolean;
+  isCreatingRevision: boolean;
+  downloadingRevisionId: string | null;
   onRefresh: () => void;
-  onExport: () => void;
+  onCreateRevision: () => void;
+  onDownloadRevision: (revisionId: string) => void;
   onBackToReview: () => void;
 }) {
   const incompleteRows = preview?.incompleteRows ?? 0;
@@ -715,13 +719,14 @@ function CleanExportStep({
       <div className="panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
-            <p className="section-title">Danh mục chuẩn</p>
+            <p className="section-title">Bản nháp đang xem</p>
             <h2 className="text-ink-1 mt-1 text-base font-semibold">
-              Một sheet sạch, sẵn sàng gửi đi
+              Kiểm tra trước khi tạo bản xuất
             </h2>
             <p className="text-ink-2 mt-2 text-sm leading-6">
-              File xuất giữ 11 cột chuẩn. Dòng còn thiếu dữ liệu vẫn được xuất
-              với ô trống và trạng thái “Cần xác minh” để tiếp tục xử lý.
+              Bản nháp lấy trực tiếp từ quyết định đã lưu ở Bước 3. Mọi dòng
+              hiện tại đều được giữ lại; dòng thiếu, bỏ qua hoặc loại khỏi phạm
+              vi có mã trạng thái và lý do riêng.
             </p>
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
@@ -736,18 +741,18 @@ function CleanExportStep({
             </Button>
             <Button
               className="flex-1 sm:flex-none"
-              onClick={onExport}
+              onClick={onCreateRevision}
               disabled={!canExport}
-              isLoading={isExporting}
-              leftIcon={<Download className="h-4 w-4" />}
+              isLoading={isCreatingRevision}
+              leftIcon={<Check className="h-4 w-4" />}
               title={
                 canExport
-                  ? "Tải danh mục vật tư chuẩn"
-                  : "Chưa có dòng vật tư hiện tại để xuất"
+                  ? "Lưu bản nháp thành một bản xuất mới"
+                  : "Chưa có dòng vật tư hiện tại để tạo bản xuất"
               }
               rightIcon={<ArrowRight className="h-4 w-4" />}
             >
-              Tải file Excel
+              Tạo bản xuất mới
             </Button>
           </div>
         </div>
@@ -797,8 +802,8 @@ function CleanExportStep({
             )}
             <p>
               {incompleteRows > 0
-                ? "Có thể tải file ngay. Các dòng cần xác minh được giữ lại và đánh dấu rõ trong file."
-                : "Dữ liệu đã sẵn sàng. Bạn có thể tải file Excel chuẩn ngay."}
+                ? "Có thể tạo bản xuất. Các dòng cần xác minh được giữ lại và đánh dấu rõ trong file."
+                : "Dữ liệu đã sẵn sàng để tạo một bản xuất bất biến."}
             </p>
           </div>
         ) : null}
@@ -907,6 +912,61 @@ function CleanExportStep({
           </div>
         </div>
       ) : null}
+
+      <div className="panel overflow-hidden">
+        <div className="border-line bg-surface-2 flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+          <div>
+            <p className="text-ink-1 text-base font-semibold">
+              Lịch sử bản xuất
+            </p>
+            <p className="text-ink-2 mt-1 text-xs leading-5">
+              Mỗi bản xuất là bất biến. File ZIP luôn gồm đúng Excel,
+              manifest.json và warnings.csv.
+            </p>
+          </div>
+          <Badge tone="info" count={revisions.length}>
+            Bản xuất
+          </Badge>
+        </div>
+        {isHistoryLoading ? (
+          <p className="text-ink-2 px-4 py-4 text-sm">Đang tải lịch sử…</p>
+        ) : revisions.length === 0 ? (
+          <p className="text-ink-2 px-4 py-4 text-sm">
+            Chưa có bản xuất. Kiểm tra bản nháp rồi chọn “Tạo bản xuất mới”.
+          </p>
+        ) : (
+          <ul className="divide-line divide-y">
+            {revisions.map((revision) => (
+              <li
+                key={revision.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-ink-1 font-semibold">
+                    Bản xuất #{revision.revisionNumber}
+                  </p>
+                  <p className="text-ink-3 mt-1 text-xs">
+                    {new Date(revision.createdAt).toLocaleString("vi-VN")} ·{" "}
+                    {revision.summary.totalRows.toLocaleString("vi-VN")} dòng ·{" "}
+                    {revision.summary.needs_review.toLocaleString("vi-VN")} cần
+                    xác minh ·{" "}
+                    {revision.summary.skipped.toLocaleString("vi-VN")} bỏ qua ·{" "}
+                    {revision.summary.excluded.toLocaleString("vi-VN")} loại
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => onDownloadRevision(revision.id)}
+                  isLoading={downloadingRevisionId === revision.id}
+                  leftIcon={<Download className="h-4 w-4" />}
+                >
+                  Tải ZIP
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
@@ -1303,6 +1363,9 @@ export function MaterialProfileDetailClient({
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [edits, setEdits] = useState<CellEdits>({});
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
+  const [downloadingRevisionId, setDownloadingRevisionId] = useState<
+    string | null
+  >(null);
   const initializedWorkspaceId = useRef<number | null>(null);
   const reviewFlushRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -1368,45 +1431,25 @@ export function MaterialProfileDetailClient({
         ),
       ),
   });
-  const exportWorkspace = api.materialProfile.export.useMutation({
-    onSuccess: async (result) => {
-      setLastMaterialProfileExportDir(result.parentDirPath);
-      await utils.materialProfile.get.invalidate({ workspaceId });
-      if (
-        result.missingCount > 0 ||
-        result.warnings.length > 0 ||
-        result.unresolvedReviewCount > 0
-      ) {
-        toast.warning(
-          `Đã xuất file vào ${result.outputDirPath}, nhưng còn ${result.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${result.missingCount.toLocaleString("vi-VN")} cảnh báo catalog.`,
-        );
-      } else {
-        toast.success(`Đã xuất file vào ${result.outputDirPath}`);
-      }
-    },
-    onError: (error) =>
-      toast.error(
-        materialProfileActionMessage(
-          error.message,
-          "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
-        ),
-      ),
-  });
-  const exportDownloadBundle =
-    api.materialProfile.exportDownloadBundle.useMutation({
+  const createExportRevision =
+    api.materialProfile.createExportRevision.useMutation({
+      onSuccess: async (revision) => {
+        await Promise.all([
+          utils.materialProfile.listExportRevisions.invalidate({ workspaceId }),
+          utils.materialProfile.get.invalidate({ workspaceId }),
+        ]);
+        toast.success(`Đã tạo bản xuất #${revision.revisionNumber}.`);
+      },
       onError: (error) =>
         toast.error(
           materialProfileActionMessage(
             error.message,
-            "Không thể tạo file tải xuống. Thử lại sau ít phút.",
+            "Không thể tạo bản xuất mới. Kiểm tra bản nháp rồi thử lại.",
           ),
         ),
     });
-  const defaultExportDirQuery =
-    api.materialProfile.getDefaultExportDir.useQuery(undefined, {
-      enabled: step === 4,
-      staleTime: Infinity,
-    });
+  const downloadExportRevision =
+    api.materialProfile.downloadExportRevision.useMutation();
   const cleanExportPreviewQuery =
     api.materialProfile.previewCleanExport.useQuery(
       { workspaceId },
@@ -1416,6 +1459,14 @@ export function MaterialProfileDetailClient({
         refetchOnWindowFocus: false,
       },
     );
+  const exportRevisionsQuery = api.materialProfile.listExportRevisions.useQuery(
+    { workspaceId },
+    {
+      enabled: step === 4,
+      staleTime: 0,
+      refetchOnWindowFocus: false,
+    },
+  );
 
   const handleReviewFlushReady = useCallback(
     (flushDecisions: (() => Promise<void>) | null) => {
@@ -1577,64 +1628,25 @@ export function MaterialProfileDetailClient({
     }));
   };
 
-  const handleExportClick = async () => {
-    if (exportWorkspace.isPending || exportDownloadBundle.isPending) {
-      return;
-    }
-
-    const isDesktop = !!window.bidtoolDesktop?.isDesktop;
-    let desktopOutputPath: string | null = null;
-    let browserDirectoryHandle: FileSystemDirectoryHandle | null = null;
-
+  const handleDownloadRevision = async (revisionId: string) => {
+    if (downloadingRevisionId || downloadExportRevision.isPending) return;
+    setDownloadingRevisionId(revisionId);
     try {
-      if (isDesktop) {
-        desktopOutputPath = await pickMaterialProfileExportDir(
-          getLastMaterialProfileExportDir() ?? defaultExportDirQuery.data?.path,
-        );
-        if (!desktopOutputPath) {
-          return;
-        }
-      } else {
-        browserDirectoryHandle =
-          await pickMaterialProfileBrowserExportDirectory();
-      }
-
-      if (isDesktop && desktopOutputPath) {
-        exportWorkspace.mutate({
-          workspaceId,
-          outputDirPath: desktopOutputPath,
-        });
-        return;
-      }
-
-      const bundle = await exportDownloadBundle.mutateAsync({ workspaceId });
-      const saved = await saveMaterialProfileExportBundleInBrowser(
-        bundle,
-        browserDirectoryHandle,
-      );
-      await utils.materialProfile.get.invalidate({ workspaceId });
-
-      if (
-        bundle.missingCount > 0 ||
-        bundle.warnings.length > 0 ||
-        bundle.unresolvedReviewCount > 0
-      ) {
-        toast.warning(
-          `Đã lưu ${saved.label}, nhưng còn ${bundle.unresolvedReviewCount.toLocaleString("vi-VN")} dòng chưa duyệt và ${bundle.warnings.length.toLocaleString("vi-VN")} cảnh báo cần kiểm tra.`,
-        );
-      } else {
-        toast.success(`Đã lưu file xuất: ${saved.label}`);
-      }
+      const bundle = await downloadExportRevision.mutateAsync({
+        workspaceId,
+        revisionId,
+      });
+      const saved = await downloadMaterialProfileRevisionZip(bundle);
+      toast.success(`Đã tải ${saved.label}.`);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
       toast.error(
         materialProfileActionMessage(
           error instanceof Error ? error.message : undefined,
-          "Không thể xuất file workbook. Chọn lại thư mục đích rồi thử lại.",
+          "Không thể tải bản xuất. Hãy thử lại.",
         ),
       );
+    } finally {
+      setDownloadingRevisionId(null);
     }
   };
 
@@ -1766,13 +1778,17 @@ export function MaterialProfileDetailClient({
       {step === 4 ? (
         <CleanExportStep
           preview={cleanExportPreviewQuery.data}
+          revisions={exportRevisionsQuery.data ?? []}
           isLoading={cleanExportPreviewQuery.isLoading}
+          isHistoryLoading={exportRevisionsQuery.isLoading}
           errorMessage={cleanExportPreviewQuery.error?.message}
-          isExporting={
-            exportWorkspace.isPending || exportDownloadBundle.isPending
-          }
+          isCreatingRevision={createExportRevision.isPending}
+          downloadingRevisionId={downloadingRevisionId}
           onRefresh={() => void cleanExportPreviewQuery.refetch()}
-          onExport={() => void handleExportClick()}
+          onCreateRevision={() => createExportRevision.mutate({ workspaceId })}
+          onDownloadRevision={(revisionId) =>
+            void handleDownloadRevision(revisionId)
+          }
           onBackToReview={() => void goToStep(3)}
         />
       ) : null}

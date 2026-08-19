@@ -750,6 +750,51 @@ export const excelWorkspaceItems = pgTable(
   }),
 );
 
+/**
+ * Append-only Step 4 artifacts. A revision stores the exact workbook bytes and
+ * metadata produced from the persisted Step 3 review snapshot, so later edits
+ * cannot change an already-created download.
+ */
+export const materialProfileExportRevisions = pgTable(
+  "material_profile_export_revisions",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => excelWorkspaces.id, { onDelete: "cascade" }),
+    revisionNumber: integer("revision_number").notNull(),
+    excelFileName: text("excel_file_name").notNull(),
+    workbookBase64: text("workbook_base64").notNull(),
+    sourceSnapshotJson: jsonb("source_snapshot_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    manifestJson: jsonb("manifest_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    warningsCsv: text("warnings_csv").notNull(),
+    summaryJson: jsonb("summary_json")
+      .$type<{
+        totalRows: number;
+        ready: number;
+        needs_review: number;
+        skipped: number;
+        excluded: number;
+      }>()
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    workspaceRevisionUnique: uniqueIndex(
+      "material_profile_export_revisions_workspace_revision_unique",
+    ).on(table.workspaceId, table.revisionNumber),
+    workspaceCreatedAtIdx: index(
+      "material_profile_export_revisions_workspace_created_at_idx",
+    ).on(table.workspaceId, table.createdAt),
+  }),
+);
+
 export const webProductCandidates = pgTable(
   "web_product_candidates",
   {

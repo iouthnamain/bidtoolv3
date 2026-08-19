@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
 import {
@@ -1660,49 +1660,87 @@ export async function updateMaterialProfileItemReviewDecision(
     decision: SerializedRowDecision;
   },
 ) {
-  const [item] = await db
-    .select()
-    .from(excelWorkspaceItems)
-    .where(eq(excelWorkspaceItems.id, input.itemId))
-    .limit(1);
-  if (!item) {
-    throw new MaterialProfileWorkspaceError(
-      "NOT_FOUND",
-      "Không tìm thấy dòng.",
-    );
-  }
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ workspaceId: excelWorkspaceItems.workspaceId })
+      .from(excelWorkspaceItems)
+      .where(eq(excelWorkspaceItems.id, input.itemId))
+      .limit(1);
+    if (!target) {
+      throw new MaterialProfileWorkspaceError(
+        "NOT_FOUND",
+        "Không tìm thấy dòng.",
+      );
+    }
+    await lockMaterialProfileReviewDecisionRows(tx, target.workspaceId, [
+      input.itemId,
+    ]);
+    const [item] = await tx
+      .select()
+      .from(excelWorkspaceItems)
+      .where(
+        and(
+          eq(excelWorkspaceItems.workspaceId, target.workspaceId),
+          eq(excelWorkspaceItems.id, input.itemId),
+        ),
+      )
+      .limit(1);
+    if (!item) {
+      throw new MaterialProfileWorkspaceError(
+        "NOT_FOUND",
+        "Không tìm thấy dòng.",
+      );
+    }
 
-  const reviewItem = workspaceItemForReview(item);
-  const snapshotStatus = snapshotStatusFromItem(reviewItem);
-  const topCandidateMaterialId = topCandidateMaterialIdFromItem(reviewItem);
-  const decision = deserializeRowDecision(input.decision);
-  if (!decision) {
-    throw new MaterialProfileWorkspaceError(
-      "BAD_REQUEST",
-      "Quyết định duyệt không hợp lệ.",
-    );
-  }
+    const reviewItem = workspaceItemForReview(item);
+    const snapshotStatus = snapshotStatusFromItem(reviewItem);
+    const topCandidateMaterialId = topCandidateMaterialIdFromItem(reviewItem);
+    const decision = deserializeRowDecision(input.decision);
+    if (!decision) {
+      throw new MaterialProfileWorkspaceError(
+        "BAD_REQUEST",
+        "Quyết định duyệt không hợp lệ.",
+      );
+    }
 
-  const matchStatus = deriveMatchStatus(
-    decision,
-    snapshotStatus,
-    topCandidateMaterialId,
+    const matchStatus = deriveMatchStatus(
+      decision,
+      snapshotStatus,
+      topCandidateMaterialId,
+    );
+    const now = new Date().toISOString();
+    const [updated] = await tx
+      .update(excelWorkspaceItems)
+      .set({
+        reviewDecisionJson: serializeMaterialProfileUserDecision(
+          serializeRowDecision(decision),
+        ),
+        materialId: decision.materialId,
+        matchStatus,
+        updatedAt: now,
+      })
+      .where(eq(excelWorkspaceItems.id, input.itemId))
+      .returning();
+
+    return updated;
+  });
+}
+
+type MaterialProfileReviewLockDb = Pick<AppDb, "execute">;
+
+/** Shared workspace-first lock order for Step 3 decision writes. */
+export async function lockMaterialProfileReviewDecisionRows(
+  db: MaterialProfileReviewLockDb,
+  workspaceId: number,
+  itemIds: number[],
+) {
+  await db.execute(
+    sql`select ${excelWorkspaces.id} from ${excelWorkspaces} where ${excelWorkspaces.id} = ${workspaceId} for update`,
   );
-  const now = new Date().toISOString();
-  const [updated] = await db
-    .update(excelWorkspaceItems)
-    .set({
-      reviewDecisionJson: serializeMaterialProfileUserDecision(
-        serializeRowDecision(decision),
-      ),
-      materialId: decision.materialId,
-      matchStatus,
-      updatedAt: now,
-    })
-    .where(eq(excelWorkspaceItems.id, input.itemId))
-    .returning();
-
-  return updated;
+  if (itemIds.length === 0) return;
+  await db.execute(
+    sql`select ${excelWorkspaceItems.id} from ${excelWorkspaceItems} where ${excelWorkspaceItems.workspaceId} = ${workspaceId} and ${inArray(excelWorkspaceItems.id, itemIds)} order by ${excelWorkspaceItems.id} for update`,
+  );
 }
 
 export async function batchUpdateMaterialProfileItemReviewDecisions(
@@ -1716,7 +1754,6 @@ export async function batchUpdateMaterialProfileItemReviewDecisions(
     return { updatedCount: 0, items: [] as WorkspaceItem[] };
   }
 
-  const workspace = await requireWorkspace(db, input.workspaceId);
   const itemIds = Array.from(
     new Set(input.decisions.map((entry) => entry.itemId)),
   );
@@ -1726,50 +1763,60 @@ export async function batchUpdateMaterialProfileItemReviewDecisions(
       "Có dòng bị lặp trong danh sách quyết định duyệt.",
     );
   }
-  const items = await db
-    .select()
-    .from(excelWorkspaceItems)
-    .where(
-      and(
-        eq(excelWorkspaceItems.workspaceId, workspace.id),
-        inArray(excelWorkspaceItems.id, itemIds),
-      ),
-    );
-
-  const itemById = new Map(items.map((item) => [item.id, item]));
-  const missingItemIds = itemIds.filter((itemId) => !itemById.has(itemId));
-  if (missingItemIds.length > 0) {
-    throw new MaterialProfileWorkspaceError(
-      "BAD_REQUEST",
-      `Không tìm thấy ${missingItemIds.length.toLocaleString("vi-VN")} dòng trong hồ sơ này.`,
-    );
-  }
-
-  const prepared = input.decisions.map((entry) => {
-    const item = itemById.get(entry.itemId);
-    if (!item) {
-      throw new MaterialProfileWorkspaceError(
-        "BAD_REQUEST",
-        "Không tìm thấy dòng trong hồ sơ này.",
-      );
-    }
-    const reviewItem = workspaceItemForReview(item);
-    const decision = deserializeRowDecision(entry.decision);
-    if (!decision) {
-      throw new MaterialProfileWorkspaceError(
-        "BAD_REQUEST",
-        "Quyết định duyệt không hợp lệ.",
-      );
-    }
-    return {
-      item,
-      decision,
-      snapshotStatus: snapshotStatusFromItem(reviewItem),
-      topCandidateMaterialId: topCandidateMaterialIdFromItem(reviewItem),
-    };
-  });
-
   return await db.transaction(async (tx) => {
+    await lockMaterialProfileReviewDecisionRows(tx, input.workspaceId, itemIds);
+    const [workspace] = await tx
+      .select({ id: excelWorkspaces.id })
+      .from(excelWorkspaces)
+      .where(eq(excelWorkspaces.id, input.workspaceId))
+      .limit(1);
+    if (!workspace) {
+      throw new MaterialProfileWorkspaceError(
+        "NOT_FOUND",
+        "Không tìm thấy hồ sơ vật tư.",
+      );
+    }
+    const items = await tx
+      .select()
+      .from(excelWorkspaceItems)
+      .where(
+        and(
+          eq(excelWorkspaceItems.workspaceId, workspace.id),
+          inArray(excelWorkspaceItems.id, itemIds),
+        ),
+      )
+      .orderBy(excelWorkspaceItems.id);
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const missingItemIds = itemIds.filter((itemId) => !itemById.has(itemId));
+    if (missingItemIds.length > 0) {
+      throw new MaterialProfileWorkspaceError(
+        "BAD_REQUEST",
+        `Không tìm thấy ${missingItemIds.length.toLocaleString("vi-VN")} dòng trong hồ sơ này.`,
+      );
+    }
+    const prepared = input.decisions.map((entry) => {
+      const item = itemById.get(entry.itemId);
+      if (!item) {
+        throw new MaterialProfileWorkspaceError(
+          "BAD_REQUEST",
+          "Không tìm thấy dòng trong hồ sơ này.",
+        );
+      }
+      const reviewItem = workspaceItemForReview(item);
+      const decision = deserializeRowDecision(entry.decision);
+      if (!decision) {
+        throw new MaterialProfileWorkspaceError(
+          "BAD_REQUEST",
+          "Quyết định duyệt không hợp lệ.",
+        );
+      }
+      return {
+        item,
+        decision,
+        snapshotStatus: snapshotStatusFromItem(reviewItem),
+        topCandidateMaterialId: topCandidateMaterialIdFromItem(reviewItem),
+      };
+    });
     const now = new Date().toISOString();
     const updatedItems: WorkspaceItem[] = [];
 
@@ -2098,6 +2145,9 @@ export async function bulkApplyMaterialProfileMatches(
     summary,
   };
   await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select ${excelWorkspaces.id} from ${excelWorkspaces} where ${excelWorkspaces.id} = ${workspace.id} for update`,
+    );
     for (const update of updates) {
       const decision = seedDecisionFromItem({
         ...update.item,
@@ -2145,29 +2195,34 @@ export async function undoLastMaterialProfileBulkApply(
     );
   }
   const now = new Date().toISOString();
-  for (const previous of snapshot.previousItems) {
-    await db
-      .update(excelWorkspaceItems)
-      .set({
-        materialId: previous.materialId,
-        matchStatus: previous.matchStatus,
-        includedInExport: previous.includedInExport,
-        reviewDecisionJson: jsonRecord(previous.reviewDecisionJson),
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(excelWorkspaceItems.workspaceId, workspace.id),
-          eq(excelWorkspaceItems.id, previous.itemId),
-        ),
-      );
-  }
   const templateConfigJson = { ...workspace.templateConfigJson };
   delete templateConfigJson.materialProfileLastBulkApply;
-  await db
-    .update(excelWorkspaces)
-    .set({ templateConfigJson, updatedAt: now })
-    .where(eq(excelWorkspaces.id, workspace.id));
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select ${excelWorkspaces.id} from ${excelWorkspaces} where ${excelWorkspaces.id} = ${workspace.id} for update`,
+    );
+    for (const previous of snapshot.previousItems) {
+      await tx
+        .update(excelWorkspaceItems)
+        .set({
+          materialId: previous.materialId,
+          matchStatus: previous.matchStatus,
+          includedInExport: previous.includedInExport,
+          reviewDecisionJson: jsonRecord(previous.reviewDecisionJson),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(excelWorkspaceItems.workspaceId, workspace.id),
+            eq(excelWorkspaceItems.id, previous.itemId),
+          ),
+        );
+    }
+    await tx
+      .update(excelWorkspaces)
+      .set({ templateConfigJson, updatedAt: now })
+      .where(eq(excelWorkspaces.id, workspace.id));
+  });
   return {
     restoredCount: snapshot.previousItems.length,
     summary: snapshot.summary,
