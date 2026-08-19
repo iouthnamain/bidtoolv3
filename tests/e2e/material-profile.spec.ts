@@ -560,6 +560,46 @@ test("staged review saves all compare fields without checkboxes and stacks respo
     expect(metric.color).toBe(metric.expected);
     expect(metric.height).toBeGreaterThanOrEqual(44);
   }
+
+  const toolbarLayout = await page.evaluate(() => {
+    const bounds = (label: string) => {
+      const element = document.querySelector<HTMLElement>(
+        `[role="group"][aria-label="${label}"]`,
+      );
+      const rect = element?.getBoundingClientRect();
+      return rect
+        ? { top: rect.top, bottom: rect.bottom, width: rect.width }
+        : null;
+    };
+    const actionGroup = document.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Thao tác hàng loạt"]',
+    );
+    const actionButtons = actionGroup
+      ? [...actionGroup.querySelectorAll("button")].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { top: rect.top, width: rect.width };
+        })
+      : [];
+    return {
+      filters: bounds("Bộ lọc trạng thái"),
+      selection: bounds("Chọn dòng hàng loạt"),
+      actions: bounds("Thao tác hàng loạt"),
+      actionButtons,
+    };
+  });
+  expect(toolbarLayout.filters).not.toBeNull();
+  expect(toolbarLayout.selection).not.toBeNull();
+  expect(toolbarLayout.actions).not.toBeNull();
+  expect(toolbarLayout.selection!.top).toBeGreaterThan(
+    toolbarLayout.filters!.top,
+  );
+  expect(toolbarLayout.actions!.top).toBeGreaterThan(
+    toolbarLayout.selection!.top,
+  );
+  expect(toolbarLayout.actionButtons).toHaveLength(4);
+  expect(
+    new Set(toolbarLayout.actionButtons.map((button) => button.top)).size,
+  ).toBe(1);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -579,6 +619,20 @@ test("staged review saves all compare fields without checkboxes and stacks respo
         : false;
     });
   expect(stacked).toBe(true);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const phoneActionRows = await page
+    .getByRole("group", { name: "Thao tác hàng loạt" })
+    .getByRole("button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().top),
+    );
+  expect(new Set(phoneActionRows).size).toBe(4);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("PDF source attaches catalog evidence without invoking AI", async ({
