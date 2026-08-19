@@ -28,7 +28,7 @@ import type { SearchQuery } from "~/server/services/excel-research/query-builder
 
 const log = createLogger("material-web-search");
 
-export type WebSearchProvider = "searxng" | "known_source";
+export type WebSearchProvider = "searxng" | "bing" | "known_source";
 
 export type WebSearchResult = {
   title: string;
@@ -55,6 +55,10 @@ export type WebSearchResult = {
 export type WebSearchResponse = {
   results: WebSearchResult[];
   warnings: string[];
+  /** Providers attempted while producing this response, including empty ones. */
+  providers?: WebSearchProvider[];
+  /** Normalized queries that already made a direct Bing HTTP attempt. */
+  directBingQueries?: string[];
   domainPolicy?: SearchDomainPolicy;
   unsafeRejectedUrls?: string[];
 };
@@ -66,6 +70,7 @@ type ProviderSearchResponse = WebSearchResponse & {
 type SearchOptions = {
   feature?: SearchAuditFeature;
   overrideEngines?: string[];
+  providerMode?: "primary" | "bing";
 };
 
 const EXPLICIT_CONTENT_DOMAIN_PATTERN =
@@ -101,7 +106,7 @@ const inFlightSearches = new Map<string, Promise<WebSearchResponse>>();
 let webLimiterConcurrency = 0;
 let webLimiter = createAsyncLimiter(12);
 
-function normalizeCacheKey(query: string) {
+export function normalizeWebSearchQuery(query: string) {
   return query.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
@@ -129,6 +134,7 @@ export function createWebSearchConfigurationFingerprint(
     requestTimeoutMs: resolvedConfig.requestTimeoutMs,
     htmlFallback: resolvedConfig.htmlFallback,
     resultLimitPerQuery: resolvedConfig.resultLimitPerQuery,
+    providerMode: options?.providerMode ?? "primary",
   };
   return compactFingerprint({ config, policy });
 }
@@ -311,6 +317,51 @@ function parseSearxngHtml(html: string, query: string): WebSearchResult[] {
       rankScore: 0,
       rankReasons: [],
       provider: "searxng",
+    });
+  }
+
+  return results;
+}
+
+function parseBingHtml(html: string, query: string): WebSearchResult[] {
+  const results: WebSearchResult[] = [];
+  const seen = new Set<string>();
+  const resultPattern =
+    /<li[^>]*class=["'][^"']*\bb_algo\b[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+
+  for (const match of html.matchAll(resultPattern)) {
+    const block = match[1] ?? "";
+    const anchor = /<h2[^>]*>[\s\S]*?<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(
+      block,
+    );
+    const rawUrl = decodeHtmlEntities(anchor?.[1]?.trim() ?? "");
+    const title = stripHtmlTags(anchor?.[2] ?? "");
+    const snippet = stripHtmlTags(
+      /<div[^>]*class=["'][^"']*\bb_caption\b[^"']*["'][^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i.exec(
+        block,
+      )?.[1] ?? "",
+    );
+    let normalizedUrl = "";
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        continue;
+      }
+      normalizedUrl = normalizeResultUrl(parsed.toString());
+    } catch {
+      continue;
+    }
+    if (!normalizedUrl || !title || seen.has(normalizedUrl)) continue;
+    seen.add(normalizedUrl);
+    results.push({
+      title,
+      url: normalizedUrl,
+      domain: extractDomain(normalizedUrl),
+      snippet,
+      query,
+      rankScore: 0,
+      rankReasons: [],
+      provider: "bing",
     });
   }
 
@@ -546,6 +597,96 @@ async function searchSearxngQuery(
   }
 }
 
+async function searchBingQuery(
+  query: string,
+  signal?: AbortSignal,
+  options?: SearchOptions,
+): Promise<ProviderSearchResponse> {
+  const startedAt = Date.now();
+  const [config, policy] = await Promise.all([
+    resolveSearxngSearchConfig(),
+    resolveSearchDomainPolicy(),
+  ]);
+  const feature = options?.feature ?? "interactive";
+  const warnings: string[] = [];
+  throwIfAborted(signal);
+
+  try {
+    const url = new URL("https://www.bing.com/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("count", String(config.resultLimitPerQuery));
+    url.searchParams.set("setlang", "vi-VN");
+    url.searchParams.set("cc", "vn");
+    url.searchParams.set("adlt", "strict");
+    const response = await fetch(url, {
+      headers: buildSearchHeaders({ referer: "https://www.bing.com/" }),
+      signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const collected = parseBingHtml(await response.text(), query);
+    const unsafeRejectedUrls = [
+      ...new Set(
+        collected
+          .filter(isUnsafeSearchResult)
+          .map((result) => normalizeResultUrl(result.url)),
+      ),
+    ];
+    const filtered = applyDomainPolicy(collected, policy).slice(
+      0,
+      config.resultLimitPerQuery,
+    );
+    const status: SearchAuditStatus =
+      filtered.length > 0 ? "success" : "no_results";
+    if (filtered.length === 0) {
+      warnings.push(`Bing trực tiếp: không có kết quả cho "${query}".`);
+    }
+    await recordSearchAuditLog({
+      feature,
+      provider: "bing_html",
+      query,
+      engines: ["bing_html"],
+      language: "vi-VN",
+      resultCount: filtered.length,
+      selectedResultCount: filtered.length,
+      durationMs: Date.now() - startedAt,
+      status,
+      warnings,
+      topResults: topAuditResults(filtered),
+      rankingPolicy: policy,
+    });
+    return {
+      results: filtered,
+      warnings,
+      status,
+      domainPolicy: policy,
+      unsafeRejectedUrls,
+    };
+  } catch (error) {
+    throwIfAborted(signal);
+    const message =
+      error instanceof Error ? error.message : "Lỗi tìm kiếm không xác định.";
+    warnings.push(`Bing trực tiếp: ${message}`);
+    await recordSearchAuditLog({
+      feature,
+      provider: "bing_html",
+      query,
+      engines: ["bing_html"],
+      language: "vi-VN",
+      resultCount: 0,
+      selectedResultCount: 0,
+      durationMs: Date.now() - startedAt,
+      status: "error",
+      warnings,
+      errorText: message,
+      rankingPolicy: policy,
+    });
+    return { results: [], warnings, status: "error", domainPolicy: policy };
+  }
+}
+
 function discoveredPdfUrlsFromHtml(html: string, baseUrl: string) {
   const urls = new Set<string>();
   const hrefPattern = /href\s*=\s*["']([^"']+)["']/gi;
@@ -673,43 +814,20 @@ async function _searchQueryWithFallback(
   options?: SearchOptions,
 ): Promise<WebSearchResponse> {
   const primary = await searchSearxngQuery(query, signal, options);
-  if (
-    primary.results.length > 0 ||
-    options?.overrideEngines ||
-    signal?.aborted
-  ) {
+  if (primary.results.length > 0 || signal?.aborted) {
     return {
       results: primary.results,
       warnings: primary.warnings,
+      providers: ["searxng"],
+      directBingQueries: [],
       domainPolicy: primary.domainPolicy,
       unsafeRejectedUrls: primary.unsafeRejectedUrls,
     };
   }
 
-  const config = await resolveSearxngSearchConfig();
-  const hasBing = config.engines.some(
-    (engine) => engine.trim().toLowerCase() === "bing",
-  );
-  // A multi-engine request can fail before Bing contributes anything (for
-  // example when another configured engine is suspended). Retry explicitly
-  // with Bing based on the empty observed response, not merely on Bing being
-  // present in the configured list.
-  const canRetryWithBing = config.engines.length > 1 || !hasBing;
-  if (!config.baseUrl || !canRetryWithBing) {
-    return {
-      results: primary.results,
-      warnings: primary.warnings,
-      domainPolicy: primary.domainPolicy,
-      unsafeRejectedUrls: primary.unsafeRejectedUrls,
-    };
-  }
-
-  const rescue = await searchSearxngQuery(query, signal, {
-    ...options,
-    overrideEngines: ["bing"],
-  });
+  const rescue = await searchBingQuery(query, signal, options);
   const retryWarning =
-    "SearXNG: engine chính không có kết quả; đã thử lại bằng Bing.";
+    "SearXNG không có kết quả dùng được; đã thử lại bằng Bing trực tiếp.";
   const primaryWarnings =
     rescue.results.length > 0
       ? primary.warnings.filter(
@@ -726,6 +844,8 @@ async function _searchQueryWithFallback(
   return {
     results: rescue.results,
     warnings: [...primaryWarnings, retryWarning, ...rescueWarnings],
+    providers: ["searxng", "bing"],
+    directBingQueries: [normalizeWebSearchQuery(query)],
     domainPolicy: rescue.domainPolicy ?? primary.domainPolicy,
     unsafeRejectedUrls: [
       ...new Set([
@@ -772,6 +892,8 @@ async function _searchWebForProduct(
   const merged: WebSearchResult[] = [];
   const byUrl = new Map<string, WebSearchResult>();
   const warnings: string[] = [];
+  const providers = new Set<WebSearchProvider>();
+  const directBingQueries = new Set<string>();
   let domainPolicy: SearchDomainPolicy | undefined;
   const unsafeRejectedUrls = new Set<string>();
 
@@ -790,6 +912,8 @@ async function _searchWebForProduct(
     warnings: queryWarnings,
     domainPolicy: policy,
     unsafeRejectedUrls: queryUnsafeRejectedUrls,
+    providers: queryProviders,
+    directBingQueries: queryDirectBingQueries,
     query,
     intent,
   } of responses) {
@@ -797,6 +921,12 @@ async function _searchWebForProduct(
     domainPolicy ??= policy;
     for (const url of queryUnsafeRejectedUrls ?? []) {
       unsafeRejectedUrls.add(url);
+    }
+    for (const provider of queryProviders ?? []) {
+      providers.add(provider);
+    }
+    for (const directQuery of queryDirectBingQueries ?? []) {
+      directBingQueries.add(directQuery);
     }
 
     for (const [index, result] of results.entries()) {
@@ -820,7 +950,7 @@ async function _searchWebForProduct(
     }
   }
 
-  const dedupedWarnings = uniqueWarnings(warnings);
+  const dedupedWarnings = uniqueWarnings(warnings).slice(0, 6);
   if (merged.length === 0 && dedupedWarnings.length > 0) {
     log.warn("web_search_no_results", { warnings: dedupedWarnings });
   }
@@ -828,9 +958,22 @@ async function _searchWebForProduct(
   return {
     results: merged,
     warnings: dedupedWarnings,
+    providers: [...providers],
+    directBingQueries: [...directBingQueries],
     domainPolicy,
     unsafeRejectedUrls: [...unsafeRejectedUrls],
   };
+}
+
+async function _searchBingForProduct(
+  queries: Array<string | SearchQuery>,
+  signal?: AbortSignal,
+  options?: SearchOptions,
+) {
+  return _searchWebForProduct(queries, signal, {
+    ...options,
+    providerMode: "bing",
+  });
 }
 
 async function searchQueryWithCache(
@@ -841,7 +984,8 @@ async function searchQueryWithCache(
   const configurationSnapshot =
     await stableSearchConfigurationSnapshot(options);
   const configurationFingerprint = configurationSnapshot.fingerprint;
-  const key = `${options?.feature ?? "search"}:${configurationFingerprint}:${normalizeCacheKey(query)}`;
+  const providerMode = options?.providerMode ?? "primary";
+  const key = `${providerMode}:${options?.feature ?? "search"}:${configurationFingerprint}:${normalizeWebSearchQuery(query)}`;
   const ttlMs = await resolveEnrichmentSearchCacheTtlMs();
   const now = Date.now();
   const cached = searchCache.get(key);
@@ -849,6 +993,12 @@ async function searchQueryWithCache(
     return {
       results: cached.response.results.map((result) => ({ ...result })),
       warnings: [...cached.response.warnings],
+      providers: cached.response.providers
+        ? [...cached.response.providers]
+        : undefined,
+      directBingQueries: cached.response.directBingQueries
+        ? [...cached.response.directBingQueries]
+        : undefined,
       domainPolicy: cached.response.domainPolicy
         ? {
             boostDomains: [...cached.response.domainPolicy.boostDomains],
@@ -866,7 +1016,17 @@ async function searchQueryWithCache(
     return inFlightSearches.get(key)!;
   }
 
-  const promise = searchQueryWithFallback(query, signal, options);
+  const promise =
+    providerMode === "bing"
+      ? searchBingQuery(query, signal, options).then((response) => ({
+          results: response.results,
+          warnings: response.warnings,
+          providers: ["bing" as const],
+          directBingQueries: [normalizeWebSearchQuery(query)],
+          domainPolicy: response.domainPolicy,
+          unsafeRejectedUrls: response.unsafeRejectedUrls,
+        }))
+      : searchQueryWithFallback(query, signal, options);
   if (!signal) {
     inFlightSearches.set(key, promise);
   }
@@ -887,6 +1047,10 @@ async function searchQueryWithCache(
         response: {
           results: response.results.map((result) => ({ ...result })),
           warnings: [...response.warnings],
+          providers: response.providers ? [...response.providers] : undefined,
+          directBingQueries: response.directBingQueries
+            ? [...response.directBingQueries]
+            : undefined,
           domainPolicy: response.domainPolicy
             ? {
                 boostDomains: [...response.domainPolicy.boostDomains],
@@ -1251,6 +1415,11 @@ export const searchWebForProduct = traceFn(
   log,
   "searchWebForProduct",
   _searchWebForProduct,
+);
+export const searchBingForProduct = traceFn(
+  log,
+  "searchBingForProduct",
+  _searchBingForProduct,
 );
 export const rankSearchResults = traceFn(
   log,

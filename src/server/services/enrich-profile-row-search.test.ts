@@ -13,7 +13,10 @@ const appSettingsMock = vi.hoisted(() => ({
 const materialWebSearchMock = vi.hoisted(() => ({
   enrichSearchResultsWithFetchedContent: vi.fn(),
   fetchUrlAsSearchResult: vi.fn(),
+  normalizeWebSearchQuery: (query: string) =>
+    query.trim().replace(/\s+/g, " ").toLowerCase(),
   rankSearchResults: vi.fn(),
+  searchBingForProduct: vi.fn(),
   searchWebForProduct: vi.fn(),
 }));
 
@@ -67,6 +70,7 @@ import {
   enrichSearchResultsWithFetchedContent,
   fetchUrlAsSearchResult,
   rankSearchResults,
+  searchBingForProduct,
   searchWebForProduct,
 } from "~/server/services/material-web-search";
 import { activeRejectedUrls } from "~/server/services/material-search-feedback";
@@ -192,6 +196,16 @@ describe("searchProfileRowWebLinks query budget", () => {
           blockDomains: [],
         },
       });
+    vi.mocked(searchBingForProduct).mockReset().mockResolvedValue({
+      results: [],
+      warnings: [],
+      providers: ["bing"],
+      domainPolicy: {
+        boostDomains: [],
+        penaltyDomains: [],
+        blockDomains: [],
+      },
+    });
     vi.mocked(rankSearchResults).mockReset().mockReturnValue([]);
     vi.mocked(enrichSearchResultsWithFetchedContent)
       .mockReset()
@@ -298,5 +312,228 @@ describe("searchProfileRowWebLinks query budget", () => {
         }),
       }),
     );
+  });
+
+  it("tries direct Bing once when SearXNG candidates all fail the identity gate", async () => {
+    vi.mocked(resolveSearchQueryControls).mockResolvedValue({
+      enableSiteVnVariants: true,
+      enableNegativeMarketplaceVariants: true,
+      materialJobMaxQueries: 6,
+      interactiveMaxQueries: 1,
+      excelResearchMaxQueries: 6,
+    });
+    vi.mocked(searchWebForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Tin bóng đá mới nhất",
+          url: "https://news.example/bong-da",
+          domain: "news.example",
+          snippet: "Kết quả thi đấu hôm nay",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          provider: "searxng",
+        },
+      ],
+      warnings: [],
+      providers: ["searxng"],
+      domainPolicy: { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    });
+    vi.mocked(searchBingForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Ống nhựa PVC D50 Bình Minh PN10",
+          url: "https://binhminhplastic.com.vn/ong-pvc-d50-pn10",
+          domain: "binhminhplastic.com.vn",
+          snippet: "Sản phẩm ống PVC D50 PN10 chính hãng Bình Minh",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          provider: "bing",
+        },
+      ],
+      warnings: ["Đã thử Bing trực tiếp sau khi lọc nhận dạng."],
+      providers: ["bing"],
+      domainPolicy: { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+    vi.mocked(enrichSearchResultsWithFetchedContent).mockImplementation(
+      async (results) =>
+        results.map((result) => ({ ...result, fetchStatus: "verified" })),
+    );
+
+    const result = await searchProfileRowWebLinks({
+      name: "Ống PVC D50 Bình Minh",
+      manufacturer: "Bình Minh",
+      specText: "D50 PN10",
+    });
+
+    expect(searchBingForProduct).toHaveBeenCalledTimes(1);
+    expect(result.webLinkResults.map((link) => link.url)).toContain(
+      "https://binhminhplastic.com.vn/ong-pvc-d50-pn10",
+    );
+  });
+
+  it("keeps irrelevant direct Bing results rejected after the rescue attempt", async () => {
+    vi.mocked(resolveSearchQueryControls).mockResolvedValue({
+      enableSiteVnVariants: true,
+      enableNegativeMarketplaceVariants: true,
+      materialJobMaxQueries: 6,
+      interactiveMaxQueries: 1,
+      excelResearchMaxQueries: 6,
+    });
+    vi.mocked(searchWebForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Kết quả xổ số",
+          url: "https://noise.example/xo-so",
+          domain: "noise.example",
+          snippet: "Tin không liên quan",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          provider: "searxng",
+        },
+      ],
+      warnings: [],
+      providers: ["searxng"],
+    });
+    vi.mocked(searchBingForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Tin thời tiết",
+          url: "https://other.example/thoi-tiet",
+          domain: "other.example",
+          snippet: "Dự báo thời tiết hôm nay",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          provider: "bing",
+        },
+      ],
+      warnings: [],
+      providers: ["bing"],
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+
+    const result = await searchProfileRowWebLinks({
+      name: "Ống PVC D50 Bình Minh",
+      manufacturer: "Bình Minh",
+      specText: "D50 PN10",
+    });
+
+    expect(searchBingForProduct).toHaveBeenCalledTimes(1);
+    expect(result.webLinkResults).toEqual([]);
+  });
+
+  it("does not run direct Bing again when the search response already included it", async () => {
+    vi.mocked(resolveSearchQueryControls).mockResolvedValue({
+      enableSiteVnVariants: true,
+      enableNegativeMarketplaceVariants: true,
+      materialJobMaxQueries: 6,
+      interactiveMaxQueries: 1,
+      excelResearchMaxQueries: 6,
+    });
+    vi.mocked(searchWebForProduct).mockResolvedValue({
+      results: [
+        {
+          title: "Tin thời tiết",
+          url: "https://other.example/thoi-tiet",
+          domain: "other.example",
+          snippet: "Dự báo thời tiết hôm nay",
+          query: "Ống PVC D50 Bình Minh",
+          rankScore: 1,
+          provider: "bing",
+        },
+      ],
+      warnings: [],
+      providers: ["searxng", "bing"],
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+
+    const result = await searchProfileRowWebLinks({
+      name: "Ống PVC D50 Bình Minh",
+      manufacturer: "Bình Minh",
+      specText: "D50 PN10",
+    });
+
+    expect(searchBingForProduct).not.toHaveBeenCalled();
+    expect(result.webLinkResults).toEqual([]);
+  });
+
+  it("rescues only mixed-response queries that have not already tried direct Bing", async () => {
+    let searchCall = 0;
+    let alreadyRescuedQuery = "";
+    vi.mocked(searchWebForProduct).mockImplementation(async (queries) => {
+      searchCall += 1;
+      const normalized = queries.map((entry) =>
+        (typeof entry === "string" ? entry : entry.query)
+          .trim()
+          .replace(/\s+/g, " ")
+          .toLowerCase(),
+      );
+      if (searchCall === 1) {
+        alreadyRescuedQuery = normalized[0]!;
+        return {
+          results: queries.map((entry, index) => {
+            const query = typeof entry === "string" ? entry : entry.query;
+            return {
+              title: index === 0 ? "Tin thời tiết" : "Kết quả xổ số",
+              url: `https://noise.example/first-${index}`,
+              domain: "noise.example",
+              snippet: "Nội dung không liên quan",
+              query,
+              rankScore: 1,
+              provider: index === 0 ? ("bing" as const) : ("searxng" as const),
+            };
+          }),
+          warnings: [],
+          providers: ["searxng" as const, "bing" as const],
+          directBingQueries: [alreadyRescuedQuery],
+        };
+      }
+      return {
+        results: queries.map((entry, index) => {
+          const query = typeof entry === "string" ? entry : entry.query;
+          return {
+            title: "Tin thể thao",
+            url: `https://noise.example/second-${index}`,
+            domain: "noise.example",
+            snippet: "Nội dung không liên quan",
+            query,
+            rankScore: 1,
+            provider: "searxng" as const,
+          };
+        }),
+        warnings: [],
+        providers: ["searxng" as const],
+        directBingQueries: [],
+      };
+    });
+    vi.mocked(searchBingForProduct).mockResolvedValue({
+      results: [],
+      warnings: [],
+      providers: ["bing"],
+      directBingQueries: [],
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+    vi.mocked(enrichSearchResultsWithFetchedContent).mockImplementation(
+      async (results) =>
+        results.map((result) => ({ ...result, fetchStatus: "verified" })),
+    );
+
+    await searchProfileRowWebLinks({
+      name: "Ống PVC D50 Bình Minh",
+      manufacturer: "Bình Minh",
+      specText: "D50 PN10",
+    });
+
+    expect(searchBingForProduct).toHaveBeenCalledTimes(1);
+    const rescuedQueries = vi
+      .mocked(searchBingForProduct)
+      .mock.calls[0]![0].map((entry) =>
+        (typeof entry === "string" ? entry : entry.query)
+          .trim()
+          .replace(/\s+/g, " ")
+          .toLowerCase(),
+      );
+    expect(rescuedQueries).not.toContain(alreadyRescuedQuery);
+    expect(rescuedQueries).toHaveLength(3);
   });
 });
