@@ -320,6 +320,7 @@ export function MaterialProfileReviewStep({
     }
     previousActiveSearchJobIdRef.current = null;
     invalidatedTerminalSearchJobKeyRef.current = terminalSearchJobKey;
+    void utils.materialProfile.listSearchRuns.invalidate({ workspaceId });
     const decisionsAtRequest = new Map(decisionsRef.current);
     void utils.materialProfile.get
       .fetch({ workspaceId })
@@ -357,6 +358,7 @@ export function MaterialProfileReviewStep({
     latestProfileSearchJob?.id,
     terminalSearchJobKey,
     utils.materialProfile.get,
+    utils.materialProfile.listSearchRuns,
     workspaceId,
   ]);
 
