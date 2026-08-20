@@ -695,8 +695,8 @@ export function FieldCompareEditor({
           searchSourceCandidates.some(
             (candidate) => candidate.tier === "weak",
           ) ? (
-            <details className="rounded border border-amber-300 bg-amber-50/50 p-2">
-              <summary className="focus-visible:ring-ring flex min-h-10 cursor-pointer items-center font-semibold text-amber-900 focus-visible:ring-2 focus-visible:outline-none">
+            <section className="rounded border border-amber-300 bg-amber-50/50 p-2">
+              <h4 className="flex min-h-10 items-center font-semibold text-amber-900">
                 Kết quả cần kiểm tra (
                 {
                   searchSourceCandidates.filter(
@@ -704,7 +704,7 @@ export function FieldCompareEditor({
                   ).length
                 }
                 )
-              </summary>
+              </h4>
               <p className="mt-1 text-xs text-amber-900">
                 Các nguồn này chỉ để kiểm tra thủ công và không được đề xuất tự
                 động.
@@ -758,7 +758,7 @@ export function FieldCompareEditor({
                     />
                   ))}
               </div>
-            </details>
+            </section>
           ) : null}
         </div>
       )}
