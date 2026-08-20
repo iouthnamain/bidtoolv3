@@ -421,6 +421,7 @@ export function storeProfileCandidateCapture(
   const candidateKey = profileCandidateCaptureKey(source.url);
   const inheritedDraft =
     !existing &&
+    current.selectedScrapeProductKey == null &&
     current.selectedSource === "web" &&
     current.selectedSearchCandidateKey === candidateKey
       ? {

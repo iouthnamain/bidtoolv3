@@ -164,6 +164,30 @@ describe("profile candidate shop scrape", () => {
     ).toBe(2);
   });
 
+  it("starts a newly selected product from its own scraped fields", () => {
+    const first = mergeProfileCandidateCapture(baseDecision, source, product)!;
+    const secondProduct: ProfileScrapedProduct = {
+      ...product,
+      name: "Máy bơm ABC bản công suất lớn",
+      unit: "bộ",
+      price: 2_400_000,
+      priceText: "2.400.000 ₫",
+      sku: "ABC-02",
+    };
+    const secondStored = storeProfileCandidateCapture(
+      first.decision,
+      source,
+      secondProduct,
+    )!;
+    const second = activateProfileCandidateCapture(
+      secondStored.decision,
+      secondStored.productKey,
+    )!;
+
+    expect(second.editedValues?.unit).toBe("bộ");
+    expect(second.editedValues?.defaultUnitPrice).toBe("2400000");
+  });
+
   it("activates a newly retained web product with its product profile", () => {
     const stored = storeProfileCandidateCapture(
       {
