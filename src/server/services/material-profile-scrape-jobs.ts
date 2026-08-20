@@ -29,6 +29,7 @@ import {
   serializeRowDecision,
   type RowDecision,
 } from "~/lib/materials/review-decision";
+import type { WebLinkResult } from "~/lib/materials/enrich-gap-fill";
 import { searchCandidateKey } from "~/lib/materials/search-candidate-match";
 import { db } from "~/server/db";
 import {
@@ -130,8 +131,9 @@ export function selectedProfileScrapeSource(
   options: {
     explicitSourceUrl?: string;
     explicitSourceCandidateKey?: string;
+    allowUnpersistedExplicitSource?: boolean;
   },
-) {
+): WebLinkResult | undefined {
   const links = [...(decision.webLinkResults ?? [])].sort(
     (left, right) => (right.rankScore ?? 0) - (left.rankScore ?? 0),
   );
@@ -144,9 +146,27 @@ export function selectedProfileScrapeSource(
       ? decision.selectedSearchCandidateKey.slice(4)
       : undefined,
   ].find(Boolean);
-  return selectedUrl
+  const persistedSource = selectedUrl
     ? links.find((link) => link.url === selectedUrl)
     : undefined;
+  if (
+    persistedSource ||
+    !explicitUrl ||
+    !options.allowUnpersistedExplicitSource
+  ) {
+    return persistedSource;
+  }
+
+  try {
+    return {
+      title: explicitUrl,
+      url: explicitUrl,
+      domain: new URL(explicitUrl).hostname.replace(/^www\./i, ""),
+      snippet: "",
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function sourceForDecision(
@@ -157,7 +177,11 @@ function sourceForDecision(
     interactive: boolean;
   },
 ) {
-  const source = selectedProfileScrapeSource(decision, options);
+  const source = selectedProfileScrapeSource(decision, {
+    explicitSourceUrl: options.explicitSourceUrl,
+    explicitSourceCandidateKey: options.explicitSourceCandidateKey,
+    allowUnpersistedExplicitSource: options.interactive,
+  });
 
   if (!source) {
     return {

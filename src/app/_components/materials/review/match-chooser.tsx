@@ -814,7 +814,7 @@ export function MatchChooser({
     });
   };
 
-  const captureSearchCandidate = (key: string) => {
+  const captureSearchCandidate = async (key: string) => {
     const parsed = parseSearchCandidateKey(key);
     if (parsed?.source !== "web" || isWebLinksPending || isAiSearchPending) {
       return;
@@ -854,6 +854,21 @@ export function MatchChooser({
     }
     setStartingCandidateKeys((current) => new Set(current).add(candidateKey));
     onCapturePendingChangeRef.current?.(true);
+    try {
+      await flushCurrentDecision();
+    } catch (error) {
+      setStartingCandidateKeys((current) => {
+        const next = new Set(current);
+        next.delete(candidateKey);
+        return next;
+      });
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Không lưu được nguồn web trước khi scrape.",
+      );
+      return;
+    }
     if (/\.pdf(?:$|[?#])/i.test(link.url)) {
       attachPdfSource.mutate(
         {

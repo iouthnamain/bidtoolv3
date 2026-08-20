@@ -88,6 +88,26 @@ describe("material profile scrape source selection", () => {
       ),
     ).toEqual(selected);
   });
+
+  it("accepts an interactive explicit URL before the visible result is persisted", () => {
+    expect(
+      selectedProfileScrapeSource(
+        {
+          materialId: null,
+          acceptedFields: new Set(),
+          webLinkResults: [],
+        },
+        {
+          explicitSourceUrl: selected.url,
+          explicitSourceCandidateKey: `web:${selected.url}`,
+          allowUnpersistedExplicitSource: true,
+        },
+      ),
+    ).toMatchObject({
+      url: selected.url,
+      domain: "example.com",
+    });
+  });
 });
 
 describe("material profile scrape producer state", () => {
