@@ -94,11 +94,13 @@ export function isMaterialProfileScrapeInputCurrent(input: {
   currentSourceFingerprint: string;
   runSourceFingerprint: string;
   currentSearchGeneration: unknown;
+  allowChangedSearchGeneration?: boolean;
 }) {
   const snapshot = recordOf(input.snapshot);
   return (
     input.currentSourceFingerprint === input.runSourceFingerprint &&
-    input.currentSearchGeneration === snapshot.searchGeneration &&
+    (input.allowChangedSearchGeneration === true ||
+      input.currentSearchGeneration === snapshot.searchGeneration) &&
     (!("materialId" in snapshot) ||
       input.currentMaterialId === snapshot.materialId)
   );
@@ -464,6 +466,7 @@ async function applySelectedProduct(
   product: ProfileScrapedProduct,
   productMatchScore: number | null,
   activate: boolean,
+  allowChangedSearchGeneration = false,
 ) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const [item] = await db
@@ -487,6 +490,7 @@ async function applySelectedProduct(
         currentSourceFingerprint: item.sourceFingerprint,
         runSourceFingerprint: run.sourceFingerprint,
         currentSearchGeneration: profileCandidateSearchGeneration(decision),
+        allowChangedSearchGeneration,
       })
     ) {
       return {
@@ -1013,7 +1017,7 @@ export async function selectMaterialProfileScrapedProduct(input: {
       "BAD_REQUEST",
       "Sản phẩm đã chọn không hợp lệ.",
     );
-  const applied = await applySelectedProduct(run, product, null, true);
+  const applied = await applySelectedProduct(run, product, null, true, true);
   const now = new Date().toISOString();
   await db
     .update(materialProfileScrapeRuns)

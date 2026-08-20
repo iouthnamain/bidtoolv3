@@ -46,6 +46,32 @@ describe("material profile scrape input snapshot", () => {
       }),
     ).toBe(false);
   });
+
+  it("allows an explicit product choice after only the search results changed", () => {
+    expect(
+      isMaterialProfileScrapeInputCurrent({
+        ...current,
+        currentSearchGeneration: "web-run-4",
+        allowChangedSearchGeneration: true,
+      }),
+    ).toBe(true);
+    expect(
+      isMaterialProfileScrapeInputCurrent({
+        ...current,
+        currentMaterialId: 42,
+        currentSearchGeneration: "web-run-4",
+        allowChangedSearchGeneration: true,
+      }),
+    ).toBe(false);
+    expect(
+      isMaterialProfileScrapeInputCurrent({
+        ...current,
+        currentSourceFingerprint: "source-b",
+        currentSearchGeneration: "web-run-4",
+        allowChangedSearchGeneration: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("material profile scrape source selection", () => {
