@@ -228,6 +228,18 @@ export function profileCandidateCaptureKey(sourceUrl: string) {
   return searchCandidateKey("web", sourceUrl);
 }
 
+export function isMaterialProfileScrapeProductSelectable(
+  status: string,
+  productCount: number,
+) {
+  return (
+    productCount > 0 &&
+    ["awaiting_product_selection", "completed", "skipped", "failed"].includes(
+      status,
+    )
+  );
+}
+
 /** Stable fingerprint for detecting search results that changed mid-scrape. */
 export function profileCandidateSearchGeneration(
   decision: RowDecision | undefined,

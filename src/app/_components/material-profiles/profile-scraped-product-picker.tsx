@@ -15,12 +15,14 @@ export type ProfileScrapedProductPickerItem = {
 
 export function ProfileScrapedProductPicker({
   products,
+  canSelectUnretained,
   onSelect,
   onRemove,
   pendingProductKey,
   removingProductKey,
 }: {
   products: ProfileScrapedProductPickerItem[];
+  canSelectUnretained: boolean;
   onSelect: (product: ProfileScrapedProductPickerItem) => void;
   onRemove: (productKey: string) => void;
   pendingProductKey: string | null;
@@ -91,10 +93,16 @@ export function ProfileScrapedProductPicker({
                       onClick={() => onSelect(item)}
                       isLoading={pendingProductKey === item.productKey}
                       disabled={
-                        pendingProductKey != null || removingProductKey != null
+                        (!item.retained && !canSelectUnretained) ||
+                        pendingProductKey != null ||
+                        removingProductKey != null
                       }
                     >
-                      {item.retained ? "Xem kết quả" : "Chọn sản phẩm này"}
+                      {item.retained
+                        ? "Xem kết quả"
+                        : canSelectUnretained
+                          ? "Chọn sản phẩm này"
+                          : "Chờ scrape xong"}
                     </Button>
                   ) : null}
                   {item.retained ? (

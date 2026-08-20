@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   isMaterialProfileScrapeInputCurrent,
+  isMaterialProfileScrapeProductSelectable,
   isMaterialProfileScrapeProducerJobStatus,
+  materialProfileScrapeSourceForRun,
   materialProfileScrapeProducerFinishedAt,
   selectedProfileScrapeSource,
 } from "~/server/services/material-profile-scrape-jobs";
@@ -107,6 +109,39 @@ describe("material profile scrape source selection", () => {
       url: selected.url,
       domain: "example.com",
     });
+  });
+
+  it("keeps the source that launched an interactive scrape when it is absent from the latest search list", () => {
+    expect(
+      materialProfileScrapeSourceForRun(
+        {
+          materialId: null,
+          acceptedFields: new Set(),
+          webLinkResults: [],
+        },
+        {
+          sourceUrl: selected.url,
+          sourceScore: 0.72,
+          inputSnapshotJson: {
+            source: selected,
+          },
+        },
+      ),
+    ).toEqual(selected);
+  });
+});
+
+describe("material profile scraped product selection", () => {
+  it("allows recovery from terminal runs that retain product snapshots", () => {
+    expect(isMaterialProfileScrapeProductSelectable("skipped", 6)).toBe(true);
+    expect(isMaterialProfileScrapeProductSelectable("failed", 2)).toBe(true);
+  });
+
+  it("does not expose partial products while a scrape is still running", () => {
+    expect(isMaterialProfileScrapeProductSelectable("running", 6)).toBe(false);
+    expect(isMaterialProfileScrapeProductSelectable("cancelled", 6)).toBe(
+      false,
+    );
   });
 });
 

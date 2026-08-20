@@ -19,6 +19,7 @@ import { normalizeCatalogPdfUrl } from "~/lib/materials/catalog-pdf";
 import {
   isProfilePdfSource,
   activateProfileCandidateCapture,
+  isMaterialProfileScrapeProductSelectable,
   profileCandidateSearchGeneration,
   removeProfileCandidateCapture,
   resolveProfileScrapedProduct,
@@ -63,6 +64,8 @@ let advanceInFlight: Promise<void> | null = null;
 
 type ScrapeJobRow = typeof materialProfileScrapeJobs.$inferSelect;
 type ScrapeRunRow = typeof materialProfileScrapeRuns.$inferSelect;
+
+export { isMaterialProfileScrapeProductSelectable } from "~/lib/materials/profile-scrape-capture";
 
 export class MaterialProfileScrapeJobError extends Error {
   constructor(
@@ -167,6 +170,48 @@ export function selectedProfileScrapeSource(
   } catch {
     return undefined;
   }
+}
+
+export function materialProfileScrapeSourceForRun(
+  decision: RowDecision,
+  run: Pick<ScrapeRunRow, "sourceUrl" | "sourceScore" | "inputSnapshotJson">,
+): WebLinkResult | undefined {
+  const sourceUrl = run.sourceUrl?.trim();
+  if (!sourceUrl) return undefined;
+  const persisted = decision.webLinkResults?.find(
+    (link) => link.url === sourceUrl,
+  );
+  if (persisted) return persisted;
+
+  const snapshot = recordOf(recordOf(run.inputSnapshotJson).source);
+  const snapshotUrl =
+    typeof snapshot.url === "string" ? snapshot.url.trim() : "";
+  let domain =
+    typeof snapshot.domain === "string" ? snapshot.domain.trim() : "";
+  if (!domain) {
+    try {
+      domain = new URL(sourceUrl).hostname.replace(/^www\./i, "");
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    title:
+      snapshotUrl === sourceUrl && typeof snapshot.title === "string"
+        ? snapshot.title
+        : sourceUrl,
+    url: sourceUrl,
+    domain,
+    snippet:
+      snapshotUrl === sourceUrl && typeof snapshot.snippet === "string"
+        ? snapshot.snippet
+        : "",
+    ...(typeof snapshot.rankScore === "number"
+      ? { rankScore: snapshot.rankScore }
+      : run.sourceScore != null
+        ? { rankScore: run.sourceScore }
+        : {}),
+  };
 }
 
 function sourceForDecision(
@@ -309,6 +354,7 @@ export async function startMaterialProfileScrapeJob(input: {
           searchGeneration: profileCandidateSearchGeneration(selected.decision),
           itemUpdatedAt: item.updatedAt,
           materialId: item.materialId,
+          source: source ?? null,
         },
         sourceFingerprint: item.sourceFingerprint,
         warningsJson: source || !sourceError ? [] : [sourceError],
@@ -449,9 +495,7 @@ async function applySelectedProduct(
           "Dòng hoặc nguồn web đã thay đổi trong lúc scrape; kết quả cũ không được áp dụng.",
       };
     }
-    const source = decision.webLinkResults?.find(
-      (link) => link.url === run.sourceUrl,
-    );
+    const source = materialProfileScrapeSourceForRun(decision, run);
     if (!source) {
       return {
         status: "skipped",
@@ -956,16 +1000,13 @@ export async function selectMaterialProfileScrapedProduct(input: {
       "NOT_FOUND",
       "Không tìm thấy lượt scrape.",
     );
-  if (
-    run.status !== "awaiting_product_selection" &&
-    run.status !== "completed"
-  ) {
+  const products = productsFromJson(run.scrapedProductCandidatesJson);
+  if (!isMaterialProfileScrapeProductSelectable(run.status, products.length)) {
     throw new MaterialProfileScrapeJobError(
       "CONFLICT",
       "Lượt scrape này không chờ chọn sản phẩm.",
     );
   }
-  const products = productsFromJson(run.scrapedProductCandidatesJson);
   const product = products[input.productIndex];
   if (!product)
     throw new MaterialProfileScrapeJobError(

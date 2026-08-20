@@ -16,6 +16,7 @@ export function ProfileScrapeInlineLayer({
   job,
   run,
   products,
+  canSelectUnretained,
   onCancel,
   onRetry,
   onRescrape,
@@ -30,6 +31,7 @@ export function ProfileScrapeInlineLayer({
   job?: Job;
   run?: Run | null;
   products: ProfileScrapedProductPickerItem[];
+  canSelectUnretained: boolean;
   onCancel?: () => void;
   onRetry?: () => void;
   onRescrape?: () => void;
@@ -56,6 +58,7 @@ export function ProfileScrapeInlineLayer({
       {products.length > 0 ? (
         <ProfileScrapedProductPicker
           products={products}
+          canSelectUnretained={canSelectUnretained}
           onSelect={onSelectProduct}
           onRemove={onRemoveProduct}
           pendingProductKey={pendingProductKey}

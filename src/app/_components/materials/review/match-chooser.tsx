@@ -51,6 +51,7 @@ import {
   findProfileCandidateCapture,
   findProfileCandidateCaptureByProductKey,
   hasCapturedProductDetails,
+  isMaterialProfileScrapeProductSelectable,
   profileCandidateCaptureKey,
 } from "~/lib/materials/profile-candidate-capture";
 import { missingProfileMaterialSaveFields } from "~/lib/materials/profile-scrape-capture";
@@ -1735,6 +1736,7 @@ export function MatchChooser({
           : "Không áp dụng được sản phẩm đã chọn.",
       );
     } finally {
+      void scrapeHistoryQuery.refetch();
       setPendingProductKey(null);
     }
   };
@@ -1829,6 +1831,13 @@ export function MatchChooser({
             }
             run={run}
             products={products}
+            canSelectUnretained={
+              run == null ||
+              isMaterialProfileScrapeProductSelectable(
+                run.status,
+                products.length,
+              )
+            }
             onCancel={
               run && (run.status === "queued" || run.status === "running")
                 ? () =>
