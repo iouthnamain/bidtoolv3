@@ -747,7 +747,7 @@ function CleanExportStep({
               leftIcon={<Check className="h-4 w-4" />}
               title={
                 canExport
-                  ? "Lưu bản nháp thành một bản xuất mới"
+                  ? "Tạo bản xuất mới và tải file ZIP"
                   : "Chưa có dòng vật tư hiện tại để tạo bản xuất"
               }
               rightIcon={<ArrowRight className="h-4 w-4" />}
@@ -1368,6 +1368,7 @@ export function MaterialProfileDetailClient({
   >(null);
   const initializedWorkspaceId = useRef<number | null>(null);
   const reviewFlushRef = useRef<(() => Promise<void>) | null>(null);
+  const createRevisionInFlightRef = useRef(false);
 
   const detail = query.data;
   const sheets = useMemo(
@@ -1431,14 +1432,34 @@ export function MaterialProfileDetailClient({
         ),
       ),
   });
+  const downloadExportRevision =
+    api.materialProfile.downloadExportRevision.useMutation();
   const createExportRevision =
     api.materialProfile.createExportRevision.useMutation({
       onSuccess: async (revision) => {
-        await Promise.all([
+        setDownloadingRevisionId(revision.id);
+        const refreshHistory = Promise.all([
           utils.materialProfile.listExportRevisions.invalidate({ workspaceId }),
           utils.materialProfile.get.invalidate({ workspaceId }),
-        ]);
-        toast.success(`Đã tạo bản xuất #${revision.revisionNumber}.`);
+        ]).catch(() => undefined);
+        try {
+          const bundle = await downloadExportRevision.mutateAsync({
+            workspaceId,
+            revisionId: revision.id,
+          });
+          const saved = await downloadMaterialProfileRevisionZip(bundle);
+          await refreshHistory;
+          toast.success(
+            `Đã tạo bản xuất #${revision.revisionNumber} và tải ${saved.label}.`,
+          );
+        } catch {
+          await refreshHistory;
+          toast.error(
+            `Đã tạo bản xuất #${revision.revisionNumber} nhưng không thể tự tải ZIP. Dùng nút Tải ZIP trong lịch sử để thử lại.`,
+          );
+        } finally {
+          setDownloadingRevisionId(null);
+        }
       },
       onError: (error) =>
         toast.error(
@@ -1448,8 +1469,6 @@ export function MaterialProfileDetailClient({
           ),
         ),
     });
-  const downloadExportRevision =
-    api.materialProfile.downloadExportRevision.useMutation();
   const cleanExportPreviewQuery =
     api.materialProfile.previewCleanExport.useQuery(
       { workspaceId },
@@ -1650,6 +1669,25 @@ export function MaterialProfileDetailClient({
     }
   };
 
+  const handleCreateExportRevision = () => {
+    if (
+      createRevisionInFlightRef.current ||
+      createExportRevision.isPending ||
+      downloadExportRevision.isPending
+    ) {
+      return;
+    }
+    createRevisionInFlightRef.current = true;
+    createExportRevision.mutate(
+      { workspaceId },
+      {
+        onSettled: () => {
+          createRevisionInFlightRef.current = false;
+        },
+      },
+    );
+  };
+
   if (query.isError) {
     return (
       <section className="panel p-4">
@@ -1785,7 +1823,7 @@ export function MaterialProfileDetailClient({
           isCreatingRevision={createExportRevision.isPending}
           downloadingRevisionId={downloadingRevisionId}
           onRefresh={() => void cleanExportPreviewQuery.refetch()}
-          onCreateRevision={() => createExportRevision.mutate({ workspaceId })}
+          onCreateRevision={handleCreateExportRevision}
           onDownloadRevision={(revisionId) =>
             void handleDownloadRevision(revisionId)
           }
