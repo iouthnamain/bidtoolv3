@@ -853,6 +853,14 @@ export function MatchChooser({
       setExpandedScrapeSourceKey(candidateKey);
       return;
     }
+    if (
+      latestRun?.status === "skipped" &&
+      Array.isArray(latestRun.scrapedProductCandidatesJson) &&
+      latestRun.scrapedProductCandidatesJson.length > 0
+    ) {
+      setExpandedScrapeSourceKey(candidateKey);
+      return;
+    }
     setStartingCandidateKeys((current) => new Set(current).add(candidateKey));
     onCapturePendingChangeRef.current?.(true);
     try {
@@ -1803,13 +1811,15 @@ export function MatchChooser({
           ? "Đang scrape"
           : run?.status === "awaiting_product_selection"
             ? "Chọn sản phẩm"
-            : run?.status === "failed"
-              ? "Xem lỗi"
-              : run?.status === "cancelled" || run?.status === "skipped"
-                ? "Scrape lại"
-                : run?.status === "completed" || products.length > 0
-                  ? "Xem sản phẩm"
-                  : undefined;
+            : products.length > 0
+              ? "Xem sản phẩm"
+              : run?.status === "failed"
+                ? "Xem lỗi"
+                : run?.status === "cancelled" || run?.status === "skipped"
+                  ? "Scrape lại"
+                  : run?.status === "completed"
+                    ? "Xem sản phẩm"
+                    : undefined;
     const expanded = expandedScrapeSourceKey === sourceKey;
     return {
       pending,
