@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compactMaterialIdentityQuery,
   createMaterialSearchIdentity,
   normalizeMaterialSearchQueryVariant,
 } from "./material-search-identity";
@@ -42,6 +43,18 @@ describe("material search identity", () => {
     });
     expect(identity.identifiers).toEqual(
       expect.arrayContaining(["2p", "32a", "6ka", "sl4-m5", "d90"]),
+    );
+  });
+
+  it("preserves Vietnamese product wording in the compact provider query", () => {
+    const identity = createMaterialSearchIdentity({
+      name: "Dây điện VCm 0.5mm2",
+      code: "VT-001",
+      manufacturer: "Cadivi",
+    });
+
+    expect(compactMaterialIdentityQuery(identity)).toBe(
+      "Dây điện VCm Cadivi vt-001 0.5mm",
     );
   });
 

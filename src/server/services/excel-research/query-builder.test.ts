@@ -91,7 +91,7 @@ describe("buildSearchQueries", () => {
     expect(queries.length).toBeLessThanOrEqual(6);
   });
 
-  it("keeps bare and normalized identity queries within the six-query cap", () => {
+  it("keeps Vietnamese identity queries within the six-query cap", () => {
     const queries = buildSearchQueries(
       {
         name: "Dây cáp điện Cadivi CVV 2x2.5",
@@ -117,7 +117,7 @@ describe("buildSearchQueries", () => {
 
     const joined = queries.map((query) => query.query).join("\n");
     expect(queries[0]?.query).toBe("Dây cáp điện Cadivi CVV 2x2.5");
-    expect(joined).toContain("day cap cvv Cadivi 2x2.5");
+    expect(joined).not.toContain("day cap cvv");
     expect(joined).toContain("-site:shopee.vn");
     expect(joined).toContain("thông số kỹ thuật catalog");
     expect(queries.length).toBeLessThanOrEqual(6);

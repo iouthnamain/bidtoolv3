@@ -275,7 +275,9 @@ export function assessMaterialSearchCandidate(input: {
     searchPhrase && containsNormalizedPhrase(text, searchPhrase),
   );
   const manufacturerMatch = identity.manufacturer
-    ? tokenOverlap(identity.manufacturer, text)
+    ? containsNormalizedPhrase(text, identity.manufacturer)
+      ? 1
+      : tokenOverlap(identity.manufacturer, text)
     : 0.5;
   const identifiers = identifierEvidence(identity, text);
   const dimensionsMatched = identity.compositeDimensions.filter((dimension) =>
@@ -293,11 +295,31 @@ export function assessMaterialSearchCandidate(input: {
   // product-family page. A strong broad-phrase match is enough for a weak
   // result, but never overrides identifier, dimension, family, or safety
   // conflicts below.
+  const familyTokenCoverage = Math.max(
+    identity.productPhrase ? tokenOverlap(text, identity.productPhrase) : 0,
+    searchPhrase ? tokenOverlap(text, searchPhrase) : 0,
+  );
+  const manufacturerBackedFamilyMatch = Boolean(
+    identity.manufacturer &&
+      manufacturerMatch >= 0.7 &&
+      familyTokenCoverage >= 0.6,
+  );
   const broadIdentityScore = broadPhraseMatched
     ? 0.45 + manufacturerMatch * 0.1
     : 0;
+  // Search providers often return a brand price-list or catalog page before
+  // the exact SKU page. Keep that source visible as weak evidence when both
+  // the requested manufacturer and most family tokens match. Identifier/spec
+  // evidence is still required to reach the primary tier.
+  const manufacturerBackedFamilyScore = manufacturerBackedFamilyMatch
+    ? 0.3 + familyTokenCoverage * 0.15 + manufacturerMatch * 0.1
+    : 0;
   const identityScore = clampMatchScore(
-    Math.max(identityBaseScore, broadIdentityScore),
+    Math.max(
+      identityBaseScore,
+      broadIdentityScore,
+      manufacturerBackedFamilyScore,
+    ),
   );
   const matchedSpecs = identity.highSignalSpecTokens.filter((token) =>
     text.includes(token),
@@ -337,7 +359,8 @@ export function assessMaterialSearchCandidate(input: {
   const broadPhraseNeedsIdentifier =
     broadIdentityScore > identityBaseScore &&
     identity.identifiers.length > 0 &&
-    identifiers.matches.length === 0;
+    identifiers.matches.length === 0 &&
+    !manufacturerBackedFamilyMatch;
   if (identityScore < 0.18 || broadPhraseNeedsIdentifier) {
     hardRejects.push("identity_missing");
   }
@@ -360,6 +383,7 @@ export function assessMaterialSearchCandidate(input: {
         : "weak";
   const reasons = compactReasons([
     productPhraseMatch || broadPhraseMatched ? "Khớp cụm sản phẩm" : "",
+    manufacturerBackedFamilyMatch ? "Khớp nhóm và nhà sản xuất" : "",
     identifiers.matches.length
       ? `Khớp mã: ${identifiers.matches.join(", ")}`
       : "",

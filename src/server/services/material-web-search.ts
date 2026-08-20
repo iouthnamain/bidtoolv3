@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
 import {
@@ -189,7 +190,17 @@ function decodeHtmlEntities(value: string) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (match, decimal: string) => {
+      const codePoint = Number.parseInt(decimal, 10);
+      if (!Number.isInteger(codePoint) || codePoint > 0x10ffff) return match;
+      return String.fromCodePoint(codePoint);
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+      const codePoint = Number.parseInt(hex, 16);
+      if (!Number.isInteger(codePoint) || codePoint > 0x10ffff) return match;
+      return String.fromCodePoint(codePoint);
+    });
 }
 
 function stripAccents(value: string) {
@@ -233,6 +244,31 @@ function normalizeResultUrl(value: string) {
     return url.toString();
   } catch {
     return value.trim();
+  }
+}
+
+function unwrapBingResultUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (
+      !/(?:^|\.)bing\.com$/i.test(url.hostname) ||
+      !url.pathname.startsWith("/ck/")
+    ) {
+      return value;
+    }
+    const encodedTarget = url.searchParams.get("u") ?? "";
+    const payload = encodedTarget.startsWith("a1")
+      ? encodedTarget.slice(2)
+      : encodedTarget;
+    if (!payload) return value;
+    const decoded = Buffer.from(payload, "base64url").toString("utf8").trim();
+    const target = new URL(decoded);
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      return value;
+    }
+    return target.toString();
+  } catch {
+    return value;
   }
 }
 
@@ -341,7 +377,9 @@ function parseBingHtml(html: string, query: string): WebSearchResult[] {
       /<h2[^>]*>[\s\S]*?<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(
         block,
       );
-    const rawUrl = decodeHtmlEntities(anchor?.[1]?.trim() ?? "");
+    const rawUrl = unwrapBingResultUrl(
+      decodeHtmlEntities(anchor?.[1]?.trim() ?? ""),
+    );
     const title = stripHtmlTags(anchor?.[2] ?? "");
     const snippet = stripHtmlTags(
       /<div[^>]*class=["'][^"']*\bb_caption\b[^"']*["'][^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i.exec(

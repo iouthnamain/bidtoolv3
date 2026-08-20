@@ -20,6 +20,11 @@ function bingHtml(input: { title: string; url: string; snippet: string }) {
   return `<ol id="b_results"><li class="b_algo"><h2><a href="${input.url}">${input.title}</a></h2><div class="b_caption"><p>${input.snippet}</p></div></li></ol>`;
 }
 
+function bingRedirectUrl(target: string) {
+  const encoded = Buffer.from(target).toString("base64url");
+  return `https://www.bing.com/ck/a?u=a1${encoded}&ntb=1`;
+}
+
 describe("searchQueryWithFallback", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -112,6 +117,49 @@ describe("searchQueryWithFallback", () => {
         new URL(requestUrl(url)).hostname.includes("bing.com"),
       ),
     ).toBe(true);
+  });
+
+  it("decodes Bing redirect targets and numeric Vietnamese entities", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "http://searxng.test");
+    vi.stubEnv("SEARXNG_HTML_FALLBACK", "false");
+    const target = "https://etinco.vn/bang-gia-day-cap-dien-cadivi/";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = requestUrl(input);
+        if (url.includes("searxng.test")) {
+          return new Response(JSON.stringify({ results: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("bing.com/search")) {
+          return new Response(
+            bingHtml({
+              title: "Bảng gi&#225; D&#226;y c&#225;p điện Cadivi",
+              url: bingRedirectUrl(target),
+              snippet: "Bảng gi&#225; d&#226;y điện ch&#237;nh h&#227;ng.",
+            }),
+            { status: 200, headers: { "Content-Type": "text/html" } },
+          );
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    const { searchQueryWithFallback } = await import("./material-web-search");
+    const response = await searchQueryWithFallback("Dây điện VCm 0.5mm2");
+
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        title: "Bảng giá Dây cáp điện Cadivi",
+        url: target,
+        domain: "etinco.vn",
+        snippet: "Bảng giá dây điện chính hãng.",
+        provider: "bing",
+      }),
+    ]);
   });
 
   it("lets the guarded profile pipeline defer direct Bing rescue", async () => {

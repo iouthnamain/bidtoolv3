@@ -65,6 +65,31 @@ describe("guarded material assessment", () => {
     expect(assessment.aiOverrideEligible).toBe(true);
   });
 
+  it("keeps a manufacturer-backed family price page visible for manual review", () => {
+    const cableIdentity = createMaterialSearchIdentity({
+      name: "Dây điện VCm 0.5mm2",
+      code: "VT-001",
+      manufacturer: "Cadivi",
+      specText: "VCm 0.5mm2, 450/750V",
+      unit: "m",
+    });
+    const assessment = assessMaterialSearchCandidate({
+      identity: cableIdentity,
+      candidate: {
+        title: "Bảng giá Dây cáp điện Cadivi 2026 mới",
+        url: "https://etinco.vn/bang-gia-day-cap-dien-cadivi/",
+        domain: "etinco.vn",
+        snippet:
+          "Bảng giá dây cáp điện Cadivi kèm catalogue đầy đủ thông tin.",
+        rrfScore: 1 / 61,
+      },
+    });
+
+    expect(assessment.tier).toBe("weak");
+    expect(assessment.hardRejects).not.toContain("identity_missing");
+    expect(assessment.score).toBeLessThan(0.75);
+  });
+
   it("keeps broad product-family evidence weak when no identifier is expected", () => {
     const broadIdentity = createMaterialSearchIdentity({
       name: "Van tiết lưu khí nén",

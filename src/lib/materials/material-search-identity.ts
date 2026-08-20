@@ -257,9 +257,17 @@ export function createMaterialSearchIdentity(
 }
 
 export function compactMaterialIdentityQuery(identity: MaterialSearchIdentity) {
+  const product = identity.searchPhrase ?? identity.name;
+  const manufacturer = identity.manufacturer;
+  const productContainsManufacturer = Boolean(
+    manufacturer &&
+      normalizeMaterialSearchText(product).includes(
+        normalizeMaterialSearchText(manufacturer),
+      ),
+  );
   const parts = [
-    identity.productPhrase,
-    identity.manufacturer,
+    product,
+    productContainsManufacturer ? null : manufacturer,
     ...identity.identifiers.slice(0, 3),
   ].filter(Boolean);
   return parts.join(" ").replace(/\s+/g, " ").trim();

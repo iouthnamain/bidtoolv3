@@ -372,6 +372,59 @@ describe("searchProfileRowWebLinks query budget", () => {
     );
   });
 
+  it("returns a captured Cadivi family-price result as weak instead of dropping every link", async () => {
+    vi.mocked(resolveSearchQueryControls).mockResolvedValue({
+      enableSiteVnVariants: true,
+      enableNegativeMarketplaceVariants: true,
+      materialJobMaxQueries: 6,
+      interactiveMaxQueries: 1,
+      excelResearchMaxQueries: 6,
+    });
+    const candidate = {
+      title: "Bảng giá Dây cáp điện Cadivi 2026 mới | Đầy đủ chi tiết",
+      url: "https://etinco.vn/bang-gia-day-cap-dien-cadivi/",
+      domain: "etinco.vn",
+      snippet:
+        "Etinco cung cấp bảng giá dây cáp điện Cadivi kèm catalogue đầy đủ.",
+      query: "Dây điện VCm 0.5mm2",
+      rankScore: 1,
+      rrfScore: 1 / 61,
+      provider: "searxng" as const,
+      engines: ["bing"],
+    };
+    vi.mocked(searchWebForProduct).mockResolvedValue({
+      results: [candidate],
+      warnings: [],
+      providers: ["searxng"],
+      domainPolicy: { boostDomains: [], penaltyDomains: [], blockDomains: [] },
+    });
+    vi.mocked(rankSearchResults).mockImplementation((results) => results);
+    vi.mocked(enrichSearchResultsWithFetchedContent).mockImplementation(
+      async (results) =>
+        results.map((result) => ({ ...result, fetchStatus: "verified" })),
+    );
+
+    const result = await searchProfileRowWebLinks({
+      name: "Dây điện VCm 0.5mm2",
+      code: "VT-001",
+      manufacturer: "Cadivi",
+      specText: "VCm 0.5mm2, 450/750V",
+      unit: "m",
+    });
+
+    expect(result.primaryResults).toEqual([]);
+    expect(result.weakResults).toEqual([
+      expect.objectContaining({
+        url: candidate.url,
+        provider: "searxng",
+        engines: ["bing"],
+        assessment: expect.objectContaining({ tier: "weak" }),
+      }),
+    ]);
+    expect(result.webLinkResults).toHaveLength(1);
+    expect(searchBingForProduct).not.toHaveBeenCalled();
+  });
+
   it("still tries direct Bing when SearXNG labels its engine results as Bing", async () => {
     vi.mocked(resolveSearchQueryControls).mockResolvedValue({
       enableSiteVnVariants: true,
