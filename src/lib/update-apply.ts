@@ -42,7 +42,7 @@ export function resolveApplyUpdateAction(input: {
   }
 
   if (input.version.surface === "onprem" && input.version.updateAvailable) {
-    return input.version.canApplyInApp ? "run-onprem" : "copy-onprem-command";
+    return "copy-onprem-command";
   }
 
   if (input.version.surface === "web") {
