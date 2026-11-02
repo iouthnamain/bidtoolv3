@@ -6,6 +6,7 @@
 | [roadmaps/README.md](./roadmaps/README.md)                                         | Lộ trình on-prem 3 năm bằng tiếng Việt cho một phòng ban trong một công ty          |
 | [workflows.md](./workflows.md)                                                     | **Main app workflows** — routes, tRPC procedures, services, and background jobs     |
 | [material-profiles-and-materials-mvp.md](./material-profiles-and-materials-mvp.md) | Kiểm thử thủ công Danh mục và Hồ sơ vật tư                                          |
+| [ci-cd.md](./ci-cd.md)                                                             | CI/CD gates, protected release and rollback, evidence and integration handoffs      |
 | [updates/README.md](./updates/README.md)                                           | Release, deployment, and on-prem update system                                      |
 | [architecture-option-b/README.md](./architecture-option-b/README.md)               | Target architecture and migration plan                                              |
 

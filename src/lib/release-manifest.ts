@@ -29,6 +29,7 @@ export const desktopPlatformArtifactSchema = z.object({
 
 export const releaseManifestSchema = z.object({
   version: z.string().min(1),
+  commitSha: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   releasedAt: z.string().datetime(),
   channel: releaseChannelSchema,
   schemaVersion: z.number().int().nonnegative(),
