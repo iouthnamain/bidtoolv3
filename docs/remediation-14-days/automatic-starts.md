@@ -1,0 +1,44 @@
+# Automatic task starts
+
+The user authorized automatic starts for Days 2–14 on 2026-11-02. Thirteen one-time T3 Code coordinator runs are scheduled for **09:00 Asia/Ho_Chi_Minh**, November 3–15, 2026 (**02:00 UTC**). They use the existing BidTool project and reserved implementation threads. The next run checks every due unstarted package, including packages blocked on previous days.
+
+## Eligibility and concurrency
+
+A package becomes eligible when its start date has arrived, its prerequisite implementation PRs have merged, and its writable files have no active owner. Issue closure or a green check alone does not establish that prerequisite code is on the target branch. Automatic starts do not create an unreviewed stack. If a prerequisite is still open or draft, record that blocker and check again at the next daily run.
+
+Keep at most two remediation implementation threads active at a time. Count preparing, starting, queued, running and waiting threads as occupying a slot. Read existing threads and PRs before sending a start message. Use the stable per-package request key below so duplicate coordinator delivery cannot launch a second turn. A package already started or with an implementation PR is not a new task. Apply the Sol continuation rules below instead of duplicating its initial start. Never interrupt an active turn or answer a pending approval automatically. Honor later user pauses, cancellations and scope changes before dispatching anything.
+
+Respect the file handoffs in the [delivery schedule](./README.md). In particular, R2 waits for the R1 storage handoff before editing shared storage code. R5 and R11 must agree their shared search/workspace lock contract before either changes the other's files. R14 follows R5, and R6 follows R14. Never start two owners of overlapping files.
+
+## Sol implementation loop
+
+The user also authorized GPT-6.1 Sol workers to keep iterating until each scoped PR is ready. All fourteen reserved threads are configured for `gpt-6.1-sol` on `codexCLIProxy`, with `reasoningEffort: high`. Retain these threads and worktrees; this is not a request for extra workers.
+
+Each worker repeats implementation, affected checks, complete-diff review and focused fixes within its run until the package's local acceptance passes and its scoped PR is prepared. Record the actual results and remaining evidence. Missing Docker, database or native-platform proof keeps the PR draft; do not manufacture evidence or mark drafts ready automatically. PR readiness here means code and available validation are prepared for review, not that reviewers have approved it.
+
+The daily coordinator may resume unfinished work whose previous turn has ended, including recoverable failed or interrupted turns, only when the thread has no active run or pending human request, dependencies still pass, its scope is free, and the next action is concrete. Read the latest outcome and actual worktree/PR state first. A ready PR, closed PR, merged package or unchanged environment/dependency blocker gets no new turn. An interrupted tool action with an unknown outcome must be resolved before retrying. Never reset or discard existing work.
+
+For each continuation use `bidtool-20261102-sol-continue-<package>-<last-ended-run-id>` as `clientRequestId`. Record that key before dispatch; at most one continuation per package per daily coordinator run. Duplicate triggers observing the same ended run reuse the key. Count continuations against the same two-thread limit and prioritize actionable unfinished packages before new starts. Do not poll or watch workers/PRs, or create a timer loop. Workers iterate within a run; these thirteen daily runs provide bounded resumption through November 15. After that date, report unfinished work without new starts or continuations.
+
+## R8 has two review stages
+
+The smoke-command dependency between R8 and R13 requires a deliberate split:
+
+1. On or after Day 10, start **R8 smoke scaffolding** once R0, R1, R2, R3, R4, R5, R7, R10, R11, R12 and R14 have merged. Its scope is isolated runtime/packaging smoke commands and fixtures. Leave release workflow ownership with R13. Open a focused smoke-foundation PR and record it on R8's issue. This stage does not close R8 or any missing runtime proof.
+2. R13 may start after its normal prerequisites and the R8 smoke-foundation PR have merged. It consumes those commands and implements artifact reporting/publication requirements.
+3. Resume R8 for **final release gates and closure** once all normal R8 prerequisites, including R6 and R13, have merged and its smoke-foundation turn has ended successfully. Use a second focused PR for final gate wiring and operator evidence. Keep the original R8 issue and reserved thread; record both PRs.
+
+This is the planned exception to one implementation PR per package. A missing platform or Docker environment keeps the relevant acceptance item open.
+
+## Dispatch procedure
+
+The scheduled coordinator reads this guide, the [delivery schedule](./README.md), each eligible package brief, and the live local registry at `.pipeline/runs/remediation-20261102/registry.json`. The registry identifies the exact existing threads and GitHub tasks. Scheduler IDs and returned run times are recorded separately in `.pipeline/runs/remediation-20261102/automation.json`; neither file is committed.
+
+1. Confirm the actual date in Asia/Ho_Chi_Minh. Run only within November 3–15. If several triggers arrive late, consider the actual day's due work once and use the same request keys. After November 15, report the remaining backlog without starting new work.
+2. Inspect all fourteen thread states with `t3_thread_read` and the actual GitHub PR state using `gh-axi`. Resolve dependencies from task-linked implementation PRs and their merge commits, not from stale registry status. A missing or corrupt registry is a blocker, never a reason to invent threads or paths.
+3. List due candidates in the delivery-table order. Skip closed/merged packages, ready PRs, active threads, unmet prerequisites and active file conflicts. Consider unfinished work only under the Sol continuation rules above. Apply the R8 stage rules above. Do not launch beyond the two-thread limit.
+4. Start only the original reserved top-level thread with `t3_thread_send`. For an initial start use `clientRequestId: bidtool-20261102-auto-start-<package>`. For R8's final stage use `bidtool-20261102-auto-r8-final`. For unfinished work use the Sol continuation key above. Keep each message stable across retry deliveries. Do not create a replacement thread or delegate a new worker.
+5. The start or continuation message identifies the issue, package brief, exact writable scope and stage, and requires the Sol implementation loop above. Before dispatch verify the configured provider/model with `t3_thread_configure`; set `instanceId: codexCLIProxy`, `model: gpt-6.1-sol` and `reasoningEffort: high` if needed. Stop on an unavailable model instead of silently substituting. Instruct the worker to verify its T3-managed worktree, inspect/fetch current `origin/main`, and bring required merged changes into that branch with a non-destructive fast-forward or merge. Preserve local edits and published history. The worker implements, runs focused checks, commits/pushes and opens a scoped PR using `/file-pr`; `link_pull_request` is its next tool call after PR creation. Missing acceptance proof requires a draft PR. The R8 foundation PR references the task without closing it.
+6. Record each returned run ID, thread link, request key and observed PR in the local registry. Summarize starts, active work and blockers in the coordinator's own thread using exact returned thread links. A later daily run rechecks blocked, unstarted work. Do not poll workers, monitor PRs, or start servers from the coordinator.
+
+The coordinator may update local orchestration records. Implementation stays in the assigned worktrees. Merging PRs, marking drafts ready, release publication, deployment, production-data access and destructive cleanup remain outside this automation's authorization. Scheduled runs require the T3 host to be available; delayed delivery does not extend the authorized window.

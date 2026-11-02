@@ -2,7 +2,7 @@
 
 Window: **2026-11-02 through 2026-11-15**, Asia/Ho_Chi_Minh. Day 1 starts now. This is a target schedule; prerequisite failures move dependent work rather than weakening acceptance checks.
 
-The [architecture plan](../architecture-remediation-plan.md) remains the implementation specification for F01–F19. Each package has one GitHub task, an isolated T3 Code thread, and one intended implementation PR. PRs open when there is reviewable code. Dates do not authorize merges, releases, deployment, or production-data access.
+The [architecture plan](../architecture-remediation-plan.md) remains the implementation specification for F01–F19. Each package has one GitHub task, an isolated T3 Code thread, and one intended implementation PR, except R8's two planned stages. PRs open when there is reviewable code. Dates do not authorize merges, releases, deployment, or production-data access.
 
 ## Package ownership and PR sequence
 
@@ -25,7 +25,7 @@ The [architecture plan](../architecture-remediation-plan.md) remains the impleme
 
 ## T3 Code task threads
 
-All 14 threads belong to the registered BidTool project. Day 1 threads start implementation immediately; the others are idle, with worktree strategies reserved for their own branches.
+All 14 threads belong to the registered BidTool project. Day 1 threads start implementation immediately; the others begin idle, with worktree strategies reserved for their own branches. Automatic starts follow the eligibility checks below.
 
 | Package | Thread                                                                                                                            | Initial execution  |
 | ------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
@@ -77,6 +77,8 @@ All 14 threads belong to the registered BidTool project. Day 1 threads start imp
 
 The live task and thread registry is recorded locally in `.pipeline/runs/remediation-20261102/registry.json`. It contains external links, workspace bindings and observed run state. This document is the dated plan; GitHub issues and PRs hold execution evidence. The canonical plan checkboxes stay open until that evidence exists.
 
-Days 2–14 are dependency-gated backlog until an execution schedule is explicitly configured. Day 1 implementation does not authorize automatic merges or deployment.
+Days 2–14 have automatic eligibility checks at **09:00 Asia/Ho_Chi_Minh (02:00 UTC), November 3–15, 2026**. Thirteen one-time coordinator runs start eligible work in the existing threads, with at most two implementation threads active. Blocked unstarted tasks carry forward to the next daily check. All fourteen workers use GPT-6.1 Sol and iterate through implementation, tests, review and fixes until their scoped PR is prepared. Daily checks can resume actionable unfinished work under the same concurrency limit. Prerequisite PRs must be merged; automation does not create unreviewed stacks or merge anything. See [automatic-start rules](./automatic-starts.md).
+
+R8 uses a smoke-foundation PR before R13 and a final-gates PR afterward, as described in the automatic-start rules. Both belong to the original R8 task/thread. No automatic starts occur after November 15. Release publication and deployment remain separate actions.
 
 R9 remains deferred. Framework/database rewrites, multi-user authentication, and speculative worker separation remain outside this delivery.
