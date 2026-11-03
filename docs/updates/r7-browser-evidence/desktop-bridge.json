@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-11-03T08:28:51.340Z",
+  "scope": "Real browser UI with a fake Electron bridge; not native Electron/package verification",
+  "bridgeCalls": [
+    "check",
+    "download",
+    "install"
+  ],
+  "onpremMutationRequests": [],
+  "accessibility": "- paragraph: Cập nhật\n- text: Có bản mới\n- heading \"Quản lý phiên bản\" [level=2]\n- paragraph: Kiểm tra bản phát hành mới, áp dụng cập nhật và xem ghi chú phát hành.\n- button \"Làm mới\"\n- term: Phiên bản hiện tại\n- definition: 0.1.0\n- term: Môi trường\n- definition: On-prem (Docker)\n- term: Bản mới nhất\n- definition: 0.2.0 (0.2.0+onprem.fixture)\n- term: Trạng thái\n- definition: Có bản cập nhật mới\n- paragraph: Hành động cập nhật\n- paragraph: Cài bản đã tải và khởi động lại ứng dụng.\n- button \"Áp dụng cập nhật\"\n- paragraph: Ghi chú phát hành\n- paragraph: Bản phát hành giả lập cho kiểm tra R7; không triển khai.\n- paragraph: \"Desktop shell: 0.1.0\""
+}
