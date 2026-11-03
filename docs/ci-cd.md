@@ -13,6 +13,8 @@ PR/main SHA ------------------------> validate
 release event -> resolve tag SHA ---> validate
                                        |-- quality: frozen install, lint, typecheck,
                                        |            unit tests, Next build, metadata/CLI
+                                       |-- integration: isolated PG16 migrations
+                                       |                and coordinated transactions
                                        |-- runtime: assembled image, disposable PG16,
                                        |            migrations, restart, HTTP liveness
                                        `-- bundle: contents, image version, SHA256
@@ -23,6 +25,8 @@ release: validate -> Windows/Linux desktop assembly and checks
                   -> push verified image -> deploy Vercel -> manifest/pins proposal
                   -> create GitHub Release -> promote image latest
 ```
+
+The shared `integration` job retains R0's PostgreSQL 16 service and `bun run test:integration` command. It checks out `inputs.source_sha`, asserts `HEAD`, installs the frozen lockfile and runs the guarded migration/concurrent-connection fixtures with a validated `BIDTOOL_TEST_DATABASE_URL`. GitHub allocates the host port; only the test step receives the loopback URL for role `bidtool_test` and database `bidtool_test_ci`. The job has a 15-minute timeout and read-only token. Both CI and release call this same workflow; release desktop/artifact/publication jobs require its successful completion, including integration. The PR's required-check settings must also include this new check once its actual displayed name is reviewed; this source change does not configure branch protection.
 
 The runtime gate creates only uniquely named Docker containers, an internal network and a data volume. PostgreSQL and the app have no host port bindings. Cleanup names only that invocation's resources; it does not use production Compose or prune Docker. A second migration run and app restart must succeed. The SQL migration count is compared with the checked-out journal. `/api/health` proves HTTP liveness, not scheduler readiness or application correctness.
 
@@ -38,6 +42,12 @@ Reviewed on 2026-11-03: [CI run 41409160797, attempt 1](https://github.com/iouth
 
 These observations replace the initial lack of image-startup evidence. They do not prove concurrent-project cleanup, scheduler readiness/recovery, browser behavior, document downloads, persistent upgrade, complete restore, native desktop packaging/UI, environment protections or production release/rollback. The Docker build emitted `scheduler_init_failed` and `scheduler_poll_failed` against its placeholder database; those logs are an R6/R8 handoff, not successful recovery evidence. The smoke's cleanup trap ran, but removal errors are suppressed and resource absence was not independently asserted. Vercel and Preview Comments checks also passed; an automatic PR preview does not exercise the protected release workflow.
 
+## R0 integration verification
+
+R0 [PR #28](https://github.com/iouthnamain/bidtoolv3/pull/28), reviewed head `38c56faf1ff0c40626d5940c294580d2a50c72a3`, was merged by the coordinator as `4eb0121d34bade948a2e587d4746c2f222e5ecc1`. That merge was brought into PR #29 through a normal branch merge. The overlapping `ci.yml` job moved into `validate.yml`; R0's fixtures, scripts, package command, Playwright config and Vitest integration exclusion remain unchanged.
+
+Local period-4 verification used Bun 1.3.11 and a new temporary PostgreSQL 16.15 cluster listening on an allocated loopback port, with a uniquely named `bidtool_test_r10_p4_<suffix>` database and role `bidtool_test`. `bun run test:integration` passed both tests: migrations provisioned the required app schema, and two independent connections coordinated transactions against an owned fixture row. Post-test checks found 41 migration rows and no remaining `fixture_%` schemas. The owned cluster was stopped and removed. These tests prove the R0 foundation, not all planned domain failure/concurrency cases or browser E2E. The combined unit suite passed 561 tests / 5 skipped. The earlier runner evidence above predates this integration and does not stand in for a runner execution of the new shared job.
+
 ## Local checks
 
 Use Bun **1.3.11**, matching `packageManager` and every workflow. No live database is needed for the source suite:
@@ -51,6 +61,8 @@ DATABASE_URL=postgres://placeholder:placeholder@localhost:5432/placeholder SKIP_
 bash -n scripts/ci/image-smoke.sh
 actionlint
 ```
+
+Run `bun run test:integration` separately with `BIDTOOL_TEST_DATABASE_URL` set to an owned disposable PostgreSQL 16 database on loopback, using role `bidtool_test` and database name `bidtool_test_<suffix>`. The guard rejects an absent/unsafe URL and never falls back to `DATABASE_URL`. R0's launcher and identity checks remain the prerequisite for mutation browser tests; merging this workflow does not run or establish browser acceptance.
 
 The bundle test runs the real packager against inputs copied into a temporary directory. It never replaces local release outputs or runs backup/restore/install helpers. To reproduce the runtime gate on a disposable Docker host:
 
@@ -73,7 +85,7 @@ These are operator setup steps, not changes made by this PR:
 
 1. Create the GitHub **production** environment before enabling delivery. Require reviewers, prevent self-review, disable administrator bypass where supported, and restrict deployment branches/tags to the reviewed release policy. Environment protection is an external prerequisite; declaring `environment: production` alone does not guarantee approval rules exist.
 2. Store `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` as production environment secrets. All three are required for a full release and rollback. Missing credentials fail before any image or web publication. There is no placeholder deployment URL or successful skip.
-3. Allow the production jobs' `GITHUB_TOKEN` to write repository releases and that repository's GHCR package. Other jobs have only `contents: read`; checkout credentials are not persisted. Set required PR checks to the reusable workflow's quality, runtime and bundle jobs, using their actual names from the first reviewed run.
+3. Allow the production jobs' `GITHUB_TOKEN` to write repository releases and that repository's GHCR package. Other jobs have only `contents: read`; checkout credentials are not persisted. Set required PR checks to the reusable workflow's quality, isolated PostgreSQL integration, runtime and bundle jobs, using their actual names from the first reviewed run.
 4. Keep protected `main`, review requirements and tag creation rights consistent with the release policy. Review the workflow definition at the dispatch ref as well as the target source. Do not approve an unreviewed dispatch workflow merely because its target tag is trusted.
 5. Rehearse on disposable infrastructure and record environment protection, native packages, Vercel CLI and registry evidence before approving production delivery. No remote settings or secrets are configured automatically.
 
@@ -83,7 +95,7 @@ Release and rollback share `bidtool-production-delivery` concurrency with cancel
 
 After merging reviewed code and preparing an authorized existing stable tag, dispatch **Release** with that tag from the reviewed workflow ref. A tag push also starts Release. Do not dispatch just to test this PR.
 
-Review quality, runtime, bundle, both desktop artifacts and their evidence before approving the production environment. Desktop builds set `BIDTOOL_PACKAGE_VERSION`, `BIDTOOL_APP_VERSION`, `BIDTOOL_DEPLOYMENT_SURFACE` and platform build metadata explicitly; the desktop preparation script uses build metadata for the staged package version. The image embeds the version and metadata and labels the full revision. The release manifest carries optional, backward-compatible `commitSha`; new pipeline manifests always set the full SHA.
+Review quality, isolated PostgreSQL integration, runtime, bundle, both desktop artifacts and their evidence before approving the production environment. Desktop builds set `BIDTOOL_PACKAGE_VERSION`, `BIDTOOL_APP_VERSION`, `BIDTOOL_DEPLOYMENT_SURFACE` and platform build metadata explicitly; the desktop preparation script uses build metadata for the staged package version. The image embeds the version and metadata and labels the full revision. The release manifest carries optional, backward-compatible `commitSha`; new pipeline manifests always set the full SHA.
 
 Publication re-fetches the remote tag and checks `HEAD` against the resolved SHA before external writes. It publishes the saved, tested image without rebuilding. Vercel CLI is pinned to 65.9.0; its prebuilt output must exist before image push or deployment. The successful deployment is inspected for READY state, real ID/URL and the exact source/version metadata; only those fields are retained as evidence. Existing release assets and version images are never intentionally overwritten. A failed run may leave a version image or a deployed web build: cross-service publication is not atomic. Investigate partial state and prepare a new reviewed version; do not delete/rewrite tags or clobber assets to force a rerun.
 
@@ -97,7 +109,7 @@ Both targets are inspected before promotion. It promotes the pinned Vercel deplo
 
 ## Integration handoffs and remaining acceptance
 
-- **R0 / PR #28:** unmerged at implementation time; no cherry-pick or stack was made. When integrating its `ci.yml` change, move its PostgreSQL 16 service job into `validate.yml`, give it `inputs.source_sha` checkout, a timeout and `BIDTOOL_TEST_DATABASE_URL` with loopback, role `bidtool_test` and database `bidtool_test_<suffix>`. Run its existing `bun run test:integration` only once its package command/config/fixtures are merged. Make its success a reusable-workflow gate for both PR and release. Preserve its Vitest integration exclusion and owned E2E app/database identity checks. The baseline pipeline deliberately does not call that absent command.
+- **R0 / PR #28:** merged and integrated into `validate.yml` as a required exact-source job for both callers. Its package command/config/fixtures and owned E2E app/database identity checks are preserved. Local PostgreSQL migration/connection tests passed; the new shared GitHub service job still needs its own observed runner result. Extend its test suite with the planned domain failure/concurrency cases as those fixes land.
 - **R8:** extend the reusable gate with controlled browser, transport/filesystem failures, recovered jobs, persistent upgrade/complete restore and extracted desktop-server readiness/document download outside the checkout. Clear `NODE_PATH` and disable global module lookup. Run native NSIS/AppImage/UI and writable-data-path checks on supported runners. Prove two smoke projects coexist and cleanup of one leaves the other/development intact. Current smoke isolates resources by construction but has no recorded concurrent runtime proof. Add a reviewed SearXNG pin in its assigned scope.
 - **R12:** rollback tooling/coordinate source fixes are included here; disposable-registry retag and controlled Vercel rollback rehearsal remain unverified. Existing historical pins with short placeholder digests cannot pass the new gate.
 - **R13:** assembly receipts, checksum validation, saved-image delivery and fail-closed web credentials are included. Complete installed/extracted-artifact runtime, browser/restore and deployment-observation evidence. A file receipt or metadata label must not close F15.

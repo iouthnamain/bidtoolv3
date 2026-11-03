@@ -2,18 +2,14 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test as base, type Page, type Route } from "@playwright/test";
-import dotenv from "dotenv";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import postgres from "postgres";
 
-if (!process.env.CI) {
-  dotenv.config({ path: ".env.local", override: true });
-}
+import { requireTestDatabase } from "../fixtures/remediation/test-target";
+import verifyTestApp from "../fixtures/remediation/verify-app";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl)
-  throw new Error("Thiếu DATABASE_URL cho Material Profile E2E.");
+const databaseUrl = requireTestDatabase();
 const sql = postgres(databaseUrl, { max: 4 });
 
 type ProfileSeed = {
@@ -55,7 +51,7 @@ function serializedDecision(
     acceptedProfileFields: ["name", "imageUrl"],
     editedProfileValues: {
       name: `Máy bơm ${seed.marker}`,
-      imageUrl: "https://example.com/pump.jpg",
+      imageUrl: "https://fixtures.invalid/pump.jpg",
     },
     editedValues: {
       code: seed.code,
@@ -76,7 +72,7 @@ function serializedDecision(
       {
         title: seed.htmlTitle,
         url: seed.htmlUrl,
-        domain: "example.com",
+        domain: "fixtures.invalid",
         snippet: "Trang sản phẩm máy bơm E2E",
         query: seed.marker,
         rankScore: 0.96,
@@ -84,7 +80,7 @@ function serializedDecision(
       {
         title: seed.pdfTitle,
         url: seed.pdfUrl,
-        domain: "example.com",
+        domain: "fixtures.invalid",
         snippet: "Catalog PDF máy bơm E2E",
         query: seed.marker,
         rankScore: 0.9,
@@ -103,9 +99,9 @@ async function createProfileSeed(
   const marker = `E2E-MP-${randomUUID().slice(0, 8)}`;
   const code = marker;
   const sourceFingerprint = `source-${marker}`;
-  const htmlUrl = `https://example.com/${marker}/product`;
-  const pdfUrl = `https://example.com/${marker}/catalog.pdf`;
-  const catalogUrl = `https://example.com/${marker}/approved.pdf`;
+  const htmlUrl = `https://fixtures.invalid/${marker}/product`;
+  const pdfUrl = `https://fixtures.invalid/${marker}/catalog.pdf`;
+  const catalogUrl = `https://fixtures.invalid/${marker}/approved.pdf`;
   const htmlTitle = `Nguồn HTML ${marker}`;
   const pdfTitle = `Catalog PDF ${marker}`;
   const workbook = {
@@ -133,31 +129,33 @@ async function createProfileSeed(
     pdfTitle,
     catalogUrl,
   };
-  const [workspace] = await sql<{ id: number }[]>`
+  return sql.begin(async (tx) => {
+    const [workspace] = await tx<{ id: number }[]>`
     insert into excel_workspaces (
       name, source_sheet_name, row_count, workbook_json
     ) values (
-      ${marker}, 'Sheet1', 1, ${sql.json(workbook)}
+      ${marker}, 'Sheet1', 1, ${tx.json(workbook)}
     ) returning id
   `;
-  if (!workspace) throw new Error("Không seed được workspace E2E.");
-  const decision = serializedDecision(seedWithoutIds, options);
-  const [item] = await sql<{ id: number; updated_at: string }[]>`
+    if (!workspace) throw new Error("Không seed được workspace E2E.");
+    const decision = serializedDecision(seedWithoutIds, options);
+    const [item] = await tx<{ id: number; updated_at: string }[]>`
     insert into excel_workspace_items (
       workspace_id, original_row_index, source_fingerprint, product_name,
       spec_text, unit, unit_price, currency, review_decision_json, match_status
     ) values (
       ${workspace.id}, 2, ${sourceFingerprint}, ${`Máy bơm ${marker}`},
-      'IP68 220V', 'cái', 1250000, 'VND', ${sql.json(decision)}, 'manual'
+      'IP68 220V', 'cái', 1250000, 'VND', ${tx.json(decision)}, 'manual'
     ) returning id, updated_at
   `;
-  if (!item) throw new Error("Không seed được dòng E2E.");
-  return {
-    workspaceId: workspace.id,
-    itemId: item.id,
-    ...seedWithoutIds,
-    itemUpdatedAt: item.updated_at,
-  };
+    if (!item) throw new Error("Không seed được dòng E2E.");
+    return {
+      workspaceId: workspace.id,
+      itemId: item.id,
+      ...seedWithoutIds,
+      itemUpdatedAt: item.updated_at,
+    };
+  });
 }
 
 async function cleanupProfileSeed(seed: ProfileSeed) {
@@ -206,7 +204,7 @@ async function addSecondHtmlSource(seed: ProfileSeed) {
         {
           title: secondTitle,
           url: secondUrl,
-          domain: "example.com",
+          domain: "fixtures.invalid",
           snippet: "Trang sản phẩm phụ E2E",
           query: seed.marker,
           rankScore: 0.92,
@@ -330,7 +328,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
       priceText: "1.250.000 đ",
       currency: "VND",
       sourceUrl: `${seed.htmlUrl}?sku=a`,
-      imageUrl: "https://example.com/pump-a.jpg",
+      imageUrl: "https://fixtures.invalid/pump-a.jpg",
       sku: "A",
       model: "A",
       shopCategory: "Máy bơm",
@@ -347,7 +345,7 @@ async function seedAwaitingProductSelection(seed: ProfileSeed) {
       priceText: "1.350.000 đ",
       currency: "VND",
       sourceUrl: `${seed.htmlUrl}?sku=b`,
-      imageUrl: "https://example.com/pump-b.jpg",
+      imageUrl: "https://fixtures.invalid/pump-b.jpg",
       sku: "B",
       model: "B",
       shopCategory: "Máy bơm",
@@ -404,18 +402,34 @@ const test = base.extend<
   { profileSeed: ProfileSeed },
   { databaseLifecycle: undefined }
 >({
+  context: async ({ context }, provide) => {
+    await context.route("https://fixtures.invalid/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      }),
+    );
+    await provide(context);
+  },
   databaseLifecycle: [
     async ({}, provide) => {
-      await provide(undefined);
-      await sql.end({ timeout: 5 });
+      await verifyTestApp();
+      try {
+        await provide(undefined);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
     },
     { scope: "worker", auto: true },
   ],
   profileSeed: async ({ page }, provide) => {
     const seed = await createProfileSeed({ catalogAttached: true });
-    await provide(seed);
-    await page.close();
-    await cleanupProfileSeed(seed);
+    try {
+      await provide(seed);
+    } finally {
+      await page.close().finally(() => cleanupProfileSeed(seed));
+    }
   },
 });
 
@@ -848,8 +862,7 @@ test("PDF source attaches catalog evidence without invoking AI", async ({
       false,
     );
   } finally {
-    await page.close();
-    await cleanupProfileSeed(seed);
+    await page.close().finally(() => cleanupProfileSeed(seed));
   }
 });
 
@@ -896,8 +909,7 @@ test("changing the selected source does not revert to the first result", async (
       `web:${seed.pdfUrl}`,
     );
   } finally {
-    await page.close();
-    await cleanupProfileSeed(seed);
+    await page.close().finally(() => cleanupProfileSeed(seed));
   }
 });
 
@@ -933,8 +945,7 @@ test("changing a different material does not jump back to the deep-linked first 
     ).toHaveAttribute("aria-pressed", "true");
     await expect(secondRow).toHaveAttribute("aria-pressed", "true");
   } finally {
-    await page.close();
-    await cleanupProfileSeed(seed);
+    await page.close().finally(() => cleanupProfileSeed(seed));
   }
 });
 
@@ -974,8 +985,7 @@ test("two HTML source cards can scrape in parallel", async ({ page }) => {
     releaseRequests();
     await page.unrouteAll({ behavior: "wait" });
   } finally {
-    await page.close();
-    await cleanupProfileSeed(seed);
+    await page.close().finally(() => cleanupProfileSeed(seed));
   }
 });
 
@@ -1195,8 +1205,7 @@ test("persisted scrape retains multiple products and restores separate drafts", 
       expect(item?.review_decision_json.selectedScrapeProductKey).toBeNull();
     });
   } finally {
-    await page.close();
-    await cleanupProfileSeed(seed);
+    await page.close().finally(() => cleanupProfileSeed(seed));
   }
 });
 
