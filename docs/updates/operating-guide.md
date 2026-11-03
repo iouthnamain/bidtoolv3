@@ -86,12 +86,12 @@ When the app shows an update is available:
 2. Copy the update command, for example:
 
    ```bash
-   BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update
+   BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible
    ```
 
 3. Run it **on the host** (SSH or automation), not inside the app container.
 
-The script optionally creates a backup, rewrites `BIDTOOL_APP_IMAGE` in the customer env file, runs `docker compose pull`, and recreates the stack. Migrations run when the new container starts.
+The script requires a complete stopped-app DB-and-file backup, verifies a new data volume, pins the target image, and then recreates only the app. Migrations run when the new container starts. Establish schema compatibility before passing the flag. See [durable storage and recovery](./durable-storage.md) for the first migration, prerequisites and failure handling.
 
 ### Air-gapped on-prem
 
@@ -169,7 +169,7 @@ See [Local development](./local-dev.md) for mock artifact layout and manifest sc
 | Next patch release | `bun run release patch` |
 | Next minor/major | `bun run release minor` / `bun run release major` |
 | Release CLI docs | [release-cli.md](./release-cli.md) |
-| On-prem update | `BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update` |
+| On-prem update | `BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible` |
 | Check version | `curl http://localhost:3000/api/version` |
 | Rollback | GitHub Actions → Rollback workflow |
 | Flow diagrams | [Update flows](./flows.md) |
