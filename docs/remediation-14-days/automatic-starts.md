@@ -8,6 +8,8 @@ A package becomes eligible when its start date has arrived, its prerequisite imp
 
 Dispatch at most two tasks total (initial starts plus resumes) per five-hour period. Start one or two when eligible; zero is correct when blocked. Keep at most two remediation implementation threads active at a time. Count preparing, starting, queued, running and waiting threads as occupying a slot. Read existing threads and PRs before sending a start message. Use the stable per-package request key below so duplicate coordinator delivery cannot launch a second turn. A package already started or with an implementation PR is not a new task. Apply the Sol continuation rules below instead of duplicating its initial start. Never interrupt an active turn or answer a pending approval automatically. Honor later user pauses, cancellations and scope changes before dispatching anything.
 
+An unstarted reserved thread may not yet have its bound worktree on disk. This alone is not a blocker: T3 materializes the preconfigured worktree when that existing thread starts. Verify the binding and setup, and stop if T3 cannot provision it. Never make a substitute checkout in the shell.
+
 Respect the file handoffs in the [delivery schedule](./README.md). In particular, R2 waits for the R1 storage handoff before editing shared storage code. R5 and R11 must agree their shared search/workspace lock contract before either changes the other's files. R14 follows R5, and R6 follows R14. Never start two owners of overlapping files.
 
 ## Sol implementation loop
