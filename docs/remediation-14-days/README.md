@@ -2,7 +2,7 @@
 
 Window: **2026-11-02 through 2026-11-15**, Asia/Ho_Chi_Minh. Day 1 starts now. This is a target schedule; prerequisite failures move dependent work rather than weakening acceptance checks.
 
-The [architecture plan](../architecture-remediation-plan.md) remains the implementation specification for F01–F19. Each package has one GitHub task, an isolated T3 Code thread, and one intended implementation PR, except R8's two planned stages. PRs open when there is reviewable code. Dates do not authorize merges, releases, deployment, or production-data access.
+The [architecture plan](../architecture-remediation-plan.md) remains the implementation specification for F01–F19. Each package has one GitHub task, an isolated T3 Code thread, and one intended implementation PR, except R8's two planned stages. PRs open when there is reviewable code. Dates do not authorize releases, deployment, or production-data access. The user separately authorized coordinator review and merge of qualifying prerequisites on November 3; see the automatic-start rules.
 
 ## Package ownership and PR sequence
 
@@ -68,7 +68,7 @@ All 14 threads belong to the registered BidTool project. Day 1 threads start imp
 - R0 and R7 are the only implementation tasks launched on Day 1. The coordinator owns planning documents and the registry.
 - R1 hands off shared storage files to R2/R3/R11. R2 completes the catalog downloader before R3 changes replacement. R5 hands importer and schema ownership to R14; R14 hands scheduler ownership to R6.
 - R10 owns `release.yml` first. R13 owns it next. R8 builds smoke executables separately, then takes the final workflow gate wiring after R13. R8 smoke scaffolding has no dependency on R13; final R8 closure does. This avoids a circular implementation dependency.
-- Start dependent work only with its prerequisite changes merged, or in an explicit reviewed stack whose parent is available in the task worktree. Nobody merges a dependency to unblock themselves.
+- Start dependent work only with its prerequisite changes merged, or in an explicit reviewed stack whose parent is available in the task worktree. Workers do not merge their own dependencies. The coordinator may merge qualifying prerequisites after review and acceptance verification.
 - Future threads must fetch and inspect current `origin/main` before implementation. Their initial worktree snapshot is not evidence that dependencies exist. Keep branch updates non-destructive; never rewrite a published branch without authorization.
 - One worker owns each listed writable scope. Shared-file changes require a handoff. Workers may report a needed adjacent change but must not edit outside their scope silently.
 - Use focused tests with each fix, then the package acceptance matrix. Keep missing native-platform, database, Docker, registry or browser proof visible. A code-complete PR is not finding closure.
