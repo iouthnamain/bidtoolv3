@@ -34,6 +34,35 @@ jobs:
       - name: Build
         run: bun run build
 
+  integration:
+    name: Isolated PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bidtool_test
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: bidtool_test_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bidtool_test -d bidtool_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BIDTOOL_TEST_DATABASE_URL: postgres://bidtool_test:fixture-only@127.0.0.1:5432/bidtool_test_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Test isolated migrations and concurrent connections
+        run: bun run test:integration
+
   release-scripts:
     name: Validate Release Scripts
     runs-on: ubuntu-latest

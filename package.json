@@ -63,6 +63,7 @@
     "start:mock-update-server": "bun run ./scripts/mock-update-server.ts",
     "start:dev": "bun run dev:run",
     "test": "vitest run",
+    "test:integration": "vitest run --config tests/integration/vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "update": "bun run dev:update"

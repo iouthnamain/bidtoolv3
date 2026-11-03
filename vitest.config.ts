@@ -23,6 +23,7 @@ export default defineConfig({
       SKIP_ENV_VALIDATION: "1",
     },
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "tests/**/*.test.ts"],
+    exclude: ["tests/integration/**"],
     globals: false,
   },
 });
