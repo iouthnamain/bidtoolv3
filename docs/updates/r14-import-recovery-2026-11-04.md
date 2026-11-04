@@ -23,7 +23,7 @@ committed ledger outcomes available to the next recovery attempt.
 - `bun run db:generate` — passed; reviewed `drizzle/0042_sudden_prima.sql`.
 - `bunx vitest run src/server/services/shop-product-importer.test.ts src/server/services/shop-import-jobs.test.ts src/server/services/catalog-pdf-storage.test.ts` — passed (19 tests).
 - `bun run check` — passed.
-- PostgreSQL restart and cancellation integration evidence — unavailable on
-  `lab-1` because `BIDTOOL_TEST_DATABASE_URL` is unset and Docker is not
-  installed. The PR must keep this runtime proof open until an isolated test
-  database is available.
+- Local PostgreSQL migration/runtime evidence was unavailable on `lab-1`
+  because `DATABASE_URL` and `BIDTOOL_TEST_DATABASE_URL` are unset and Docker
+  is not installed. The GitHub Actions isolated PostgreSQL integration for
+  commit `c3fd694` passed on PR #33, including the R14 integration file.
