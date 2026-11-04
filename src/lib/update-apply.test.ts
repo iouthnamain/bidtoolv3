@@ -21,7 +21,7 @@ const idleDesktopState: DesktopUpdateState = {
 };
 
 describe("update apply helpers", () => {
-  it("routes on-prem updates to in-app apply when enabled", () => {
+  it("copies the host command even for a stale status advertising in-app apply", () => {
     expect(
       resolveApplyUpdateAction({
         version: {
@@ -33,7 +33,7 @@ describe("update apply helpers", () => {
         desktopState: null,
         isDesktop: false,
       }),
-    ).toBe("run-onprem");
+    ).toBe("copy-onprem-command");
   });
 
   it("routes on-prem updates to copy command when in-app apply is disabled", () => {
