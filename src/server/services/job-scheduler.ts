@@ -6,6 +6,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "~/server/db";
 import {
   shopImportJobs,
+  shopImportItems,
   shopScrapeJobs,
   excelResearchJobs,
   materialEnrichmentJobs,
@@ -609,6 +610,7 @@ async function runImportJob(job: ShopImportJobRow) {
     const products = await loadProductsForImportJob(job);
     const result = await importScrapedProducts(db, products, {
       signal: controller.signal,
+      importJobId: job.id,
       scrapeJobId: job.scrapeJobId,
       mode: job.productSourceUrls === null ? "create_all" : "match_existing",
       onProgress: (progress) => {
@@ -1218,17 +1220,6 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(shopScrapeJobs.status, "running")),
     db
-      .update(shopImportJobs)
-      .set({
-        status: "queued",
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: null,
-        lastProgressAt: now,
-        updatedAt: now,
-      })
-      .where(eq(shopImportJobs.status, "running")),
-    db
       .update(materialEnrichmentJobs)
       .set({
         status: "queued",
@@ -1264,6 +1255,61 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(materialProfileSearchRuns.status, "running")),
   ]);
+  await recoverInterruptedImportJobs(now);
+}
+
+async function recoverInterruptedImportJobs(now: string) {
+  const jobs = await db
+    .select({ id: shopImportJobs.id })
+    .from(shopImportJobs)
+    .where(eq(shopImportJobs.status, "running"));
+
+  for (const job of jobs) {
+    const [ledger] = await db
+      .select({ id: shopImportItems.id })
+      .from(shopImportItems)
+      .where(eq(shopImportItems.importJobId, job.id))
+      .limit(1);
+
+    if (!ledger) {
+      await db
+        .update(shopImportJobs)
+        .set({
+          status: "failed",
+          currentProductName: null,
+          currentSourceUrl: null,
+          error:
+            "Job nhập bị gián đoạn trước khi có sổ kiểm kê; không tự động chạy lại để tránh tạo trùng. Hãy tạo một job nhập mới.",
+          finishedAt: now,
+          lastProgressAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(shopImportJobs.id, job.id),
+            eq(shopImportJobs.status, "running"),
+          ),
+        );
+      continue;
+    }
+
+    await db
+      .update(shopImportJobs)
+      .set({
+        status: "queued",
+        currentProductName: null,
+        currentSourceUrl: null,
+        error: null,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(shopImportJobs.id, job.id),
+          eq(shopImportJobs.status, "running"),
+        ),
+      );
+  }
 }
 
 async function cleanupExpiredJobs() {
@@ -1408,4 +1454,9 @@ export const runJobSchedulerTickForTests = traceFn(
   log,
   "runJobSchedulerTickForTests",
   _runJobSchedulerTickForTests,
+);
+export const recoverInterruptedImportJobsForTests = traceFn(
+  log,
+  "recoverInterruptedImportJobsForTests",
+  recoverInterruptedImportJobs,
 );
