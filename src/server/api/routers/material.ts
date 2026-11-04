@@ -41,6 +41,7 @@ import {
 import { attachCatalogPdfUrlsToMaterial } from "~/server/services/catalog-documents";
 import {
   buildMaterialMetadata,
+  mergeMaterialMetadata,
   MATERIAL_FIELD_LOCK_KEYS,
   normalizeMaterialMetadata,
   type MaterialFieldLockKey,
@@ -53,6 +54,10 @@ import {
   getActiveMaterialById,
   requireUpdatedMaterial,
 } from "~/server/api/routers/material/records";
+import {
+  lockMaterialForUpdate,
+  updateLockedMaterial,
+} from "~/server/services/material-write";
 import { shopJobProcedures } from "~/server/api/routers/material/shop-jobs";
 import { selectWorkbookSheet } from "~/server/api/routers/material/workbook";
 
@@ -549,6 +554,7 @@ export const materialRouter = createTRPCRouter({
           currency: materials.currency,
           sourceUrl: materials.sourceUrl,
           metadataJson: materials.metadataJson,
+          revision: materials.revision,
           updatedAt: materials.updatedAt,
         })
         .from(materials)
@@ -684,6 +690,7 @@ export const materialRouter = createTRPCRouter({
           defaultUnitPrice: materials.defaultUnitPrice,
           currency: materials.currency,
           sourceUrl: materials.sourceUrl,
+          revision: materials.revision,
         })
         .from(materials)
         .where(and(...materialFilterConditions(input)))
@@ -754,24 +761,29 @@ export const materialRouter = createTRPCRouter({
       z.object({
         id: z.number().int().positive().optional(),
         patch: materialInput,
+        expectedRevision: z.number().int().nonnegative().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const now = new Date().toISOString();
       const catalogPdfUrls = input.patch.catalogPdfUrls ?? [];
       if (input.id) {
-        await assertMaterialCodeAvailable(ctx.db, input.patch.code, input.id);
-        const [updated] = await ctx.db
-          .update(materials)
-          .set(materialUpdateValues(input.patch, now))
-          .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
-          .returning();
-        if (!updated) {
+        if (input.expectedRevision === undefined) {
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Không tìm thấy vật tư.",
+            code: "BAD_REQUEST",
+            message: "Thiếu phiên bản vật tư để kiểm tra dữ liệu cũ.",
           });
         }
+        await assertMaterialCodeAvailable(ctx.db, input.patch.code, input.id);
+        const updated = await ctx.db.transaction(async (tx) => {
+          const current = await lockMaterialForUpdate(tx, input.id!);
+          return updateLockedMaterial(
+            tx,
+            current,
+            materialUpdateValues(input.patch, now),
+            { expectedRevision: input.expectedRevision, now },
+          );
+        });
         if (catalogPdfUrls.length > 0) {
           try {
             await attachCatalogPdfUrlsToMaterial(
@@ -822,38 +834,32 @@ export const materialRouter = createTRPCRouter({
       z.object({
         id: z.number().int().positive(),
         patch: materialInput.partial(),
+        expectedRevision: z.number().int().nonnegative(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const patch = input.patch;
       await assertMaterialCodeAvailable(ctx.db, patch.code, input.id);
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          ...patch,
-          code: patch.code === "" ? null : patch.code,
-          category: patch.category === "" ? null : patch.category,
-          manufacturer: patch.manufacturer === "" ? null : patch.manufacturer,
-          originCountry:
-            patch.originCountry === "" ? null : patch.originCountry,
-          defaultUnitPrice:
-            patch.defaultUnitPrice === undefined
-              ? undefined
-              : patch.defaultUnitPrice,
-          sourceUrl: patch.sourceUrl === "" ? null : patch.sourceUrl,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
-        .returning();
-
-      if (!updated) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy vật tư.",
-        });
-      }
-
-      return updated;
+      const now = new Date().toISOString();
+      const { catalogPdfUrls: _catalogPdfUrls, ...materialPatch } = patch;
+      void _catalogPdfUrls;
+      return ctx.db.transaction(async (tx) => {
+        const current = await lockMaterialForUpdate(tx, input.id);
+        return updateLockedMaterial(
+          tx,
+          current,
+          {
+            ...materialPatch,
+            code: patch.code === "" ? null : patch.code,
+            category: patch.category === "" ? null : patch.category,
+            manufacturer: patch.manufacturer === "" ? null : patch.manufacturer,
+            originCountry:
+              patch.originCountry === "" ? null : patch.originCountry,
+            sourceUrl: patch.sourceUrl === "" ? null : patch.sourceUrl,
+          },
+          { expectedRevision: input.expectedRevision, now },
+        );
+      });
     }),
 
   setMaterialFieldLocks: requirePermission("material:write")
@@ -861,67 +867,47 @@ export const materialRouter = createTRPCRouter({
       z.object({
         id: z.number().int().positive(),
         fieldLocks: z.record(z.string(), z.boolean()),
+        expectedRevision: z.number().int().nonnegative(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const material = await getActiveMaterialById(ctx.db, input.id);
-      const metadata = normalizeMaterialMetadata(material.metadataJson);
-      const nextLocks = { ...metadata.fieldLocks };
-      for (const [key, value] of Object.entries(input.fieldLocks)) {
-        if (!MATERIAL_FIELD_LOCK_KEYS.includes(key as MaterialFieldLockKey)) {
-          continue;
+      return ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.id);
+        const metadata = normalizeMaterialMetadata(material.metadataJson);
+        const nextLocks = { ...metadata.fieldLocks };
+        for (const [key, value] of Object.entries(input.fieldLocks)) {
+          if (!MATERIAL_FIELD_LOCK_KEYS.includes(key as MaterialFieldLockKey)) {
+            continue;
+          }
+          if (value) {
+            nextLocks[key as keyof typeof nextLocks] = true;
+          } else {
+            delete nextLocks[key as keyof typeof nextLocks];
+          }
         }
-        if (value) {
-          nextLocks[key as keyof typeof nextLocks] = true;
-        } else {
-          delete nextLocks[key as keyof typeof nextLocks];
-        }
-      }
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          metadataJson: buildMaterialMetadata({
-            priceSources: metadata.priceSources,
-            shopScrape: metadata.shopScrape,
-            webEnrichment: metadata.webEnrichment,
-            fieldLocks:
-              Object.keys(nextLocks).length > 0 ? nextLocks : undefined,
-          }),
-          updatedAt: new Date().toISOString(),
-        })
-        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
-        .returning();
-
-      if (!updated) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy vật tư.",
-        });
-      }
-
-      return updated;
+        return updateLockedMaterial(
+          tx,
+          material,
+          {
+            metadataJson: mergeMaterialMetadata(material.metadataJson, {
+              fieldLocks:
+                Object.keys(nextLocks).length > 0 ? nextLocks : undefined,
+            }),
+          },
+          { expectedRevision: input.expectedRevision },
+        );
+      });
     }),
 
   deleteMaterial: requirePermission("material:delete")
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
+      await ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.id);
+        await updateLockedMaterial(tx, material, {
           deletedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .where(and(eq(materials.id, input.id), isNull(materials.deletedAt)))
-        .returning({ id: materials.id });
-
-      if (!updated) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy vật tư.",
         });
-      }
-
+      });
       return { success: true };
     }),
 
@@ -971,13 +957,12 @@ export const materialRouter = createTRPCRouter({
       const now = new Date().toISOString();
       const patch = input.patch;
       const setValues: {
-        updatedAt: string;
         category?: string | null;
         manufacturer?: string | null;
         originCountry?: string | null;
         defaultUnitPrice?: number | null;
         currency?: string;
-      } = { updatedAt: now };
+      } = {};
 
       if (patch.category !== undefined) {
         setValues.category = patch.category || null;
@@ -995,13 +980,23 @@ export const materialRouter = createTRPCRouter({
         setValues.currency = patch.currency;
       }
 
-      const updated = await ctx.db
-        .update(materials)
-        .set(setValues)
-        .where(
-          and(inArray(materials.id, input.ids), isNull(materials.deletedAt)),
-        )
-        .returning({ id: materials.id });
+      const updated = await ctx.db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(materials)
+          .where(
+            and(inArray(materials.id, input.ids), isNull(materials.deletedAt)),
+          )
+          .orderBy(asc(materials.id))
+          .for("update");
+        const rows = [];
+        for (const material of locked) {
+          rows.push(
+            await updateLockedMaterial(tx, material, setValues, { now }),
+          );
+        }
+        return rows;
+      });
 
       return { count: updated.length };
     }),
@@ -1165,11 +1160,26 @@ export const materialRouter = createTRPCRouter({
       // by the `material:delete` permission, which is the governance boundary.
       const ids = Array.from(new Set(input.ids));
       const now = new Date().toISOString();
-      const updated = await ctx.db
-        .update(materials)
-        .set({ deletedAt: now, updatedAt: now })
-        .where(and(inArray(materials.id, ids), isNull(materials.deletedAt)))
-        .returning({ id: materials.id });
+      const updated = await ctx.db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(materials)
+          .where(and(inArray(materials.id, ids), isNull(materials.deletedAt)))
+          .orderBy(asc(materials.id))
+          .for("update");
+        const rows = [];
+        for (const material of locked) {
+          rows.push(
+            await updateLockedMaterial(
+              tx,
+              material,
+              { deletedAt: now },
+              { now },
+            ),
+          );
+        }
+        return rows;
+      });
       return { count: updated.length };
     }),
 

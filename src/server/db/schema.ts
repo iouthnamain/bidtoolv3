@@ -458,6 +458,7 @@ export const materials = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
+    revision: integer("revision").notNull().default(0),
     deletedAt: timestamp("deleted_at", { mode: "string", withTimezone: true }),
     createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
       .notNull()

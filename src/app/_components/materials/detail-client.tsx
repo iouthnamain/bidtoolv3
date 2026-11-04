@@ -570,9 +570,10 @@ export function MaterialDetailClient({
       setMaterialFieldLocks.mutate({
         id,
         fieldLocks: { [field]: locked },
+        expectedRevision: materialQuery.data?.revision ?? 0,
       });
     },
-    [id, setMaterialFieldLocks],
+    [id, materialQuery.data?.revision, setMaterialFieldLocks],
   );
 
   const deleteMaterial = api.material.deleteMaterial.useMutation({
@@ -811,6 +812,7 @@ export function MaterialDetailClient({
       setActionError(null);
       updateMaterial.mutate({
         id,
+        expectedRevision: material?.revision ?? 0,
         patch: {
           code: form.code || "",
           name: form.name.trim(),
@@ -825,7 +827,7 @@ export function MaterialDetailClient({
         },
       });
     },
-    [canSave, form, id, updateMaterial],
+    [canSave, form, id, material?.revision, updateMaterial],
   );
 
   useEffect(() => {

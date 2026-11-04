@@ -47,6 +47,7 @@ import {
   materialProfileDecisionForItem,
   materialProfileDecisionsForItems,
 } from "~/server/services/material-profile-review-decisions";
+import { updateLockedMaterial } from "~/server/services/material-write";
 
 const MAX_BATCH_ITEMS = 500;
 const HISTORY_LIMIT = 100;
@@ -1228,47 +1229,37 @@ async function commitGroup(batch: Batch, rows: BatchRow[]) {
           .returning();
         savedTarget = created ?? null;
       } else if (target) {
-        const existingMetadata =
-          target.metadataJson && typeof target.metadataJson === "object"
-            ? target.metadataJson
-            : {};
-        const [updated] = await tx
-          .update(materials)
-          .set({
-            ...(batch.overwriteScope === "selected"
-              ? selectedSingleUpdateValues(
-                  current.proposal,
-                  current.decision,
-                  batch.workspaceId,
-                  winner.workspaceItemId,
-                  now,
-                )
-              : materialValues(
-                  current.proposal,
-                  batch.workspaceId,
-                  winner.workspaceItemId,
-                  now,
-                )),
+        const patch =
+          batch.overwriteScope === "selected"
+            ? selectedSingleUpdateValues(
+                current.proposal,
+                current.decision,
+                batch.workspaceId,
+                winner.workspaceItemId,
+                now,
+              )
+            : materialValues(
+                current.proposal,
+                batch.workspaceId,
+                winner.workspaceItemId,
+                now,
+              );
+        savedTarget = await updateLockedMaterial(
+          tx,
+          target,
+          {
+            ...patch,
             metadataJson: {
-              ...existingMetadata,
+              ...(target.metadataJson ?? {}),
               materialProfile: {
                 workspaceId: batch.workspaceId,
                 itemId: winner.workspaceItemId,
                 savedAt: now,
               },
             },
-          })
-          .where(
-            and(
-              eq(materials.id, target.id),
-              eq(materials.updatedAt, winner.expectedTargetUpdatedAt!),
-              isNull(materials.deletedAt),
-            ),
-          )
-          .returning();
-        savedTarget = updated ?? null;
-        if (!savedTarget)
-          throw new Error("Vật tư đích đã thay đổi sau khi tạo bản xem trước.");
+          },
+          { now },
+        );
       }
       if (!savedTarget) throw new Error("Không tạo được vật tư.");
       await attachCatalogUrls(tx, savedTarget.id, current.proposal);
@@ -1782,7 +1773,7 @@ export async function undoMaterialProfileSaveBatch(
     try {
       await db.transaction(async (tx) => {
         const [lockedMaterial] = await tx
-          .select({ updatedAt: materials.updatedAt })
+          .select()
           .from(materials)
           .where(eq(materials.id, materialId))
           .limit(1)
@@ -1859,51 +1850,38 @@ export async function undoMaterialProfileSaveBatch(
             .where(eq(excelWorkspaceItems.id, row.workspaceItemId));
         }
         if (snapshot) {
-          await tx
-            .update(materials)
-            .set({
-              code: typeof snapshot.code === "string" ? snapshot.code : null,
-              name: trimmed(snapshot.name),
-              unit: trimmed(snapshot.unit),
-              category:
-                typeof snapshot.category === "string"
-                  ? snapshot.category
-                  : null,
-              specText: trimmed(snapshot.specText),
-              manufacturer:
-                typeof snapshot.manufacturer === "string"
-                  ? snapshot.manufacturer
-                  : null,
-              originCountry:
-                typeof snapshot.originCountry === "string"
-                  ? snapshot.originCountry
-                  : null,
-              defaultUnitPrice:
-                typeof snapshot.defaultUnitPrice === "number"
-                  ? snapshot.defaultUnitPrice
-                  : null,
-              currency: trimmed(snapshot.currency) || "VND",
-              sourceUrl:
-                typeof snapshot.sourceUrl === "string"
-                  ? snapshot.sourceUrl
-                  : null,
-              imageUrl:
-                typeof snapshot.imageUrl === "string"
-                  ? snapshot.imageUrl
-                  : null,
-              metadataJson: snapshotRecord(snapshot.metadataJson) ?? {},
-              deletedAt:
-                typeof snapshot.deletedAt === "string"
-                  ? snapshot.deletedAt
-                  : null,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(
-              and(
-                eq(materials.id, materialId),
-                eq(materials.updatedAt, version),
-              ),
-            );
+          await updateLockedMaterial(tx, lockedMaterial!, {
+            code: typeof snapshot.code === "string" ? snapshot.code : null,
+            name: trimmed(snapshot.name),
+            unit: trimmed(snapshot.unit),
+            category:
+              typeof snapshot.category === "string" ? snapshot.category : null,
+            specText: trimmed(snapshot.specText),
+            manufacturer:
+              typeof snapshot.manufacturer === "string"
+                ? snapshot.manufacturer
+                : null,
+            originCountry:
+              typeof snapshot.originCountry === "string"
+                ? snapshot.originCountry
+                : null,
+            defaultUnitPrice:
+              typeof snapshot.defaultUnitPrice === "number"
+                ? snapshot.defaultUnitPrice
+                : null,
+            currency: trimmed(snapshot.currency) || "VND",
+            sourceUrl:
+              typeof snapshot.sourceUrl === "string"
+                ? snapshot.sourceUrl
+                : null,
+            imageUrl:
+              typeof snapshot.imageUrl === "string" ? snapshot.imageUrl : null,
+            metadataJson: snapshotRecord(snapshot.metadataJson) ?? {},
+            deletedAt:
+              typeof snapshot.deletedAt === "string"
+                ? snapshot.deletedAt
+                : null,
+          });
           await tx
             .delete(materialCatalogDocumentLinks)
             .where(eq(materialCatalogDocumentLinks.materialId, materialId));
@@ -1945,18 +1923,9 @@ export async function undoMaterialProfileSaveBatch(
           await tx
             .delete(materialCatalogDocumentLinks)
             .where(eq(materialCatalogDocumentLinks.materialId, materialId));
-          await tx
-            .update(materials)
-            .set({
-              deletedAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            })
-            .where(
-              and(
-                eq(materials.id, materialId),
-                eq(materials.updatedAt, version),
-              ),
-            );
+          await updateLockedMaterial(tx, lockedMaterial!, {
+            deletedAt: new Date().toISOString(),
+          });
         }
       });
       restored += group.length;
