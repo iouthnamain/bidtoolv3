@@ -2,7 +2,10 @@ import "server-only";
 
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
-import { buildFillPlan, type FillableField } from "~/lib/materials/excel-enrich-fields";
+import {
+  buildFillPlan,
+  type FillableField,
+} from "~/lib/materials/excel-enrich-fields";
 import { resolveEnrichmentFieldProposal } from "~/lib/materials/material-enrichment-commit-decision";
 import {
   ENRICHABLE_FIELDS,
@@ -12,10 +15,11 @@ import {
   type MaterialEnrichmentResult,
 } from "~/lib/materials/material-enrichment-types";
 import {
-  buildMaterialMetadata,
+  mergeMaterialMetadata,
   normalizeMaterialMetadata,
   type MaterialFieldLockKey,
 } from "~/lib/material-price-sources";
+import { updateLockedMaterial } from "~/server/services/material-write";
 import type { db as appDb } from "~/server/db";
 import {
   materialEnrichmentEvents,
@@ -86,7 +90,9 @@ function trimmedOrEmpty(value: string | null | undefined) {
  * column expects. Returns null when no sensible positive number can be derived,
  * so commit never zeroes out an existing price.
  */
-function _parseEnrichmentPrice(value: string | null | undefined): number | null {
+function _parseEnrichmentPrice(
+  value: string | null | undefined,
+): number | null {
   if (value == null) {
     return null;
   }
@@ -199,7 +205,10 @@ function _buildMaterialUpdatePlan(
     }
 
     if (
-      (field === "category" || field === "manufacturer" || field === "originCountry" || field === "unit") &&
+      (field === "category" ||
+        field === "manufacturer" ||
+        field === "originCountry" ||
+        field === "unit") &&
       cell.action === "filled" &&
       cell.after
     ) {
@@ -290,8 +299,11 @@ async function _commitEnrichmentItem(
     const [material] = await tx
       .select()
       .from(materials)
-      .where(and(eq(materials.id, item.materialId), isNull(materials.deletedAt)))
-      .limit(1);
+      .where(
+        and(eq(materials.id, item.materialId), isNull(materials.deletedAt)),
+      )
+      .limit(1)
+      .for("update");
 
     if (!material) {
       throw new Error("Không tìm thấy vật tư để cập nhật.");
@@ -312,7 +324,8 @@ async function _commitEnrichmentItem(
       .from(materialEnrichmentJobs)
       .where(eq(materialEnrichmentJobs.id, item.jobId))
       .limit(1);
-    const jobOptions = (jobRow?.optionsJson ?? {}) as MaterialEnrichmentJobOptions;
+    const jobOptions = (jobRow?.optionsJson ??
+      {}) as MaterialEnrichmentJobOptions;
     // `generatePdfIfMissing` only governs *generating* a PDF when none was
     // found (handled after the transaction). Discovered PDFs are always
     // attached — that has always been the behaviour and is independent of the
@@ -327,7 +340,12 @@ async function _commitEnrichmentItem(
       }
       const extracted = result.fields[field];
       const existing = materialFieldValue(material, field);
-      const nextValue = applyLockedFillEmptyField(locks, field, existing, proposed);
+      const nextValue = applyLockedFillEmptyField(
+        locks,
+        field,
+        existing,
+        proposed,
+      );
       if (nextValue === undefined) {
         continue;
       }
@@ -393,14 +411,20 @@ async function _commitEnrichmentItem(
     }
 
     if (Object.keys(update).length > 0) {
-      await tx
-        .update(materials)
-        .set({
+      await updateLockedMaterial(
+        tx,
+        material,
+        {
           ...update,
-          metadataJson: buildMaterialMetadata(metadata),
-          updatedAt: now,
-        })
-        .where(eq(materials.id, material.id));
+          metadataJson: mergeMaterialMetadata(material.metadataJson, {
+            priceSources: metadata.priceSources,
+            shopScrape: metadata.shopScrape,
+            webEnrichment: metadata.webEnrichment,
+            fieldLocks: metadata.fieldLocks,
+          }),
+        },
+        { now },
+      );
     }
 
     let pdfWasDiscovered = false;
@@ -415,7 +439,10 @@ async function _commitEnrichmentItem(
         {
           sourceType: "detected",
           linkSource: "manual",
-          supplier: result.fields.manufacturer?.matchedOption ?? result.fields.manufacturer?.value ?? material.manufacturer,
+          supplier:
+            result.fields.manufacturer?.matchedOption ??
+            result.fields.manufacturer?.value ??
+            material.manufacturer,
         },
       );
       pdfWasDiscovered = attached.documentIds.length > 0;
@@ -565,6 +592,18 @@ async function maybeGenerateCatalogPdf(
   }
 }
 
-export const parseEnrichmentPrice = traceFn(log, "parseEnrichmentPrice", _parseEnrichmentPrice);
-export const buildMaterialUpdatePlan = traceFn(log, "buildMaterialUpdatePlan", _buildMaterialUpdatePlan);
-export const commitEnrichmentItem = traceFn(log, "commitEnrichmentItem", _commitEnrichmentItem);
+export const parseEnrichmentPrice = traceFn(
+  log,
+  "parseEnrichmentPrice",
+  _parseEnrichmentPrice,
+);
+export const buildMaterialUpdatePlan = traceFn(
+  log,
+  "buildMaterialUpdatePlan",
+  _buildMaterialUpdatePlan,
+);
+export const commitEnrichmentItem = traceFn(
+  log,
+  "commitEnrichmentItem",
+  _commitEnrichmentItem,
+);

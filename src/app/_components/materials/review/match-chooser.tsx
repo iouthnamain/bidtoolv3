@@ -1571,6 +1571,8 @@ export function MatchChooser({
     upsertMaterial.mutate(
       {
         id: selectedId ?? undefined,
+        expectedRevision:
+          selectedId != null ? selectedCandidate?.revision : undefined,
         patch: {
           name,
           unit,

@@ -66,6 +66,45 @@ export type MaterialMetadata = {
   fieldLocks?: Partial<Record<MaterialFieldLockKey, boolean>>;
 };
 
+type MaterialMetadataPatch = Partial<MaterialMetadata> &
+  Partial<
+    Pick<MaterialMetadata, "shopScrape" | "webEnrichment" | "fieldLocks">
+  >;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Replace only metadata owned by a writer while retaining profile provenance
+ * and keys introduced by newer writers. Normalization is deliberately kept at
+ * the boundary where a writer reads its own fields.
+ */
+export function mergeMaterialMetadata(
+  raw: unknown,
+  patch: MaterialMetadataPatch,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = isRecord(raw) ? { ...raw } : {};
+
+  if (patch.priceSources !== undefined) {
+    result.priceSources = patch.priceSources;
+  }
+  if ("shopScrape" in patch) {
+    if (patch.shopScrape === undefined) delete result.shopScrape;
+    else result.shopScrape = patch.shopScrape;
+  }
+  if ("webEnrichment" in patch) {
+    if (patch.webEnrichment === undefined) delete result.webEnrichment;
+    else result.webEnrichment = patch.webEnrichment;
+  }
+  if ("fieldLocks" in patch) {
+    if (patch.fieldLocks === undefined) delete result.fieldLocks;
+    else result.fieldLocks = patch.fieldLocks;
+  }
+
+  return result;
+}
+
 export function normalizePriceSource(
   value: unknown,
 ): MaterialPriceSource | null {

@@ -7,6 +7,7 @@ const log = createLogger("services-material-price-sources");
 
 export {
   buildMaterialMetadata,
+  mergeMaterialMetadata,
   MATERIAL_FIELD_LOCK_KEYS,
   normalizeMaterialMetadata,
 } from "~/lib/material-price-sources";
@@ -145,4 +146,8 @@ function isPrivateIpv4(address: string) {
   );
 }
 
-export const fetchPriceFromUrl = traceFn(log, "fetchPriceFromUrl", _fetchPriceFromUrl);
+export const fetchPriceFromUrl = traceFn(
+  log,
+  "fetchPriceFromUrl",
+  _fetchPriceFromUrl,
+);

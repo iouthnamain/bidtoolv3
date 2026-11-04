@@ -21,6 +21,10 @@ import {
   type MaterialMetadata,
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
+import {
+  lockMaterialForUpdate,
+  updateLockedMaterial,
+} from "~/server/services/material-write";
 import type {
   ShopImportJobItem,
   ShopImportJobProgress,
@@ -348,17 +352,11 @@ async function _applyScrapedProductToMaterial(
   product: ScrapedShopProduct,
 ): Promise<MaterialRow> {
   const now = new Date().toISOString();
-  const mergedValues = computeMergedMaterialValues(material, product, now);
-  const [row] = await db
-    .update(materials)
-    .set({
-      ...mergedValues,
-      updatedAt: now,
-    })
-    .where(and(eq(materials.id, material.id), isNull(materials.deletedAt)))
-    .returning();
-
-  const updatedRow = requireUpdatedMaterial(row);
+  const updatedRow = await db.transaction(async (tx) => {
+    const current = await lockMaterialForUpdate(tx, material.id);
+    const mergedValues = computeMergedMaterialValues(current, product, now);
+    return updateLockedMaterial(tx, current, mergedValues, { now });
+  });
   await linkScrapedCatalogPdfs(db, updatedRow.id, product);
   return updatedRow;
 }

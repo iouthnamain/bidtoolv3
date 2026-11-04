@@ -26,6 +26,7 @@ function reviewRow(overrides: Partial<ReviewRow> = {}): ReviewRow {
     candidates: [],
     topCandidate: {
       materialId: 10,
+      revision: 0,
       name: "Ống thép mạ kẽm DN50",
       code: "VT-001",
       unit: "m",
