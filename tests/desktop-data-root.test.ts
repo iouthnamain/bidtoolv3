@@ -74,6 +74,11 @@ test("explicit data root bypasses desktop migration", async () => {
   expect(prepare(serverDir)).toBe(path.join(root, "explicit"));
   expect(fs.existsSync(userData)).toBe(false);
 });
+test("desktop defaults to userData even with no legacy files", async () => {
+  const { userData, serverDir, prepare } = await setup();
+  await rm(path.join(serverDir, "data"), { recursive: true });
+  expect(prepare(serverDir)).toBe(path.join(userData, "data"));
+});
 test("conflicting destination or copy failure preserves the old bytes and blocks start", async () => {
   const fixture = await setup();
   await mkdir(path.join(fixture.userData, "data"), { recursive: true });

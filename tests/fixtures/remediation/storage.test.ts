@@ -221,6 +221,48 @@ test.each(["stop", "pg_restore", "run"])(
   },
 );
 
+test.each(["backup", "update", "restore"])(
+  "%s stop failure forbids SQL, copies, migration, replacement and start",
+  async (operation) => {
+    const fake = await createStorageDocker();
+    try {
+      const directory = await bundle(fake);
+      await writeFile(path.join(fake.dir, "commands.jsonl"), "");
+      const result = await script(
+        fake,
+        operation,
+        operation === "restore"
+          ? [directory]
+          : operation === "update"
+            ? ["--schema-compatible"]
+            : [],
+        { FAKE_DOCKER_FAIL: "stop" },
+      );
+      expect(result.code).toBe(23);
+      const commands = await fake.commands();
+      expect(commands.some((args) => args.includes("stop"))).toBe(true);
+      expect(
+        commands.some((args) =>
+          args.some((arg) =>
+            [
+              "psql",
+              "pg_dump",
+              "pg_restore",
+              "createdb",
+              "cp",
+              "run",
+              "up",
+              "start",
+            ].includes(arg),
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      await fake.cleanup();
+    }
+  },
+);
+
 test("update copies old bytes and publishes a complete bundle before any replacement", async () => {
   const fake = await createStorageDocker();
   try {
@@ -261,6 +303,22 @@ test("a stopped app stays stopped after backup", async () => {
     await fake.saveState();
     await bundle(fake);
     expect(starts(await fake.commands())).toHaveLength(0);
+  } finally {
+    await fake.cleanup();
+  }
+});
+
+test("update reuses a pinned local immutable image without a registry pull", async () => {
+  const fake = await createStorageDocker("pull");
+  try {
+    fake.state.config.services.app.image = fake.state.image;
+    await fake.saveState();
+    const result = await script(fake, "update", ["--schema-compatible"]);
+    expect(result, result.output).toMatchObject({ code: 0 });
+    const commands = await fake.commands();
+    expect(commands.some((args) => args[0] === "pull")).toBe(false);
+    expect(commands.some((args) => args[0] === "image")).toBe(true);
+    expect(commands.some((args) => args.includes("up"))).toBe(true);
   } finally {
     await fake.cleanup();
   }

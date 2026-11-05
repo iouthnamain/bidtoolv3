@@ -648,8 +648,9 @@ try {
       const image = process.env.BIDTOOL_IMAGE_TAG
         ? `ghcr.io/iouthnamain/bidtoolv3:${process.env.BIDTOOL_IMAGE_TAG}`
         : config.services.app.image;
-      // Pulling an image never recreates the preserved old container.
-      run(["pull", image]);
+      // A prior successful operation pins a local image ID. It is already
+      // immutable and cannot be pulled from a registry (also supports air gaps).
+      if (!/^sha256:[a-f0-9]{64}$/.test(image)) run(["pull", image]);
       verifyTargetPaths(result.manifest.database, result.manifest.paths);
       const targetImage = imageId(image);
       const volume = initializeVolume(result.directory, targetImage);
