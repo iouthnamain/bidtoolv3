@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
@@ -51,6 +51,11 @@ import {
   type MaterialProfileSearchJobProgress,
 } from "~/server/services/material-profile-search-jobs";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import {
+  markSchedulerPollFailed,
+  markSchedulerPollSucceeded,
+  setSchedulerState,
+} from "~/server/services/scheduler-state";
 
 const log = createLogger("job-scheduler");
 
@@ -61,6 +66,17 @@ type MaterialProfileSearchJobRow =
   typeof materialProfileSearchJobs.$inferSelect;
 type TimerHandle = ReturnType<typeof setInterval>;
 
+export function cancelledImportRecoveryPatch(
+  status: string,
+  progress: ShopImportJobProgress | null,
+  now: string,
+) {
+  if (status !== "cancelled" || !progress) {
+    return null;
+  }
+  return { ...progress, updatedAt: now };
+}
+
 const SCHEDULER_POLL_MS = 1_000;
 const PROGRESS_WRITE_MS = 2_000;
 const CLEANUP_POLL_MS = 60 * 60_000;
@@ -70,41 +86,43 @@ const activeEnrichmentRuns = new Map<string, AbortController>();
 const activeMaterialProfileSearchRuns = new Map<string, AbortController>();
 const activeExcelResearchRuns = new Set<string>();
 
-let schedulerStarted = false;
+// R6 assumes one scheduler owner for this database. Durable leases and
+// multi-owner coordination need a separate design before another worker starts
+// claiming the same queue.
+const STARTUP_RETRY_INITIAL_MS = 1_000;
+const STARTUP_RETRY_MAX_MS = 30_000;
+let schedulerEnabled = false;
 let pollTimer: TimerHandle | null = null;
 let cleanupTimer: TimerHandle | null = null;
 let pollInFlight = false;
+let startupAttempt: Promise<void> | null = null;
+let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let startupRetryCount = 0;
 
 function _startJobScheduler() {
-  if (schedulerStarted) {
+  if (!hasDatabaseUrl() || isServerlessRuntime()) {
+    setSchedulerState("disabled");
     return;
   }
-  if (!hasDatabaseUrl() || isServerlessRuntime()) {
+  if (schedulerEnabled || startupAttempt || startupRetryTimer) {
     return;
   }
 
-  schedulerStarted = true;
-  log.info("scheduler_started", {
-    pollIntervalMs: SCHEDULER_POLL_MS,
-    cleanupIntervalMs: CLEANUP_POLL_MS,
-  });
-  void initializeScheduler();
-  pollTimer = setInterval(() => {
-    void pollScheduler();
-  }, SCHEDULER_POLL_MS);
-  cleanupTimer = setInterval(() => {
-    void cleanupExpiredJobs();
-  }, CLEANUP_POLL_MS);
-  pollTimer.unref?.();
-  cleanupTimer.unref?.();
+  schedulerEnabled = true;
+  startupRetryCount = 0;
+  void beginSchedulerInitialization();
 }
 
 function _stopJobSchedulerForTests() {
+  schedulerEnabled = false;
   if (pollTimer) {
     clearInterval(pollTimer);
   }
   if (cleanupTimer) {
     clearInterval(cleanupTimer);
+  }
+  if (startupRetryTimer) {
+    clearTimeout(startupRetryTimer);
   }
   for (const controller of activeScrapeRuns.values()) {
     controller.abort();
@@ -126,7 +144,10 @@ function _stopJobSchedulerForTests() {
   pollTimer = null;
   cleanupTimer = null;
   pollInFlight = false;
-  schedulerStarted = false;
+  startupAttempt = null;
+  startupRetryTimer = null;
+  startupRetryCount = 0;
+  setSchedulerState("stopped");
 }
 
 function _abortShopScrapeJob(jobId: string) {
@@ -150,23 +171,84 @@ function _abortMaterialProfileSearchJob(jobId: string) {
 }
 
 async function _runJobSchedulerTickForTests() {
-  await pollScheduler();
+  await pollScheduler({ allowBeforeReady: true });
+}
+
+async function beginSchedulerInitialization() {
+  if (startupAttempt) return startupAttempt;
+
+  setSchedulerState("recovering", { lastError: null });
+  startupAttempt = initializeScheduler()
+    .then(() => {
+      if (!schedulerEnabled) return;
+      startupRetryCount = 0;
+      setSchedulerState("ready");
+      log.info("scheduler_started", {
+        pollIntervalMs: SCHEDULER_POLL_MS,
+        cleanupIntervalMs: CLEANUP_POLL_MS,
+      });
+      pollTimer = setInterval(() => {
+        void pollScheduler();
+      }, SCHEDULER_POLL_MS);
+      cleanupTimer = setInterval(() => {
+        void cleanupExpiredJobs().catch((error) => {
+          log.warn("scheduler_cleanup_failed", { error });
+        });
+      }, CLEANUP_POLL_MS);
+      pollTimer.unref?.();
+      cleanupTimer.unref?.();
+    })
+    .catch((error) => {
+      if (!schedulerEnabled) return;
+      markSchedulerPollFailed(error);
+      setSchedulerState("retrying", {
+        lastError:
+          error instanceof Error ? error.message : "scheduler init failed",
+      });
+      const delay = Math.min(
+        STARTUP_RETRY_MAX_MS,
+        STARTUP_RETRY_INITIAL_MS * 2 ** startupRetryCount,
+      );
+      startupRetryCount += 1;
+      log.warn("scheduler_init_retry", { delayMs: delay, error });
+      startupRetryTimer = setTimeout(() => {
+        startupRetryTimer = null;
+        void beginSchedulerInitialization();
+      }, delay);
+      startupRetryTimer.unref?.();
+    })
+    .finally(() => {
+      startupAttempt = null;
+    });
+  return startupAttempt;
 }
 
 async function initializeScheduler() {
+  if (!schedulerEnabled) return;
   try {
     await resetStaleRunningJobs();
-    await resetStaleExcelResearchRows();
-    await cleanupExpiredJobs();
-    await pollScheduler();
+    await resetStaleExcelResearchRows({ startup: true });
+    // Cleanup is optional. A database outage while deleting expired history
+    // must not keep claims paused after required recovery has succeeded.
+    void cleanupExpiredJobs().catch((error) => {
+      log.warn("scheduler_cleanup_failed", { error });
+    });
+    const polled = await pollScheduler({ allowBeforeReady: true });
+    if (!polled) {
+      throw new Error("Scheduler poll did not complete during startup.");
+    }
   } catch (error) {
     log.error("scheduler_init_failed", { error });
+    throw error;
   }
 }
 
-async function pollScheduler() {
+async function pollScheduler(options: { allowBeforeReady?: boolean } = {}) {
+  if (!options.allowBeforeReady && !schedulerEnabled) {
+    return false;
+  }
   if (pollInFlight) {
-    return;
+    return true;
   }
 
   pollInFlight = true;
@@ -184,8 +266,12 @@ async function pollScheduler() {
       ),
       fillExcelResearchSlots(),
     ]);
+    markSchedulerPollSucceeded();
+    return true;
   } catch (error) {
     log.error("scheduler_poll_failed", { error });
+    markSchedulerPollFailed(error);
+    return false;
   } finally {
     pollInFlight = false;
   }
@@ -330,7 +416,7 @@ async function runExcelResearchJob(jobId: string) {
             ? "awaiting_review"
             : "completed";
 
-        await db
+        const [completed] = await db
           .update(excelResearchJobs)
           .set({
             status: nextStatus,
@@ -342,7 +428,21 @@ async function runExcelResearchJob(jobId: string) {
             updatedAt: now,
             lastProgressAt: now,
           })
-          .where(eq(excelResearchJobs.id, jobId));
+          .where(
+            and(
+              eq(excelResearchJobs.id, jobId),
+              eq(excelResearchJobs.status, "running"),
+            ),
+          )
+          .returning({ id: excelResearchJobs.id });
+        if (!completed) {
+          log.info("job_completion_skipped", {
+            jobType: "excel_research",
+            jobId,
+            reason: "state_changed",
+          });
+          break;
+        }
         log.info("job_completed", {
           jobType: "excel_research",
           jobId,
@@ -363,7 +463,12 @@ async function runExcelResearchJob(jobId: string) {
         message: "Job nghiên cứu thất bại.",
         updatedAt: new Date().toISOString(),
       })
-      .where(eq(excelResearchJobs.id, jobId));
+      .where(
+        and(
+          eq(excelResearchJobs.id, jobId),
+          eq(excelResearchJobs.status, "running"),
+        ),
+      );
   } finally {
     activeExcelResearchRuns.delete(jobId);
   }
@@ -1180,7 +1285,7 @@ async function isJobCancelled(
 
 async function resetStaleRunningJobs() {
   const now = new Date().toISOString();
-  await Promise.all([
+  const results = await Promise.allSettled([
     db
       .update(shopScrapeJobs)
       .set({
@@ -1228,14 +1333,26 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(materialProfileSearchRuns.status, "running")),
   ]);
+  const failures = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures.map((failure) => {
+        const reason: unknown = failure.reason;
+        return reason;
+      }),
+      "Scheduler startup recovery did not settle successfully.",
+    );
+  }
   await recoverInterruptedImportJobs(now);
 }
 
 async function recoverInterruptedImportJobs(now: string) {
   const jobs = await db
-    .select({ id: shopImportJobs.id })
+    .select({ id: shopImportJobs.id, status: shopImportJobs.status })
     .from(shopImportJobs)
-    .where(eq(shopImportJobs.status, "running"));
+    .where(inArray(shopImportJobs.status, ["running", "cancelled"]));
   for (const job of jobs) {
     await db.transaction(async (tx) => {
       const [current] = await tx
@@ -1244,8 +1361,32 @@ async function recoverInterruptedImportJobs(now: string) {
         .where(eq(shopImportJobs.id, job.id))
         .for("update")
         .limit(1);
-      if (current?.status !== "running") return;
+      if (!current || !["running", "cancelled"].includes(current.status)) {
+        return;
+      }
       const progress = await readImportJobProgress(tx, job.id);
+      // A cancellation can commit after a product ledger row but before the
+      // process observes the terminal parent state. Reconcile those durable
+      // counters while preserving cancellation; never requeue the job.
+      if (current.status === "cancelled") {
+        const patch = cancelledImportRecoveryPatch(
+          current.status,
+          progress,
+          now,
+        );
+        if (patch) {
+          await tx
+            .update(shopImportJobs)
+            .set(patch)
+            .where(
+              and(
+                eq(shopImportJobs.id, job.id),
+                eq(shopImportJobs.status, "cancelled"),
+              ),
+            );
+        }
+        return;
+      }
       if (!progress) {
         await tx
           .update(shopImportJobs)
@@ -1278,6 +1419,7 @@ async function recoverInterruptedImportJobs(now: string) {
 }
 
 async function cleanupExpiredJobs() {
+  await resetStaleExcelResearchRows();
   const now = new Date().toISOString();
   await import("~/server/services/material-profile-material-batches").then(
     (service) => service.cleanupExpiredMaterialProfileBatches(now),
