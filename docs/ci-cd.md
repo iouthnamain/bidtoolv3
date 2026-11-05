@@ -109,6 +109,12 @@ Both targets are inspected before promotion. It promotes the pinned Vercel deplo
 
 ## Integration handoffs and remaining acceptance
 
+### R10 source acceptance dry run
+
+`R10 source acceptance` is a read-only workflow that runs `scripts/ci/release-dry-run.ts`. The harness parses the checked-in release and reusable validation workflows, checks that the resolved full SHA reaches every checkout and that quality gates remain upstream of artifact verification and publication, then runs the real source resolver against temporary Git repositories. It records tag A resolved from a dispatch at B and fails for missing, non-commit, moved, or wrong-checkout identities. It never creates a shared tag, calls a release or deployment command, or changes repository settings.
+
+Run the same proof locally with `bun run scripts/ci/release-dry-run.ts`.
+
 - **R0 / PR #28:** merged and integrated into `validate.yml` as a required exact-source job for both callers. Its package command/config/fixtures and owned E2E app/database identity checks are preserved. Local PostgreSQL migration/connection tests passed, and the first shared GitHub service job reports success; detailed runner logs remain to be collected. Extend its test suite with the planned domain failure/concurrency cases as those fixes land.
 - **R8:** extend the reusable gate with controlled browser, transport/filesystem failures, recovered jobs, persistent upgrade/complete restore and extracted desktop-server readiness/document download outside the checkout. Clear `NODE_PATH` and disable global module lookup. Run native NSIS/AppImage/UI and writable-data-path checks on supported runners. Prove two smoke projects coexist and cleanup of one leaves the other/development intact. Current smoke isolates resources by construction but has no recorded concurrent runtime proof. Add a reviewed SearXNG pin in its assigned scope.
 - **R12:** rollback tooling/coordinate source fixes are included here; disposable-registry retag and controlled Vercel rollback rehearsal remain unverified. Existing historical pins with short placeholder digests cannot pass the new gate.
