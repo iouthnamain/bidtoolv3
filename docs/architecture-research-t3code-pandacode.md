@@ -128,7 +128,7 @@ This is a low-priority follow-up after the audited fixes. Panda's writer does no
 | Adapt later | SSE recovery and limits, BOQ measurements, atomic desktop config, job-aware restart        | Workload baseline and focused tests before behavior changes                          |
 | Leave out   | New orchestration framework, service split, runtime rewrite, new database, multi-user auth | No current requirement justifies their migration cost                                |
 
-Preserve the R0–R8 delivery sequence. R2 and R7 may land independently of storage work. Every fix carries its own tests; release rehearsals remain part of R8.
+Follow the canonical package dependencies and file handoffs. R7 has no storage dependency; R2 waits for the R1 storage handoff, and R3 follows R1 and R2. Every fix carries its own tests; release rehearsals remain part of R8.
 
 ## Applicability to the expanded findings
 
