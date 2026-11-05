@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -118,7 +118,8 @@ test("startup recovers fresh and missing timestamps while maintenance keeps the 
         status: schema.excelResearchJobRows.status,
       })
       .from(schema.excelResearchJobRows)
-      .where(eq(schema.excelResearchJobRows.jobId, ids.jobId)),
+      .where(eq(schema.excelResearchJobRows.jobId, ids.jobId))
+      .orderBy(asc(schema.excelResearchJobRows.rowNumber)),
   ).toEqual([
     { id: ids.fresh, status: "processing" },
     { id: ids.missing, status: "processing" },
