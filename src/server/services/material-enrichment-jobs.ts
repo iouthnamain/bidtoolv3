@@ -184,7 +184,11 @@ async function _startMaterialEnrichmentJob(input: {
   // users). Threaded down from the router so the row is correctly owned.
   tenantId?: string | null;
 }) {
-  const materialIds = [...new Set(input.materialIds.map((id) => Math.trunc(id)).filter((id) => id > 0))];
+  const materialIds = [
+    ...new Set(
+      input.materialIds.map((id) => Math.trunc(id)).filter((id) => id > 0),
+    ),
+  ];
   if (materialIds.length === 0) {
     throw new ShopJobServiceError(
       "BAD_REQUEST",
@@ -192,48 +196,57 @@ async function _startMaterialEnrichmentJob(input: {
     );
   }
 
-  const existingMaterials = await db
-    .select({ id: materials.id })
-    .from(materials)
-    .where(and(inArray(materials.id, materialIds), isNull(materials.deletedAt)));
-
-  if (existingMaterials.length === 0) {
-    throw new ShopJobServiceError("NOT_FOUND", "Không tìm thấy vật tư đã chọn.");
-  }
-
   const filterSnapshot =
     input.filterOptions ?? (await loadFilterOptionsSnapshot(materialIds));
   const now = new Date().toISOString();
   const jobId = randomUUID();
 
-  const [job] = await db
-    .insert(materialEnrichmentJobs)
-    .values({
-      id: jobId,
-      status: "queued",
-      optionsJson: input.options ?? {},
-      materialIds,
-      filterSnapshotJson: filterSnapshot,
-      total: existingMaterials.length,
-      message: "Đang xếp hàng chờ enrichment.",
-      tenantId: input.tenantId ?? null,
-      startedAt: now,
-      updatedAt: now,
-    })
-    .returning();
+  const job = await db.transaction(async (tx) => {
+    const selectedMaterials = await tx
+      .select({ id: materials.id })
+      .from(materials)
+      .where(
+        and(inArray(materials.id, materialIds), isNull(materials.deletedAt)),
+      )
+      .orderBy(asc(materials.id));
 
-  await db.insert(materialEnrichmentItems).values(
-    existingMaterials.map((material, index) => ({
-      jobId,
-      materialId: material.id,
-      sortOrder: index,
-      status: "pending",
-      createdAt: now,
-      updatedAt: now,
-    })),
-  );
+    if (selectedMaterials.length === 0) {
+      throw new ShopJobServiceError(
+        "NOT_FOUND",
+        "Không tìm thấy vật tư đã chọn.",
+      );
+    }
 
-  return toJobSnapshot(requireRow(job));
+    const [created] = await tx
+      .insert(materialEnrichmentJobs)
+      .values({
+        id: jobId,
+        status: "queued",
+        optionsJson: input.options ?? {},
+        materialIds: selectedMaterials.map((material) => material.id),
+        filterSnapshotJson: filterSnapshot,
+        total: selectedMaterials.length,
+        message: "Đang xếp hàng chờ enrichment.",
+        tenantId: input.tenantId ?? null,
+        startedAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    await tx.insert(materialEnrichmentItems).values(
+      selectedMaterials.map((material, index) => ({
+        jobId,
+        materialId: material.id,
+        sortOrder: index,
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+    return requireRow(created);
+  });
+
+  return toJobSnapshot(job);
 }
 
 async function _listMaterialEnrichmentJobs(

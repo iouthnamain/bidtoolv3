@@ -8,6 +8,18 @@ The app does not run `docker compose pull` itself. Instead it:
 2. Displays release notes from the manifest
 3. Provides a copy-paste update command
 
+On-prem status always reports `canApplyInApp: false`. The legacy
+`BIDTOOL_ALLOW_IN_APP_UPDATES` flag is ignored, including when set to `true`;
+remove it from existing deployment environments. The supplied customer env
+example does not include this flag. The app container has no supported way to
+control the Docker host. Copying an update script into the image does not provide
+that boundary.
+
+The legacy `version.applyOnPremUpdate` mutation remains available for old clients
+but returns `NOT_IMPLEMENTED` with instructions to run the host command. It
+never starts an update process. Electron continues to use its separate desktop
+updater.
+
 Example:
 
 ```bash

@@ -5,6 +5,15 @@
 - REST: `GET /api/version`
 - tRPC: `version.getStatus`
 
+For the supplied on-prem deployment, both status endpoints return
+`canApplyInApp: false`, even with the legacy `BIDTOOL_ALLOW_IN_APP_UPDATES=true`
+environment variable. When a latest version is known, `updateCommand` remains
+the command to run on the Docker host. Remove the legacy flag from deployments.
+
+The compatibility mutation `version.applyOnPremUpdate` returns the tRPC error
+`NOT_IMPLEMENTED` without fetching release metadata or spawning an updater.
+It does not affect Electron's separate supported updater.
+
 ## Runtime env vars
 
 | Variable | Purpose |

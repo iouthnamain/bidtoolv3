@@ -1,0 +1,31 @@
+{
+  "legacyFlag": "true",
+  "capturedAt": "2026-11-03T08:27:41.672Z",
+  "status": {
+    "current": "0.1.0",
+    "buildMetadata": null,
+    "surface": "onprem",
+    "latest": "0.2.0",
+    "latestBuildMetadata": "0.2.0+onprem.fixture",
+    "updateAvailable": true,
+    "changelog": "Bản phát hành giả lập cho kiểm tra R7; không triển khai.",
+    "updateCommand": "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
+    "canApplyInApp": false,
+    "schemaVersion": 14,
+    "checkedAt": "2026-11-03T08:27:41.167Z"
+  },
+  "clipboard": "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
+  "updateClick": {
+    "mutationRequests": [],
+    "dialogs": 0
+  },
+  "legacyMutation": {
+    "httpStatus": 501,
+    "code": "NOT_IMPLEMENTED",
+    "message": "Cập nhật on-prem trong ứng dụng không được hỗ trợ. Sao chép lệnh cập nhật và chạy trên máy chủ hosting Docker."
+  },
+  "externalBrowserRequestsBlocked": [
+    "https://va.vercel-scripts.com/v1/script.debug.js"
+  ],
+  "accessibility": "- paragraph: Cập nhật\n- text: Có bản mới\n- heading \"Quản lý phiên bản\" [level=2]\n- paragraph: Kiểm tra bản phát hành mới, áp dụng cập nhật và xem ghi chú phát hành.\n- button \"Làm mới\"\n- term: Phiên bản hiện tại\n- definition: 0.1.0\n- term: Môi trường\n- definition: On-prem (Docker)\n- term: Bản mới nhất\n- definition: 0.2.0 (0.2.0+onprem.fixture)\n- term: Trạng thái\n- definition: Có bản cập nhật mới\n- paragraph: Hành động cập nhật\n- paragraph: Sao chép lệnh và chạy trên máy chủ hosting Docker stack.\n- code: BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update\n- button \"Sao chép\"\n- button \"Áp dụng cập nhật\"\n- paragraph: Ghi chú phát hành\n- paragraph: Bản phát hành giả lập cho kiểm tra R7; không triển khai."
+}

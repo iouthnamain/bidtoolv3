@@ -114,6 +114,7 @@ export function ManualProductForm({
     upsertMaterial.mutate(
       {
         id: selectedCandidate?.materialId,
+        expectedRevision: selectedCandidate?.revision,
         patch: {
           name,
           unit,
