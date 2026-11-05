@@ -113,20 +113,20 @@ sequenceDiagram
   Manifest-->>App: latest=0.2.0 changelog
   App->>UI: updateAvailable=true
   UI->>Ops: Show banner + copy command
-  Ops->>Script: BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update
-  Script->>Script: Optional backup
-  Script->>Script: Rewrite BIDTOOL_APP_IMAGE in .env.customer
-  Script->>Docker: compose pull
-  Script->>Docker: compose up -d
+  Ops->>Script: BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible
+  Script->>Script: Stop app; complete DB + file backup
+  Script->>Docker: pull target image
+  Script->>Script: Verify new volume; pin image + volume in .env.customer
+  Script->>Docker: compose up -d --no-deps --wait app
   Docker->>App: New container starts migrations on boot
 ```
 
 **Operator steps**
 
 1. See dismissible banner or open **Settings → About**
-2. Copy `BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update`
+2. Copy `BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible`
 3. Run on the host (SSH or automation), not inside the app container
-4. Script pulls the pinned image, recreates the stack, migrations run on container start
+4. Establish schema compatibility first. The script preserves a complete backup, verifies a new volume, then recreates only the app. See [durable storage](./durable-storage.md).
 
 **Air-gapped**
 
