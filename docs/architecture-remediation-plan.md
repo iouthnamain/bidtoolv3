@@ -14,26 +14,26 @@ Complete the work when all nineteen findings pass the acceptance checks below an
 
 Treat the following as separate reviewable changes. Use the dependency column for implementation order; package IDs remain stable. This is not a request to create PRs now.
 
-| Change | Scope                                                | Findings                         | Dependency           | Completion evidence                                                                                |
-| ------ | ---------------------------------------------------- | -------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------- |
-| R0     | Add isolated database and failure-test fixtures      | F12; supports all fixes          | None                 | Tests cannot connect to a development or customer database accidentally                            |
-| R1     | Persist files and make complete backups and restores | F01, F08                         | R0                   | Existing-install migration, container replacement, and clean restore preserve checksums            |
-| R2     | Bound and validate public-content downloads          | F02, F03                         | R0                   | Private destinations, redirect bypasses, body stalls, and oversized streams are rejected           |
-| R3     | Replace PDFs without deleting the good version first | F06                              | R0; release after R1 | Disk and database failures leave the current document readable                                     |
-| R4     | Enqueue enrichment work atomically                   | F05                              | R0                   | Failed child insertion leaves no parent job; inconsistent jobs cannot complete successfully        |
-| R5     | Serialize material changes and reject stale edits    | F04, F19                         | R0                   | Concurrent refresh, manual edit, field-lock, and enrichment tests preserve unrelated changes       |
-| R6     | Retry scheduler recovery and expose readiness        | F07, F09, F17, F18               | R0, R4, R14          | A startup database outage recovers without restart; readiness reflects recovery and database state |
-| R7     | Report only supported update capabilities            | F10                              | None                 | Packaged on-prem status offers the host command and cannot invoke the broken self-updater          |
-| R8     | Run cross-system checks and document operation       | All findings; audit improvements | R1–R7, R10–R14       | Required CI and release jobs, upgrade and restore evidence, and an operator runbook                |
-| R10    | Pin release checks and builds to the tag commit      | F11 (P1)                         | R0                   | Dispatch from another branch still checks and builds the resolved tag SHA                          |
-| R11    | Replace workbooks atomically                         | F13 (P2)                         | R0, R1               | Invalid input or failed replacement preserves jobs, rows, and the previous workbook                |
-| R12    | Repair rollback tooling and image references         | F14 (P2)                         | R0, R10              | Clean runner has pinned Bun; rollback resolves repository@digest and fails on invalid pins         |
-| R13    | Verify and report actual release artifacts           | F15 (P2)                         | R7, R10, R12         | Missing, wrong-version, corrupt, or skipped artifacts cannot be reported as verified               |
-| R14    | Make interrupted imports safe to resume              | F16 (P2)                         | R0, R5               | Restart does not duplicate one job's products; a separate intentional import still works           |
+| Change | Scope                                                | Findings                         | Dependency     | Completion evidence                                                                                |
+| ------ | ---------------------------------------------------- | -------------------------------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| R0     | Add isolated database and failure-test fixtures      | F12; supports all fixes          | None           | Tests cannot connect to a development or customer database accidentally                            |
+| R1     | Persist files and make complete backups and restores | F01, F08                         | R0             | Existing-install migration, container replacement, and clean restore preserve checksums            |
+| R2     | Bound and validate public-content downloads          | F02, F03                         | R0, R1         | Private destinations, redirect bypasses, body stalls, and oversized streams are rejected           |
+| R3     | Replace PDFs without deleting the good version first | F06                              | R0, R1, R2     | Disk and database failures leave the current document readable                                     |
+| R4     | Enqueue enrichment work atomically                   | F05                              | R0             | Failed child insertion leaves no parent job; inconsistent jobs cannot complete successfully        |
+| R5     | Serialize material changes and reject stale edits    | F04, F19                         | R0             | Concurrent refresh, manual edit, field-lock, and enrichment tests preserve unrelated changes       |
+| R6     | Retry scheduler recovery and expose readiness        | F07, F09, F17, F18               | R0, R4, R14    | A startup database outage recovers without restart; readiness reflects recovery and database state |
+| R7     | Report only supported update capabilities            | F10                              | None           | Packaged on-prem status offers the host command and cannot invoke the broken self-updater          |
+| R8     | Run cross-system checks and document operation       | All findings; audit improvements | R1–R7, R10–R14 | Required CI and release jobs, upgrade and restore evidence, and an operator runbook                |
+| R10    | Pin release checks and builds to the tag commit      | F11 (P1)                         | R0             | Dispatch from another branch still checks and builds the resolved tag SHA                          |
+| R11    | Replace workbooks atomically                         | F13 (P2)                         | R0, R1         | Invalid input or failed replacement preserves jobs, rows, and the previous workbook                |
+| R12    | Repair rollback tooling and image references         | F14 (P2)                         | R0, R10        | Clean runner has pinned Bun; rollback resolves repository@digest and fails on invalid pins         |
+| R13    | Verify and report actual release artifacts           | F15 (P2)                         | R7, R10, R12   | Missing, wrong-version, corrupt, or skipped artifacts cannot be reported as verified               |
+| R14    | Make interrupted imports safe to resume              | F16 (P2)                         | R0, R5         | Restart does not duplicate one job's products; a separate intentional import still works           |
 
 R9 is reserved for the previously considered low-priority atomic desktop configuration follow-up; it remains deferred, and package IDs stay stable.
 
-R2 and R7 have no dependency on the storage work and can land earlier if needed. Add each regression check with its fix; R8 consolidates deployment verification rather than postponing tests until the end.
+R7 has no storage dependency. R2 starts after the R1 storage handoff; R3 waits for both R1 and R2 so the catalog storage file has one owner. Add each regression check with its fix; R8 consolidates deployment verification rather than postponing tests until the end.
 
 ## Decisions to preserve
 

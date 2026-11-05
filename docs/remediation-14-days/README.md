@@ -13,7 +13,7 @@ The [architecture plan](../architecture-remediation-plan.md) remains the impleme
 | R10     | D2–D3 · 11-03–11-04   | F11                | R0                                                      | [Pin release checks and artifacts to one tag commit](https://github.com/iouthnamain/bidtoolv3/issues/14) · [brief](./R10.md)       | `fix/release-tag-provenance`             |
 | R1      | D2–D5 · 11-03–11-06   | F01, F08           | R0                                                      | [Preserve application files through upgrades and restore](https://github.com/iouthnamain/bidtoolv3/issues/15) · [brief](./R1.md)   | `fix/durable-app-storage`                |
 | R4      | D3–D4 · 11-04–11-05   | F05                | R0                                                      | [Commit enrichment jobs and children atomically](https://github.com/iouthnamain/bidtoolv3/issues/16) · [brief](./R4.md)            | `fix/atomic-enrichment-enqueue`          |
-| R2      | D3–D6 · 11-04–11-07   | F02, F03           | R0                                                      | [Validate public destinations and bound download bodies](https://github.com/iouthnamain/bidtoolv3/issues/17) · [brief](./R2.md)    | `fix/public-content-http`                |
+| R2      | D3–D6 · 11-04–11-07   | F02, F03           | R0, R1                                                  | [Validate public destinations and bound download bodies](https://github.com/iouthnamain/bidtoolv3/issues/17) · [brief](./R2.md)    | `fix/public-content-http`                |
 | R12     | D4–D5 · 11-05–11-06   | F14                | R0, R10                                                 | [Validate rollback tooling and immutable image references](https://github.com/iouthnamain/bidtoolv3/issues/18) · [brief](./R12.md) | `fix/rollback-image-references`          |
 | R5      | D4–D8 · 11-05–11-09   | F04, F19           | R0                                                      | [Preserve material metadata and reject stale writes](https://github.com/iouthnamain/bidtoolv3/issues/19) · [brief](./R5.md)        | `fix/material-write-concurrency`         |
 | R3      | D6–D7 · 11-07–11-08   | F06                | R0, R1, R2                                              | [Publish PDF replacements without losing current bytes](https://github.com/iouthnamain/bidtoolv3/issues/20) · [brief](./R3.md)     | `fix/recoverable-pdf-replacement`        |
@@ -23,9 +23,11 @@ The [architecture plan](../architecture-remediation-plan.md) remains the impleme
 | R13     | D11–D13 · 11-12–11-14 | F15                | R7, R10, R12                                            | [Verify actual artifacts and report skipped surfaces](https://github.com/iouthnamain/bidtoolv3/issues/24) · [brief](./R13.md)      | `fix/release-artifact-evidence`          |
 | R8      | D10–D14 · 11-11–11-15 | F01–F19 closure    | R0, R1, R2, R3, R4, R5, R6, R7, R10, R11, R12, R13, R14 | [Require runtime, upgrade, restore and browser evidence](https://github.com/iouthnamain/bidtoolv3/issues/25) · [brief](./R8.md)    | `test/remediation-runtime-release-gates` |
 
-## T3 Code task threads
+## Original T3 Code reservations (historical)
 
-All 14 threads belong to the registered BidTool project. Day 1 threads start implementation immediately; the others begin idle, with worktree strategies reserved for their own branches. Automatic starts follow the eligibility checks below.
+The November 5 lab-only instruction supersedes these Mac reservations. Do not send to, configure, or start them. Materialize planned tasks in real T3-managed lab-1 worktrees as eligible, and record returned lab IDs in the local registry. The coordinator has no permission to enable Mac execution.
+
+All 14 original threads belong to the registered BidTool project. Day 1 threads start implementation immediately; the others begin idle, with worktree strategies reserved for their own branches. Automatic starts follow the eligibility checks below.
 
 | Package | Thread                                                                                                                            | Initial execution  |
 | ------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
