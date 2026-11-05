@@ -34,6 +34,24 @@ every registered product to have a durable outcome.
 A legacy interrupted job without ledger evidence fails visibly with a Vietnamese
 message. Recovery preserves its partial counters and items and never requeues it.
 
+## Catalog document race follow-up
+
+Concurrent import jobs may discover the same catalog PDF URL at the same time.
+`getOrCreateCatalogDocumentByUrl` now treats its initial lookup as a fast path,
+uses PostgreSQL `ON CONFLICT DO NOTHING` for the insert, and rereads the winning
+document when another transaction commits first. The duplicate-key error no
+longer rolls back a valid material and ledger transaction.
+
+The R14 integration suite adds a two-backend PostgreSQL case with two different
+jobs and materials sharing one PDF URL. It requires both imports to finish with
+`created` ledger outcomes, two materials, two links, and exactly one document.
+
+For this follow-up, `bun run check`, the focused importer/scheduler unit suite,
+Prettier on the changed test and evidence files, and `git diff --check` pass on
+lab-1. The PostgreSQL integration case is included for hosted validation; lab-1
+still has no disposable PostgreSQL or Docker, so `BIDTOOL_TEST_DATABASE_URL` is
+the exact local startup blocker.
+
 ## Accepted baseline
 
 The coordinator accepted the exact-head hosted PostgreSQL run for

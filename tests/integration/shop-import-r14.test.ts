@@ -389,6 +389,44 @@ test("two independent concurrent retries create one material for the job", async
   expect(await ledger(id)).toMatchObject([{ status: "created" }]);
 });
 
+test("concurrent import jobs reread one winning catalog document", async () => {
+  const firstProduct = product("catalog-race-first");
+  const secondProduct = product("catalog-race-second");
+  const sharedPdf = "https://example.com/r14/shared-catalog.pdf";
+  firstProduct.catalogPdfUrls = [sharedPdf];
+  secondProduct.catalogPdfUrls = [sharedPdf];
+  const firstJob = await createJob([firstProduct]);
+  const secondJob = await createJob([secondProduct]);
+  const meet = barrier(2);
+  for (const connection of [database, second]) {
+    const transaction = connection.transaction.bind(connection);
+    vi.spyOn(connection, "transaction").mockImplementationOnce(
+      async (callback, config) => {
+        await meet();
+        return transaction(callback, config);
+      },
+    );
+  }
+
+  const results = await Promise.all([
+    run(firstJob, [firstProduct]),
+    run(secondJob, [secondProduct], second),
+  ]);
+  expect(results).toMatchObject([
+    { created: 1, failed: 0 },
+    { created: 1, failed: 0 },
+  ]);
+  expect(await database.select().from(schema.materials)).toHaveLength(2);
+  expect(
+    await database.select().from(schema.materialCatalogDocuments),
+  ).toMatchObject([{ sourceUrl: sharedPdf }]);
+  expect(
+    await database.select().from(schema.materialCatalogDocumentLinks),
+  ).toHaveLength(2);
+  expect(await ledger(firstJob)).toMatchObject([{ status: "created" }]);
+  expect(await ledger(secondJob)).toMatchObject([{ status: "created" }]);
+});
+
 test("progress uses bounded ledger snapshots as the product count grows", async () => {
   const products = Array.from({ length: 12 }, (_, index) =>
     product(`bounded-progress-${index}`),
