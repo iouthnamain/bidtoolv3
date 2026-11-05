@@ -596,7 +596,26 @@ async function importScrapedProductsWithLedger(
   options: ImportScrapedProductsOptions & { importJobId: string },
 ): Promise<ShopImportJobResult> {
   if (products.length === 0) {
-    throw new Error("Không có sản phẩm scrape để nhập.");
+    throwIfImportAborted(options.signal);
+    const durable = await readImportJobProgress(db, options.importJobId);
+    // A restarted job can have a source list that now sanitizes to empty after
+    // every ledger row already reached a terminal outcome. Preserve that
+    // durable result instead of turning an idempotent replay into a failure.
+    if (!durable || durable.processed !== durable.total) {
+      throw new Error("Không có sản phẩm scrape để nhập.");
+    }
+    options.onProgress?.({
+      ...durable,
+      currentProductName: null,
+      currentSourceUrl: null,
+    });
+    return {
+      created: durable.created,
+      updated: durable.updated,
+      skipped: durable.skipped,
+      failed: durable.failed,
+      items: durable.items,
+    };
   }
 
   throwIfImportAborted(options.signal);
