@@ -74,11 +74,18 @@ These are database-boundary failure simulations, not an OS process-kill test.
 - `bun run check` — passed on lab-1 after the scoped implementation changes.
 - `bunx vitest run src/server/services/shop-product-importer.test.ts src/server/services/shop-import-jobs.test.ts src/server/services/job-scheduler.test.ts src/server/services/job-scheduler.concurrency.test.ts src/server/services/job-scheduler.failure.test.ts` — passed, 5 files and 13 tests.
 - Changed TypeScript files pass Prettier and `git diff --check`.
+- Hosted run `42010229208`, PostgreSQL job `127187071732`, exposed one R14
+  regression: the skipped replay's sanitized source list was empty on restart,
+  so the importer raised "Không có sản phẩm scrape để nhập" and the scheduler
+  recorded `failed` despite a complete skipped ledger row. The fix returns the
+  durable terminal result for this case and still rejects incomplete empty
+  sources. The other 11 R14 cases passed in that run.
 - The local R14 integration command refuses startup because
   `BIDTOOL_TEST_DATABASE_URL` is unset. No disposable PostgreSQL binaries or Docker
-  are available. No failing-before or passing-after PostgreSQL result is claimed
-  for the new cases. The next hosted `Isolated PostgreSQL integration` job must
-  validate them at the new PR head. PR #33 stays draft until that proof is reviewed.
+  are available. The next hosted `Isolated PostgreSQL integration` job must
+  validate the skipped replay fix and the full 12-case suite at head
+  `ca58aec97f47fc8c188a45f4886199400775479e`. PR #33 stays draft until that
+  proof is reviewed.
 
 ## Migration and rollback
 
