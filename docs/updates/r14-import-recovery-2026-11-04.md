@@ -80,12 +80,15 @@ These are database-boundary failure simulations, not an OS process-kill test.
   recorded `failed` despite a complete skipped ledger row. The fix returns the
   durable terminal result for this case and still rejects incomplete empty
   sources. The other 11 R14 cases passed in that run.
+- Exact-head follow-up `4270c3b1121a292a517bc9f792ce1912a62e3977` passed the
+  isolated PostgreSQL integration: [run 42052403569, job
+  127331688175](https://github.com/iouthnamain/bidtoolv3/actions/runs/42052403569/job/127331688175).
+  This validates all 12 R14 integration cases at that code head.
 - The local R14 integration command refuses startup because
   `BIDTOOL_TEST_DATABASE_URL` is unset. No disposable PostgreSQL binaries or Docker
   are available. The next hosted `Isolated PostgreSQL integration` job must
-  validate the skipped replay fix and the full 12-case suite at head
-  `ca58aec97f47fc8c188a45f4886199400775479e`. PR #33 stays draft until that
-  proof is reviewed.
+  validate the docs-only follow-up head after this evidence update. PR #33
+  stays draft until its exact-head checks and review are complete.
 
 ## Migration and rollback
 
