@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resolveApplyUpdateAction } from "~/lib/update-apply";
 import { getVersionStatus } from "./version-info";
 
 describe("version info service", () => {
@@ -10,14 +11,16 @@ describe("version info service", () => {
     vi.stubEnv("BIDTOOL_MANIFEST_PATH", "");
     vi.stubEnv("BIDTOOL_MANIFEST_URL", "");
     vi.stubEnv("VERCEL", "");
+    vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", "true");
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it("reports update availability from pinned manifest data", async () => {
+  it("offers the host command using real on-prem capabilities despite the legacy flag", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -96,6 +99,13 @@ describe("version info service", () => {
       "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
     );
     expect(status.canApplyInApp).toBe(false);
+    expect(
+      resolveApplyUpdateAction({
+        version: status,
+        desktopState: null,
+        isDesktop: false,
+      }),
+    ).toBe("copy-onprem-command");
     expect(status.changelog).toBe("New release");
   });
 });

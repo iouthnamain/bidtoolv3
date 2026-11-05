@@ -66,6 +66,7 @@ import {
   filterActiveRejectedWebLinks,
 } from "~/server/services/material-search-feedback";
 import { abortMaterialProfileSearchJob } from "~/server/services/job-scheduler";
+import { updateLockedMaterial } from "~/server/services/material-write";
 import { createLogger, traceFn } from "~/server/lib/logger";
 import {
   getAppSettingsRevision,
@@ -1478,7 +1479,8 @@ async function promoteAutoProfileCandidate(input: {
               ),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     const collisionReasons = existing
       ? autoProfileIdentityMismatchReasons(
           {
@@ -1531,11 +1533,7 @@ async function promoteAutoProfileCandidate(input: {
       updatedAt: now,
     };
     const [saved] = existing
-      ? await tx
-          .update(materials)
-          .set(values)
-          .where(eq(materials.id, existing.id))
-          .returning()
+      ? [await updateLockedMaterial(tx, existing, values, { now })]
       : await tx
           .insert(materials)
           .values({ ...values, createdAt: now })

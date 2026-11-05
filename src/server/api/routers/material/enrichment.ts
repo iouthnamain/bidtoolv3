@@ -251,6 +251,7 @@ export const materialEnrichmentProcedures = {
       return {
         candidates: rows.map((row) => ({
           materialId: row.id,
+          revision: row.revision,
           name: row.name,
           code: row.code,
           unit: row.unit,

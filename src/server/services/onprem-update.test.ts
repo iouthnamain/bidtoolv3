@@ -1,104 +1,66 @@
 import { spawn } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { versionRouter } from "~/server/api/routers/version";
+import { createTRPCContext } from "~/server/api/trpc";
 import {
   applyOnPremUpdate,
   canApplyInAppOnPremUpdates,
 } from "./onprem-update";
 
 vi.mock("node:child_process", () => ({
-  spawn: vi.fn(),
+  spawn: vi.fn(() => {
+    throw new Error("Unexpected process spawn");
+  }),
 }));
+vi.mock("~/server/db", () => ({ db: {} }));
+
+const unsupportedMessage =
+  "Cập nhật on-prem trong ứng dụng không được hỗ trợ. Sao chép lệnh cập nhật và chạy trên máy chủ hosting Docker.";
 
 describe("onprem update service", () => {
-  beforeEach(() => {
-    vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", "true");
-  });
-
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
-  it("reports when in-app updates are disabled", () => {
-    vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", "false");
-    expect(canApplyInAppOnPremUpdates()).toBe(false);
-  });
+  it.each([undefined, "false", "true"])(
+    "reports no in-app capability with legacy flag %s",
+    (flag) => {
+      vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", flag);
+      expect(canApplyInAppOnPremUpdates()).toBe(false);
+    },
+  );
 
-  it("runs the on-prem update script with the target image tag", async () => {
-    const closeHandlers: Array<(code: number | null) => void> = [];
+  it.each(["v0.2.0", "not-a-version"])(
+    "rejects direct update %s without spawning even with the legacy flag",
+    async (version) => {
+      vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", "true");
 
-    vi.mocked(spawn).mockImplementation(() => {
-      return {
-        stdout: {
-          setEncoding: vi.fn(),
-          on: vi.fn(),
-        },
-        stderr: {
-          setEncoding: vi.fn(),
-          on: vi.fn(),
-        },
-        once: vi.fn((event: string, handler: (code: number | null) => void) => {
-          if (event === "close") {
-            closeHandlers.push(handler);
-          }
-        }),
-      } as never;
-    });
+      await expect(applyOnPremUpdate(version)).rejects.toThrow(unsupportedMessage);
+      expect(spawn).not.toHaveBeenCalled();
+    },
+  );
 
-    const promise = applyOnPremUpdate("v0.2.0");
-    closeHandlers[0]?.(0);
+  it.each([{}, { version: "0.2.0" }, { version: "not-a-version" }])(
+    "rejects the legacy mutation with %j without fetching a manifest or spawning",
+    async (input) => {
+      vi.stubEnv("BIDTOOL_ALLOW_IN_APP_UPDATES", "true");
+      const fetchMock = vi.fn(() => {
+        throw new Error("Unexpected manifest fetch");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const caller = versionRouter.createCaller(
+        await createTRPCContext({ headers: new Headers() }),
+      );
 
-    await expect(promise).resolves.toEqual({
-      message: "Đã áp dụng cập nhật on-prem 0.2.0.",
-      version: "0.2.0",
-    });
-
-    expect(spawn).toHaveBeenCalledWith(
-      "sh",
-      [expect.stringContaining("scripts/onprem-update.sh")],
-      expect.objectContaining({
-        env: expect.objectContaining({
-          BIDTOOL_IMAGE_TAG: "0.2.0",
-        }) as Record<string, string>,
-      }),
-    );
-  });
-
-  it("rejects when the update script exits with an error", async () => {
-    const closeHandlers: Array<(code: number | null) => void> = [];
-
-    vi.mocked(spawn).mockImplementation(() => {
-      return {
-        stdout: {
-          setEncoding: vi.fn(),
-          on: vi.fn((event: string, handler: (chunk: string) => void) => {
-            if (event === "data") {
-              handler("");
-            }
-          }),
-        },
-        stderr: {
-          setEncoding: vi.fn(),
-          on: vi.fn((event: string, handler: (chunk: string) => void) => {
-            if (event === "data") {
-              handler("docker not found");
-            }
-          }),
-        },
-        once: vi.fn((event: string, handler: (code: number | null) => void) => {
-          if (event === "close") {
-            closeHandlers.push(handler);
-          }
-        }),
-      } as never;
-    });
-
-    const promise = applyOnPremUpdate("0.2.0");
-    closeHandlers[0]?.(1);
-
-    await expect(promise).rejects.toThrow(
-      "Không thể áp dụng cập nhật on-prem: docker not found",
-    );
-  });
+      await expect(caller.applyOnPremUpdate(input)).rejects.toMatchObject({
+        code: "NOT_IMPLEMENTED",
+        message: unsupportedMessage,
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+    },
+  );
 });

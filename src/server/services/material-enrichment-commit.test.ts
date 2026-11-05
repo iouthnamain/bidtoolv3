@@ -21,6 +21,7 @@ function material(overrides: Partial<MaterialRow> = {}): MaterialRow {
     sourceUrl: null,
     imageUrl: null,
     metadataJson: null,
+    revision: 0,
     tenantId: null,
     deletedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
