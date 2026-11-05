@@ -5,6 +5,10 @@ import path from "node:path";
 import { CATALOG_PDF_MAX_FILE_SIZE } from "~/lib/materials/catalog-pdf";
 import { createLogger, traceFn } from "~/server/lib/logger";
 import { resolveStorageDirectory } from "~/server/services/data-root";
+import {
+  fetchPublicContent,
+  PUBLIC_CONTENT_PDF_MAX_BYTES,
+} from "~/server/services/public-content-client";
 const log = createLogger("services-catalog-pdf-storage");
 
 const PDF_MAGIC = "%PDF-";
@@ -100,51 +104,31 @@ function _decodeCatalogPdfBase64(value: string) {
 }
 
 async function _downloadCatalogPdfFromUrl(url: string): Promise<Buffer> {
-  let parsed: URL;
   try {
-    parsed = new URL(url);
-  } catch {
-    throw new CatalogPdfStorageError("URL tài liệu không hợp lệ.");
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new CatalogPdfStorageError("Chỉ hỗ trợ tải PDF qua http/https.");
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await fetch(parsed, {
-      signal: controller.signal,
-      redirect: "follow",
+    const response = await fetchPublicContent({
+      url,
+      kind: "pdf",
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+      maxBytes: CATALOG_PDF_MAX_FILE_SIZE,
       headers: { Accept: "application/pdf,*/*" },
     });
+    if (response.body.byteLength > PUBLIC_CONTENT_PDF_MAX_BYTES) {
+      throw new CatalogPdfStorageError(
+        `Tệp PDF vượt quá giới hạn ${Math.round(PUBLIC_CONTENT_PDF_MAX_BYTES / 1024 / 1024)} MB.`,
+      );
+    }
+    assertValidCatalogPdf(response.body);
+    return response.body;
   } catch (error) {
-    throw new CatalogPdfStorageError(
-      error instanceof Error && error.name === "AbortError"
-        ? "Tải PDF quá thời gian cho phép."
-        : "Không thể tải PDF từ URL nguồn.",
-    );
-  } finally {
-    clearTimeout(timeout);
+    if (error instanceof CatalogPdfStorageError) throw error;
+    if (
+      error instanceof Error &&
+      /quá thời gian|timeout/i.test(error.message)
+    ) {
+      throw new CatalogPdfStorageError("Tải PDF quá thời gian cho phép.");
+    }
+    throw new CatalogPdfStorageError("Không thể tải PDF từ URL nguồn.");
   }
-
-  if (!response.ok) {
-    throw new CatalogPdfStorageError(
-      `Nguồn trả về lỗi HTTP ${response.status}.`,
-    );
-  }
-
-  const contentLength = Number(response.headers.get("content-length") ?? "0");
-  if (contentLength > CATALOG_PDF_MAX_FILE_SIZE) {
-    throw new CatalogPdfStorageError(
-      `Tệp PDF vượt quá giới hạn ${Math.round(CATALOG_PDF_MAX_FILE_SIZE / 1024 / 1024)} MB.`,
-    );
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  assertValidCatalogPdf(buffer);
-  return buffer;
 }
 
 export const sanitizeCatalogPdfFileName = traceFn(log, "sanitizeCatalogPdfFileName", _sanitizeCatalogPdfFileName);
