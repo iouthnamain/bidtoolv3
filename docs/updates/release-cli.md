@@ -102,7 +102,7 @@ Track progress in GitHub Actions → **Release**.
 On-prem customers update separately with the command printed at the end:
 
 ```bash
-BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update
+BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible
 ```
 
 ## Related docs

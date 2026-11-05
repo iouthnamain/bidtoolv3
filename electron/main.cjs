@@ -5,6 +5,7 @@ const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 
 const HOST = "127.0.0.1";
@@ -446,6 +447,7 @@ async function installDesktopUpdate() {
   updateInstallInFlight = true;
   isQuitting = true;
   try {
+    await prepareDesktopStorageForInstall();
     autoUpdater.quitAndInstall(false, true);
     return { accepted: true, completed: false, state: desktopUpdateState };
   } catch (error) {
@@ -682,12 +684,148 @@ function clearDesktopServerUrl() {
   return getDesktopServerConfig();
 }
 
+/** @param {string} root */
+function desktopDataInventory(root) {
+  /** @type {{ path: string; size: number; checksum: string }[]} */
+  const files = [];
+  /** @param {string} directory */
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isSymbolicLink())
+        throw new Error(`Legacy data contains a symlink: ${file}`);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile()) {
+        files.push({
+          path: path.relative(root, file),
+          size: fs.statSync(file).size,
+          checksum: crypto
+            .createHash("sha256")
+            .update(fs.readFileSync(file))
+            .digest("hex"),
+        });
+      } else throw new Error(`Unsupported legacy data entry: ${file}`);
+    }
+  }
+  visit(root);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Runs only for a bundled child, before spawn. Retain the original files so a
+ * failed copy or desktop upgrade never destroys the only recoverable copy.
+ * @param {string} serverDir
+ */
+function prepareDesktopDataRoot(serverDir) {
+  const configured = process.env.BIDTOOL_DATA_DIR?.trim();
+  if (configured) return path.resolve(configured);
+  const target = path.join(app.getPath("userData"), "data");
+  const legacy = path.join(serverDir, "data");
+  if (path.resolve(legacy) === path.resolve(target) || !fs.existsSync(legacy))
+    return target;
+  const source = desktopDataInventory(legacy);
+  if (source.length === 0) return target;
+  const marker = path.join(app.getPath("userData"), "data-migration.json");
+  const record = {
+    legacy: path.resolve(legacy),
+    target: path.resolve(target),
+    source,
+  };
+  if (fs.existsSync(marker) && fs.existsSync(target)) {
+    if (fs.readFileSync(marker, "utf8") !== JSON.stringify(record)) {
+      throw new Error(
+        `Legacy data changed after migration. Preserve ${legacy} and ${target} for manual recovery.`,
+      );
+    }
+    return target;
+  }
+  if (fs.existsSync(target) && fs.readdirSync(target).length > 0) {
+    // A retry can accept an identical verified copy, but must never merge or
+    // overwrite a live installation with older packaged bytes.
+    const existing = desktopDataInventory(target);
+    const copied = source.every((file) =>
+      existing.some(
+        (entry) =>
+          entry.path === file.path &&
+          entry.checksum === file.checksum &&
+          entry.size === file.size,
+      ),
+    );
+    if (!copied)
+      throw new Error(
+        `Legacy data conflicts with ${target}. Preserve both directories and migrate manually before starting.`,
+      );
+    fs.writeFileSync(marker, JSON.stringify(record), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    return target;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const staging = fs.mkdtempSync(
+    path.join(path.dirname(target), ".data-migration-"),
+  );
+  // Keep staging on failure for inspection; publish only a verified full tree.
+  for (const name of fs.readdirSync(legacy)) {
+    fs.cpSync(path.join(legacy, name), path.join(staging, name), {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
+  }
+  if (
+    JSON.stringify(desktopDataInventory(staging)) !== JSON.stringify(source)
+  ) {
+    throw new Error(
+      `Desktop data checksum mismatch. Retained ${staging} and ${legacy}.`,
+    );
+  }
+  if (fs.existsSync(target)) fs.rmdirSync(target); // Empty destination only.
+  fs.renameSync(staging, target);
+  fs.writeFileSync(marker, JSON.stringify(record), { flag: "wx", mode: 0o600 });
+  return target;
+}
+
+async function prepareDesktopStorageForInstall() {
+  if (getDesktopServerConfig().serverUrl) return;
+  const child = nextServerProcess;
+  if (child && child.exitCode === null && child.signalCode === null) {
+    // A sent signal is not proof that filesystem writers have stopped.
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error("Local server did not stop; desktop update blocked."),
+          ),
+        30_000,
+      );
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      });
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      if (!child.kill()) {
+        clearTimeout(timer);
+        reject(
+          new Error("Could not stop local server; desktop update blocked."),
+        );
+      }
+    });
+    nextServerProcess = null;
+  }
+  prepareDesktopDataRoot(path.dirname(findStandaloneServerPath()));
+}
+
 async function startStandaloneNextServer() {
   loadLocalEnv();
   const port =
     Number(process.env.BIDTOOL_DESKTOP_PORT) || (await findAvailablePort());
   const serverPath = findStandaloneServerPath();
   const serverDir = path.dirname(serverPath);
+  const dataRoot = prepareDesktopDataRoot(serverDir);
   const url = `http://${HOST}:${port}`;
   let exited = false;
 
@@ -696,6 +834,7 @@ async function startStandaloneNextServer() {
     env: {
       ...process.env,
       BIDTOOL_DESKTOP: "1",
+      BIDTOOL_DATA_DIR: dataRoot,
       ELECTRON_RUN_AS_NODE: "1",
       FORCE_COLOR: "0",
       HOSTNAME: HOST,

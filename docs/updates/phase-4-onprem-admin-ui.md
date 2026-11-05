@@ -23,7 +23,7 @@ updater.
 Example:
 
 ```bash
-BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update
+BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible
 ```
 
 ## UI components
@@ -35,7 +35,7 @@ Both are visible to all authenticated users.
 
 ## Script support
 
-[`scripts/onprem-update.sh`](../../scripts/onprem-update.sh) accepts `BIDTOOL_IMAGE_TAG` and rewrites `BIDTOOL_APP_IMAGE` in the customer env file before pulling images.
+[`scripts/onprem-update.sh`](../../scripts/onprem-update.sh) accepts `BIDTOOL_IMAGE_TAG` and requires `--schema-compatible`. It creates a complete stopped-app backup and verifies a new volume before pinning the target image and recreating the app. See [durable storage](./durable-storage.md).
 
 ## Air-gapped installs
 

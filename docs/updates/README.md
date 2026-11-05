@@ -9,7 +9,7 @@ BidTool ships through one unified release unit across web, on-prem Docker, and E
 | Surface | Update mechanism | Version source |
 | --- | --- | --- |
 | Web (Vercel) | Release workflow promotes production on tag `v*` | `BIDTOOL_APP_VERSION` + `BIDTOOL_BUILD_METADATA` |
-| On-prem (Docker) | Hybrid: app shows status; ops run `BIDTOOL_IMAGE_TAG=x.y.z bun run onprem:update` | Docker env + manifest |
+| On-prem (Docker) | Hybrid: app shows status; ops run `BIDTOOL_IMAGE_TAG=x.y.z bun run onprem:update --schema-compatible` | Docker env + manifest |
 | Desktop (Electron) | `electron-updater` via GitHub Releases or local mock server | Electron app version + updater feed |
 
 ## Version format
@@ -32,7 +32,7 @@ Each release uses one semver with build metadata:
 ```bash
 bun run release status          # what version am I on? what's next?
 bun run release patch           # tag + push next patch release
-BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update   # on-prem server update
+BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update --schema-compatible   # on-prem server update
 curl http://localhost:3000/api/version        # runtime version check
 ```
 
@@ -44,6 +44,8 @@ curl http://localhost:3000/api/version        # runtime version check
 - **[Release CLI](./release-cli.md)** — incremental tagging without remembering version numbers
 - **[Update flows](./flows.md)** — diagrams for each path
 - **[CI/CD review](./ci-cd.md)** — GitHub Actions workflows and secrets
+
+- [Durable storage and recovery](./durable-storage.md) — R1 migration, complete bundles, staged restore and missing runtime proof
 
 ### Reference
 

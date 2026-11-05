@@ -6,6 +6,10 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
+import {
+  relocatedProfileWorkbook,
+  resolveStorageDirectory,
+} from "~/server/services/data-root";
 import { catalogPdfFileNameFromUrl } from "~/lib/materials/catalog-pdf";
 import {
   deriveMatchStatus,
@@ -447,7 +451,7 @@ export function resolveMaterialProfileStorageRoot(
   if (options.serverless ?? isServerlessEnvironment()) {
     return path.join(tmpdir(), "bidtool", "material-profiles");
   }
-  return path.join(process.cwd(), "data", "material-profiles");
+  return resolveStorageDirectory("material-profiles");
 }
 
 async function materialProfileRoot() {
@@ -966,11 +970,17 @@ export async function resolveWorkspaceWorkbookBuffer(workspace: {
   sourceWorkbookPath?: string | null;
   workbookJson?: Record<string, unknown> | null;
 }) {
-  if (
-    workspace.sourceWorkbookPath &&
-    (await sourceWorkbookPathReadable(workspace.sourceWorkbookPath))
-  ) {
-    return readFile(workspace.sourceWorkbookPath);
+  if (workspace.sourceWorkbookPath) {
+    if (await sourceWorkbookPathReadable(workspace.sourceWorkbookPath)) {
+      return readFile(workspace.sourceWorkbookPath);
+    }
+    const relocated = relocatedProfileWorkbook(
+      workspace.sourceWorkbookPath,
+      await materialProfileRoot(),
+    );
+    if (relocated && (await sourceWorkbookPathReadable(relocated))) {
+      return readFile(relocated);
+    }
   }
 
   const record =

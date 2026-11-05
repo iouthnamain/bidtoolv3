@@ -23,6 +23,10 @@ services:
     container_name: bidtool-onprem-app
     restart: unless-stopped
     environment:
+      BIDTOOL_DATA_DIR: /app/data
+      BIDTOOL_CATALOG_PDF_DIR: "${BIDTOOL_CATALOG_PDF_DIR:-}"
+      BIDTOOL_EXCEL_RESEARCH_DIR: "${BIDTOOL_EXCEL_RESEARCH_DIR:-}"
+      BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR: "${BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR:-}"
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
@@ -58,6 +62,8 @@ services:
       SEARCH_EXCEL_RESEARCH_MAX_QUERIES: "${SEARCH_EXCEL_RESEARCH_MAX_QUERIES:-6}"
       SEARCH_RESULT_LIMIT_PER_QUERY: "${SEARCH_RESULT_LIMIT_PER_QUERY:-8}"
       SEARCH_AUDIT_RETENTION_DAYS: "${SEARCH_AUDIT_RETENTION_DAYS:-30}"
+    volumes:
+      - bidtool-onprem-app-data:/app/data
     expose:
       - "3000"
     depends_on:
@@ -122,6 +128,8 @@ services:
       timeout: 5s
       retries: 20
 volumes:
+  bidtool-onprem-app-data:
+    name: "${BIDTOOL_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-bidtool-onprem}_app-data}"
   bidtool-onprem-caddy-data:
   bidtool-onprem-caddy-config:
   bidtool-onprem-postgres-data:

@@ -31,6 +31,10 @@ If rollback is unsafe because migrations already ran:
 
 See [Release CLI](./release-cli.md).
 
+## File and database recovery
+
+Retain the complete pre-upgrade DB-and-file bundle and prior volume. Artifact rollback does not restore either one. Never run an older image over newer schema without established compatibility. Use [durable storage and recovery](./durable-storage.md) for exact-image staged restore and explicit legacy DB-only mode; the latter leaves the app stopped because file bytes are unavailable.
+
 ## Related docs
 
 - [Operating guide](./operating-guide.md)

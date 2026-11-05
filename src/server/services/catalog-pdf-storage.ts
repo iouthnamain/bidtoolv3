@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { CATALOG_PDF_MAX_FILE_SIZE } from "~/lib/materials/catalog-pdf";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import { resolveStorageDirectory } from "~/server/services/data-root";
 const log = createLogger("services-catalog-pdf-storage");
 
 const PDF_MAGIC = "%PDF-";
@@ -12,10 +13,10 @@ const DOWNLOAD_TIMEOUT_MS = 60_000;
 export class CatalogPdfStorageError extends Error {}
 
 function storageRoot() {
-  const configured = process.env.BIDTOOL_CATALOG_PDF_DIR?.trim();
-  return configured && configured.length > 0
-    ? path.resolve(configured)
-    : path.join(process.cwd(), "data", "catalog-pdfs");
+  return resolveStorageDirectory(
+    "catalog-pdfs",
+    process.env.BIDTOOL_CATALOG_PDF_DIR,
+  );
 }
 
 function _sanitizeCatalogPdfFileName(fileName: string) {

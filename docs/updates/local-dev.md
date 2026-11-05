@@ -73,4 +73,4 @@ BIDTOOL_DEPLOYMENT_SURFACE=onprem BIDTOOL_APP_VERSION=0.1.0 bun run start
 | `release:manifest` | Generate `manifest.json` |
 | `release:pins` | Update `releases/pins.json` |
 | `start:mock-update-server` | Local desktop updater feed |
-| `onprem:update` | Pull and recreate on-prem Docker stack |
+| `onprem:update --schema-compatible` | Complete backup, stage durable files, then recreate app; see [recovery](./durable-storage.md) |

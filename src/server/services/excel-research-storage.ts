@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { resolveExcelResearchDir } from "~/server/services/app-settings";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import { resolveStorageDirectory } from "~/server/services/data-root";
 const log = createLogger("services-excel-research-storage");
 
 export class ExcelResearchStorageError extends Error {}
@@ -31,10 +32,10 @@ const MIME_BY_KIND: Record<ExcelResearchStorageKind, string> = {
 };
 
 async function storageRoot() {
-  const configured = (await resolveExcelResearchDir())?.trim();
-  return configured && configured.length > 0
-    ? path.resolve(configured)
-    : path.join(process.cwd(), "data", "excel-research");
+  return resolveStorageDirectory(
+    "excel-research",
+    await resolveExcelResearchDir(),
+  );
 }
 
 async function _excelResearchJobRoot(jobId: string) {
