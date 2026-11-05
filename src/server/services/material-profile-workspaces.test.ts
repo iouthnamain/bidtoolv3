@@ -1,7 +1,22 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import ExcelJS from "exceljs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  excelWorkspaceItems,
+  excelWorkspaces,
+  materialProfileSearchJobs,
+  materialProfileSearchRuns,
+} from "~/server/db/schema";
 
 import {
   assertExportDirWritable,
@@ -22,7 +37,172 @@ import {
   shouldBulkApplyMaterialProfileCandidate,
   summarizeMaterialProfileReviewReadiness,
   summarizeMaterialProfileExportEditState,
+  uploadMaterialProfileWorkbook,
 } from "~/server/services/material-profile-workspaces";
+
+type ReplacementTestState = {
+  workspace: Record<string, unknown>;
+  items: Array<Record<string, unknown>>;
+  jobs: Array<Record<string, unknown>>;
+  runs: Array<Record<string, unknown>>;
+  transactionError?: Error;
+  deleteError?: Error;
+  beforeTransaction?: () => void;
+};
+
+function fakeTableName(table: unknown) {
+  return String(
+    table && typeof table === "object"
+      ? ((table as Record<symbol, unknown>)[Symbol.for("drizzle:Name")] ?? "")
+      : "",
+  );
+}
+
+function replacementDb(state: ReplacementTestState) {
+  const rowsFor = (table: unknown) => {
+    switch (fakeTableName(table)) {
+      case "excel_workspaces":
+        return [state.workspace];
+      case "excel_workspace_items":
+        return state.items;
+      case "material_profile_search_jobs":
+        return state.jobs;
+      case "material_profile_search_runs":
+        return state.runs;
+      default:
+        return [];
+    }
+  };
+
+  const select = (projection?: unknown) => {
+    let table: unknown;
+    const builder = {
+      from(value: unknown) {
+        table = value;
+        return builder;
+      },
+      where() {
+        return builder;
+      },
+      limit() {
+        return builder;
+      },
+      orderBy() {
+        return builder;
+      },
+      for() {
+        return builder;
+      },
+      then(
+        resolve: (value: unknown) => unknown,
+        reject?: (reason: unknown) => unknown,
+      ) {
+        const rows =
+          fakeTableName(table) === "excel_workspaces" && projection
+            ? []
+            : rowsFor(table);
+        return Promise.resolve(rows).then(resolve, reject);
+      },
+    };
+    return builder;
+  };
+
+  const update = (table: unknown) => {
+    let values: Record<string, unknown> = {};
+    const builder = {
+      set(next: Record<string, unknown>) {
+        values = next;
+        return builder;
+      },
+      where() {
+        return builder;
+      },
+      returning() {
+        const name = fakeTableName(table);
+        if (name === "excel_workspaces") {
+          state.workspace = { ...state.workspace, ...values };
+          return Promise.resolve([state.workspace]);
+        }
+        if (name === "material_profile_search_jobs") {
+          state.jobs = state.jobs.map((job) => ({ ...job, ...values }));
+        }
+        if (name === "material_profile_search_runs") {
+          state.runs = state.runs.map((run) => ({ ...run, ...values }));
+        }
+        return Promise.resolve([]);
+      },
+      then(
+        resolve: (value: unknown) => unknown,
+        reject?: (reason: unknown) => unknown,
+      ) {
+        const name = fakeTableName(table);
+        if (name === "material_profile_search_jobs") {
+          state.jobs = state.jobs.map((job) => ({ ...job, ...values }));
+        }
+        if (name === "material_profile_search_runs") {
+          state.runs = state.runs.map((run) => ({ ...run, ...values }));
+        }
+        return Promise.resolve([]).then(resolve, reject);
+      },
+    };
+    return builder;
+  };
+
+  const remove = (table: unknown) => ({
+    where() {
+      if (state.deleteError) {
+        return Promise.reject(state.deleteError);
+      }
+      if (fakeTableName(table) === "excel_workspace_items") {
+        state.items = [];
+      }
+      return Promise.resolve([]);
+    },
+  });
+
+  const db = {
+    select,
+    update,
+    delete: remove,
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+      state.beforeTransaction?.();
+      if (state.transactionError) throw state.transactionError;
+      const snapshot = {
+        workspace: { ...state.workspace },
+        items: [...state.items],
+        jobs: [...state.jobs],
+        runs: [...state.runs],
+      };
+      try {
+        return await callback(db);
+      } catch (error) {
+        state.workspace = snapshot.workspace;
+        state.items = snapshot.items;
+        state.jobs = snapshot.jobs;
+        state.runs = snapshot.runs;
+        throw error;
+      }
+    },
+  };
+  return db;
+}
+
+async function workbookBytes(name = "Materials") {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(name);
+  sheet.addRow(["Tên vật tư", "ĐVT", "Thông số kỹ thuật"]);
+  sheet.addRow(["Vật tư mới", "cái", "Mô tả mới"]);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+async function emptyWorkbookBytes() {
+  const workbook = new ExcelJS.Workbook();
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("material profile workspace helpers", () => {
   it("locks the workspace before Step 3 decision rows in stable order", async () => {
@@ -342,5 +522,242 @@ describe("resolveWorkspaceWorkbookBuffer", () => {
       code: "BAD_REQUEST",
       message: "Chưa upload file Excel cho work này.",
     });
+  });
+});
+
+describe("uploadMaterialProfileWorkbook replacement", () => {
+  function workspaceFixture(sourceWorkbookPath: string | null = null) {
+    return {
+      id: 7,
+      name: "Hồ sơ thử nghiệm",
+      noticeNumber: "TB-7",
+      status: "imported",
+      sourceFileName: "old.xlsx",
+      sourceWorkbookPath,
+      sourceSheetName: "Materials",
+      rowCount: 1,
+      columnMappingJson: {},
+      workbookJson: {
+        sourceWorkbookBase64: Buffer.from("old workbook").toString("base64"),
+        sheets: [],
+      },
+      editStateJson: {},
+      exportEditStateJson: {},
+      updatedAt: "2026-11-05T00:00:00.000Z",
+    };
+  }
+
+  it("parses before changing active jobs or rows", async () => {
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(),
+      items: [{ id: 11, workspaceId: 7 }],
+      jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+      runs: [{ id: 1, workspaceId: 7, status: "running" }],
+    };
+
+    await expect(
+      uploadMaterialProfileWorkbook(replacementDb(state) as never, {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: "%%%not-base64%%%",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(state.jobs[0]?.status).toBe("running");
+    expect(state.runs[0]?.status).toBe("running");
+    expect(state.items).toHaveLength(1);
+  });
+
+  it("keeps the old state when the workbook cannot be parsed or has no sheet", async () => {
+    for (const bytes of [
+      Buffer.from("not an xlsx"),
+      await emptyWorkbookBytes(),
+    ]) {
+      const state: ReplacementTestState = {
+        workspace: workspaceFixture(),
+        items: [{ id: 11, workspaceId: 7 }],
+        jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+        runs: [{ id: 1, workspaceId: 7, status: "running" }],
+      };
+
+      await expect(
+        uploadMaterialProfileWorkbook(replacementDb(state) as never, {
+          workspaceId: 7,
+          fileName: "new.xlsx",
+          workbookBase64: bytes.toString("base64"),
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(state.jobs[0]?.status).toBe("running");
+      expect(state.runs[0]?.status).toBe("running");
+      expect(state.items).toHaveLength(1);
+    }
+  });
+
+  it("publishes a unique workbook path and atomically clears old rows", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "bidtool-workbook-replace-"),
+    );
+    const oldPath = path.join(root, "old", "old.xlsx");
+    await mkdir(path.dirname(oldPath), { recursive: true });
+    await writeFile(oldPath, "old bytes");
+    vi.stubEnv("BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR", root);
+    const bytes = await workbookBytes();
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(oldPath),
+      items: [{ id: 11, workspaceId: 7 }],
+      jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+      runs: [{ id: 1, workspaceId: 7, status: "running" }],
+    };
+
+    const updated = await uploadMaterialProfileWorkbook(
+      replacementDb(state) as never,
+      {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: bytes.toString("base64"),
+      },
+    );
+
+    const newPath = updated.sourceWorkbookPath;
+    expect(newPath).toMatch(/new\.xlsx\.[0-9a-f-]+$/);
+    expect(newPath).not.toBe(oldPath);
+    await expect(readFile(newPath!)).resolves.toEqual(bytes);
+    await expect(readFile(oldPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(state.items).toHaveLength(0);
+    expect(state.jobs[0]?.status).toBe("cancelled");
+    expect(state.runs[0]?.status).toBe("cancelled");
+    expect(
+      (updated.workbookJson as { sourceWorkbookBase64: string })
+        .sourceWorkbookBase64,
+    ).toBe(bytes.toString("base64"));
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps the old bytes and removes the staged version on commit failure", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "bidtool-workbook-failure-"),
+    );
+    const oldPath = path.join(root, "old.xlsx");
+    await writeFile(oldPath, "old bytes");
+    vi.stubEnv("BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR", root);
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(oldPath),
+      items: [{ id: 11, workspaceId: 7 }],
+      jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+      runs: [],
+      transactionError: new Error("commit failed"),
+    };
+
+    await expect(
+      uploadMaterialProfileWorkbook(replacementDb(state) as never, {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: (await workbookBytes()).toString("base64"),
+      }),
+    ).rejects.toThrow("commit failed");
+
+    await expect(readFile(oldPath)).resolves.toEqual(Buffer.from("old bytes"));
+    const sourceDir = path.join(root, "TB-7", "7", "source");
+    await expect(readdir(sourceDir)).resolves.toEqual([]);
+    expect(state.workspace.sourceWorkbookPath).toBe(oldPath);
+    expect(state.items).toHaveLength(1);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("rolls back cancellation and workbook changes when item deletion fails", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "bidtool-workbook-delete-failure-"),
+    );
+    const oldPath = path.join(root, "old.xlsx");
+    await writeFile(oldPath, "old bytes");
+    vi.stubEnv("BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR", root);
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(oldPath),
+      items: [{ id: 11, workspaceId: 7 }],
+      jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+      runs: [{ id: 1, workspaceId: 7, status: "running" }],
+      deleteError: new Error("item delete failed"),
+    };
+
+    await expect(
+      uploadMaterialProfileWorkbook(replacementDb(state) as never, {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: (await workbookBytes()).toString("base64"),
+      }),
+    ).rejects.toThrow("item delete failed");
+
+    await expect(readFile(oldPath)).resolves.toEqual(Buffer.from("old bytes"));
+    expect(state.workspace.sourceWorkbookPath).toBe(oldPath);
+    expect(state.jobs[0]?.status).toBe("running");
+    expect(state.runs[0]?.status).toBe("running");
+    expect(state.items).toHaveLength(1);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("uses the database blob when the filesystem cannot stage a path", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "bidtool-workbook-readonly-"),
+    );
+    const blockedRoot = path.join(root, "blocked");
+    await writeFile(blockedRoot, "not a directory");
+    vi.stubEnv("BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR", blockedRoot);
+    const bytes = await workbookBytes();
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(),
+      items: [],
+      jobs: [],
+      runs: [],
+    };
+
+    const updated = await uploadMaterialProfileWorkbook(
+      replacementDb(state) as never,
+      {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: bytes.toString("base64"),
+      },
+    );
+
+    expect(updated.sourceWorkbookPath).toBeNull();
+    expect(
+      (updated.workbookJson as { sourceWorkbookBase64: string })
+        .sourceWorkbookBase64,
+    ).toBe(bytes.toString("base64"));
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("rejects a stale replacement without cancelling the current job", async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "bidtool-workbook-race-"),
+    );
+    vi.stubEnv("BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR", root);
+    const state: ReplacementTestState = {
+      workspace: workspaceFixture(),
+      items: [{ id: 11, workspaceId: 7 }],
+      jobs: [{ id: "job-1", workspaceId: 7, status: "running" }],
+      runs: [{ id: 1, workspaceId: 7, status: "running" }],
+      beforeTransaction: () => {
+        state.workspace = {
+          ...state.workspace,
+          updatedAt: "2026-11-05T00:00:01.000Z",
+        };
+      },
+    };
+
+    await expect(
+      uploadMaterialProfileWorkbook(replacementDb(state) as never, {
+        workspaceId: 7,
+        fileName: "new.xlsx",
+        workbookBase64: (await workbookBytes()).toString("base64"),
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    expect(state.jobs[0]?.status).toBe("running");
+    expect(state.runs[0]?.status).toBe("running");
+    expect(state.items).toHaveLength(1);
+    await rm(root, { recursive: true, force: true });
   });
 });
