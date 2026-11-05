@@ -69,6 +69,95 @@ function throwIfAborted(signal: AbortSignal | undefined) {
   }
 }
 
+class EnrichmentJobStoppedError extends Error {
+  constructor() {
+    super("Job enrichment đã bị hủy hoặc không còn hoạt động.");
+    this.name = "EnrichmentJobStoppedError";
+  }
+}
+
+async function claimEnrichmentItemForProcessing(
+  jobId: string,
+  itemId: number,
+  signal?: AbortSignal,
+) {
+  throwIfAborted(signal);
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ status: materialEnrichmentJobs.status })
+      .from(materialEnrichmentJobs)
+      .where(eq(materialEnrichmentJobs.id, jobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") {
+      throw new EnrichmentJobStoppedError();
+    }
+    throwIfAborted(signal);
+    const [updated] = await tx
+      .update(materialEnrichmentItems)
+      .set({ status: "processing", updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(materialEnrichmentItems.id, itemId),
+          eq(materialEnrichmentItems.jobId, jobId),
+          inArray(materialEnrichmentItems.status, ["pending", "processing"]),
+        ),
+      )
+      .returning({ id: materialEnrichmentItems.id });
+    if (!updated) {
+      throw new EnrichmentJobStoppedError();
+    }
+    return updated;
+  });
+}
+
+async function assertEnrichmentJobRunning(jobId: string) {
+  const [job] = await db
+    .select({ status: materialEnrichmentJobs.status })
+    .from(materialEnrichmentJobs)
+    .where(eq(materialEnrichmentJobs.id, jobId))
+    .limit(1);
+  if (job?.status !== "running") {
+    throw new EnrichmentJobStoppedError();
+  }
+}
+
+async function updateActiveEnrichmentItem(
+  jobId: string,
+  itemId: number,
+  patch: Partial<typeof materialEnrichmentItems.$inferInsert>,
+) {
+  return db.transaction(async (tx) => {
+    // Serialise every result transition with cancellation on the parent row.
+    // Once cancellation wins the lock, this guard prevents a late AI result
+    // from resurrecting or completing the item.
+    const [job] = await tx
+      .select({ status: materialEnrichmentJobs.status })
+      .from(materialEnrichmentJobs)
+      .where(eq(materialEnrichmentJobs.id, jobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") {
+      throw new EnrichmentJobStoppedError();
+    }
+    const [updated] = await tx
+      .update(materialEnrichmentItems)
+      .set(patch)
+      .where(
+        and(
+          eq(materialEnrichmentItems.id, itemId),
+          eq(materialEnrichmentItems.jobId, jobId),
+          eq(materialEnrichmentItems.status, "processing"),
+        ),
+      )
+      .returning({ id: materialEnrichmentItems.id });
+    if (!updated) {
+      throw new EnrichmentJobStoppedError();
+    }
+    return updated;
+  });
+}
+
 function parseJobOptions(value: unknown): MaterialEnrichmentJobOptions {
   if (!value || typeof value !== "object") {
     return {};
@@ -362,10 +451,7 @@ async function _processEnrichmentItem(
     : [...ENRICHABLE_FIELDS];
   const now = new Date().toISOString();
 
-  await db
-    .update(materialEnrichmentItems)
-    .set({ status: "processing", updatedAt: now })
-    .where(eq(materialEnrichmentItems.id, item.id));
+  await claimEnrichmentItemForProcessing(job.id, item.id, signal);
   await publishMaterialEnrichmentItemEvent(item.id, "item.processing");
 
   const [material] = await db
@@ -373,6 +459,7 @@ async function _processEnrichmentItem(
     .from(materials)
     .where(and(eq(materials.id, item.materialId), isNull(materials.deletedAt)))
     .limit(1);
+  throwIfAborted(signal);
 
   if (!material) {
     const failedResult: MaterialEnrichmentResult = {
@@ -382,26 +469,20 @@ async function _processEnrichmentItem(
       status: "failed",
       error: "Không tìm thấy vật tư.",
     };
-    await db
-      .update(materialEnrichmentItems)
-      .set({
-        status: "failed",
-        resultJson: failedResult,
-        updatedAt: now,
-      })
-      .where(eq(materialEnrichmentItems.id, item.id));
+    await updateActiveEnrichmentItem(job.id, item.id, {
+      status: "failed",
+      resultJson: failedResult,
+      updatedAt: now,
+    });
     await publishMaterialEnrichmentItemEvent(item.id, "item.failed");
     return failedResult;
   }
 
   const input = materialToInput(material);
-  await db
-    .update(materialEnrichmentItems)
-    .set({
-      originalSnapshotJson: input,
-      updatedAt: now,
-    })
-    .where(eq(materialEnrichmentItems.id, item.id));
+  await updateActiveEnrichmentItem(job.id, item.id, {
+    originalSnapshotJson: input,
+    updatedAt: now,
+  });
   await publishMaterialEnrichmentItemEvent(item.id, "item.snapshot");
 
   // `skipWellFilled`: when the material already has its core enrichable fields,
@@ -429,19 +510,18 @@ async function _processEnrichmentItem(
       status: "skipped",
       error: "Đã đủ thông tin — bỏ qua theo tùy chọn.",
     };
-    await db
-      .update(materialEnrichmentItems)
-      .set({
-        status: skippedResult.status,
-        resultJson: skippedResult,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(materialEnrichmentItems.id, item.id));
+    await updateActiveEnrichmentItem(job.id, item.id, {
+      status: skippedResult.status,
+      resultJson: skippedResult,
+      updatedAt: new Date().toISOString(),
+    });
     await publishMaterialEnrichmentItemEvent(item.id, "item.skipped");
     return skippedResult;
   }
 
   try {
+    await assertEnrichmentJobRunning(job.id);
+    throwIfAborted(signal);
     const [domainPolicy, queryControls] = await Promise.all([
       resolveSearchDomainPolicy(),
       resolveSearchQueryControls(),
@@ -462,6 +542,8 @@ async function _processEnrichmentItem(
         queryControls,
       },
     ).map((query) => query.query);
+    await assertEnrichmentJobRunning(job.id);
+    throwIfAborted(signal);
     const searchResponse = await searchWebForProduct(queries, signal, {
       feature: "material_enrichment",
     });
@@ -501,19 +583,18 @@ async function _processEnrichmentItem(
         status: "skipped",
         error: buildSkippedError(searchResponse.warnings),
       };
-      await db
-        .update(materialEnrichmentItems)
-        .set({
-          status: skippedResult.status,
-          resultJson: skippedResult,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(materialEnrichmentItems.id, item.id));
+      await updateActiveEnrichmentItem(job.id, item.id, {
+        status: skippedResult.status,
+        resultJson: skippedResult,
+        updatedAt: new Date().toISOString(),
+      });
       await publishMaterialEnrichmentItemEvent(item.id, "item.skipped");
       return skippedResult;
     }
 
     const pdfUrls = extractPdfUrlsFromResults(ranked);
+    await assertEnrichmentJobRunning(job.id);
+    throwIfAborted(signal);
     const candidates = await saveWebCandidates(item, ranked, pdfUrls);
 
     const fetchedRanked = await enrichSearchResultsWithFetchedContent(ranked, {
@@ -523,6 +604,8 @@ async function _processEnrichmentItem(
 
     const provider =
       loadProvider?.() ?? resolveAiProvider("enrichment", options.model);
+    await assertEnrichmentJobRunning(job.id);
+    throwIfAborted(signal);
     const extracted = await extractProductFromSources(
       input,
       fetchedRanked,
@@ -531,23 +614,23 @@ async function _processEnrichmentItem(
     );
 
     const result = buildResultFromExtraction(extracted, pdfUrls, targetFields);
+    throwIfAborted(signal);
     applyOptionMatching(result, filterOptions);
     result.overallConfidence = overallConfidence(result, targetFields);
     const band = classifyEnrichmentConfidence(result.overallConfidence);
     result.status = resolveItemStatus(band);
     result.selectedCandidateId = candidates[0]?.id ?? null;
 
-    await db
-      .update(materialEnrichmentItems)
-      .set({
-        status: result.status,
-        resultJson: result,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(materialEnrichmentItems.id, item.id));
+    await updateActiveEnrichmentItem(job.id, item.id, {
+      status: result.status,
+      resultJson: result,
+      updatedAt: new Date().toISOString(),
+    });
     await publishMaterialEnrichmentItemEvent(item.id, "item.completed");
 
     if (options.autoCommitHighConfidence && result.status === "auto") {
+      await assertEnrichmentJobRunning(job.id);
+      throwIfAborted(signal);
       await commitEnrichmentItem(db, item.id, {
         autoCommitHighConfidence: true,
       });
@@ -565,11 +648,6 @@ async function _processEnrichmentItem(
       signal?.aborted === true ||
       (error instanceof Error && error.name === "AbortError")
     ) {
-      await db
-        .update(materialEnrichmentItems)
-        .set({ status: "pending", updatedAt: new Date().toISOString() })
-        .where(eq(materialEnrichmentItems.id, item.id));
-      await publishMaterialEnrichmentItemEvent(item.id, "item.pending");
       throw error;
     }
     const message =
@@ -583,14 +661,11 @@ async function _processEnrichmentItem(
       status: "failed",
       error: message,
     };
-    await db
-      .update(materialEnrichmentItems)
-      .set({
-        status: "failed",
-        resultJson: failedResult,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(materialEnrichmentItems.id, item.id));
+    await updateActiveEnrichmentItem(job.id, item.id, {
+      status: "failed",
+      resultJson: failedResult,
+      updatedAt: new Date().toISOString(),
+    });
     await publishMaterialEnrichmentItemEvent(item.id, "item.failed");
     return failedResult;
   }
@@ -641,7 +716,12 @@ async function refreshJobCounters(jobId: string) {
       pdfsFound: stats?.pdfsFound ?? 0,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(materialEnrichmentJobs.id, jobId));
+    .where(
+      and(
+        eq(materialEnrichmentJobs.id, jobId),
+        eq(materialEnrichmentJobs.status, "running"),
+      ),
+    );
 }
 
 // Review/rejection and failed outcomes are terminal work, not missing work.
@@ -774,7 +854,7 @@ async function _processEnrichmentJob(
       .where(eq(materials.id, item.materialId))
       .limit(1);
 
-    await db
+    const [progressUpdated] = await db
       .update(materialEnrichmentJobs)
       .set({
         currentMaterialId: material?.id ?? item.materialId,
@@ -782,7 +862,16 @@ async function _processEnrichmentJob(
         lastProgressAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
-      .where(eq(materialEnrichmentJobs.id, jobId));
+      .where(
+        and(
+          eq(materialEnrichmentJobs.id, jobId),
+          eq(materialEnrichmentJobs.status, "running"),
+        ),
+      )
+      .returning({ id: materialEnrichmentJobs.id });
+    if (!progressUpdated) {
+      throw new EnrichmentJobStoppedError();
+    }
 
     await processEnrichmentItem(job, item, loadProvider, signal);
     await refreshJobCounters(jobId);

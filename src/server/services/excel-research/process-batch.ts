@@ -27,6 +27,17 @@ import {
 
 type ClaimedRow = typeof excelResearchJobRows.$inferSelect;
 
+export function isExcelProcessingRowOrphaned(
+  processingStartedAt: string | null,
+  nowMs = Date.now(),
+  startup = false,
+) {
+  if (startup) return true;
+  if (!processingStartedAt) return false;
+  const startedAtMs = Date.parse(processingStartedAt);
+  return Number.isFinite(startedAtMs) && nowMs - startedAtMs >= 10 * 60 * 1000;
+}
+
 async function appendChangeLog(input: {
   jobId: string;
   jobRowId?: number;
@@ -92,14 +103,14 @@ export type ProcessBatchResult = {
   remaining: number;
 };
 
-async function countPendingRows(jobId: string) {
+async function countOpenRows(jobId: string) {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(excelResearchJobRows)
     .where(
       and(
         eq(excelResearchJobRows.jobId, jobId),
-        eq(excelResearchJobRows.status, "pending"),
+        inArray(excelResearchJobRows.status, ["pending", "processing"]),
       ),
     );
   return row?.count ?? 0;
@@ -314,7 +325,7 @@ async function _processJobBatch(jobId: string): Promise<number> {
     .limit(1);
 
   if (job?.status !== "running") {
-    return countPendingRows(jobId);
+    return countOpenRows(jobId);
   }
 
   const config = resolveConfig(job.configJson);
@@ -376,14 +387,14 @@ async function _processJobBatch(jobId: string): Promise<number> {
     await recomputeJobCounters(jobId);
   }
 
-  return countPendingRows(jobId);
+  return countOpenRows(jobId);
 }
 
 async function _processJobBatchDetailed(
   jobId: string,
 ): Promise<ProcessBatchResult> {
   const batchId = randomUUID();
-  const remainingBefore = await countPendingRows(jobId);
+  const remainingBefore = await countOpenRows(jobId);
   const remaining = await processJobBatch(jobId);
   return {
     batchId,
@@ -392,9 +403,22 @@ async function _processJobBatchDetailed(
   };
 }
 
-async function _resetStaleExcelResearchRows() {
-  const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+async function _resetStaleExcelResearchRows(
+  options: { startup?: boolean } = {},
+) {
+  const nowMs = Date.now();
+  const cutoff = new Date(nowMs - 10 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
+
+  // A process restart makes every in-flight row orphaned. The startup path is
+  // deliberately broad so a recent or timestamp-less row is not stranded;
+  // periodic maintenance keeps the age guard and cannot reclaim live work.
+  const orphanedAtStartup = options.startup
+    ? eq(excelResearchJobRows.status, "processing")
+    : and(
+        eq(excelResearchJobRows.status, "processing"),
+        sql`${excelResearchJobRows.processingStartedAt} < ${cutoff}`,
+      );
 
   await db
     .update(excelResearchJobRows)
@@ -404,12 +428,7 @@ async function _resetStaleExcelResearchRows() {
       processingStartedAt: null,
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(excelResearchJobRows.status, "processing"),
-        sql`${excelResearchJobRows.processingStartedAt} < ${cutoff}`,
-      ),
-    );
+    .where(and(orphanedAtStartup));
 }
 
 export const processJobBatch = traceFn(
