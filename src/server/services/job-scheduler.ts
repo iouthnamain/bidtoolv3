@@ -23,7 +23,11 @@ import {
   type ShopScrapeProgress,
 } from "~/server/services/shop-material-scraper";
 import type { ShopImportJobProgress } from "~/server/services/shop-import-jobs";
-import { importScrapedProducts } from "~/server/services/shop-product-importer";
+import {
+  importScrapedProducts,
+  readImportJobProgress,
+  reconcileImportJobProgress,
+} from "~/server/services/shop-product-importer";
 import {
   resolveScrapeMaxConcurrentJobs,
   resolveScrapeMaxConcurrentPages,
@@ -607,8 +611,9 @@ async function runImportJob(job: ShopImportJobRow) {
 
   try {
     const products = await loadProductsForImportJob(job);
-    const result = await importScrapedProducts(db, products, {
+    await importScrapedProducts(db, products, {
       signal: controller.signal,
+      importJobId: job.id,
       scrapeJobId: job.scrapeJobId,
       mode: job.productSourceUrls === null ? "create_all" : "match_existing",
       onProgress: (progress) => {
@@ -618,78 +623,76 @@ async function runImportJob(job: ShopImportJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
-      await persistLatestImportProgressItems(job.id, progressWriter.latest());
+      await reconcileImportJobProgress(db, job.id);
       return;
     }
 
-    const finishedAt = new Date().toISOString();
-    await db
-      .update(shopImportJobs)
-      .set({
-        status: "completed",
-        processed: products.length,
-        total: products.length,
-        created: result.created,
-        updated: result.updated,
-        skipped: result.skipped,
-        failed: result.failed,
-        items: result.items,
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: null,
-        finishedAt,
-        lastProgressAt: finishedAt,
-        expiresAt: await expiresAt(finishedAt),
-        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(shopImportJobs.id, job.id),
-          eq(shopImportJobs.status, "running"),
-        ),
-      );
+    const durable = await finishImportJob(job.id, { status: "completed" });
+    if (!durable) return;
     log.info("job_completed", {
       jobType: "import",
       jobId: job.id,
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      failed: result.failed,
+      created: durable.created,
+      updated: durable.updated,
+      skipped: durable.skipped,
+      failed: durable.failed,
     });
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
-      await persistLatestImportProgressItems(job.id, progressWriter.latest());
+      await reconcileImportJobProgress(db, job.id);
       return;
     }
 
-    const finishedAt = new Date().toISOString();
     const message = errorMessage(error, "Không thể nhập catalog.");
     log.warn("job_failed", { jobType: "import", jobId: job.id, error });
-    await db
-      .update(shopImportJobs)
-      .set({
-        status: "failed",
-        items: progressWriter.latest()?.items ?? job.items,
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: message,
-        finishedAt,
-        lastProgressAt: finishedAt,
-        expiresAt: await expiresAt(finishedAt),
-        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(shopImportJobs.id, job.id),
-          eq(shopImportJobs.status, "running"),
-        ),
-      );
+    await finishImportJob(job.id, { status: "failed", error: message });
   } finally {
     activeImportRuns.delete(job.id);
   }
+}
+
+async function finishImportJob(
+  jobId: string,
+  outcome: { status: "completed" } | { status: "failed"; error: string },
+) {
+  const finishedAt = new Date().toISOString();
+  const expiry = await expiresAt(finishedAt);
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ status: shopImportJobs.status })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, jobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") return null;
+    // Keep reconciliation and terminal status under the product commit lock.
+    const progress = await readImportJobProgress(tx, jobId);
+    if (
+      outcome.status === "completed" &&
+      (!progress || progress.processed !== progress.total)
+    ) {
+      throw new Error(
+        "Job nhập catalog còn sản phẩm chưa xử lý; không thể hoàn tất.",
+      );
+    }
+    await tx
+      .update(shopImportJobs)
+      .set({
+        ...progress,
+        status: outcome.status,
+        currentProductName: null,
+        currentSourceUrl: null,
+        error: outcome.status === "failed" ? outcome.error : null,
+        finishedAt,
+        lastProgressAt: finishedAt,
+        expiresAt: expiry,
+        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
+        updatedAt: finishedAt,
+      })
+      .where(eq(shopImportJobs.id, jobId));
+    return progress;
+  });
 }
 
 async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
@@ -918,7 +921,6 @@ async function persistLatestScrapeProgressProducts(
 
 function createImportProgressWriter(jobId: string) {
   let pendingProgress: ShopImportJobProgress | null = null;
-  let latestProgress: ShopImportJobProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -939,16 +941,11 @@ function createImportProgressWriter(jobId: string) {
     flushChain = flushChain
       .catch(() => undefined)
       .then(async () => {
+        await reconcileImportJobProgress(db, jobId);
         const now = new Date().toISOString();
         await db
           .update(shopImportJobs)
           .set({
-            processed: progress.processed,
-            total: progress.total,
-            created: progress.created,
-            updated: progress.updated,
-            skipped: progress.skipped,
-            failed: progress.failed,
             currentProductName: progress.currentProductName,
             currentSourceUrl: progress.currentSourceUrl,
             durationMs: elapsedSql(now, shopImportJobs.startedAt),
@@ -969,7 +966,6 @@ function createImportProgressWriter(jobId: string) {
   return {
     queue(progress: ShopImportJobProgress) {
       pendingProgress = progress;
-      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -982,28 +978,7 @@ function createImportProgressWriter(jobId: string) {
       }
     },
     flush,
-    latest() {
-      return latestProgress;
-    },
   };
-}
-
-async function persistLatestImportProgressItems(
-  jobId: string,
-  progress: ShopImportJobProgress | null,
-) {
-  if (!progress?.items?.length) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  await db
-    .update(shopImportJobs)
-    .set({
-      items: progress.items,
-      updatedAt: now,
-    })
-    .where(eq(shopImportJobs.id, jobId));
 }
 
 function createEnrichmentProgressWriter(jobId: string) {
@@ -1218,17 +1193,6 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(shopScrapeJobs.status, "running")),
     db
-      .update(shopImportJobs)
-      .set({
-        status: "queued",
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: null,
-        lastProgressAt: now,
-        updatedAt: now,
-      })
-      .where(eq(shopImportJobs.status, "running")),
-    db
       .update(materialEnrichmentJobs)
       .set({
         status: "queued",
@@ -1264,6 +1228,53 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(materialProfileSearchRuns.status, "running")),
   ]);
+  await recoverInterruptedImportJobs(now);
+}
+
+async function recoverInterruptedImportJobs(now: string) {
+  const jobs = await db
+    .select({ id: shopImportJobs.id })
+    .from(shopImportJobs)
+    .where(eq(shopImportJobs.status, "running"));
+  for (const job of jobs) {
+    await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ status: shopImportJobs.status })
+        .from(shopImportJobs)
+        .where(eq(shopImportJobs.id, job.id))
+        .for("update")
+        .limit(1);
+      if (current?.status !== "running") return;
+      const progress = await readImportJobProgress(tx, job.id);
+      if (!progress) {
+        await tx
+          .update(shopImportJobs)
+          .set({
+            status: "failed",
+            currentProductName: null,
+            currentSourceUrl: null,
+            error:
+              "Job nhập bị gián đoạn trước khi có sổ kiểm kê; không tự động chạy lại để tránh tạo trùng. Hãy tạo một job nhập mới.",
+            finishedAt: now,
+            lastProgressAt: now,
+            updatedAt: now,
+          })
+          .where(eq(shopImportJobs.id, job.id));
+        return;
+      }
+      await tx
+        .update(shopImportJobs)
+        .set({
+          ...progress,
+          status: "queued",
+          error: null,
+          finishedAt: null,
+          lastProgressAt: now,
+          updatedAt: now,
+        })
+        .where(eq(shopImportJobs.id, job.id));
+    });
+  }
 }
 
 async function cleanupExpiredJobs() {
@@ -1408,4 +1419,15 @@ export const runJobSchedulerTickForTests = traceFn(
   log,
   "runJobSchedulerTickForTests",
   _runJobSchedulerTickForTests,
+);
+export const recoverInterruptedImportJobsForTests = traceFn(
+  log,
+  "recoverInterruptedImportJobsForTests",
+  recoverInterruptedImportJobs,
+);
+
+export const runShopImportJobForTests = traceFn(
+  log,
+  "runShopImportJobForTests",
+  runImportJob,
 );

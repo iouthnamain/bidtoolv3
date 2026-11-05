@@ -103,6 +103,14 @@ export const shopJobStatusEnum = pgEnum("shop_job_status", [
   "cancelled",
 ]);
 
+export const shopImportItemStatusEnum = pgEnum("shop_import_item_status", [
+  "processing",
+  "created",
+  "updated",
+  "skipped",
+  "failed",
+]);
+
 export const tenderPackages = pgTable(
   "tender_packages",
   {
@@ -986,6 +994,39 @@ export const shopImportJobs = pgTable(
     ),
     shopImportJobsTenantIdx: index("shop_import_jobs_tenant_id_idx").on(
       table.tenantId,
+    ),
+  }),
+);
+
+export const shopImportItems = pgTable(
+  "shop_import_items",
+  {
+    id: serial("id").primaryKey(),
+    importJobId: uuid("import_job_id")
+      .notNull()
+      .references(() => shopImportJobs.id, { onDelete: "cascade" }),
+    productKey: text("product_key").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    productName: text("product_name").notNull(),
+    status: shopImportItemStatusEnum("status").notNull(),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    message: text("message"),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    importJobProductUnique: uniqueIndex(
+      "shop_import_items_job_product_unique",
+    ).on(table.importJobId, table.productKey),
+    importJobStatusIdx: index("shop_import_items_job_status_idx").on(
+      table.importJobId,
+      table.status,
     ),
   }),
 );

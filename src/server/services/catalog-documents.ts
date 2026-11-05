@@ -6,16 +6,16 @@ import {
   type CatalogDocumentLinkSource,
   type CatalogDocumentSourceType,
 } from "~/lib/materials/catalog-pdf";
-import type { db as appDb } from "~/server/db";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
 } from "~/server/db/schema";
+import type { MaterialWriteHandle } from "~/server/services/material-write";
 import { saveCatalogPdfFile } from "~/server/services/catalog-pdf-storage";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-catalog-documents");
 
-type AppDb = typeof appDb;
+type AppDb = MaterialWriteHandle;
 
 export type CatalogDocumentRow =
   typeof materialCatalogDocuments.$inferSelect;
