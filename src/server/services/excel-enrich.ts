@@ -57,6 +57,7 @@ export const MATCH_CONCURRENCY = 10;
 
 export type EnrichCandidate = {
   materialId: number;
+  revision?: number;
   name: string;
   code: string | null;
   unit: string;
@@ -138,6 +139,7 @@ function toCandidate(
 ): EnrichCandidate {
   return {
     materialId: row.id,
+    revision: row.revision,
     name: row.name,
     code: row.code,
     unit: row.unit,
@@ -232,9 +234,8 @@ async function mapWithConcurrency<T, R>(
     }
   }
 
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    () => worker(),
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    worker(),
   );
   await Promise.all(workers);
   return results;
@@ -272,7 +273,11 @@ async function _matchRows(
         return {
           key,
           candidateIds: [] as number[],
-          scored: [] as Array<{ id: number; score: number; breakdown: ScoreBreakdown }>,
+          scored: [] as Array<{
+            id: number;
+            score: number;
+            breakdown: ScoreBreakdown;
+          }>,
         };
       }
       const candidates = await findFuzzyCandidates(
@@ -292,12 +297,12 @@ async function _matchRows(
       };
     },
   );
-  const rawByKey = new Map(uniqueRawResults.map((result) => [result.key, result]));
+  const rawByKey = new Map(
+    uniqueRawResults.map((result) => [result.key, result]),
+  );
   const rawResults = rowKeys.map((key) => rawByKey.get(key)!);
 
-  const allIds = Array.from(
-    new Set(rawResults.flatMap((r) => r.candidateIds)),
-  );
+  const allIds = Array.from(new Set(rawResults.flatMap((r) => r.candidateIds)));
   const hydrated = await hydrateCandidates(db, allIds);
 
   return rawResults.map((raw, i) => {
@@ -312,7 +317,9 @@ async function _matchRows(
     const top = candidates[0] ?? null;
     const status = classify(top?.score);
     const matchedMaterial =
-      status !== "unmatched" && top ? (hydrated.get(top.materialId) ?? null) : null;
+      status !== "unmatched" && top
+        ? (hydrated.get(top.materialId) ?? null)
+        : null;
 
     return {
       originalRowIndex: row.originalRowIndex,
@@ -402,8 +409,7 @@ async function writePreservedWorkbook(
     >[0],
   );
 
-  const sheet =
-    workbook.getWorksheet(opts.sheetName) ?? workbook.worksheets[0];
+  const sheet = workbook.getWorksheet(opts.sheetName) ?? workbook.worksheets[0];
   if (!sheet) {
     throw new Error("Không tìm thấy trang tính để ghi dữ liệu.");
   }
@@ -499,9 +505,7 @@ const CLEAN_COLUMN_ORDER: FillableField[] = [
   "sourceUrl",
 ];
 
-async function writeCleanWorkbook(
-  opts: WriteWorkbookOptions,
-): Promise<Buffer> {
+async function writeCleanWorkbook(opts: WriteWorkbookOptions): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(opts.sheetName || "Enriched");
 
@@ -521,7 +525,8 @@ async function writeCleanWorkbook(
     sheet.addRow([
       material?.name ?? "",
       ...CLEAN_COLUMN_ORDER.map(
-        (field) => resolveCellValue(material, field, decision.valueOverrides) ?? "",
+        (field) =>
+          resolveCellValue(material, field, decision.valueOverrides) ?? "",
       ),
     ]);
   }
@@ -577,7 +582,8 @@ function cellToText(value: ExcelJS.CellValue): string {
   if (typeof value === "object") {
     const record = value as unknown as Record<string, unknown>;
     if (typeof record.text === "string") return cellToText(record.text);
-    if ("result" in record) return cellToText(record.result as ExcelJS.CellValue);
+    if ("result" in record)
+      return cellToText(record.result as ExcelJS.CellValue);
     if (Array.isArray(record.richText)) {
       return record.richText
         .map((part) =>
@@ -633,8 +639,20 @@ function _extractRowFields(
 
 export { columnKeys };
 
-export const rowToScrapedProduct = traceFn(log, "rowToScrapedProduct", _rowToScrapedProduct);
+export const rowToScrapedProduct = traceFn(
+  log,
+  "rowToScrapedProduct",
+  _rowToScrapedProduct,
+);
 export const buildFillPlan = traceFn(log, "buildFillPlan", _buildFillPlan);
 export const matchRows = traceFn(log, "matchRows", _matchRows);
-export const writeEnrichedWorkbook = traceFn(log, "writeEnrichedWorkbook", _writeEnrichedWorkbook);
-export const extractRowFields = traceFn(log, "extractRowFields", _extractRowFields);
+export const writeEnrichedWorkbook = traceFn(
+  log,
+  "writeEnrichedWorkbook",
+  _writeEnrichedWorkbook,
+);
+export const extractRowFields = traceFn(
+  log,
+  "extractRowFields",
+  _extractRowFields,
+);

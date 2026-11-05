@@ -1,20 +1,21 @@
 import { randomUUID } from "node:crypto";
 
 import { TRPCError } from "@trpc/server";
-import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { requirePermission } from "~/server/api/trpc";
-import { materials } from "~/server/db/schema";
 import {
-  buildMaterialMetadata,
   fetchPriceFromUrl,
+  mergeMaterialMetadata,
   normalizeMaterialMetadata,
   type MaterialPriceSource,
 } from "~/server/services/material-price-sources";
 import {
+  lockMaterialForUpdate,
+  updateLockedMaterial,
+} from "~/server/services/material-write";
+import {
   getActiveMaterialById,
-  requireUpdatedMaterial,
 } from "~/server/api/routers/material/records";
 
 const priceSourceBaseInput = z.object({
@@ -101,52 +102,46 @@ export const priceSourceProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const material = await getActiveMaterialById(ctx.db, input.materialId);
-      const metadata = normalizeMaterialMetadata(material.metadataJson);
-      const now = new Date().toISOString();
-      const source: MaterialPriceSource = {
-        id: randomUUID(),
-        label: input.source.label,
-        url: input.source.url ?? "",
-        mode: input.source.mode,
-        fixedPrice: input.source.fixedPrice ?? null,
-        lastPrice: null,
-        lastPriceText: null,
-        currency: input.source.currency,
-        lastCheckedAt: null,
-        note: input.source.note ?? "",
-        isPrimary: input.source.isPrimary || metadata.priceSources.length === 0,
-      };
-      const priceSources = normalizePrimarySources(
-        [...metadata.priceSources, source],
-        source.isPrimary ? source.id : undefined,
-      );
-      const shouldApplyFixedPrice =
-        source.isPrimary &&
-        source.mode === "fixed" &&
-        source.fixedPrice != null;
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          metadataJson: {
-            ...material.metadataJson,
-            ...buildMaterialMetadata({ priceSources }),
-          },
+      return ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.materialId);
+        const metadata = normalizeMaterialMetadata(material.metadataJson);
+        const source: MaterialPriceSource = {
+          id: randomUUID(),
+          label: input.source.label,
+          url: input.source.url ?? "",
+          mode: input.source.mode,
+          fixedPrice: input.source.fixedPrice ?? null,
+          lastPrice: null,
+          lastPriceText: null,
+          lastCheckedAt: null,
+          currency: input.source.currency,
+          note: input.source.note ?? "",
+          isPrimary:
+            input.source.isPrimary || metadata.priceSources.length === 0,
+        };
+        const priceSources = normalizePrimarySources(
+          [...metadata.priceSources, source],
+          source.isPrimary ? source.id : undefined,
+        );
+        const shouldApplyFixedPrice =
+          source.isPrimary &&
+          source.mode === "fixed" &&
+          source.fixedPrice != null;
+        const updated = await updateLockedMaterial(tx, material, {
+          metadataJson: mergeMaterialMetadata(material.metadataJson, {
+            priceSources,
+          }),
           sourceUrl:
             source.isPrimary && source.url ? source.url : material.sourceUrl,
-          defaultUnitPrice: shouldApplyFixedPrice
-            ? source.fixedPrice
-            : material.defaultUnitPrice,
-          currency: shouldApplyFixedPrice ? source.currency : material.currency,
-          updatedAt: now,
-        })
-        .where(
-          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
-        )
-        .returning();
-
-      return { material: requireUpdatedMaterial(updated), source };
+          ...(shouldApplyFixedPrice
+            ? {
+                defaultUnitPrice: source.fixedPrice,
+                currency: source.currency,
+              }
+            : {}),
+        });
+        return { material: updated, source };
+      });
     }),
 
   updatePriceSource: requirePermission("material:write")
@@ -158,60 +153,51 @@ export const priceSourceProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const material = await getActiveMaterialById(ctx.db, input.materialId);
-      const metadata = normalizeMaterialMetadata(material.metadataJson);
-      const existing = metadata.priceSources.find(
-        (source) => source.id === input.sourceId,
-      );
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy link giá.",
-        });
-      }
-
-      const nextSource: MaterialPriceSource = {
-        ...existing,
-        ...input.patch,
-        fixedPrice:
-          input.patch.fixedPrice === undefined
-            ? existing.fixedPrice
-            : (input.patch.fixedPrice ?? null),
-        note: input.patch.note ?? existing.note,
-        url: input.patch.url ?? existing.url,
-        label: input.patch.label ?? existing.label,
-        currency: input.patch.currency ?? existing.currency,
-        mode: input.patch.mode ?? existing.mode,
-        isPrimary: input.patch.isPrimary ?? existing.isPrimary,
-      };
-      assertValidPriceSource(nextSource);
-      const priceSources = normalizePrimarySources(
-        metadata.priceSources.map((source) =>
-          source.id === input.sourceId ? nextSource : source,
-        ),
-        nextSource.isPrimary ? nextSource.id : undefined,
-      );
-      const primary = priceSources.find((source) => source.isPrimary);
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          metadataJson: {
-            ...material.metadataJson,
-            ...buildMaterialMetadata({ priceSources }),
-          },
+      return ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.materialId);
+        const metadata = normalizeMaterialMetadata(material.metadataJson);
+        const existing = metadata.priceSources.find(
+          (source) => source.id === input.sourceId,
+        );
+        if (!existing) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Không tìm thấy link giá.",
+          });
+        }
+        const nextSource: MaterialPriceSource = {
+          ...existing,
+          ...input.patch,
+          fixedPrice:
+            input.patch.fixedPrice === undefined
+              ? existing.fixedPrice
+              : (input.patch.fixedPrice ?? null),
+          note: input.patch.note ?? existing.note,
+          url: input.patch.url ?? existing.url,
+          label: input.patch.label ?? existing.label,
+          currency: input.patch.currency ?? existing.currency,
+          mode: input.patch.mode ?? existing.mode,
+          isPrimary: input.patch.isPrimary ?? existing.isPrimary,
+        };
+        assertValidPriceSource(nextSource);
+        const priceSources = normalizePrimarySources(
+          metadata.priceSources.map((source) =>
+            source.id === input.sourceId ? nextSource : source,
+          ),
+          nextSource.isPrimary ? nextSource.id : undefined,
+        );
+        const primary = priceSources.find((source) => source.isPrimary);
+        const updated = await updateLockedMaterial(tx, material, {
+          metadataJson: mergeMaterialMetadata(material.metadataJson, {
+            priceSources,
+          }),
           sourceUrl:
             primary?.url != null && primary.url.length > 0
               ? primary.url
               : material.sourceUrl,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(
-          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
-        )
-        .returning();
-
-      return { material: requireUpdatedMaterial(updated), source: nextSource };
+        });
+        return { material: updated, source: nextSource };
+      });
     }),
 
   deletePriceSource: requirePermission("material:write")
@@ -222,59 +208,49 @@ export const priceSourceProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const material = await getActiveMaterialById(ctx.db, input.materialId);
-      const metadata = normalizeMaterialMetadata(material.metadataJson);
-      const priceSources = metadata.priceSources.filter(
-        (source) => source.id !== input.sourceId,
-      );
-      if (priceSources.length === metadata.priceSources.length) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy link giá.",
-        });
-      }
-
-      const deletedSource = metadata.priceSources.find(
-        (source) => source.id === input.sourceId,
-      );
-      const normalizedSources =
-        priceSources.some((source) => source.isPrimary) ||
-        priceSources.length === 0
-          ? priceSources
-          : priceSources.map((source, index) => ({
-              ...source,
-              isPrimary: index === 0,
-            }));
-      const primary = normalizedSources.find((source) => source.isPrimary);
-      const deletedSourceUrl = deletedSource?.url.trim();
-      const currentSourceUrl = material.sourceUrl?.trim();
-      const shouldClearCurrentSourceUrl =
-        deletedSourceUrl != null &&
-        deletedSourceUrl.length > 0 &&
-        currentSourceUrl === deletedSourceUrl;
-      const nextSourceUrl =
-        shouldClearCurrentSourceUrl && primary?.url.trim()
-          ? primary.url
-          : shouldClearCurrentSourceUrl
-            ? null
-            : material.sourceUrl;
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          metadataJson: {
-            ...material.metadataJson,
-            ...buildMaterialMetadata({ priceSources: normalizedSources }),
-          },
+      return ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.materialId);
+        const metadata = normalizeMaterialMetadata(material.metadataJson);
+        const priceSources = metadata.priceSources.filter(
+          (source) => source.id !== input.sourceId,
+        );
+        if (priceSources.length === metadata.priceSources.length) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Không tìm thấy link giá.",
+          });
+        }
+        const deletedSource = metadata.priceSources.find(
+          (source) => source.id === input.sourceId,
+        );
+        const normalizedSources =
+          priceSources.some((source) => source.isPrimary) ||
+          priceSources.length === 0
+            ? priceSources
+            : priceSources.map((source, index) => ({
+                ...source,
+                isPrimary: index === 0,
+              }));
+        const primary = normalizedSources.find((source) => source.isPrimary);
+        const deletedSourceUrl = deletedSource?.url.trim();
+        const currentSourceUrl = material.sourceUrl?.trim();
+        const shouldClearCurrentSourceUrl =
+          deletedSourceUrl != null &&
+          deletedSourceUrl.length > 0 &&
+          currentSourceUrl === deletedSourceUrl;
+        const nextSourceUrl =
+          shouldClearCurrentSourceUrl && primary?.url.trim()
+            ? primary.url
+            : shouldClearCurrentSourceUrl
+              ? null
+              : material.sourceUrl;
+        return updateLockedMaterial(tx, material, {
+          metadataJson: mergeMaterialMetadata(material.metadataJson, {
+            priceSources: normalizedSources,
+          }),
           sourceUrl: nextSourceUrl,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(
-          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
-        )
-        .returning();
-
-      return requireUpdatedMaterial(updated);
+        });
+      });
     }),
 
   refreshPriceSource: requirePermission("material:write")
@@ -317,37 +293,49 @@ export const priceSourceProcedures = {
         });
       }
       const checkedAt = new Date().toISOString();
-      const nextSource: MaterialPriceSource = {
-        ...source,
-        lastPrice: result.price,
-        lastPriceText: result.priceText,
-        lastCheckedAt: checkedAt,
-      };
-      const priceSources = metadata.priceSources.map((item) =>
-        item.id === source.id ? nextSource : item,
-      );
-      const nextDefaultPrice =
-        input.updateDefaultPrice && result.price != null
-          ? result.price
-          : material.defaultUnitPrice;
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
-          metadataJson: {
-            ...material.metadataJson,
-            ...buildMaterialMetadata({ priceSources }),
-          },
-          defaultUnitPrice: nextDefaultPrice,
-          sourceUrl: source.isPrimary ? source.url : material.sourceUrl,
-          updatedAt: checkedAt,
-        })
-        .where(
-          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
-        )
-        .returning();
-
-      return { material: requireUpdatedMaterial(updated), source: nextSource };
+      return ctx.db.transaction(async (tx) => {
+        const current = await lockMaterialForUpdate(tx, input.materialId);
+        const currentMetadata = normalizeMaterialMetadata(current.metadataJson);
+        const currentSource = currentMetadata.priceSources.find(
+          (item) => item.id === input.sourceId,
+        );
+        if (!currentSource) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Nguồn giá đã bị xóa trong lúc đang cập nhật.",
+          });
+        }
+        if (currentSource.url !== source.url) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "URL nguồn giá đã thay đổi trong lúc đang cập nhật.",
+          });
+        }
+        const nextSource: MaterialPriceSource = {
+          ...currentSource,
+          lastPrice: result.price,
+          lastPriceText: result.priceText,
+          lastCheckedAt: checkedAt,
+        };
+        const priceSources = currentMetadata.priceSources.map((item) =>
+          item.id === nextSource.id ? nextSource : item,
+        );
+        const update: Record<string, unknown> = {
+          metadataJson: mergeMaterialMetadata(current.metadataJson, {
+            priceSources,
+          }),
+          sourceUrl: currentSource.isPrimary
+            ? currentSource.url
+            : current.sourceUrl,
+        };
+        if (input.updateDefaultPrice && result.price != null) {
+          update.defaultUnitPrice = result.price;
+        }
+        const updated = await updateLockedMaterial(tx, current, update, {
+          now: checkedAt,
+        });
+        return { material: updated, source: nextSource };
+      });
     }),
 
   applyPriceSourcePrice: requirePermission("material:write")
@@ -358,40 +346,31 @@ export const priceSourceProcedures = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const material = await getActiveMaterialById(ctx.db, input.materialId);
-      const metadata = normalizeMaterialMetadata(material.metadataJson);
-      const source = metadata.priceSources.find(
-        (item) => item.id === input.sourceId,
-      );
-      if (!source) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Không tìm thấy link giá.",
-        });
-      }
-
-      const price =
-        source.mode === "fixed" ? source.fixedPrice : source.lastPrice;
-      if (price == null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Nguồn giá chưa có giá để áp dụng.",
-        });
-      }
-
-      const [updated] = await ctx.db
-        .update(materials)
-        .set({
+      return ctx.db.transaction(async (tx) => {
+        const material = await lockMaterialForUpdate(tx, input.materialId);
+        const metadata = normalizeMaterialMetadata(material.metadataJson);
+        const source = metadata.priceSources.find(
+          (item) => item.id === input.sourceId,
+        );
+        if (!source) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Không tìm thấy link giá.",
+          });
+        }
+        const price =
+          source.mode === "fixed" ? source.fixedPrice : source.lastPrice;
+        if (price == null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Nguồn giá chưa có giá để áp dụng.",
+          });
+        }
+        return updateLockedMaterial(tx, material, {
           defaultUnitPrice: price,
           currency: source.currency,
           sourceUrl: source.url.trim() ? source.url : material.sourceUrl,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(
-          and(eq(materials.id, input.materialId), isNull(materials.deletedAt)),
-        )
-        .returning();
-
-      return requireUpdatedMaterial(updated);
+        });
+      });
     }),
 };

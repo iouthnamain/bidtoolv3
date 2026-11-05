@@ -644,6 +644,49 @@ async function refreshJobCounters(jobId: string) {
     .where(eq(materialEnrichmentJobs.id, jobId));
 }
 
+// Review/rejection and failed outcomes are terminal work, not missing work.
+const TERMINAL_ITEM_STATUSES = new Set([
+  "review",
+  "auto",
+  "committed",
+  "rejected",
+  "failed",
+  "skipped",
+]);
+
+export function assertEnrichmentWorkSet(
+  job: Pick<JobRow, "total" | "materialIds">,
+  items: Pick<ItemRow, "materialId" | "status">[],
+  requireTerminal = false,
+) {
+  const expected = new Set(
+    Array.isArray(job.materialIds) ? job.materialIds : [],
+  );
+  const actual = new Set(items.map((item) => item.materialId));
+  if (
+    job.total <= 0 ||
+    !Array.isArray(job.materialIds) ||
+    job.materialIds.some((id) => !Number.isInteger(id) || id <= 0) ||
+    expected.size !== job.total ||
+    job.materialIds.length !== job.total ||
+    items.length !== job.total ||
+    actual.size !== job.total ||
+    items.some((item) => !expected.has(item.materialId)) ||
+    items.some(
+      (item) =>
+        !TERMINAL_ITEM_STATUSES.has(item.status) &&
+        !["pending", "processing"].includes(item.status),
+    ) ||
+    (requireTerminal &&
+      items.some((item) => !TERMINAL_ITEM_STATUSES.has(item.status)))
+  ) {
+    throw new Error(
+      "Job enrichment có danh sách công việc không đầy đủ hoặc chưa kết thúc. " +
+        "Hãy kiểm tra kết quả đã lưu và tạo job mới cho vật tư còn thiếu; không tự động chạy lại AI.",
+    );
+  }
+}
+
 async function _processEnrichmentJob(
   jobId: string,
   options: {
@@ -663,8 +706,20 @@ async function _processEnrichmentJob(
     throw new Error("Không tìm thấy job enrichment.");
   }
 
+  if (!["queued", "running"].includes(job.status)) {
+    throw new Error("Job enrichment không còn hoạt động.");
+  }
+  const workItems = await db
+    .select({
+      materialId: materialEnrichmentItems.materialId,
+      status: materialEnrichmentItems.status,
+    })
+    .from(materialEnrichmentItems)
+    .where(eq(materialEnrichmentItems.jobId, jobId));
+  assertEnrichmentWorkSet(job, workItems);
+
   const now = new Date().toISOString();
-  await db
+  const [started] = await db
     .update(materialEnrichmentJobs)
     .set({
       status: "running",
@@ -672,7 +727,14 @@ async function _processEnrichmentJob(
       lastProgressAt: now,
       updatedAt: now,
     })
-    .where(eq(materialEnrichmentJobs.id, jobId));
+    .where(
+      and(
+        eq(materialEnrichmentJobs.id, jobId),
+        inArray(materialEnrichmentJobs.status, ["queued", "running"]),
+      ),
+    )
+    .returning({ id: materialEnrichmentJobs.id });
+  if (!started) throw new Error("Job enrichment không còn hoạt động.");
 
   options.onProgress?.(await loadJobProgress(jobId));
 
@@ -702,7 +764,7 @@ async function _processEnrichmentJob(
       .from(materialEnrichmentJobs)
       .where(eq(materialEnrichmentJobs.id, jobId))
       .limit(1);
-    if (currentJob?.status === "cancelled") {
+    if (currentJob?.status !== "running") {
       throw new Error("Job enrichment đã bị hủy.");
     }
 
@@ -726,6 +788,26 @@ async function _processEnrichmentJob(
     await refreshJobCounters(jobId);
     options.onProgress?.(await loadJobProgress(jobId));
   });
+
+  throwIfAborted(signal);
+  const [currentJob] = await db
+    .select()
+    .from(materialEnrichmentJobs)
+    .where(eq(materialEnrichmentJobs.id, jobId))
+    .limit(1);
+  if (currentJob?.status !== "running") {
+    throw new Error("Job enrichment không còn hoạt động.");
+  }
+  const persistedItems = await db
+    .select({
+      materialId: materialEnrichmentItems.materialId,
+      status: materialEnrichmentItems.status,
+    })
+    .from(materialEnrichmentItems)
+    .where(eq(materialEnrichmentItems.jobId, jobId));
+  assertEnrichmentWorkSet(currentJob, persistedItems, true);
+  await refreshJobCounters(jobId);
+  options.onProgress?.(await loadJobProgress(jobId));
 }
 
 export const processEnrichmentItem = traceFn(

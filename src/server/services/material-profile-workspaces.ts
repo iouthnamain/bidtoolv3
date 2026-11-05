@@ -63,6 +63,10 @@ import {
   materials,
 } from "~/server/db/schema";
 import type { MaterialProfileSearchRunSnapshot } from "~/server/services/material-profile-search-jobs";
+import {
+  lockMaterialForUpdate,
+  updateLockedMaterial,
+} from "~/server/services/material-write";
 
 type AppDb = typeof appDb;
 type Workspace = typeof excelWorkspaces.$inferSelect;
@@ -1430,6 +1434,7 @@ export async function matchMaterialProfileWorkspace(
         localMaterial &&
         localResolution?.promotable
       ) {
+        localMaterial = await lockMaterialForUpdate(tx, localMaterial.id);
         const candidateCode = localResolution.candidate.code?.trim() ?? "";
         const [codeOwner] =
           !localMaterial.code?.trim() && candidateCode
@@ -1462,11 +1467,9 @@ export async function matchMaterialProfileWorkspace(
             category: source.fields.category,
             resolvedAt: now,
           });
-          const [saved] = await tx
-            .update(materials)
-            .set({ ...patch, updatedAt: now })
-            .where(eq(materials.id, localMaterial.id))
-            .returning();
+          const saved = await updateLockedMaterial(tx, localMaterial, patch, {
+            now,
+          });
           if (saved) {
             localMaterial = saved;
             materialsToVerifyById.set(saved.id, saved);

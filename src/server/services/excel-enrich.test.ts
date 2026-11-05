@@ -20,7 +20,8 @@ function cellText(value: ExcelJS.CellValue): string {
   if (typeof value === "object") {
     const record = value as { text?: unknown; result?: unknown };
     if (typeof record.text === "string") return record.text;
-    if (record.result != null) return cellText(record.result as ExcelJS.CellValue);
+    if (record.result != null)
+      return cellText(record.result as ExcelJS.CellValue);
     return "";
   }
   return String(value);
@@ -44,6 +45,7 @@ function material(
     defaultDepreciation: 1,
     defaultReusePct: 0,
     metadataJson: {},
+    revision: 0,
     deletedAt: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
@@ -121,11 +123,7 @@ describe("rowToScrapedProduct", () => {
 
 describe("column mapping additions", () => {
   it("maps Vietnamese aliases for code and category", () => {
-    const mapping = suggestColumnMapping([
-      "Tên vật tư",
-      "Mã vật tư",
-      "Nhóm",
-    ]);
+    const mapping = suggestColumnMapping(["Tên vật tư", "Mã vật tư", "Nhóm"]);
     expect(mapping.materialName).toBe("Tên vật tư");
     expect(mapping.code).toBe("Mã vật tư");
     expect(mapping.category).toBe("Nhóm");
@@ -158,7 +156,11 @@ describe("writeEnrichedWorkbook (preserve)", () => {
       mapping,
       headerRowIndex: 1,
       decisions: [
-        { originalRowIndex: 2, materialId: 5, fields: ["unit", "manufacturer"] },
+        {
+          originalRowIndex: 2,
+          materialId: 5,
+          fields: ["unit", "manufacturer"],
+        },
       ],
       materialsById: new Map([
         [
@@ -175,7 +177,9 @@ describe("writeEnrichedWorkbook (preserve)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     // Unit blank → filled with "m".
@@ -202,7 +206,9 @@ describe("writeEnrichedWorkbook (preserve)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     // A new 3rd column should hold the category value.
     expect(cellText(sheet.getRow(2).getCell(3).value)).toBe("Điện");
@@ -225,7 +231,9 @@ describe("writeEnrichedWorkbook (clean)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.worksheets[0]!;
     // Header + one data row.
     expect(sheet.rowCount).toBe(2);
@@ -269,7 +277,9 @@ describe("writeEnrichedWorkbook (force-overwrite)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     // Unit was force-overwritten: "cuộn" → "m".
@@ -311,7 +321,9 @@ describe("writeEnrichedWorkbook (force-overwrite)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     // Manufacturer was NOT in overwriteFields and had a value: sheet wins.
@@ -343,7 +355,9 @@ describe("writeEnrichedWorkbook (force-overwrite)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     // No new column should have been appended for currency: still 2 columns.
     expect(sheet.columnCount).toBe(2);
@@ -382,7 +396,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     // Unit from the material; manufacturer from the override (not on material).
@@ -413,7 +429,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     expect(cellText(dataRow.getCell(2).value)).toBe("cái");
@@ -443,7 +461,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     expect(sheet.getRow(2).getCell(2).value).toBe(25000);
   });
@@ -471,7 +491,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     // Clean mode uses the fixed CLEAN_COLUMN_ORDER: name, code, unit, category,
@@ -492,7 +514,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
       "Đơn giá",
       "Nguồn",
     ];
-    const base64 = await makeWorkbookBase64(headers, [["Van bi", "", "", "", "", "", "", "", ""]]);
+    const base64 = await makeWorkbookBase64(headers, [
+      ["Van bi", "", "", "", "", "", "", "", ""],
+    ]);
     const mapping = suggestColumnMapping(headers);
 
     // Mirrors enrichExportXlsx input → writeEnrichedWorkbook decision mapping.
@@ -540,7 +564,9 @@ describe("writeEnrichedWorkbook (value overrides / web-only)", () => {
     });
 
     const out = new ExcelJS.Workbook();
-    await out.xlsx.load(buffer as unknown as Parameters<typeof out.xlsx.load>[0]);
+    await out.xlsx.load(
+      buffer as unknown as Parameters<typeof out.xlsx.load>[0],
+    );
     const sheet = out.getWorksheet("Sheet1")!;
     const dataRow = sheet.getRow(2);
     expect(cellText(dataRow.getCell(2).value)).toBe("VB-50");

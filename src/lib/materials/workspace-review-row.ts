@@ -41,6 +41,7 @@ function normalizeCandidate(value: unknown): EnrichCandidate | null {
   if (!record || typeof record.materialId !== "number") return null;
   return {
     materialId: record.materialId,
+    revision: typeof record.revision === "number" ? record.revision : 0,
     name: stringValue(record.name),
     code: typeof record.code === "string" ? record.code : null,
     unit: stringValue(record.unit),
