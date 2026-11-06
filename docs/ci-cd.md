@@ -111,7 +111,7 @@ Both targets are inspected before promotion. It promotes the pinned Vercel deplo
 
 ### R10 source acceptance dry run
 
-`R10 source acceptance` is a read-only workflow that runs `scripts/ci/release-dry-run.ts`. The harness parses the checked-in release and reusable validation workflows, checks that the resolved full SHA reaches every checkout and that quality gates remain upstream of artifact verification and publication, then runs the real source resolver against temporary Git repositories. It records tag A resolved from a dispatch at B and fails for missing, non-commit, moved, or wrong-checkout identities. It never creates a shared tag, calls a release or deployment command, or changes repository settings.
+`R10 source acceptance` is a read-only workflow that runs `scripts/ci/release-dry-run.ts`. The harness parses the checked-in release, rollback and reusable validation workflows, checks workflow-dispatch input wiring, exact source-SHA propagation, quality-to-publication dependencies, production permissions and locks, and the rollback preflight order. It then runs the real source resolver against temporary Git repositories and the real rollback-pin CLI against disposable pin files. The fixtures record tag A resolved from a dispatch at B, fail for missing, non-commit, moved, or wrong-checkout identities, and reject skipped-web or wrong-repository rollback pins. It never creates a shared tag, calls a release or deployment command, or changes repository settings.
 
 Run the same proof locally with `bun run scripts/ci/release-dry-run.ts`.
 

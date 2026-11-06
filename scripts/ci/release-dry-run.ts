@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +15,7 @@ declare const Bun: { YAML: { parse(input: string): unknown } };
 
 const repository = path.resolve(".");
 const sourceScript = path.join(repository, "scripts/ci/source.ts");
+const rollbackScript = path.join(repository, "scripts/ci/rollback-pin.ts");
 
 function asMap(value: unknown, label: string): YamlMap {
   if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -29,6 +36,11 @@ function stringValue(value: unknown, label: string): string {
 function falseValue(value: unknown, label: string) {
   if (value !== false && value !== "false")
     throw new Error(`${label} must be false`);
+}
+
+function trueValue(value: unknown, label: string) {
+  if (value !== true && value !== "true")
+    throw new Error(`${label} must be true`);
 }
 
 function mapValue(map: YamlMap, key: string, label: string): unknown {
@@ -95,6 +107,60 @@ function envValue(jobDefinition: YamlMap, key: string, label: string): string {
   return stringValue(mapValue(env, key, `${label}.env`), `${label}.env.${key}`);
 }
 
+function stepEnvValue(
+  jobDefinition: YamlMap,
+  runNeedle: string,
+  key: string,
+  label: string,
+): string {
+  const steps = asArray(
+    mapValue(jobDefinition, "steps", label),
+    `${label}.steps`,
+  );
+  const step = steps
+    .map((value, index) => asMap(value, `${label}.steps[${index}]`))
+    .find(
+      (value) => typeof value.run === "string" && value.run.includes(runNeedle),
+    );
+  if (!step) throw new Error(`${label} has no step containing ${runNeedle}`);
+  const env = asMap(
+    mapValue(step, "env", `${label}.${runNeedle}`),
+    `${label}.${runNeedle}.env`,
+  );
+  return stringValue(
+    mapValue(env, key, `${label}.${runNeedle}.env`),
+    `${label}.${runNeedle}.env.${key}`,
+  );
+}
+
+function workflowInput(
+  workflow: YamlMap,
+  input: string,
+  label: string,
+): YamlMap {
+  const triggers = asMap(mapValue(workflow, "on", label), `${label}.on`);
+  const dispatch = asMap(
+    mapValue(triggers, "workflow_dispatch", label),
+    `${label}.workflow_dispatch`,
+  );
+  const inputs = asMap(
+    mapValue(dispatch, "inputs", `${label}.workflow_dispatch`),
+    `${label}.workflow_dispatch.inputs`,
+  );
+  return asMap(
+    mapValue(inputs, input, `${label}.workflow_dispatch.inputs`),
+    `${label}.${input}`,
+  );
+}
+
+function before(text: string, earlier: string, later: string, label: string) {
+  const earlierIndex = text.indexOf(earlier);
+  const laterIndex = text.indexOf(later);
+  if (earlierIndex < 0) throw new Error(`${label} is missing ${earlier}`);
+  if (laterIndex >= 0 && earlierIndex > laterIndex)
+    throw new Error(`${label} runs ${earlier} after ${later}`);
+}
+
 function assertReleaseGraph() {
   const release = asMap(
     Bun.YAML.parse(
@@ -120,6 +186,19 @@ function assertReleaseGraph() {
   const desktop = job(release, "desktop");
   const verify = job(release, "verify-artifacts");
   const publish = job(release, "publish");
+  const releaseTagInput = workflowInput(release, "release_tag", "release");
+  expectEqual(releaseTagInput.type, "string", "release tag input type");
+  trueValue(releaseTagInput.required, "release tag input required");
+  expectEqual(
+    stepEnvValue(
+      resolve,
+      "scripts/ci/source.ts resolve",
+      "RELEASE_TAG",
+      "release.resolve",
+    ),
+    "${{ inputs.release_tag || github.ref_name }}",
+    "workflow dispatch tag reaches resolver",
+  );
   expectEqual(
     needs(releaseValidate.needs, "release.validate.needs"),
     ["resolve"],
@@ -252,6 +331,192 @@ function assertReleaseGraph() {
         `publication command ${command} runs before source assertion`,
       );
   }
+
+  const releasePermissions = asMap(
+    mapValue(release, "permissions", "release"),
+    "release.permissions",
+  );
+  expectEqual(
+    releasePermissions.contents,
+    "read",
+    "release default permissions",
+  );
+  const releaseConcurrency = asMap(
+    mapValue(release, "concurrency", "release"),
+    "release.concurrency",
+  );
+  expectEqual(
+    releaseConcurrency.group,
+    "bidtool-production-delivery",
+    "release lock group",
+  );
+  falseValue(
+    releaseConcurrency["cancel-in-progress"],
+    "release lock cancellation",
+  );
+  expectEqual(
+    publish.environment,
+    "production",
+    "release publication environment",
+  );
+  const publishPermissions = asMap(
+    mapValue(publish, "permissions", "release.publish"),
+    "release.publish.permissions",
+  );
+  expectEqual(
+    publishPermissions.contents,
+    "write",
+    "release publication contents permission",
+  );
+  expectEqual(
+    publishPermissions.packages,
+    "write",
+    "release publication packages permission",
+  );
+  before(
+    publishRuns,
+    "scripts/ci/production-env.sh",
+    "docker push",
+    "release publication guard",
+  );
+  before(
+    publishRuns,
+    "scripts/ci/production-env.sh",
+    "vercel@65.9.0 deploy",
+    "release web guard",
+  );
+}
+
+function assertRollbackContract() {
+  const rollback = asMap(
+    Bun.YAML.parse(
+      readFileSync(
+        path.join(repository, ".github/workflows/rollback.yml"),
+        "utf8",
+      ),
+    ),
+    "rollback workflow",
+  );
+  const targetVersion = workflowInput(rollback, "target_version", "rollback");
+  expectEqual(targetVersion.type, "string", "rollback version input type");
+  trueValue(targetVersion.required, "rollback version input required");
+  const permissions = asMap(
+    mapValue(rollback, "permissions", "rollback"),
+    "rollback.permissions",
+  );
+  expectEqual(permissions.contents, "read", "rollback default permissions");
+  const concurrency = asMap(
+    mapValue(rollback, "concurrency", "rollback"),
+    "rollback.concurrency",
+  );
+  expectEqual(
+    concurrency.group,
+    "bidtool-production-delivery",
+    "rollback lock group",
+  );
+  falseValue(concurrency["cancel-in-progress"], "rollback lock cancellation");
+  const definition = job(rollback, "rollback");
+  expectEqual(
+    checkoutRef(definition, "rollback.rollback"),
+    "${{ github.sha }}",
+    "rollback checks out the workflow SHA",
+  );
+  expectEqual(definition.environment, "production", "rollback environment");
+  const jobPermissions = asMap(
+    mapValue(definition, "permissions", "rollback.rollback"),
+    "rollback.rollback.permissions",
+  );
+  expectEqual(jobPermissions.contents, "read", "rollback contents permission");
+  expectEqual(jobPermissions.packages, "write", "rollback packages permission");
+  const runs = runText(definition, "rollback.rollback");
+  before(
+    runs,
+    "scripts/ci/rollback-pin.ts",
+    "docker login",
+    "rollback pin validation",
+  );
+  before(
+    runs,
+    "scripts/ci/production-env.sh",
+    "docker login",
+    "rollback credential guard",
+  );
+  before(
+    runs,
+    "scripts/ci/production-env.sh",
+    "vercel@65.9.0 promote",
+    "rollback web guard",
+  );
+  before(
+    runs,
+    "scripts/ci/production-env.sh",
+    "imagetools create",
+    "rollback image guard",
+  );
+  assertRollbackPinFixture();
+}
+
+function assertRollbackPinFixture() {
+  const directory = mkdtempSync(path.join(tmpdir(), "bidtool-r10-rollback-"));
+  try {
+    mkdirSync(path.join(directory, "releases"), { recursive: true });
+    const digest = `sha256:${"a".repeat(64)}`;
+    const entry = {
+      releasedAt: "2026-01-01T00:00:00.000Z",
+      manifestUrl: "https://example.invalid/manifest.json",
+      web: {
+        buildId: "dpl_fixture",
+        deploymentUrl: "https://example.invalid",
+        buildMetadata: "1.2.3+web.fixture",
+      },
+      onprem: {
+        image: "ghcr.io/iouthnamain/bidtoolv3:1.2.3",
+        digest,
+        buildMetadata: "1.2.3+onprem.fixture",
+      },
+      desktop: {},
+    };
+    const pinsFile = path.join(directory, "releases/pins.json");
+    const output = path.join(directory, "github-output");
+    const writePins = (value: YamlMap) =>
+      writeFileSync(
+        pinsFile,
+        JSON.stringify({ current: "1.2.3", releases: { "1.2.3": value } }),
+      );
+    const runPin = () =>
+      execFileSync("bun", [rollbackScript], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          TARGET_VERSION: "1.2.3",
+          GITHUB_REPOSITORY: "iouthnamain/bidtoolv3",
+          GITHUB_OUTPUT: output,
+        },
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    writePins(entry);
+    runPin();
+    const validOutput = readFileSync(output, "utf8");
+    if (
+      !validOutput.includes(
+        `source_ref=ghcr.io/iouthnamain/bidtoolv3@${digest}\n`,
+      ) ||
+      !validOutput.includes("web_build_id=dpl_fixture\n")
+    )
+      throw new Error(
+        "valid rollback pin did not produce a qualified immutable target",
+      );
+    writePins({ ...entry, web: { ...entry.web, buildId: "skipped" } });
+    mustFail("skipped rollback web pin", runPin);
+    writePins({
+      ...entry,
+      onprem: { ...entry.onprem, image: "ghcr.io/other/project:1.2.3" },
+    });
+    mustFail("wrong rollback image repository", runPin);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function git(args: string[], cwd: string): string {
@@ -353,7 +618,8 @@ function assertSourceResolution() {
 }
 
 assertReleaseGraph();
+assertRollbackContract();
 assertSourceResolution();
 console.log(
-  "R10 dry run passed: tag A/dispatch B, missing/non-commit/moved tags, wrong checkout, and quality dependency gates.",
+  "R10 dry run passed: dispatch tag wiring, exact source propagation, negative tag paths, quality gates, and protected rollback pin guards.",
 );
