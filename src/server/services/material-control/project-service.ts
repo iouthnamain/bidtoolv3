@@ -680,7 +680,14 @@ async function assertProjectAndParent(
     .where(eq(materialControlLocations.id, parentId))
     .limit(1);
   if (!parent) fail("NOT_FOUND", "Địa điểm cha không tồn tại.");
-  if (parent.projectId !== projectId) {
+  // A project-scoped location may sit below a shared/global location (for
+  // example: shared warehouse -> project site -> zone). A shared location
+  // must never sit below a project-scoped location because that would make
+  // ownership ambiguous for stock queries.
+  if (
+    parent.projectId !== null &&
+    (projectId === null || parent.projectId !== projectId)
+  ) {
     fail("BAD_REQUEST", "Địa điểm cha phải thuộc cùng phạm vi dự án.");
   }
   const seen = new Set<number>();

@@ -306,18 +306,32 @@ export const materialControlRouter = createTRPCRouter({
 
   createRequirement: requirePermission("material:write")
     .input(
-      z.object({
-        planId: positiveId,
-        materialId: positiveId.nullable().optional(),
-        materialName: z.string().trim().min(1).max(500),
-        specText: z.string().trim().min(1).max(5_000),
-        unit: z.string().trim().min(1).max(50),
-        quantity: quantityInput,
-        requiredAt: dateInput,
-        targetLocationId: nullablePositiveId,
-        status: requirementStatus.optional(),
-        notes: z.string().trim().max(5_000).optional(),
-      }),
+      z
+        .object({
+          planId: positiveId,
+          materialId: positiveId.nullable().optional(),
+          materialName: z.string().trim().min(1).max(500).optional(),
+          specText: z.string().trim().max(5_000).optional(),
+          unit: z.string().trim().min(1).max(50).optional(),
+          quantity: quantityInput,
+          requiredAt: dateInput,
+          targetLocationId: nullablePositiveId,
+          status: requirementStatus.optional(),
+          notes: z.string().trim().max(5_000).optional(),
+        })
+        .superRefine((value, context) => {
+          if (value.materialId == null) {
+            for (const field of ["materialName", "specText", "unit"] as const) {
+              if (value[field] === undefined) {
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: [field],
+                  message: "Vật tư tạm thời cần tên, quy cách và đơn vị.",
+                });
+              }
+            }
+          }
+        }),
     )
     .mutation(({ ctx, input }) =>
       callService(() => createRequirement(input, ctx.db)),
@@ -347,7 +361,7 @@ export const materialControlRouter = createTRPCRouter({
         id: positiveId,
         materialId: positiveId.nullable().optional(),
         materialName: z.string().trim().min(1).max(500).optional(),
-        specText: z.string().trim().min(1).max(5_000).optional(),
+        specText: z.string().trim().max(5_000).optional(),
         unit: z.string().trim().min(1).max(50).optional(),
         quantity: quantityInput.optional(),
         requiredAt: dateInput,
