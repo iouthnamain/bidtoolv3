@@ -6,16 +6,16 @@ import {
   type CatalogDocumentLinkSource,
   type CatalogDocumentSourceType,
 } from "~/lib/materials/catalog-pdf";
-import type { db as appDb } from "~/server/db";
 import {
   materialCatalogDocumentLinks,
   materialCatalogDocuments,
 } from "~/server/db/schema";
+import type { MaterialWriteHandle } from "~/server/services/material-write";
 import { saveCatalogPdfFile } from "~/server/services/catalog-pdf-storage";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-catalog-documents");
 
-type AppDb = typeof appDb;
+type AppDb = MaterialWriteHandle;
 
 export type CatalogDocumentRow =
   typeof materialCatalogDocuments.$inferSelect;
@@ -73,12 +73,21 @@ async function _getOrCreateCatalogDocumentByUrl(
       createdAt: now,
       updatedAt: now,
     })
+    // The lookup above is only a fast path. A concurrent import can insert the
+    // same normalized URL after that read, so let PostgreSQL select the winner
+    // and reread it below instead of aborting the caller's material transaction.
+    .onConflictDoNothing()
     .returning();
 
-  if (!row) {
-    throw new Error("Không thể tạo tài liệu catalog.");
+  if (row) {
+    return { document: row, created: true };
   }
-  return { document: row, created: true };
+
+  const winning = await findCatalogDocumentByUrl(db, trimmedUrl);
+  if (!winning) {
+    throw new Error("Không thể đọc tài liệu catalog vừa tạo.");
+  }
+  return { document: winning, created: false };
 }
 
 /** Idempotently link documents to a material. Returns number of new links. */
