@@ -28,6 +28,11 @@ describe("material-control router", () => {
       "updateRequirement",
       "deleteRequirement",
       "getPlanSummary",
+      "uploadDocument",
+      "listDocuments",
+      "getDocument",
+      "downloadDocument",
+      "deleteDocument",
     ]) {
       expect(procedures).toHaveProperty(procedure);
     }

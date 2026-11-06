@@ -33,6 +33,13 @@ import {
   updateRequirement,
 } from "~/server/services/material-control/requirement-service";
 import { MaterialControlDomainError } from "~/server/services/material-control/types";
+import {
+  deleteMaterialControlDocument,
+  getMaterialControlDocument,
+  listMaterialControlDocuments,
+  readMaterialControlDocument,
+  uploadMaterialControlDocument,
+} from "~/server/services/material-control/document-service";
 
 const positiveId = z.number().int().positive();
 const nullablePositiveId = positiveId.nullable().optional();
@@ -118,6 +125,14 @@ const locationType = z.enum([
   "installed",
   "waste",
   "virtual",
+]);
+const documentCategory = z.enum([
+  "general",
+  "requirement",
+  "purchase",
+  "shipment",
+  "installation",
+  "export",
 ]);
 
 const projectFields = z.object({
@@ -384,5 +399,49 @@ export const materialControlRouter = createTRPCRouter({
     .input(z.object({ planId: positiveId }))
     .query(({ ctx, input }) =>
       callService(() => getPlanSummary(input.planId, ctx.db)),
+    ),
+
+  uploadDocument: requirePermission("material:write")
+    .input(
+      z.object({
+        projectId: positiveId,
+        category: documentCategory.optional(),
+        fileName: z.string().trim().min(1).max(500),
+        fileBase64: z.string().min(1).max(70_000_000),
+        mimeType: z.string().trim().max(200).optional(),
+        notes: z.string().trim().max(5_000).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => uploadMaterialControlDocument(input, ctx.db)),
+    ),
+
+  listDocuments: publicProcedure
+    .input(
+      z.object({
+        projectId: positiveId,
+        category: documentCategory.optional(),
+      }),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listMaterialControlDocuments(input, ctx.db)),
+    ),
+
+  getDocument: publicProcedure
+    .input(z.object({ id: positiveId }))
+    .query(({ ctx, input }) =>
+      callService(() => getMaterialControlDocument(input.id, ctx.db)),
+    ),
+
+  downloadDocument: publicProcedure
+    .input(z.object({ id: positiveId }))
+    .query(({ ctx, input }) =>
+      callService(() => readMaterialControlDocument(input.id, ctx.db)),
+    ),
+
+  deleteDocument: requirePermission("material:write")
+    .input(z.object({ id: positiveId }))
+    .mutation(({ ctx, input }) =>
+      callService(() => deleteMaterialControlDocument(input.id, ctx.db)),
     ),
 });
