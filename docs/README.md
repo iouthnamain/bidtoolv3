@@ -12,6 +12,8 @@
 | [updates/README.md](./updates/README.md)                                                 | Release, deployment, and on-prem update system                                          |
 | [architecture-option-b/README.md](./architecture-option-b/README.md)                     | Target architecture and migration plan                                                  |
 | [remediation-14-days/README.md](./remediation-14-days/README.md)                         | Fourteen-day task, dependency, thread and PR delivery schedule                          |
+| [material-control-architecture.md](./material-control-architecture.md)                   | Architecture for project plans, shared stock, movements, and evidence                   |
+| [material-control-implementation-plan.md](./material-control-implementation-plan.md)     | Small implementation chunks and multi-agent dependency order                            |
 
 ### Feature deep dives (`temp/`)
 
