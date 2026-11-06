@@ -15,6 +15,7 @@ import {
 import { createAsyncLimiter } from "~/server/services/concurrency";
 import { createLogger, traceFn } from "~/server/lib/logger";
 import { extractEnrichmentPageText } from "~/server/services/page-text-extract";
+import { fetchPublicContent } from "~/server/services/public-content-client";
 import {
   DEFAULT_SEARCH_BOOST_DOMAINS,
   DEFAULT_SEARCH_PENALTY_DOMAINS,
@@ -671,15 +672,15 @@ async function searchBingQuery(
     url.searchParams.set("setlang", "vi-VN");
     url.searchParams.set("cc", "vn");
     url.searchParams.set("adlt", "strict");
-    const response = await fetch(url, {
+    const response = await fetchPublicContent({
+      url,
+      kind: "text",
+      timeoutMs: config.requestTimeoutMs,
       headers: buildSearchHeaders({ referer: "https://www.bing.com/" }),
       signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
 
-    const collected = parseBingHtml(await response.text(), query);
+    const collected = parseBingHtml(response.body.toString("utf8"), query);
     const unsafeRejectedUrls = [
       ...new Set(
         collected
@@ -774,19 +775,17 @@ async function _fetchUrlAsSearchResult(
 
   const config = await resolveSearxngSearchConfig();
   try {
-    const response = await fetch(trimmed, {
+    const response = await fetchPublicContent({
+      url: trimmed,
+      kind: "text",
+      timeoutMs: config.requestTimeoutMs,
       headers: buildSearchHeaders({
         accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
       }),
       signal: searchTimeoutSignal(config.requestTimeoutMs, signal),
-      redirect: "follow",
     });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const contentType = response.headers.get("content-type") ?? "";
+    const contentType = response.contentType;
     if (contentType.includes("application/pdf")) {
       return null;
     }
@@ -794,14 +793,14 @@ async function _fetchUrlAsSearchResult(
       return null;
     }
 
-    const body = await response.text();
+    const body = response.body.toString("utf8");
     const titlePattern = /<title[^>]*>([\s\S]*?)<\/title>/i;
     const titleMatch = titlePattern.exec(body);
     const title = stripHtmlTags(titleMatch?.[1] ?? "") || trimmed;
     const snippet = extractEnrichmentPageText(body);
     const discoveredPdfUrls = discoveredPdfUrlsFromHtml(
       body,
-      response.url || trimmed,
+      response.finalUrl || trimmed,
     );
 
     const hasProductOfferEvidence =
@@ -816,8 +815,8 @@ async function _fetchUrlAsSearchResult(
 
     return {
       title,
-      url: response.url || trimmed,
-      domain: extractDomain(response.url || trimmed),
+      url: response.finalUrl || trimmed,
+      domain: extractDomain(response.finalUrl || trimmed),
       snippet: snippet || stripHtmlTags(body).slice(0, 600),
       discoveredPdfUrls,
       query,

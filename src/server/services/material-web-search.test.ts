@@ -4,6 +4,31 @@ vi.mock("~/server/services/search-audit", () => ({
   recordSearchAuditLog: vi.fn(),
 }));
 
+// Caller tests keep their deterministic fetch fixtures; the real pinned Node
+// transport is covered by public-content-client.test.ts.
+vi.mock("~/server/services/public-content-client", () => ({
+  fetchPublicContent: async (input: {
+    url: string | URL;
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+  }) => {
+    const response = await fetch(input.url, {
+      headers: input.headers,
+      signal: input.signal,
+      redirect: "follow",
+    });
+    if (!response.ok) {
+      throw new Error(`Nguồn trả về lỗi HTTP ${response.status}.`);
+    }
+    return {
+      status: response.status,
+      finalUrl: response.url,
+      contentType: response.headers.get("content-type") ?? "",
+      body: Buffer.from(await response.arrayBuffer()),
+    };
+  },
+}));
+
 import { recordSearchAuditLog } from "~/server/services/search-audit";
 
 function requestUrl(input: RequestInfo | URL) {

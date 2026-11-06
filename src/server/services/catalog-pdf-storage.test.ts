@@ -4,11 +4,18 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const fetchPublicContent = vi.hoisted(() => vi.fn());
+vi.mock("~/server/services/public-content-client", () => ({
+  fetchPublicContent,
+  PUBLIC_CONTENT_PDF_MAX_BYTES: 50 * 1024 * 1024,
+}));
+
 import {
   assertValidCatalogPdf,
   CatalogPdfStorageError,
   decodeCatalogPdfBase64,
   deleteCatalogPdfFiles,
+  downloadCatalogPdfFromUrl,
   readCatalogPdfFile,
   sanitizeCatalogPdfFileName,
   saveCatalogPdfFile,
@@ -83,7 +90,11 @@ describe("catalog pdf storage", () => {
 
       // Mirrors the reuploadPdf flow: clear the document dir, then save again.
       await deleteCatalogPdfFiles(9);
-      const replaced = await saveCatalogPdfFile(9, "new-name.pdf", makePdf("v2"));
+      const replaced = await saveCatalogPdfFile(
+        9,
+        "new-name.pdf",
+        makePdf("v2"),
+      );
 
       const filesInDir = await readdir(path.join(root, "9"));
       expect(filesInDir).toEqual(["new-name.pdf"]);
@@ -110,6 +121,29 @@ describe("catalog pdf storage", () => {
   describe("deleteCatalogPdfFiles", () => {
     it("is a no-op when the directory does not exist", async () => {
       await expect(deleteCatalogPdfFiles(404)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("downloadCatalogPdfFromUrl", () => {
+    it("uses the bounded public content client and validates the PDF header", async () => {
+      fetchPublicContent.mockResolvedValueOnce({
+        status: 200,
+        finalUrl: "https://example.com/catalog.pdf",
+        contentType: "application/pdf",
+        body: makePdf("downloaded"),
+      });
+
+      await expect(
+        downloadCatalogPdfFromUrl("https://example.com/catalog.pdf"),
+      ).resolves.toEqual(makePdf("downloaded"));
+      expect(fetchPublicContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "https://example.com/catalog.pdf",
+          kind: "pdf",
+          timeoutMs: 60_000,
+          headers: { Accept: "application/pdf,*/*" },
+        }),
+      );
     });
   });
 });
