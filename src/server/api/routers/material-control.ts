@@ -146,6 +146,7 @@ const projectFields = z.object({
   actualEndAt: dateInput,
   notes: z.string().trim().max(5_000).optional(),
   sources: z.array(sourceInput).max(100).optional(),
+  sourceLinks: z.array(sourceInput).max(100).optional(),
 });
 
 const projectPatch = projectFields.partial().extend({
@@ -375,9 +376,6 @@ export const materialControlRouter = createTRPCRouter({
       z.object({
         id: positiveId,
         materialId: positiveId.nullable().optional(),
-        materialName: z.string().trim().min(1).max(500).optional(),
-        specText: z.string().trim().max(5_000).optional(),
-        unit: z.string().trim().min(1).max(50).optional(),
         quantity: quantityInput.optional(),
         requiredAt: dateInput,
         targetLocationId: nullablePositiveId,

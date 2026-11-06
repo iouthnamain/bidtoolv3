@@ -45,9 +45,6 @@ export type CreateRequirementInput = Readonly<{
 export type UpdateRequirementInput = Readonly<{
   id: number;
   materialId?: number | null;
-  materialName?: string;
-  specText?: string;
-  unit?: string;
   quantity?: number;
   requiredAt?: string | Date | null;
   targetLocationId?: number | null;
@@ -228,6 +225,7 @@ async function validateTargetLocation(
     .select({
       id: materialControlLocations.id,
       projectId: materialControlLocations.projectId,
+      type: materialControlLocations.type,
     })
     .from(materialControlLocations)
     .where(eq(materialControlLocations.id, targetLocationId))
@@ -235,6 +233,16 @@ async function validateTargetLocation(
   if (!location) fail("NOT_FOUND", "Địa điểm đích không tồn tại.");
   if (location.projectId !== null && location.projectId !== projectId) {
     fail("BAD_REQUEST", "Địa điểm đích không thuộc dự án của kế hoạch.");
+  }
+  if (
+    location.type !== "warehouse" &&
+    location.type !== "site" &&
+    location.type !== "zone"
+  ) {
+    fail(
+      "BAD_REQUEST",
+      "Nhu cầu vật tư phải trỏ đến kho, công trường hoặc khu vực.",
+    );
   }
 }
 
@@ -367,7 +375,8 @@ export async function updateRequirement(
       .select()
       .from(materialControlRequirements)
       .where(eq(materialControlRequirements.id, input.id))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!current) fail("NOT_FOUND", "Nhu cầu vật tư không tồn tại.");
     const targetLocationId =
       input.targetLocationId === undefined
@@ -382,26 +391,22 @@ export async function updateRequirement(
       input.materialId === undefined ? current.materialId : input.materialId;
     const catalog =
       materialId === null ? null : await materialById(tx, materialId);
-    const snapshotFieldsChanged =
-      input.materialName !== undefined ||
-      input.specText !== undefined ||
-      input.unit !== undefined;
-    const snapshot = snapshotFieldsChanged
-      ? captureRequirementSnapshot(
-          {
-            materialId,
-            materialName: input.materialName ?? current.materialName,
-            specText: input.specText ?? current.specText,
-            unit: input.unit ?? current.unit,
-          },
-          catalog,
-        )
-      : ({
-          materialId,
-          materialName: current.materialName,
-          specText: current.specText,
-          unit: current.unit,
-        } satisfies MaterialSnapshot);
+    // The name, specification, and unit are an immutable requirement
+    // snapshot. A later catalog link only changes materialId.
+    if (catalog && materialId !== current.materialId) {
+      parseMaterialSnapshot({
+        materialId,
+        materialName: current.materialName,
+        specText: current.specText,
+        unit: current.unit,
+      });
+    }
+    const snapshot = {
+      materialId,
+      materialName: current.materialName,
+      specText: current.specText,
+      unit: current.unit,
+    } satisfies MaterialSnapshot;
     const [updated] = await tx
       .update(materialControlRequirements)
       .set({
@@ -429,12 +434,16 @@ export async function deleteRequirement(
   database: AppDb = db,
 ): Promise<{ id: number }> {
   return database.transaction(async (tx) => {
-    const deleted = await tx
-      .delete(materialControlRequirements)
+    const [cancelled] = await tx
+      .update(materialControlRequirements)
+      .set({
+        status: "cancelled",
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(materialControlRequirements.id, id))
       .returning({ id: materialControlRequirements.id });
-    if (!deleted[0]) fail("NOT_FOUND", "Nhu cầu vật tư không tồn tại.");
-    return deleted[0];
+    if (!cancelled) fail("NOT_FOUND", "Nhu cầu vật tư không tồn tại.");
+    return cancelled;
   });
 }
 

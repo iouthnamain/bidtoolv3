@@ -2543,7 +2543,14 @@ export const materialControlLocations = pgTable(
   (table) => ({
     projectCodeUnique: uniqueIndex(
       "material_control_locations_project_code_unique",
-    ).on(table.projectId, table.code),
+    )
+      .on(table.projectId, table.code)
+      .where(sql`${table.projectId} IS NOT NULL`),
+    globalCodeUnique: uniqueIndex(
+      "material_control_locations_global_code_unique",
+    )
+      .on(table.code)
+      .where(sql`${table.projectId} IS NULL`),
     projectTypeIdx: index("material_control_locations_project_type_idx").on(
       table.projectId,
       table.type,
@@ -3020,6 +3027,7 @@ export const materialControlStockMovements = pgTable(
       scale: 3,
       mode: "number",
     }).notNull(),
+    explicitAdjustment: boolean("explicit_adjustment").notNull().default(false),
     occurredAt: timestamp("occurred_at", {
       mode: "string",
       withTimezone: true,
@@ -3039,7 +3047,7 @@ export const materialControlStockMovements = pgTable(
   (table) => ({
     quantityPositive: check(
       "material_control_stock_movements_quantity_positive",
-      sql`${table.quantity} > 0`,
+      sql`${table.quantity} > 0 OR (${table.movementType} = 'adjustment' AND ${table.explicitAdjustment} = true AND ${table.quantity} <> 0)`,
     ),
     locationRequired: check(
       "material_control_stock_movements_location_required",

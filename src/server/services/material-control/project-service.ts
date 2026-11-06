@@ -221,6 +221,20 @@ export function normalizeOptionalDate(
   if (Number.isNaN(parsed.getTime())) {
     fail("BAD_REQUEST", `${label} phải là ngày hợp lệ.`);
   }
+  if (typeof value === "string") {
+    const isoDatePrefix = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+    if (!isoDatePrefix) {
+      fail("BAD_REQUEST", `${label} phải dùng định dạng ngày ISO.`);
+    }
+    const [, year, month, day] = isoDatePrefix;
+    if (
+      parsed.getUTCFullYear() !== Number(year) ||
+      parsed.getUTCMonth() + 1 !== Number(month) ||
+      parsed.getUTCDate() !== Number(day)
+    ) {
+      fail("BAD_REQUEST", `${label} không tồn tại trên lịch.`);
+    }
+  }
   return parsed.toISOString();
 }
 
@@ -599,12 +613,13 @@ export async function deleteProject(
   database: AppDb = db,
 ): Promise<{ id: number }> {
   return database.transaction(async (tx) => {
-    const deleted = await tx
-      .delete(materialControlProjects)
+    const [archived] = await tx
+      .update(materialControlProjects)
+      .set({ status: "archived", updatedAt: new Date().toISOString() })
       .where(eq(materialControlProjects.id, id))
       .returning({ id: materialControlProjects.id });
-    if (!deleted[0]) fail("NOT_FOUND", "Dự án không tồn tại.");
-    return deleted[0];
+    if (!archived) fail("NOT_FOUND", "Dự án không tồn tại.");
+    return archived;
   });
 }
 
@@ -786,6 +801,19 @@ export async function updateLocation(
         input.projectId === undefined ? current.projectId : input.projectId;
       const parentId =
         input.parentId === undefined ? current.parentId : input.parentId;
+      if (projectId !== current.projectId) {
+        const [child] = await tx
+          .select({ id: materialControlLocations.id })
+          .from(materialControlLocations)
+          .where(eq(materialControlLocations.parentId, current.id))
+          .limit(1);
+        if (child) {
+          fail(
+            "BAD_REQUEST",
+            "Không thể đổi phạm vi của địa điểm đang có địa điểm con.",
+          );
+        }
+      }
       await assertProjectAndParent(tx, current.id, projectId, parentId);
       const [row] = await tx
         .update(materialControlLocations)
@@ -1015,11 +1043,12 @@ export async function deletePlan(
   database: AppDb = db,
 ): Promise<{ id: number }> {
   return database.transaction(async (tx) => {
-    const deleted = await tx
-      .delete(materialControlPlans)
+    const [archived] = await tx
+      .update(materialControlPlans)
+      .set({ status: "archived", updatedAt: new Date().toISOString() })
       .where(eq(materialControlPlans.id, id))
       .returning({ id: materialControlPlans.id });
-    if (!deleted[0]) fail("NOT_FOUND", "Kế hoạch không tồn tại.");
-    return deleted[0];
+    if (!archived) fail("NOT_FOUND", "Kế hoạch không tồn tại.");
+    return archived;
   });
 }
