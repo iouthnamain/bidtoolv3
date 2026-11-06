@@ -19,6 +19,16 @@ const DNS_TIMEOUT_MS = 5_000;
 
 type AddressFamily = 4 | 6;
 
+export type PublicContentDestination = {
+  address: string;
+  family: AddressFamily;
+};
+
+export type PublicUrlResolution = {
+  url: URL;
+  destination: PublicContentDestination;
+};
+
 export type PublicContentKind = "pdf" | "text";
 
 export type PublicContentRequest = {
@@ -60,11 +70,6 @@ export class PublicContentError extends Error {
     this.code = code;
   }
 }
-
-type PublicContentAddress = {
-  address: string;
-  family: AddressFamily;
-};
 
 type Lookup = (
   hostname: string,
@@ -335,7 +340,7 @@ async function resolvePublicDestination(
   url: URL,
   dependencies: PublicContentClientDependencies,
   signal: AbortSignal,
-): Promise<PublicContentAddress> {
+): Promise<PublicContentDestination> {
   const hostname = hostnameForPolicy(url);
   assertPublicHostname(hostname);
   const directVersion = isIP(hostname);
@@ -388,15 +393,26 @@ async function resolvePublicDestination(
   return { address: first.address, family: first.family as AddressFamily };
 }
 
+export async function resolvePublicUrl(
+  input: string | URL,
+  options?: { signal?: AbortSignal },
+): Promise<PublicUrlResolution> {
+  const parsed = parseUrl(input);
+  const controller = new AbortController();
+  const signal = options?.signal ?? controller.signal;
+  const destination = await resolvePublicDestination(
+    parsed,
+    defaultDependencies,
+    signal,
+  );
+  return { url: parsed, destination };
+}
+
 export async function assertPublicUrl(
   input: string | URL,
   options?: { signal?: AbortSignal },
 ): Promise<URL> {
-  const parsed = parseUrl(input);
-  const controller = new AbortController();
-  const signal = options?.signal ?? controller.signal;
-  await resolvePublicDestination(parsed, defaultDependencies, signal);
-  return parsed;
+  return (await resolvePublicUrl(input, options)).url;
 }
 
 function responseHeaders(response: http.IncomingMessage) {
@@ -501,7 +517,7 @@ async function readBody(
 }
 
 function requestOnce(
-  destination: PublicContentAddress,
+  destination: PublicContentDestination,
   url: URL,
   headers: Record<string, string>,
   deadline: number,

@@ -1,12 +1,14 @@
 import {
-  assertPublicUrl,
+  resolvePublicUrl,
   isPublicIpAddress,
 } from "~/server/services/public-content-client";
 
-export async function assertSafeScrapeUrl(
+export type SafeScrapeUrlResolution = Awaited<ReturnType<typeof resolvePublicUrl>>;
+
+export async function resolveSafeScrapeUrl(
   input: string,
   expectedHostname?: string,
-) {
+): Promise<SafeScrapeUrlResolution> {
   let parsed: URL;
   try {
     parsed = new URL(input);
@@ -19,14 +21,20 @@ export async function assertSafeScrapeUrl(
     throw new Error("Chỉ theo pagination trong cùng domain shop.");
   }
   try {
-    await assertPublicUrl(parsed);
+    return await resolvePublicUrl(parsed);
   } catch (error) {
     if (error instanceof Error && error.message.includes("http/https")) {
       throw error;
     }
     throw new Error("Không hỗ trợ scrape URL nội bộ.");
   }
-  return parsed;
+}
+
+export async function assertSafeScrapeUrl(
+  input: string,
+  expectedHostname?: string,
+) {
+  return (await resolveSafeScrapeUrl(input, expectedHostname)).url;
 }
 
 export { isPublicIpAddress };
