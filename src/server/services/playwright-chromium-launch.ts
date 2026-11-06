@@ -120,13 +120,12 @@ export function buildChromiumHostResolverRule(target: ChromiumNetworkTarget) {
     .trim()
     .toLowerCase()
     .replace(/^\[|\]$/g, "");
-  if (isIP(hostname) !== 0) return null;
-  if (
-    !hostname ||
-    !/^[a-z0-9.-]+$/.test(hostname) ||
-    !isPublicIpAddress(target.address)
-  ) {
+  if (!isPublicIpAddress(target.address)) {
     throw new Error("Không thể ghim browser tới đích không công khai.");
+  }
+  if (isIP(hostname) !== 0) return null;
+  if (!hostname || !/^[a-z0-9.-]+$/.test(hostname)) {
+    throw new Error("Không thể ghim browser tới hostname không hợp lệ.");
   }
 
   const address = target.address.includes(":")

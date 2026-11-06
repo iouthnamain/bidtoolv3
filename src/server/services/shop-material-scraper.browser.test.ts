@@ -68,6 +68,12 @@ describe.skipIf(!RUN_BROWSER_TESTS)(
               address: "127.0.0.1",
             }),
           ).toThrow();
+          expect(() =>
+            buildChromiumHostResolverRule({
+              hostname: "1.1.1.1",
+              address: "127.0.0.1",
+            }),
+          ).toThrow();
           expect(requestCount).toBe(0);
         } finally {
           await context.close();
