@@ -354,6 +354,14 @@ export async function recordMovement(
   return database.transaction((tx) => insertMovement(tx, input));
 }
 
+/** Use the same movement invariants while composing a larger transaction. */
+export async function recordMovementInTransaction(
+  input: RecordMovementInput,
+  tx: AppTx,
+): Promise<MovementView> {
+  return insertMovement(tx, input);
+}
+
 export type TransferMovementInput = Readonly<{
   projectId?: number | null;
   requirementId?: number | null;

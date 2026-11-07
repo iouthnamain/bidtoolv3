@@ -59,6 +59,13 @@ import {
   listReservations,
   releaseReservation,
 } from "~/server/services/material-control/procurement-service";
+import {
+  createShipment,
+  dispatchShipment,
+  getShipment,
+  listShipments,
+  receiveShipment,
+} from "~/server/services/material-control/shipment-service";
 
 const positiveId = z.number().int().positive();
 const nullablePositiveId = positiveId.nullable().optional();
@@ -664,6 +671,83 @@ export const materialControlRouter = createTRPCRouter({
     )
     .mutation(({ ctx, input }) =>
       callService(() => releaseReservation(input.id, input.status, ctx.db)),
+    ),
+
+  createShipment: requirePermission("material:write")
+    .input(
+      z.object({
+        projectId: positiveId,
+        sourceLocationId: positiveId,
+        destinationLocationId: positiveId,
+        externalReference: z.string().trim().max(300).nullable().optional(),
+        plannedShipAt: dateInput,
+        expectedArrivalAt: dateInput,
+        notes: z.string().trim().max(5_000).optional(),
+        lines: z
+          .array(
+            z.object({
+              requirementId: nullablePositiveId,
+              materialId: positiveId.nullable().optional(),
+              materialName: z.string().trim().min(1).max(500).optional(),
+              specText: z.string().trim().max(5_000).optional(),
+              unit: z.string().trim().min(1).max(50).optional(),
+              quantity: quantityInput,
+              notes: z.string().trim().max(5_000).optional(),
+            }),
+          )
+          .min(1)
+          .max(500),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => createShipment(input, ctx.db)),
+    ),
+
+  getShipment: publicProcedure
+    .input(z.object({ id: positiveId }))
+    .query(({ ctx, input }) =>
+      callService(() => getShipment(input.id, ctx.db)),
+    ),
+
+  listShipments: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          status: z
+            .enum([
+              "draft",
+              "ready",
+              "in_transit",
+              "partially_received",
+              "received",
+              "cancelled",
+            ])
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listShipments(input ?? {}, ctx.db)),
+    ),
+
+  dispatchShipment: requirePermission("material:write")
+    .input(z.object({ id: positiveId }))
+    .mutation(({ ctx, input }) =>
+      callService(() => dispatchShipment(input.id, ctx.db)),
+    ),
+
+  receiveShipment: requirePermission("material:write")
+    .input(
+      z.object({
+        id: positiveId,
+        lines: z
+          .array(z.object({ lineId: positiveId, quantity: quantityInput }))
+          .max(500),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => receiveShipment(input.id, input.lines, ctx.db)),
     ),
 
   uploadDocument: requirePermission("material:write")
