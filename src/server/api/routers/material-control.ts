@@ -40,6 +40,13 @@ import {
   readMaterialControlDocument,
   uploadMaterialControlDocument,
 } from "~/server/services/material-control/document-service";
+import {
+  getDashboardSummary,
+  getPlanDetail,
+  listPlanDetails,
+  listShortages,
+  listStockBalances,
+} from "~/server/services/material-control/inventory-queries";
 
 const positiveId = z.number().int().positive();
 const nullablePositiveId = positiveId.nullable().optional();
@@ -397,6 +404,67 @@ export const materialControlRouter = createTRPCRouter({
     .input(z.object({ planId: positiveId }))
     .query(({ ctx, input }) =>
       callService(() => getPlanSummary(input.planId, ctx.db)),
+    ),
+
+  dashboardSummary: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          now: dateInput,
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => getDashboardSummary(input ?? {}, ctx.db)),
+    ),
+
+  listPlanDetails: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          status: planStatus.optional(),
+          now: dateInput,
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listPlanDetails(input ?? {}, ctx.db)),
+    ),
+
+  getPlanDetail: publicProcedure
+    .input(z.object({ planId: positiveId, now: dateInput }))
+    .query(({ ctx, input }) =>
+      callService(() => getPlanDetail(input.planId, input, ctx.db)),
+    ),
+
+  listStockBalances: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          locationId: positiveId.optional(),
+          materialId: positiveId.optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listStockBalances(input ?? {}, ctx.db)),
+    ),
+
+  listShortages: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          lateOnly: z.boolean().optional(),
+          now: dateInput,
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listShortages(input ?? {}, ctx.db)),
     ),
 
   uploadDocument: requirePermission("material:write")
