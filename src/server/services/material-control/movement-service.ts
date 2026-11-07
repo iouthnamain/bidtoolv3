@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
@@ -329,7 +329,7 @@ async function insertMovement(
       explicitAdjustment: input.explicitAdjustment === true,
       occurredAt: normalizeDate(input.occurredAt),
       reversalOfId: input.reversalOfId ?? null,
-      reference: input.reference?.trim() || null,
+      reference: input.reference?.trim() ?? null,
       notes: input.notes?.trim() ?? "",
     })
     .returning();
@@ -416,7 +416,7 @@ export async function recordTransfer(
       explicitAdjustment: false,
       occurredAt: normalizeDate(input.occurredAt),
       reversalOfId: null,
-      reference: input.reference?.trim() || null,
+      reference: input.reference?.trim() ?? null,
       notes: input.notes?.trim() ?? "",
     }));
     const rows = await tx
