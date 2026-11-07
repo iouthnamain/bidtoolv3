@@ -331,6 +331,30 @@ export async function getPurchaseCommitment(
   return commitmentView(database, row);
 }
 
+export async function listPurchaseCommitments(
+  input: {
+    projectId?: number;
+    status?: MaterialControlPurchaseStatus;
+  } = {},
+  database: AppDb = db,
+): Promise<readonly PurchaseCommitmentView[]> {
+  const rows = await database
+    .select()
+    .from(materialControlPurchaseCommitments)
+    .where(
+      and(
+        input.projectId === undefined
+          ? undefined
+          : eq(materialControlPurchaseCommitments.projectId, input.projectId),
+        input.status === undefined
+          ? undefined
+          : eq(materialControlPurchaseCommitments.status, input.status),
+      ),
+    )
+    .orderBy(asc(materialControlPurchaseCommitments.createdAt));
+  return Promise.all(rows.map((row) => commitmentView(database, row)));
+}
+
 function movementFromRow(
   row: typeof materialControlStockMovements.$inferSelect,
 ): MovementInput {

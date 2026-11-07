@@ -48,6 +48,7 @@ import {
   listStockBalances,
 } from "~/server/services/material-control/inventory-queries";
 import {
+  listMovements,
   recordMovement,
   recordTransfer,
   reverseMovement,
@@ -56,6 +57,7 @@ import {
   createPurchaseCommitment,
   createReservation,
   getPurchaseCommitment,
+  listPurchaseCommitments,
   listReservations,
   releaseReservation,
 } from "~/server/services/material-control/procurement-service";
@@ -576,6 +578,20 @@ export const materialControlRouter = createTRPCRouter({
       callService(() => reverseMovement(input.movementId, ctx.db)),
     ),
 
+  listMovements: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          materialId: positiveId.optional(),
+          limit: z.number().int().positive().max(2_000).optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listMovements(input ?? {}, ctx.db)),
+    ),
+
   createPurchaseCommitment: requirePermission("material:write")
     .input(
       z.object({
@@ -626,6 +642,27 @@ export const materialControlRouter = createTRPCRouter({
     .input(z.object({ id: positiveId }))
     .query(({ ctx, input }) =>
       callService(() => getPurchaseCommitment(input.id, ctx.db)),
+    ),
+
+  listPurchaseCommitments: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          status: z
+            .enum([
+              "draft",
+              "committed",
+              "partially_received",
+              "received",
+              "cancelled",
+            ])
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listPurchaseCommitments(input ?? {}, ctx.db)),
     ),
 
   createReservation: requirePermission("material:write")

@@ -60,6 +60,24 @@ export function MaterialControlProjectClient({
           >
             Tài liệu ({documents.data?.length ?? 0})
           </Link>
+          <Link
+            className="rounded border border-slate-500 px-3 py-2 text-sm font-bold"
+            href={`/material-control/projects/${projectId}/purchases`}
+          >
+            Mua hàng
+          </Link>
+          <Link
+            className="rounded border border-slate-500 px-3 py-2 text-sm font-bold"
+            href={`/material-control/projects/${projectId}/shipments`}
+          >
+            Vận chuyển
+          </Link>
+          <Link
+            className="rounded border border-slate-500 px-3 py-2 text-sm font-bold"
+            href={`/material-control/projects/${projectId}/installation`}
+          >
+            Lắp đặt
+          </Link>
         </div>
       </section>
       <section className="panel overflow-hidden">
