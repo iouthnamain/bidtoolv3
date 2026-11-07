@@ -4,7 +4,7 @@ Implementation for [issue #15](https://github.com/iouthnamain/bidtoolv3/issues/1
 
 ## Storage contract and handoff
 
-`src/server/services/data-root.ts` resolves `BIDTOOL_DATA_DIR`, defaulting to `<cwd>/data`. The catalog, research and profile services own their files under `catalog-pdfs`, `excel-research`, and `material-profiles`.
+`src/server/services/data-root.ts` resolves `BIDTOOL_DATA_DIR`, defaulting to `<cwd>/data`. The catalog, research, profile, and material-control services own their files under `catalog-pdfs`, `excel-research`, `material-profiles`, and `material-control`.
 
 | Surface | Default | Precedence and limits |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ A published `bidtool-<id>.bundle/` contains:
 - `database.dump`: custom dump, SHA-256 recorded in the manifest; `pg_restore --list` must succeed.
 - `files/`: complete data-root tree, relative names, directory inventory, file sizes and SHA-256 checksums.
 
-Referenced PDFs and research files must match their DB size/checksum metadata when present. Referenced profile workbooks must exist inside the effective tree, even if a DB fallback also exists. Missing or mismatched references fail the complete-backup check and identify the path.
+Referenced PDFs, research files, and material-control project documents must match their DB size/checksum metadata when present. Referenced profile workbooks must exist inside the effective tree, even if a DB fallback also exists. Missing or mismatched references fail the complete-backup check and identify the path.
 
 Only verified output is renamed from `.incomplete-*` to `.bundle`. Failure retains incomplete evidence and returns nonzero. Standalone backup resumes the app only after a successful backup and only if it was running beforehand. It never starts caddy, PostgreSQL or unrelated services. A failed backup leaves the app stopped.
 
