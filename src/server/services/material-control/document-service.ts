@@ -124,7 +124,13 @@ function relativeFilePath(
   fileKey: string,
   fileName: string,
 ) {
-  return path.posix.join(String(projectId), "attachments", fileKey, fileName);
+  return path.posix.join(
+    "projects",
+    String(projectId),
+    "attachments",
+    fileKey,
+    fileName,
+  );
 }
 
 function absolutePath(relativePath: string) {

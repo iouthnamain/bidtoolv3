@@ -213,12 +213,12 @@ Use one aggregate dashboard query rather than client-side N+1 calls.
 Keep project files inside the durable data root:
 
 ```text
-data/material-control/projects/{projectUuid}/
+data/material-control/projects/{projectId}/
   attachments/{attachmentUuid}/{safeFileName}
   exports/{exportUuid}/{safeFileName}
 ```
 
-The database row stores project ID, logical category (`general`, `requirement`, `purchase`, `shipment`, `installation`, `export`), display/original filename, relative path, MIME type, byte size, SHA-256 checksum, and timestamps. Use UUIDs for all path segments; never use project names or user-entered slugs. Sanitize basenames, reject traversal, and write atomically. Do not store attachments as base64 JSON and do not calculate stock from files.
+The database row stores project ID, logical category (`general`, `requirement`, `purchase`, `shipment`, `installation`, `export`), display/original filename, relative path, MIME type, byte size, SHA-256 checksum, and timestamps. The project ID is a database-scoped path segment and each attachment directory uses a UUID; never use project names or user-entered slugs. Sanitize basenames, reject traversal, and write atomically. Do not store attachments as base64 JSON and do not calculate stock from files.
 
 The new storage service should extend `resolveStorageDirectory` with `material-control`. The existing on-prem backup inventory, reference checks, and Electron data-root fixtures must include this tree before the feature is considered operationally complete.
 

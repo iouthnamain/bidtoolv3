@@ -35,7 +35,7 @@ describe("material-control document storage", () => {
         "attachment-key",
         "a.txt",
       ),
-    ).toBe("12/attachments/attachment-key/a.txt");
+    ).toBe("projects/12/attachments/attachment-key/a.txt");
   });
 
   it("rejects traversal and invalid base64 before touching disk", () => {
@@ -51,7 +51,7 @@ describe("material-control document storage", () => {
     const root = await mkdtemp(path.join(tmpdir(), "material-control-doc-"));
     roots.push(root);
     vi.stubEnv("BIDTOOL_MATERIAL_CONTROL_DIR", root);
-    const relativePath = "7/attachments/key/receipt.txt";
+    const relativePath = "projects/7/attachments/key/receipt.txt";
     const bytes = Buffer.from("delivery-note");
 
     await storeMaterialControlDocumentFile(relativePath, bytes);
@@ -74,7 +74,7 @@ describe("material-control document storage", () => {
     vi.stubEnv("BIDTOOL_MATERIAL_CONTROL_DIR", root);
     await expect(
       storeMaterialControlDocumentFile(
-        "1/attachments/key/large.bin",
+        "projects/1/attachments/key/large.bin",
         Buffer.alloc(MATERIAL_CONTROL_MAX_FILE_SIZE + 1),
       ),
     ).rejects.toThrow("Tệp vượt quá giới hạn");

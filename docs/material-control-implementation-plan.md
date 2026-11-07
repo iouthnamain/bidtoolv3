@@ -1,5 +1,18 @@
 # Theo dõi vật tư — small implementation chunks
 
+## Current implementation status
+
+Completed and verified:
+
+- Chunks 0–2: domain context, additive schema/migration, quantity formulas, and focused tests.
+- Chunk 3: project, location, plan, and requirement commands with immutable snapshots and archive-on-delete behavior.
+- Chunk 4: batched dashboard, plan detail, stock, shortage, and late queries.
+- Chunk 5 (initial slice): append-only movement, transfer, reversal, purchase, reservation, and shipment lifecycle commands.
+- Chunk 6 (initial slice): dashboard, project workspace, plan, requirements, stock, shortage, location, and document pages.
+- Chunks 7–8 (initial slice): project document storage plus durable backup and desktop fixtures.
+
+Remaining work is operational polish: purchase receipt reconciliation, reservation-aware shipment selection, richer forms and filters, import/export adapters, and end-to-end browser coverage. Each addition should preserve the same bounded service and append-only ledger boundaries.
+
 This plan keeps each change narrow enough for one focused worker, one review, and one affected test set. Workers must use dedicated worktrees for substantial changes, own only the files listed in their chunk, and leave unrelated work untouched.
 
 ## Chunk 0 — domain baseline and acceptance fixtures
