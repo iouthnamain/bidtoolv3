@@ -52,6 +52,13 @@ import {
   recordTransfer,
   reverseMovement,
 } from "~/server/services/material-control/movement-service";
+import {
+  createPurchaseCommitment,
+  createReservation,
+  getPurchaseCommitment,
+  listReservations,
+  releaseReservation,
+} from "~/server/services/material-control/procurement-service";
 
 const positiveId = z.number().int().positive();
 const nullablePositiveId = positiveId.nullable().optional();
@@ -560,6 +567,103 @@ export const materialControlRouter = createTRPCRouter({
     .input(z.object({ movementId: positiveId }))
     .mutation(({ ctx, input }) =>
       callService(() => reverseMovement(input.movementId, ctx.db)),
+    ),
+
+  createPurchaseCommitment: requirePermission("material:write")
+    .input(
+      z.object({
+        projectId: positiveId,
+        status: z
+          .enum([
+            "draft",
+            "committed",
+            "partially_received",
+            "received",
+            "cancelled",
+          ])
+          .optional(),
+        supplierName: z.string().trim().max(300).nullable().optional(),
+        externalReference: z.string().trim().max(300).nullable().optional(),
+        committedAt: dateInput,
+        expectedAt: dateInput,
+        notes: z.string().trim().max(5_000).optional(),
+        lines: z
+          .array(
+            z.object({
+              requirementId: nullablePositiveId,
+              materialId: positiveId.nullable().optional(),
+              materialName: z.string().trim().min(1).max(500).optional(),
+              specText: z.string().trim().max(5_000).optional(),
+              unit: z.string().trim().min(1).max(50).optional(),
+              quantity: quantityInput,
+              unitPrice: z
+                .number()
+                .finite()
+                .nonnegative()
+                .nullable()
+                .optional(),
+              currency: z.string().trim().max(10).optional(),
+              expectedAt: dateInput,
+              notes: z.string().trim().max(5_000).optional(),
+            }),
+          )
+          .min(1)
+          .max(500),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => createPurchaseCommitment(input, ctx.db)),
+    ),
+
+  getPurchaseCommitment: publicProcedure
+    .input(z.object({ id: positiveId }))
+    .query(({ ctx, input }) =>
+      callService(() => getPurchaseCommitment(input.id, ctx.db)),
+    ),
+
+  createReservation: requirePermission("material:write")
+    .input(
+      z.object({
+        projectId: positiveId,
+        requirementId: nullablePositiveId,
+        locationId: positiveId,
+        materialId: positiveId.nullable().optional(),
+        materialName: z.string().trim().min(1).max(500).optional(),
+        specText: z.string().trim().max(5_000).optional(),
+        unit: z.string().trim().min(1).max(50).optional(),
+        quantity: quantityInput,
+        expiresAt: dateInput,
+        notes: z.string().trim().max(5_000).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => createReservation(input, ctx.db)),
+    ),
+
+  listReservations: publicProcedure
+    .input(
+      z
+        .object({
+          projectId: positiveId.optional(),
+          status: z
+            .enum(["active", "released", "fulfilled", "cancelled"])
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) =>
+      callService(() => listReservations(input ?? {}, ctx.db)),
+    ),
+
+  releaseReservation: requirePermission("material:write")
+    .input(
+      z.object({
+        id: positiveId,
+        status: z.enum(["released", "fulfilled", "cancelled"]).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => releaseReservation(input.id, input.status, ctx.db)),
     ),
 
   uploadDocument: requirePermission("material:write")
