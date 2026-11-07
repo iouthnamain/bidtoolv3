@@ -233,11 +233,12 @@ function snapshot(database = dbName()) {
     db(
       `SELECT json_build_object(
     'schema', (SELECT coalesce(json_agg(m ORDER BY id), '[]') FROM drizzle.__drizzle_migrations m),
-    'settings', (SELECT coalesce(json_object_agg(key,value ORDER BY key), '{}') FROM app_settings WHERE key IN ('bidtool_excel_research_dir','bidtool_material_profile_export_dir')),
+    'settings', (SELECT coalesce(json_object_agg(key,value ORDER BY key), '{}') FROM app_settings WHERE key IN ('bidtool_excel_research_dir','bidtool_material_profile_export_dir','bidtool_material_control_dir')),
     'references', (SELECT coalesce(json_agg(r ORDER BY tree, path), '[]') FROM (
       SELECT 'catalog-pdfs' AS tree, local_file_path AS path, file_size AS size, checksum FROM material_catalog_documents WHERE local_file_path IS NOT NULL
       UNION ALL SELECT 'excel-research', local_file_path, file_size, checksum FROM excel_research_file_artifacts
       UNION ALL SELECT 'material-profiles', source_workbook_path, NULL, NULL FROM excel_workspaces WHERE source_workbook_path IS NOT NULL
+      UNION ALL SELECT 'material-control', relative_path, file_size, checksum FROM material_control_documents
     ) r),
     'externalOutputs', (SELECT coalesce(json_agg(DISTINCT output_dir_path ORDER BY output_dir_path), '[]') FROM excel_workspaces WHERE output_dir_path IS NOT NULL)
   )`,
@@ -259,6 +260,11 @@ function roots(appEnv, cwd, metadata) {
       "material-profiles",
       appEnv.BIDTOOL_MATERIAL_PROFILE_EXPORT_DIR?.trim() ||
         settings.bidtool_material_profile_export_dir,
+    ],
+    [
+      "material-control",
+      appEnv.BIDTOOL_MATERIAL_CONTROL_DIR?.trim() ||
+        settings.bidtool_material_control_dir,
     ],
   ]) {
     const effective = value?.trim() ? path.resolve(cwd, value.trim()) : path.join(root, tree);
@@ -324,7 +330,12 @@ function verifyBundle(bundle) {
   const entries = inventory(path.join(bundle, "files"));
   if (JSON.stringify(entries) !== JSON.stringify(manifest.entries))
     fail("File tree, size or checksum mismatch.");
-  for (const tree of ["catalog-pdfs", "excel-research", "material-profiles"]) {
+  for (const tree of [
+    "catalog-pdfs",
+    "excel-research",
+    "material-profiles",
+    "material-control",
+  ]) {
     const relative = manifest.paths.trees[tree];
     if (
       typeof relative !== "string" ||

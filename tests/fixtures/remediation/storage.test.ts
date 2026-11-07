@@ -50,7 +50,7 @@ test("backup stops writers, copies all artifact trees, verifies checksums, then 
     expect(manifest.version).toBe(1);
     expect(
       manifest.entries.filter((e: { kind: string }) => e.kind === "file"),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(manifest.externalOutputs).toEqual([
       { path: "/operator/exports", included: false },
     ]);

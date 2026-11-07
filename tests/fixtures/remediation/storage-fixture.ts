@@ -29,6 +29,14 @@ export async function createStorageDocker(failCommand = "") {
         size: null,
         checksum: null,
       },
+      {
+        tree: "material-control",
+        path: "7/attachments/key/receipt.pdf",
+        size: 21,
+        checksum: createHash("sha256")
+          .update("%PDF-material-control")
+          .digest("hex"),
+      },
     ],
     externalOutputs: ["/operator/exports"],
   };
@@ -38,6 +46,7 @@ export async function createStorageDocker(failCommand = "") {
     ["catalog-pdfs/1/upload.pdf", "%PDF-upload-test"],
     ["excel-research/job/pdfs/generated.pdf", "%PDF-generated-x"],
     ["material-profiles/workspace/source.xlsx", "workbook-bytes"],
+    ["material-control/7/attachments/key/receipt.pdf", "%PDF-material-control"],
   ]) {
     await mkdir(path.dirname(path.join(files, file!)), { recursive: true });
     await writeFile(path.join(files, file!), bytes!);
