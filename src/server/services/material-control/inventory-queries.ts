@@ -658,8 +658,7 @@ export async function listShortages(
     )
     .filter(
       (requirement) =>
-        requirement.summary.missingToBuy > 0 ||
-        (input.lateOnly ? requirement.summary.late : false),
+        requirement.summary.missingToBuy > 0 || requirement.summary.late,
     )
     .filter((requirement) => !input.lateOnly || requirement.summary.late)
     .map((requirement) => ({

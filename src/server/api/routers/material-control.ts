@@ -47,6 +47,11 @@ import {
   listShortages,
   listStockBalances,
 } from "~/server/services/material-control/inventory-queries";
+import {
+  recordMovement,
+  recordTransfer,
+  reverseMovement,
+} from "~/server/services/material-control/movement-service";
 
 const positiveId = z.number().int().positive();
 const nullablePositiveId = positiveId.nullable().optional();
@@ -69,6 +74,63 @@ const quantityInput = z
   .positive()
   .refine((value) => (value.toString().split(".")[1]?.length ?? 0) <= 3, {
     message: "Số lượng chỉ được có tối đa 3 chữ số thập phân.",
+  });
+const movementTypeInput = z.enum([
+  "receipt",
+  "shipment",
+  "site_receipt",
+  "installation",
+  "return",
+  "waste",
+  "transfer_out",
+  "transfer_in",
+  "adjustment",
+  "reversal",
+]);
+const movementQuantityInput = z
+  .number()
+  .finite()
+  .refine((value) => (value.toString().split(".")[1]?.length ?? 0) <= 3, {
+    message: "Số lượng chỉ được có tối đa 3 chữ số thập phân.",
+  });
+const movementInput = z
+  .object({
+    projectId: nullablePositiveId,
+    movementType: movementTypeInput,
+    quantity: movementQuantityInput,
+    sourceLocationId: nullablePositiveId,
+    destinationLocationId: nullablePositiveId,
+    requirementId: nullablePositiveId,
+    shipmentId: nullablePositiveId,
+    reservationId: nullablePositiveId,
+    materialId: positiveId.nullable().optional(),
+    materialName: z.string().trim().min(1).max(500).optional(),
+    specText: z.string().trim().max(5_000).optional(),
+    unit: z.string().trim().min(1).max(50).optional(),
+    occurredAt: dateInput,
+    reversalOfId: nullablePositiveId,
+    reference: z.string().trim().max(500).nullable().optional(),
+    notes: z.string().trim().max(5_000).optional(),
+    explicitAdjustment: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.movementType === "adjustment" && value.explicitAdjustment) {
+      if (value.quantity === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quantity"],
+          message: "Điều chỉnh phải khác 0.",
+        });
+      }
+      return;
+    }
+    if (value.quantity <= 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["quantity"],
+        message: "Số lượng phải lớn hơn 0.",
+      });
+    }
   });
 
 const sourceInput = z
@@ -465,6 +527,39 @@ export const materialControlRouter = createTRPCRouter({
     )
     .query(({ ctx, input }) =>
       callService(() => listShortages(input ?? {}, ctx.db)),
+    ),
+
+  recordMovement: requirePermission("material:write")
+    .input(movementInput)
+    .mutation(({ ctx, input }) =>
+      callService(() => recordMovement(input, ctx.db)),
+    ),
+
+  recordTransfer: requirePermission("material:write")
+    .input(
+      z.object({
+        projectId: nullablePositiveId,
+        requirementId: nullablePositiveId,
+        materialId: positiveId.nullable().optional(),
+        materialName: z.string().trim().min(1).max(500).optional(),
+        specText: z.string().trim().max(5_000).optional(),
+        unit: z.string().trim().min(1).max(50).optional(),
+        quantity: quantityInput,
+        sourceLocationId: positiveId,
+        destinationLocationId: positiveId,
+        occurredAt: dateInput,
+        reference: z.string().trim().max(500).nullable().optional(),
+        notes: z.string().trim().max(5_000).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      callService(() => recordTransfer(input, ctx.db)),
+    ),
+
+  reverseMovement: requirePermission("material:write")
+    .input(z.object({ movementId: positiveId }))
+    .mutation(({ ctx, input }) =>
+      callService(() => reverseMovement(input.movementId, ctx.db)),
     ),
 
   uploadDocument: requirePermission("material:write")
