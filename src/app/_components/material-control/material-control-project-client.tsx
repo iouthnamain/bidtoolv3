@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { api } from "~/trpc/react";
+import { MaterialControlPlanCreateForm } from "./material-control-plan-create-form";
 
 export function MaterialControlProjectClient({
   projectId,
@@ -65,6 +66,7 @@ export function MaterialControlProjectClient({
         <div className="border-b border-slate-200 p-4">
           <h3 className="font-extrabold">Kế hoạch vật tư</h3>
         </div>
+        <MaterialControlPlanCreateForm projectId={projectId} />
         {plans.isLoading ? (
           <p className="p-4 text-sm text-slate-600">Đang tải kế hoạch…</p>
         ) : plans.data?.length ? (

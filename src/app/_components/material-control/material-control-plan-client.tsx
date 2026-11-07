@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "~/trpc/react";
+import { MaterialControlRequirementCreateForm } from "./material-control-requirement-create-form";
 
 export function MaterialControlPlanClient({ planId }: { planId: number }) {
   const plan = api.materialControl.getPlanDetail.useQuery({ planId });
@@ -26,6 +27,7 @@ export function MaterialControlPlanClient({ planId }: { planId: number }) {
         </p>
       </section>
       <section className="panel overflow-hidden">
+        <MaterialControlRequirementCreateForm planId={planId} />
         <div className="border-b border-slate-200 p-4">
           <h3 className="font-extrabold">Danh sách nhu cầu</h3>
         </div>

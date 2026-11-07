@@ -28,9 +28,17 @@ export function MaterialControlProjectsClient() {
             Mỗi dự án có kế hoạch, nhu cầu và tài liệu riêng.
           </p>
         </div>
-        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
-          {rows.length} dự án
-        </span>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/material-control/projects/new"
+            className="rounded bg-blue-700 px-3 py-2 text-sm font-bold text-white"
+          >
+            Tạo dự án
+          </Link>
+          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
+            {rows.length} dự án
+          </span>
+        </div>
       </div>
       {rows.length === 0 ? (
         <div className="p-6 text-sm text-slate-600">

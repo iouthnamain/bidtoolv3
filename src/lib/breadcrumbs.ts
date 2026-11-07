@@ -57,6 +57,7 @@ const ROUTE_LABELS: Record<string, string> = {
   // Material control
   "/material-control": "Theo dõi vật tư",
   "/material-control/projects": "Dự án vật tư",
+  "/material-control/projects/new": "Tạo workspace vật tư",
   "/material-control/projects/:id": "Chi tiết dự án vật tư",
   "/material-control/stock": "Tồn kho vật tư",
   "/material-control/shortages": "Thiếu & chậm",
