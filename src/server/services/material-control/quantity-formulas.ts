@@ -89,7 +89,7 @@ export function parseMaterialSnapshot(value: unknown): MaterialSnapshot {
   }
   if (
     !text(source.materialName) ||
-    typeof source.specText !== "string" ||
+    !text(source.specText) ||
     !text(source.unit)
   ) {
     return domainError(
