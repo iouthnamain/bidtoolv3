@@ -26,6 +26,10 @@ _Avoid_: Project material, SKU
 A quantity that has been ordered or otherwise committed by a supplier. It does not increase physical stock until a receipt is recorded.
 _Avoid_: Stock, receipt
 
+**Shipment**:
+A dated movement from a source location toward a destination. Dispatch reduces source on-hand; site receipt adds the received quantity at the destination and supports partial receipt.
+_Avoid_: Purchase commitment, delivery status only
+
 **Reservation**:
 A claim that a project has on shared on-hand stock. Reserved quantity is excluded from available stock until released or fulfilled.
 _Avoid_: Allocation status, ownership
