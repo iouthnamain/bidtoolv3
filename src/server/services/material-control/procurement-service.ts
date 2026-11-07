@@ -21,7 +21,10 @@ import type {
   MovementInput,
   ReservationState,
 } from "./types";
-import { MaterialControlServiceError } from "./project-service";
+import {
+  MaterialControlServiceError,
+  normalizeOptionalDate,
+} from "./project-service";
 
 type AppDb = typeof db;
 type DbHandle = AppDb | Parameters<Parameters<AppDb["transaction"]>[0]>[0];
@@ -131,12 +134,7 @@ function dateValue(
   value: string | Date | null | undefined,
   label: string,
 ): string | null {
-  if (value === null || value === undefined || value === "") return null;
-  const date =
-    value instanceof Date ? new Date(value.getTime()) : new Date(value);
-  if (Number.isNaN(date.getTime()))
-    fail("BAD_REQUEST", `${label} không hợp lệ.`);
-  return date.toISOString();
+  return normalizeOptionalDate(value, label);
 }
 
 async function projectExists(tx: DbHandle, projectId: number) {

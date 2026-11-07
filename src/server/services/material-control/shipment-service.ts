@@ -9,7 +9,10 @@ import {
   materialControlShipments,
 } from "~/server/db/schema";
 import { recordMovementInTransaction } from "./movement-service";
-import { MaterialControlServiceError } from "./project-service";
+import {
+  MaterialControlServiceError,
+  normalizeOptionalDate,
+} from "./project-service";
 import type { MaterialSnapshot } from "./types";
 
 type AppDb = typeof db;
@@ -90,12 +93,7 @@ function dateValue(
   value: string | Date | null | undefined,
   label: string,
 ): string | null {
-  if (value === null || value === undefined || value === "") return null;
-  const date =
-    value instanceof Date ? new Date(value.getTime()) : new Date(value);
-  if (Number.isNaN(date.getTime()))
-    fail("BAD_REQUEST", `${label} không hợp lệ.`);
-  return date.toISOString();
+  return normalizeOptionalDate(value, label);
 }
 
 function snapshotFromRequirement(
