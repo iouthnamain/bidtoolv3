@@ -389,6 +389,12 @@ export async function updateRequirement(
     );
     const materialId =
       input.materialId === undefined ? current.materialId : input.materialId;
+    if (current.materialId !== null && materialId !== current.materialId) {
+      fail(
+        "BAD_REQUEST",
+        "Không thể thay đổi liên kết catalog của nhu cầu đã liên kết; hãy tạo nhu cầu điều chỉnh mới.",
+      );
+    }
     const catalog =
       materialId === null ? null : await materialById(tx, materialId);
     // The name, specification, and unit are an immutable requirement

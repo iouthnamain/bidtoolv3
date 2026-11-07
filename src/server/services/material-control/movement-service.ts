@@ -166,6 +166,16 @@ async function resolveSnapshot(
 ): Promise<MaterialSnapshot> {
   if (
     requirement &&
+    input.materialId !== undefined &&
+    input.materialId !== requirement.materialId
+  ) {
+    fail(
+      "BAD_REQUEST",
+      "Phát sinh phải dùng đúng liên kết catalog của nhu cầu.",
+    );
+  }
+  if (
+    requirement &&
     input.materialId === undefined &&
     input.materialName === undefined
   ) {
