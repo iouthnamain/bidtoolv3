@@ -3,7 +3,9 @@ import {
   isPublicIpAddress,
 } from "~/server/services/public-content-client";
 
-export type SafeScrapeUrlResolution = Awaited<ReturnType<typeof resolvePublicUrl>>;
+export type SafeScrapeUrlResolution = Awaited<
+  ReturnType<typeof resolvePublicUrl>
+>;
 
 export async function resolveSafeScrapeUrl(
   input: string,
@@ -17,7 +19,10 @@ export async function resolveSafeScrapeUrl(
   }
 
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (expectedHostname && hostname !== expectedHostname.toLowerCase()) {
+  if (
+    expectedHostname &&
+    hostname !== expectedHostname.replace(/^\[|\]$/g, "").toLowerCase()
+  ) {
     throw new Error("Chỉ theo pagination trong cùng domain shop.");
   }
   try {

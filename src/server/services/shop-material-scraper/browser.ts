@@ -19,49 +19,75 @@ type BrowserWithProcess = Browser & {
 
 type ShopBrowserNetworkTarget = ChromiumNetworkTarget;
 
-const SHARED_BROWSER_PROMISES = new Map<string, Promise<Browser>>();
+type SharedBrowser = {
+  promise: Promise<Browser>;
+  users: number;
+  closing?: Promise<void>;
+};
 
-export async function getSharedBrowser(target: ShopBrowserNetworkTarget) {
+const SHARED_BROWSERS = new Map<string, SharedBrowser>();
+
+export async function acquireShopScraperBrowser(
+  target: ShopBrowserNetworkTarget,
+) {
   const key = browserTargetKey(target);
-  const existing = SHARED_BROWSER_PROMISES.get(key);
-  if (existing) return existing;
+  let entry = SHARED_BROWSERS.get(key);
+  if (!entry) {
+    entry = { promise: launchBrowser(target), users: 0 };
+    SHARED_BROWSERS.set(key, entry);
+  }
+  const shared = entry;
+  shared.users += 1;
 
-  const browserPromise = launchBrowser(target).catch((error) => {
-    if (SHARED_BROWSER_PROMISES.get(key) === browserPromise) {
-      SHARED_BROWSER_PROMISES.delete(key);
+  try {
+    const browser = await shared.promise;
+    let released = false;
+    return {
+      browser,
+      async release() {
+        if (released) return;
+        released = true;
+        shared.users -= 1;
+        if (shared.users !== 0) return;
+        // Never retain an idle pinned browser or close another scrape's lease.
+        if (SHARED_BROWSERS.get(key) === shared) SHARED_BROWSERS.delete(key);
+        await closeSharedBrowser(shared);
+      },
+    };
+  } catch (error) {
+    shared.users -= 1;
+    if (SHARED_BROWSERS.get(key) === shared) {
+      SHARED_BROWSERS.delete(key);
     }
     throw error;
-  });
-  SHARED_BROWSER_PROMISES.set(key, browserPromise);
-
-  return browserPromise;
+  }
 }
 
 export async function closeShopScraperBrowser() {
-  const browserPromises = [...SHARED_BROWSER_PROMISES.values()];
-  SHARED_BROWSER_PROMISES.clear();
-  if (browserPromises.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    browserPromises.map(async (browserPromise) => {
-      const browser = await browserPromise.catch(() => null);
-      if (!browser) return;
-
-      const browserClosed = await withTimeout(
-        browser.close().then(() => true),
-        BROWSER_CLOSE_TIMEOUT_MS,
-        "Đóng browser quá thời gian.",
-      ).catch(() => false);
-      if (!browserClosed) {
-        (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
-      }
-    }),
-  );
+  const browsers = [...SHARED_BROWSERS.values()];
+  SHARED_BROWSERS.clear();
+  await Promise.all(browsers.map(closeSharedBrowser));
 }
 
-async function launchBrowser(target: ShopBrowserNetworkTarget): Promise<Browser> {
+function closeSharedBrowser(shared: SharedBrowser) {
+  return (shared.closing ??= (async () => {
+    const browser = await shared.promise.catch(() => null);
+    if (!browser) return;
+
+    const browserClosed = await withTimeout(
+      browser.close().then(() => true),
+      BROWSER_CLOSE_TIMEOUT_MS,
+      "Đóng browser quá thời gian.",
+    ).catch(() => false);
+    if (!browserClosed) {
+      (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
+    }
+  })());
+}
+
+async function launchBrowser(
+  target: ShopBrowserNetworkTarget,
+): Promise<Browser> {
   if (isServerlessRuntime()) {
     return launchServerlessBrowser(target);
   }
@@ -119,10 +145,15 @@ function browserLaunchError(error: unknown) {
 
 function registerBrowser(browser: Browser) {
   browser.on("disconnected", () => {
-    for (const [key, promise] of SHARED_BROWSER_PROMISES) {
-      void promise.then((candidate) => {
-        if (candidate === browser) SHARED_BROWSER_PROMISES.delete(key);
-      }, () => undefined);
+    for (const [key, shared] of SHARED_BROWSERS) {
+      void shared.promise.then(
+        (candidate) => {
+          if (candidate === browser && SHARED_BROWSERS.get(key) === shared) {
+            SHARED_BROWSERS.delete(key);
+          }
+        },
+        () => undefined,
+      );
     }
   });
   return browser;
@@ -178,7 +209,11 @@ function findSystemBrowserExecutable() {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
