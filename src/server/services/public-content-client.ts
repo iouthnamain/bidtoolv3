@@ -5,7 +5,7 @@ import type { LookupAddress } from "node:dns";
 import * as http from "node:http";
 import * as https from "node:https";
 import { isIP } from "node:net";
-import { type Readable, type Transform } from "node:stream";
+import { pipeline, type Readable, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 import { createLogger, traceFn } from "~/server/lib/logger";
@@ -218,7 +218,7 @@ function isPublicIpv4(address: string) {
   );
 }
 
-/** Returns true only for globally routable IP address space. */
+/** Allows native global unicast and IPv4-mapped destinations using IPv4 policy. */
 export function isPublicIpAddress(address: string): boolean {
   const version = isIP(address);
   if (version === 4) return isPublicIpv4(address);
@@ -227,7 +227,6 @@ export function isPublicIpAddress(address: string): boolean {
   const value = parseIpv6(address);
   if (value === null) return false;
 
-  if (value === 0n || value === 1n) return false; // unspecified / loopback
   const mappedPrefix = ipv6Prefix(value, 96);
   if (mappedPrefix === 0xffffn) {
     const mappedIpv4 = Number(value & 0xffffffffn);
@@ -240,29 +239,30 @@ export function isPublicIpAddress(address: string): boolean {
     return isPublicIpv4(octets);
   }
 
-  // IPv4-compatible IPv6 (deprecated, but still accepted by URL parsers)
-  // carries its destination in the low 32 bits and must use the same policy.
-  if (ipv6Prefix(value, 96) === 0n) {
-    const embeddedIpv4 = Number(value & 0xffffffffn);
-    const octets = [
-      (embeddedIpv4 >>> 24) & 0xff,
-      (embeddedIpv4 >>> 16) & 0xff,
-      (embeddedIpv4 >>> 8) & 0xff,
-      embeddedIpv4 & 0xff,
-    ].join(".");
-    return isPublicIpv4(octets);
-  }
+  // IANA allocates native global unicast in 2000::/3. Fail closed for the
+  // remaining space, including discard/dummy, local-use NAT64 and SRv6 SIDs.
+  // NAT64 (including 64:ff9b::/96), deprecated compatible addresses, Teredo
+  // and 6to4 are not supported destinations: a public outer/embedded address
+  // alone cannot establish this client's direct public-connection policy.
+  // https://www.iana.org/assignments/ipv6-address-space/
+  if (ipv6Prefix(value, 3) !== 0b001n) return false;
+  if (ipv6Prefix(value, 16) === 0x2002n) return false; // 6to4
+  if (ipv6Prefix(value, 32) === 0x20010db8n) return false; // documentation
+  if (ipv6Prefix(value, 20) === 0x3fff0n) return false; // documentation /20
 
-  const prefix7 = ipv6Prefix(value, 7);
-  const prefix10 = ipv6Prefix(value, 10);
-  const prefix32 = ipv6Prefix(value, 32);
-  return !(
-    prefix7 === 0b1111110n || // fc00::/7 unique local
-    prefix10 === 0b1111111010n || // fe80::/10 link-local
-    ipv6Prefix(value, 8) === 0xffn || // multicast
-    prefix10 === 0b1111111011n || // fec0::/10 site-local
-    prefix32 === 0x20010db8n // documentation
-  );
+  // 2001::/23 is reserved for IETF assignments. Permit its explicitly global
+  // service addresses/prefixes; refuse benchmarking, transition mechanisms,
+  // ORCHID/DETs identifiers and unassigned special space.
+  // https://www.iana.org/assignments/iana-ipv6-special-registry/
+  if (ipv6Prefix(value, 23) === ipv6Prefix(0x2001n << 112n, 23)) {
+    const serviceAnycast = 0x20010001000000000000000000000000n;
+    return (
+      (value >= serviceAnycast + 1n && value <= serviceAnycast + 3n) ||
+      ipv6Prefix(value, 32) === 0x20010003n || // AMT
+      ipv6Prefix(value, 48) === 0x200100040112n // AS112-v6
+    );
+  }
+  return true;
 }
 
 function assertPublicHostname(hostname: string) {
@@ -473,8 +473,10 @@ async function readBody(
     );
   }
 
+  // Unlike pipe(), pipeline forwards a remote source error/premature close to
+  // the decoder and destroys both streams. Its error reaches the iterator.
   const source: Readable = decoder
-    ? (response.pipe(decoder) as Readable)
+    ? pipeline(response, decoder, () => undefined)
     : response;
   const chunks: Buffer[] = [];
   let total = 0;
