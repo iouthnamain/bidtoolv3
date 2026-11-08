@@ -26,28 +26,45 @@ export function imageCoordinate(
   return `${expected}@${digest}`;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const version = releaseVersion(
-    `v${(process.env.TARGET_VERSION ?? "").replace(/^v/, "")}`,
-  );
-  const pins = parseReleasePins(
-    JSON.parse(readFileSync("releases/pins.json", "utf8")) as unknown,
-  );
-  const pin = pins.releases[version];
+export function rollbackPin(
+  input: unknown,
+  target: string,
+  repository: string,
+) {
+  const version = releaseVersion(`v${target.replace(/^v/, "")}`);
+  const pin = parseReleasePins(input).releases[version];
   if (!pin) throw new Error("Requested pin is missing");
+  const source = imageCoordinate(
+    pin.onprem.image,
+    pin.onprem.digest,
+    repository,
+  );
+  if (pin.web.buildId === "skipped") {
+    return { version, source, web: { kind: "skipped" as const } };
+  }
   if (
     !/^dpl_[a-zA-Z0-9]+$/.test(pin.web.buildId) ||
     !pin.web.deploymentUrl.startsWith("https://")
   )
-    throw new Error("Pin has no real web deployment");
-  const source = imageCoordinate(
-    pin.onprem.image,
-    pin.onprem.digest,
+    throw new Error(
+      "Pin has no real web deployment or explicit skipped marker",
+    );
+  return {
+    version,
+    source,
+    web: { kind: "deployment" as const, buildId: pin.web.buildId },
+  };
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const pin = rollbackPin(
+    JSON.parse(readFileSync("releases/pins.json", "utf8")) as unknown,
+    process.env.TARGET_VERSION ?? "",
     process.env.GITHUB_REPOSITORY ?? "",
   );
   if (!process.env.GITHUB_OUTPUT) throw new Error("GITHUB_OUTPUT required");
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `version=${version}\nsource_ref=${source}\nweb_build_id=${pin.web.buildId}\n`,
+    `version=${pin.version}\nsource_ref=${pin.source}\nweb_skipped=${pin.web.kind === "skipped"}\nweb_build_id=${pin.web.kind === "deployment" ? pin.web.buildId : ""}\n`,
   );
 }

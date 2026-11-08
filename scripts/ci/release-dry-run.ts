@@ -470,35 +470,28 @@ function assertRollbackContract() {
     "read",
     "rollback protection metadata permission",
   );
-  assertProtectionGuards(definition, "rollback.rollback", [
-    "vercel@65.9.0 promote",
-    "docker buildx imagetools create",
-  ]);
   const runs = runText(definition, "rollback.rollback");
   before(
     runs,
     "scripts/ci/rollback-pin.ts",
-    "docker login",
+    "bash scripts/ci/rollback.sh",
     "rollback pin validation",
   );
-  before(
-    runs,
-    "scripts/ci/production-env.sh",
-    "docker login",
-    "rollback credential guard",
+  if (!runs.includes("bash scripts/ci/rollback.sh"))
+    throw new Error("rollback must run the reviewed action helper");
+  const actions = readFileSync(
+    path.join(repository, "scripts/ci/rollback.sh"),
+    "utf8",
   );
+  for (const guard of ["production-protection.ts", "production-env.sh"])
+    if (!actions.includes(guard)) throw new Error(`rollback missing ${guard}`);
   before(
-    runs,
-    "scripts/ci/production-env.sh",
+    actions,
+    "imagetools inspect",
     "vercel@65.9.0 promote",
-    "rollback web guard",
+    "rollback preflight",
   );
-  before(
-    runs,
-    "scripts/ci/production-env.sh",
-    "imagetools create",
-    "rollback image guard",
-  );
+  before(actions, "guard\n", "docker login", "rollback protection guard");
   assertRollbackPinFixture();
 }
 
@@ -554,7 +547,11 @@ function assertRollbackPinFixture() {
         "valid rollback pin did not produce a qualified immutable target",
       );
     writePins({ ...entry, web: { ...entry.web, buildId: "skipped" } });
-    mustFail("skipped rollback web pin", runPin);
+    rmSync(output, { force: true });
+    runPin();
+    const skippedOutput = readFileSync(output, "utf8");
+    if (!skippedOutput.includes("web_skipped=true\nweb_build_id=\n"))
+      throw new Error("skipped web pin must be an explicit image-only plan");
     writePins({
       ...entry,
       onprem: { ...entry.onprem, image: "ghcr.io/other/project:1.2.3" },
