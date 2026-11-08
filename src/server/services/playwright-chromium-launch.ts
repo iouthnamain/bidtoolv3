@@ -1,9 +1,16 @@
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { isIP } from "node:net";
 import type { Browser } from "playwright";
+import { isPublicIpAddress } from "~/server/services/public-content-client";
 import { applyPlaywrightPlatformEnv } from "~/server/services/playwright-platform-env";
 
 const LINUX_LAUNCH_ARGS = ["--disable-dev-shm-usage", "--no-sandbox"] as const;
+
+export type ChromiumNetworkTarget = {
+  hostname: string;
+  address: string;
+};
 
 let chromiumInstallPromise: Promise<void> | null = null;
 
@@ -76,11 +83,17 @@ export async function ensurePlaywrightChromiumDownloaded(): Promise<string> {
  */
 export async function launchManagedChromium(
   systemExecutablePath?: string | null,
+  networkTarget?: ChromiumNetworkTarget,
 ): Promise<Browser> {
   const { chromium } = await import("playwright");
+  const resolverArgs = networkTarget
+    ? [buildChromiumHostResolverRule(networkTarget)].filter(
+        (rule): rule is string => Boolean(rule),
+      )
+    : [];
   const launchOptions = {
     headless: true as const,
-    args: [...LINUX_LAUNCH_ARGS],
+    args: [...LINUX_LAUNCH_ARGS, ...resolverArgs],
   };
 
   if (systemExecutablePath && existsSync(systemExecutablePath)) {
@@ -100,6 +113,27 @@ export async function launchManagedChromium(
     ...launchOptions,
     executablePath,
   });
+}
+
+export function buildChromiumHostResolverRule(target: ChromiumNetworkTarget) {
+  const hostname = target.hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!isPublicIpAddress(target.address)) {
+    throw new Error("Không thể ghim browser tới đích không công khai.");
+  }
+  if (isIP(hostname) !== 0) return null;
+  if (!hostname || !/^[a-z0-9.-]+$/.test(hostname)) {
+    throw new Error("Không thể ghim browser tới hostname không hợp lệ.");
+  }
+
+  const address = target.address.includes(":")
+    ? `[${target.address}]`
+    : target.address;
+  // Chromium keeps the URL's hostname for HTTP Host and HTTPS SNI/certificate
+  // checks; this rule changes only the connection address selected for it.
+  return `--host-resolver-rules=MAP ${hostname} ${address}`;
 }
 
 export async function verifyManagedChromiumLaunch(): Promise<boolean> {

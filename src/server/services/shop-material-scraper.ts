@@ -27,7 +27,10 @@ import {
   closeShopScraperBrowser as _closeShopScraperBrowser,
   getSharedBrowser,
 } from "~/server/services/shop-material-scraper/browser";
-import { assertSafeScrapeUrl } from "~/server/services/shop-material-scraper/url-safety";
+import {
+  assertSafeScrapeUrl,
+  resolveSafeScrapeUrl,
+} from "~/server/services/shop-material-scraper/url-safety";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-shop-material-scraper");
 
@@ -184,10 +187,14 @@ async function _scrapeShopMaterialsFromUrl({
   onProgress,
 }: ShopScrapeOptions): Promise<ShopScrapeResult> {
   const startedAt = Date.now();
-  const startUrl = await assertSafeScrapeUrl(url);
+  const startResolution = await resolveSafeScrapeUrl(url);
+  const startUrl = startResolution.url;
   startUrl.href = normalizeTrackedUrl(startUrl.href);
   const expectedHostname = startUrl.hostname.toLowerCase();
-  const browser = await getSharedBrowser();
+  const browser = await getSharedBrowser({
+    hostname: expectedHostname,
+    address: startResolution.destination.address,
+  });
   const context = await browser.newContext({
     locale: "vi-VN",
     viewport: { width: 1366, height: 900 },

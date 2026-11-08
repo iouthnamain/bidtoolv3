@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import type { Browser } from "playwright";
 
 import { isServerlessRuntime } from "~/server/runtime";
-import { launchManagedChromium } from "~/server/services/playwright-chromium-launch";
+import {
+  buildChromiumHostResolverRule,
+  launchManagedChromium,
+  type ChromiumNetworkTarget,
+} from "~/server/services/playwright-chromium-launch";
 
 const BROWSER_CLOSE_TIMEOUT_MS = 2_000;
 const SERVERLESS_CHROMIUM_PACK_URL =
@@ -13,54 +17,67 @@ type BrowserWithProcess = Browser & {
   process?: () => { kill: (signal?: string) => boolean };
 };
 
-let SHARED_BROWSER_PROMISE: Promise<Browser> | null = null;
+type ShopBrowserNetworkTarget = ChromiumNetworkTarget;
 
-export async function getSharedBrowser() {
-  SHARED_BROWSER_PROMISE ??= launchBrowser().catch((error) => {
-    SHARED_BROWSER_PROMISE = null;
+const SHARED_BROWSER_PROMISES = new Map<string, Promise<Browser>>();
+
+export async function getSharedBrowser(target: ShopBrowserNetworkTarget) {
+  const key = browserTargetKey(target);
+  const existing = SHARED_BROWSER_PROMISES.get(key);
+  if (existing) return existing;
+
+  const browserPromise = launchBrowser(target).catch((error) => {
+    if (SHARED_BROWSER_PROMISES.get(key) === browserPromise) {
+      SHARED_BROWSER_PROMISES.delete(key);
+    }
     throw error;
   });
+  SHARED_BROWSER_PROMISES.set(key, browserPromise);
 
-  return SHARED_BROWSER_PROMISE;
+  return browserPromise;
 }
 
 export async function closeShopScraperBrowser() {
-  const browserPromise = SHARED_BROWSER_PROMISE;
-  SHARED_BROWSER_PROMISE = null;
-  if (!browserPromise) {
+  const browserPromises = [...SHARED_BROWSER_PROMISES.values()];
+  SHARED_BROWSER_PROMISES.clear();
+  if (browserPromises.length === 0) {
     return;
   }
 
-  const browser = await browserPromise.catch(() => null);
-  if (!browser) {
-    return;
-  }
+  await Promise.all(
+    browserPromises.map(async (browserPromise) => {
+      const browser = await browserPromise.catch(() => null);
+      if (!browser) return;
 
-  const browserClosed = await withTimeout(
-    browser.close().then(() => true),
-    BROWSER_CLOSE_TIMEOUT_MS,
-    "Đóng browser quá thời gian.",
-  ).catch(() => false);
-  if (!browserClosed) {
-    (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
-  }
+      const browserClosed = await withTimeout(
+        browser.close().then(() => true),
+        BROWSER_CLOSE_TIMEOUT_MS,
+        "Đóng browser quá thời gian.",
+      ).catch(() => false);
+      if (!browserClosed) {
+        (browser as BrowserWithProcess).process?.()?.kill("SIGKILL");
+      }
+    }),
+  );
 }
 
-async function launchBrowser(): Promise<Browser> {
+async function launchBrowser(target: ShopBrowserNetworkTarget): Promise<Browser> {
   if (isServerlessRuntime()) {
-    return launchServerlessBrowser();
+    return launchServerlessBrowser(target);
   }
 
   try {
     return registerBrowser(
-      await launchManagedChromium(findSystemBrowserExecutable()),
+      await launchManagedChromium(findSystemBrowserExecutable(), target),
     );
   } catch (error) {
     throw browserLaunchError(error);
   }
 }
 
-async function launchServerlessBrowser(): Promise<Browser> {
+async function launchServerlessBrowser(
+  target: ShopBrowserNetworkTarget,
+): Promise<Browser> {
   const [{ chromium: playwrightChromium }, sparticuzChromium] =
     await Promise.all([
       import("playwright-core"),
@@ -75,7 +92,14 @@ async function launchServerlessBrowser(): Promise<Browser> {
     const executablePath = await chromium.executablePath(chromiumPackUrl);
     return registerBrowser(
       await playwrightChromium.launch({
-        args: [...chromium.args, "--disable-dev-shm-usage", "--no-sandbox"],
+        args: [
+          ...chromium.args,
+          "--disable-dev-shm-usage",
+          "--no-sandbox",
+          ...[buildChromiumHostResolverRule(target)].filter(
+            (rule): rule is string => Boolean(rule),
+          ),
+        ],
         executablePath,
         headless: true,
       }),
@@ -95,9 +119,17 @@ function browserLaunchError(error: unknown) {
 
 function registerBrowser(browser: Browser) {
   browser.on("disconnected", () => {
-    SHARED_BROWSER_PROMISE = null;
+    for (const [key, promise] of SHARED_BROWSER_PROMISES) {
+      void promise.then((candidate) => {
+        if (candidate === browser) SHARED_BROWSER_PROMISES.delete(key);
+      }, () => undefined);
+    }
   });
   return browser;
+}
+
+function browserTargetKey(target: ShopBrowserNetworkTarget) {
+  return `${target.hostname.toLowerCase()}\u0000${target.address}`;
 }
 
 function windowsBrowserCandidates(): string[] {

@@ -14,6 +14,7 @@ import {
   resolveBidwinnerTimeoutMs,
 } from "~/server/services/app-settings";
 import { fetchHtmlWithCache } from "~/server/services/bidwinner-page-cache";
+import { fetchPublicContent } from "~/server/services/public-content-client";
 import { createLogger, traceFn } from "~/server/lib/logger";
 const log = createLogger("services-bidwinner-search");
 
@@ -165,6 +166,23 @@ const SEARCH_PAYLOAD_REGEX = /<bid-search[^>]*:hsmts="([^"]+)"/i;
 const PROVINCE_PAYLOAD_REGEX = /<bid-search[^>]*:ttp="([^"]+)"/i;
 const MAX_FETCH_ATTEMPTS = 3;
 const BIDWINNER_PER_PAGE = 20;
+const BIDWINNER_ALLOWED_HOSTS = new Set([
+  "bidwinner.info",
+  "www.bidwinner.info",
+]);
+
+function assertAllowedBidWinnerUrl(url: URL) {
+  const hostname = url.hostname.toLowerCase();
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    (!BIDWINNER_ALLOWED_HOSTS.has(hostname) &&
+      !hostname.endsWith(".bidwinner.info"))
+  ) {
+    throw new Error(
+      "Source URL không hợp lệ: chỉ cho phép domain BidWinner và subdomain liên quan.",
+    );
+  }
+}
 
 /**
  * When local refinement (keyword/category/budget/date/match) is active, the
@@ -644,24 +662,15 @@ async function fetchBidWinnerPage(
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        timeoutMs + (attempt - 1) * 5_000,
-      );
-
       try {
-        const response = await fetch(url, {
+        const response = await fetchPublicContent({
+          url,
+          kind: "text",
+          timeoutMs: timeoutMs + (attempt - 1) * 5_000,
           headers: buildHeaders(baseUrl),
-          signal: controller.signal,
-          cache: "no-store",
-          redirect: "follow",
+          validateUrl: assertAllowedBidWinnerUrl,
         });
-        const html = await response.text();
-
-        if (!response.ok) {
-          throw new Error(`BidWinner trả về mã lỗi ${response.status}.`);
-        }
+        const html = response.body.toString("utf8");
 
         if (!SEARCH_PAYLOAD_REGEX.test(html)) {
           throw new Error(
@@ -676,8 +685,6 @@ async function fetchBidWinnerPage(
         if (attempt < MAX_FETCH_ATTEMPTS) {
           await sleep(attempt * 500);
         }
-      } finally {
-        clearTimeout(timeout);
       }
     }
 
