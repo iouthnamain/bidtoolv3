@@ -161,6 +161,32 @@ function before(text: string, earlier: string, later: string, label: string) {
     throw new Error(`${label} runs ${earlier} after ${later}`);
 }
 
+function assertProtectionGuards(
+  definition: YamlMap,
+  label: string,
+  commands: string[],
+) {
+  const steps = asArray(mapValue(definition, "steps", label), `${label}.steps`);
+  for (const value of steps) {
+    const step = asMap(value, `${label}.step`);
+    if (typeof step.run !== "string") continue;
+    let failClosed = false;
+    let guarded = false;
+    for (const line of step.run.split("\n")) {
+      if (line.trim() === "set -euo pipefail") failClosed = true;
+      if (line.trim() === "bash scripts/ci/production-env.sh") guarded = true;
+      const command = commands.find((command) => line.includes(command));
+      if (command) {
+        if (!failClosed || !guarded)
+          throw new Error(
+            `${label} must fail closed on protection metadata before ${command}`,
+          );
+        guarded = false;
+      }
+    }
+  }
+}
+
 function assertReleaseGraph() {
   const release = asMap(
     Bun.YAML.parse(
@@ -373,6 +399,17 @@ function assertReleaseGraph() {
     "write",
     "release publication packages permission",
   );
+  expectEqual(
+    publishPermissions.actions,
+    "read",
+    "release protection metadata permission",
+  );
+  assertProtectionGuards(publish, "release.publish", [
+    "docker push",
+    "vercel@65.9.0 deploy",
+    "gh release create",
+    "docker buildx imagetools create",
+  ]);
   before(
     publishRuns,
     "scripts/ci/production-env.sh",
@@ -428,6 +465,15 @@ function assertRollbackContract() {
   );
   expectEqual(jobPermissions.contents, "read", "rollback contents permission");
   expectEqual(jobPermissions.packages, "write", "rollback packages permission");
+  expectEqual(
+    jobPermissions.actions,
+    "read",
+    "rollback protection metadata permission",
+  );
+  assertProtectionGuards(definition, "rollback.rollback", [
+    "vercel@65.9.0 promote",
+    "docker buildx imagetools create",
+  ]);
   const runs = runText(definition, "rollback.rollback");
   before(
     runs,

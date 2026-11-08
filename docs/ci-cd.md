@@ -91,6 +91,16 @@ These are operator setup steps, not changes made by this PR:
 
 Release and rollback share `bidtool-production-delivery` concurrency with cancellation disabled. GitHub concurrency permits only one running and one pending run and may replace an older pending run; it is not a FIFO delivery queue. Quality jobs use timeouts and a read-only token. The production jobs request write permission only for the operations they perform.
 
+`production-env.sh` also reads GitHub's production-environment metadata before publication or promotion. It requires configured user/team reviewers, prevention of self-review, disabled admin bypass, and an applicable branch/tag restriction, matching the setup policy above. Both production jobs request only the additional `actions: read` needed for environment metadata; no administrator token or new secret is used. Missing permissions, HTTP errors, malformed/unknown protection data and unrestricted environments stop delivery. Vercel credentials alone cannot satisfy this guard.
+
+Selected-ref policies are checked against the workflow's `GITHUB_REF`, which can differ from the release tag on manual dispatch. Exact names and `*`/`?` patterns respect slash boundaries; other Ruby glob syntax fails closed pending reviewed support. Protected-branches mode additionally requires the current branch API to report actual protection; that mode does not establish a tag restriction. Reads are repeated at publication/promotion boundaries, but are not an atomic settings lock or proof of actual approval. Protection configuration, dispatch provenance and delivery rehearsals remain separate acceptance requirements.
+
+Read-only diagnostic (uses existing GitHub authentication; does not request Vercel credentials or publish):
+
+```sh
+GITHUB_REPOSITORY=owner/repository GITHUB_REF=refs/heads/main bun run scripts/ci/production-protection.ts
+```
+
 ## Manual release
 
 After merging reviewed code and preparing an authorized existing stable tag, dispatch **Release** with that tag from the reviewed workflow ref. A tag push also starts Release. Do not dispatch just to test this PR.

@@ -142,6 +142,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      actions: read
     env:
       SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
       RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
@@ -199,6 +200,7 @@ jobs:
       - name: Publish the verified image without rebuilding
         run: |
           set -euo pipefail
+          bash scripts/ci/production-env.sh
           bun run scripts/ci/source.ts assert
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           # Stable version tags cannot be silently replaced by a rerun.
@@ -217,6 +219,7 @@ jobs:
       - name: Deploy verified Vercel output
         run: |
           set -euo pipefail
+          bash scripts/ci/production-env.sh
           bun run scripts/ci/source.ts assert
           mkdir -p dist-release
           deployment_url=$(bunx vercel@65.9.0 deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" \
@@ -240,12 +243,14 @@ jobs:
       - name: Publish release without replacing existing assets
         run: |
           set -euo pipefail
+          bash scripts/ci/production-env.sh
           bun run scripts/ci/source.ts assert
           bun run scripts/ci/artifacts.ts verify release-assets
           mapfile -t assets < <(find release-assets -maxdepth 1 -type f | sort)
           gh release create "$RELEASE_TAG" "${assets[@]}" dist-release/manifest.json \
             --verify-tag --target "$SOURCE_SHA" --title "BidTool v3 $RELEASE_TAG" --generate-notes
           # The mutable convenience tag moves only after the release was created.
+          bash scripts/ci/production-env.sh
           bun run scripts/ci/source.ts assert
           docker buildx imagetools create --tag "ghcr.io/${GITHUB_REPOSITORY,,}:latest" \
             "${ONPREM_IMAGE%:*}@$ONPREM_DIGEST"
