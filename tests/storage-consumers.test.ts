@@ -30,7 +30,7 @@ test("PDF and research consumers write/read bytes under the data root", async ()
   const pdf = Buffer.from("%PDF-1.4\nfixture");
   const stored = await saveCatalogPdfFile(1, "a.pdf", pdf);
   expect(await readCatalogPdfFile(stored.localFilePath)).toEqual(pdf);
-  expect(await readFile(path.join(root, "catalog-pdfs/1/a.pdf"))).toEqual(pdf);
+  expect(await readFile(path.join(root, "catalog-pdfs", stored.localFilePath))).toEqual(pdf);
   const workbook = await saveOriginalWorkbook(
     "job",
     "source.xlsx",
