@@ -4,6 +4,7 @@ import { buildMergePreview } from "~/lib/materials/shop-import-merge-preview";
 import type { materials } from "~/server/db/schema";
 import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 import {
+  getImportProductKey,
   importScrapedProducts,
   previewShopImportProducts,
 } from "~/server/services/shop-product-importer";
@@ -58,6 +59,41 @@ function createScrapedProduct(
     ...overrides,
   };
 }
+
+describe("interrupted import identity", () => {
+  it("uses the source URL as the stable per-job product identity", () => {
+    expect(
+      getImportProductKey(
+        createScrapedProduct({ price: 1000, manufacturer: "NCC A" }),
+      ),
+    ).toBe(
+      getImportProductKey(
+        createScrapedProduct({ price: 2000, manufacturer: "NCC B" }),
+      ),
+    );
+    expect(
+      getImportProductKey(
+        createScrapedProduct({
+          sourceUrl: "https://example.com/product/other",
+        }),
+      ),
+    ).not.toBe(getImportProductKey(createScrapedProduct()));
+  });
+
+  it("falls back to product fields when a source URL is unavailable", () => {
+    const first = getImportProductKey(
+      createScrapedProduct({ sourceUrl: "", sku: "SKU-1" }),
+    );
+    const same = getImportProductKey(
+      createScrapedProduct({ sourceUrl: "", sku: "SKU-1", price: 999 }),
+    );
+    const different = getImportProductKey(
+      createScrapedProduct({ sourceUrl: "", sku: "SKU-2" }),
+    );
+    expect(same).toBe(first);
+    expect(different).not.toBe(first);
+  });
+});
 
 describe("buildMergePreview", () => {
   it("fills empty catalog fields from scraped product", () => {

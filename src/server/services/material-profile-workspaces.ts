@@ -1,7 +1,16 @@
 import ExcelJS from "exceljs";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
@@ -381,7 +390,22 @@ export class MaterialProfileWorkspaceError extends Error {
 }
 
 function decodeBase64(value: string) {
-  const base64 = value.includes(",") ? (value.split(",").pop() ?? "") : value;
+  const base64 = (
+    value.includes(",") ? (value.split(",").pop() ?? "") : value
+  ).trim();
+  const normalized = base64.replace(/=+$/, "");
+  if (
+    base64.length === 0 ||
+    base64.length % 4 === 1 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(base64) ||
+    Buffer.from(base64, "base64").toString("base64").replace(/=+$/, "") !==
+      normalized
+  ) {
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      "Dữ liệu tệp Excel không hợp lệ.",
+    );
+  }
   const buffer = Buffer.from(base64, "base64");
   if (buffer.byteLength === 0) {
     throw new MaterialProfileWorkspaceError(
@@ -911,9 +935,11 @@ async function requireWorkspace(db: AppDb, workspaceId: number) {
 }
 
 /**
- * A new upload or re-map changes row identity. Cancel active row-search jobs
- * first so their old snapshots cannot later be presented as current results.
- * The worker also rechecks this durable status immediately before promotion.
+ * A re-map changes row identity. Cancel active row-search jobs before the
+ * derived rows are rebuilt so their old snapshots cannot later be presented as
+ * current results. The worker also rechecks this durable status immediately
+ * before promotion. Workbook replacement performs the same cancellation in
+ * its workspace transaction below.
  */
 async function invalidateActiveMaterialProfileSearchJobs(
   db: AppDb,
@@ -955,6 +981,216 @@ async function invalidateActiveMaterialProfileSearchJobs(
         ),
       );
   });
+}
+
+type MaterialProfileWorkspaceTransaction = Parameters<
+  Parameters<AppDb["transaction"]>[0]
+>[0];
+
+function workbookVersionKey(workspace: Workspace) {
+  return JSON.stringify({
+    status: workspace.status,
+    sourceFileName: workspace.sourceFileName,
+    sourceWorkbookPath: workspace.sourceWorkbookPath,
+    sourceSheetName: workspace.sourceSheetName,
+    rowCount: workspace.rowCount,
+    columnMappingJson: workspace.columnMappingJson,
+    workbookJson: workspace.workbookJson,
+    editStateJson: workspace.editStateJson,
+    exportEditStateJson: workspace.exportEditStateJson,
+    updatedAt: workspace.updatedAt,
+  });
+}
+
+async function stageMaterialProfileWorkbook(input: {
+  workspace: Workspace;
+  fileName: string;
+  buffer: Buffer;
+}): Promise<string | null> {
+  const safeFileName = sanitizeWorkbookFileName(input.fileName);
+  const version = randomUUID();
+  let temporaryPath: string | null = null;
+  let finalPath: string | null = null;
+  try {
+    const root = await materialProfileRoot();
+    const noticeSegment = safePathSegment(
+      input.workspace.noticeNumber ?? input.workspace.name,
+      `workspace-${input.workspace.id}`,
+    );
+    const sourceDir = path.join(
+      root,
+      noticeSegment,
+      String(input.workspace.id),
+      "source",
+    );
+    await mkdir(sourceDir, { recursive: true });
+    temporaryPath = path.join(sourceDir, `.${safeFileName}.${version}.tmp`);
+    finalPath = path.join(sourceDir, `${safeFileName}.${version}`);
+    await writeFile(temporaryPath, input.buffer, { flag: "wx" });
+    await rename(temporaryPath, finalPath);
+    temporaryPath = null;
+    return finalPath;
+  } catch {
+    // A local cache is optional. The transaction below always stores the new
+    // bytes in PostgreSQL so read-only/serverless filesystems remain usable.
+    await Promise.all(
+      [temporaryPath, finalPath]
+        .filter((candidate): candidate is string => Boolean(candidate))
+        .map(async (candidate) => {
+          try {
+            await unlink(candidate);
+          } catch {
+            // Best effort cleanup of an abandoned version.
+          }
+        }),
+    );
+    return null;
+  }
+}
+
+async function removeUnreferencedWorkbookPath(
+  db: AppDb,
+  oldPath: string | null,
+  currentPath: string | null,
+) {
+  if (!oldPath || oldPath === currentPath) return;
+  try {
+    const [reference] = await db
+      .select({ id: excelWorkspaces.id })
+      .from(excelWorkspaces)
+      .where(eq(excelWorkspaces.sourceWorkbookPath, oldPath))
+      .limit(1);
+    if (reference) return;
+    await unlink(oldPath);
+  } catch {
+    // Cleanup is deliberately after commit and cannot make a committed
+    // replacement fail, including when the reference check is unavailable.
+  }
+}
+
+async function replaceMaterialProfileWorkbookInTransaction(
+  tx: MaterialProfileWorkspaceTransaction,
+  input: {
+    workspace: Workspace;
+    safeFileName: string;
+    sourceWorkbookPath: string | null;
+    sourceWorkbookBase64: string;
+    selectedSheet: ParsedWorkbookSheet;
+    parsed: Awaited<ReturnType<typeof parseWorkbookBase64>>;
+  },
+) {
+  // Workspace -> search job -> item is compatible with the existing search
+  // promotion order (job -> item) and the Step 3 workspace -> item order. A
+  // promotion already holding a job waits here; a replacement holding the
+  // workspace prevents a later promotion from committing stale rows.
+  const [lockedWorkspace] = await tx
+    .select()
+    .from(excelWorkspaces)
+    .where(eq(excelWorkspaces.id, input.workspace.id))
+    .limit(1)
+    .for("update");
+  if (!lockedWorkspace) {
+    throw new MaterialProfileWorkspaceError(
+      "NOT_FOUND",
+      "Không tìm thấy hồ sơ vật tư.",
+    );
+  }
+  if (
+    workbookVersionKey(lockedWorkspace) !== workbookVersionKey(input.workspace)
+  ) {
+    throw new MaterialProfileWorkspaceError(
+      "CONFLICT",
+      "Hồ sơ đã thay đổi trong lúc bạn tải file mới. Hãy tải lại rồi thử lại.",
+    );
+  }
+
+  const activeJobs = await tx
+    .select({ id: materialProfileSearchJobs.id })
+    .from(materialProfileSearchJobs)
+    .where(
+      and(
+        eq(materialProfileSearchJobs.workspaceId, input.workspace.id),
+        inArray(materialProfileSearchJobs.status, ["queued", "running"]),
+      ),
+    )
+    .orderBy(materialProfileSearchJobs.id)
+    .for("update");
+  await tx
+    .select({ id: excelWorkspaceItems.id })
+    .from(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, input.workspace.id))
+    .orderBy(excelWorkspaceItems.id)
+    .for("update");
+
+  const now = new Date().toISOString();
+  const cancellationMessage =
+    "Dữ liệu nguồn đã thay đổi; đã hủy job tìm kiếm cũ.";
+  if (activeJobs.length > 0) {
+    await tx
+      .update(materialProfileSearchJobs)
+      .set({
+        status: "cancelled",
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        message: cancellationMessage,
+        finishedAt: now,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(
+        inArray(
+          materialProfileSearchJobs.id,
+          activeJobs.map((job) => job.id),
+        ),
+      );
+  }
+  await tx
+    .update(materialProfileSearchRuns)
+    .set({
+      status: "cancelled",
+      errorMessage: cancellationMessage,
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(materialProfileSearchRuns.workspaceId, input.workspace.id),
+        inArray(materialProfileSearchRuns.status, ["queued", "running"]),
+      ),
+    );
+
+  const [updated] = await tx
+    .update(excelWorkspaces)
+    .set({
+      status: "imported",
+      sourceFileName: input.safeFileName,
+      sourceWorkbookPath: input.sourceWorkbookPath,
+      sourceSheetName: input.selectedSheet.name,
+      rowCount: input.selectedSheet.rows.length,
+      columnMappingJson: input.selectedSheet.suggestedMapping,
+      workbookJson: workbookJsonFromSheets(
+        input.parsed.sheets,
+        input.sourceWorkbookBase64,
+      ),
+      editStateJson: {},
+      exportEditStateJson: {},
+      updatedAt: now,
+    })
+    .where(eq(excelWorkspaces.id, input.workspace.id))
+    .returning();
+  if (!updated) {
+    throw new MaterialProfileWorkspaceError(
+      "CONFLICT",
+      "Không thể cập nhật hồ sơ vật tư.",
+    );
+  }
+
+  await tx
+    .delete(excelWorkspaceItems)
+    .where(eq(excelWorkspaceItems.workspaceId, input.workspace.id));
+
+  return { updated, oldPath: lockedWorkspace.sourceWorkbookPath };
 }
 
 async function sourceWorkbookPathReadable(filePath: string) {
@@ -1157,12 +1393,22 @@ export async function uploadMaterialProfileWorkbook(
   input: { workspaceId: number; fileName: string; workbookBase64: string },
 ) {
   const workspace = await requireWorkspace(db, input.workspaceId);
-  await invalidateActiveMaterialProfileSearchJobs(db, workspace.id);
-  const buffer = decodeBase64(input.workbookBase64);
-  const parsed = await parseWorkbookBase64(
-    input.fileName,
-    bufferToBase64(buffer),
-  );
+  let buffer: Buffer;
+  let parsed: Awaited<ReturnType<typeof parseWorkbookBase64>>;
+  try {
+    buffer = decodeBase64(input.workbookBase64);
+    parsed = await parseWorkbookBase64(input.fileName, bufferToBase64(buffer));
+  } catch (error) {
+    if (error instanceof MaterialProfileWorkspaceError) {
+      throw error;
+    }
+    throw new MaterialProfileWorkspaceError(
+      "BAD_REQUEST",
+      error instanceof Error
+        ? error.message
+        : "Không thể đọc dữ liệu tệp Excel.",
+    );
+  }
   const selectedSheet = parsed.sheets[0];
   if (!selectedSheet) {
     throw new MaterialProfileWorkspaceError(
@@ -1173,49 +1419,35 @@ export async function uploadMaterialProfileWorkbook(
 
   const sourceWorkbookBase64 = bufferToBase64(buffer);
   const safeFileName = sanitizeWorkbookFileName(input.fileName);
-  let sourceWorkbookPath: string | null = null;
+  const sourceWorkbookPath = await stageMaterialProfileWorkbook({
+    workspace,
+    fileName: input.fileName,
+    buffer,
+  });
+
   try {
-    const root = await materialProfileRoot();
-    const noticeSegment = safePathSegment(
-      workspace.noticeNumber ?? workspace.name,
-      `workspace-${workspace.id}`,
+    const { updated, oldPath } = await db.transaction((tx) =>
+      replaceMaterialProfileWorkbookInTransaction(tx, {
+        workspace,
+        safeFileName,
+        sourceWorkbookPath,
+        sourceWorkbookBase64,
+        selectedSheet,
+        parsed,
+      }),
     );
-    const sourceDir = path.join(
-      root,
-      noticeSegment,
-      String(workspace.id),
-      "source",
-    );
-    await mkdir(sourceDir, { recursive: true });
-    sourceWorkbookPath = path.join(sourceDir, safeFileName);
-    await writeFile(sourceWorkbookPath, buffer);
-  } catch {
-    // Best-effort disk cache; serverless filesystems may be read-only.
+    await removeUnreferencedWorkbookPath(db, oldPath, sourceWorkbookPath);
+    return updated;
+  } catch (error) {
+    if (sourceWorkbookPath) {
+      try {
+        await unlink(sourceWorkbookPath);
+      } catch {
+        // Best effort cleanup of an abandoned new version.
+      }
+    }
+    throw error;
   }
-
-  const now = new Date().toISOString();
-  const [updated] = await db
-    .update(excelWorkspaces)
-    .set({
-      status: "imported",
-      sourceFileName: safeFileName,
-      sourceWorkbookPath,
-      sourceSheetName: selectedSheet.name,
-      rowCount: selectedSheet.rows.length,
-      columnMappingJson: selectedSheet.suggestedMapping,
-      workbookJson: workbookJsonFromSheets(parsed.sheets, sourceWorkbookBase64),
-      editStateJson: {},
-      exportEditStateJson: {},
-      updatedAt: now,
-    })
-    .where(eq(excelWorkspaces.id, workspace.id))
-    .returning();
-
-  await db
-    .delete(excelWorkspaceItems)
-    .where(eq(excelWorkspaceItems.workspaceId, workspace.id));
-
-  return updated ?? requireWorkspace(db, workspace.id);
 }
 
 export async function updateMaterialProfileWorkspaceState(

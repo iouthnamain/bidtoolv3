@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
@@ -23,7 +23,11 @@ import {
   type ShopScrapeProgress,
 } from "~/server/services/shop-material-scraper";
 import type { ShopImportJobProgress } from "~/server/services/shop-import-jobs";
-import { importScrapedProducts } from "~/server/services/shop-product-importer";
+import {
+  importScrapedProducts,
+  readImportJobProgress,
+  reconcileImportJobProgress,
+} from "~/server/services/shop-product-importer";
 import {
   resolveScrapeMaxConcurrentJobs,
   resolveScrapeMaxConcurrentPages,
@@ -47,6 +51,11 @@ import {
   type MaterialProfileSearchJobProgress,
 } from "~/server/services/material-profile-search-jobs";
 import { createLogger, traceFn } from "~/server/lib/logger";
+import {
+  markSchedulerPollFailed,
+  markSchedulerPollSucceeded,
+  setSchedulerState,
+} from "~/server/services/scheduler-state";
 
 const log = createLogger("job-scheduler");
 
@@ -57,6 +66,17 @@ type MaterialProfileSearchJobRow =
   typeof materialProfileSearchJobs.$inferSelect;
 type TimerHandle = ReturnType<typeof setInterval>;
 
+export function cancelledImportRecoveryPatch(
+  status: string,
+  progress: ShopImportJobProgress | null,
+  now: string,
+) {
+  if (status !== "cancelled" || !progress) {
+    return null;
+  }
+  return { ...progress, updatedAt: now };
+}
+
 const SCHEDULER_POLL_MS = 1_000;
 const PROGRESS_WRITE_MS = 2_000;
 const CLEANUP_POLL_MS = 60 * 60_000;
@@ -66,41 +86,43 @@ const activeEnrichmentRuns = new Map<string, AbortController>();
 const activeMaterialProfileSearchRuns = new Map<string, AbortController>();
 const activeExcelResearchRuns = new Set<string>();
 
-let schedulerStarted = false;
+// R6 assumes one scheduler owner for this database. Durable leases and
+// multi-owner coordination need a separate design before another worker starts
+// claiming the same queue.
+const STARTUP_RETRY_INITIAL_MS = 1_000;
+const STARTUP_RETRY_MAX_MS = 30_000;
+let schedulerEnabled = false;
 let pollTimer: TimerHandle | null = null;
 let cleanupTimer: TimerHandle | null = null;
 let pollInFlight = false;
+let startupAttempt: Promise<void> | null = null;
+let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let startupRetryCount = 0;
 
 function _startJobScheduler() {
-  if (schedulerStarted) {
+  if (!hasDatabaseUrl() || isServerlessRuntime()) {
+    setSchedulerState("disabled");
     return;
   }
-  if (!hasDatabaseUrl() || isServerlessRuntime()) {
+  if (schedulerEnabled || startupAttempt || startupRetryTimer) {
     return;
   }
 
-  schedulerStarted = true;
-  log.info("scheduler_started", {
-    pollIntervalMs: SCHEDULER_POLL_MS,
-    cleanupIntervalMs: CLEANUP_POLL_MS,
-  });
-  void initializeScheduler();
-  pollTimer = setInterval(() => {
-    void pollScheduler();
-  }, SCHEDULER_POLL_MS);
-  cleanupTimer = setInterval(() => {
-    void cleanupExpiredJobs();
-  }, CLEANUP_POLL_MS);
-  pollTimer.unref?.();
-  cleanupTimer.unref?.();
+  schedulerEnabled = true;
+  startupRetryCount = 0;
+  void beginSchedulerInitialization();
 }
 
 function _stopJobSchedulerForTests() {
+  schedulerEnabled = false;
   if (pollTimer) {
     clearInterval(pollTimer);
   }
   if (cleanupTimer) {
     clearInterval(cleanupTimer);
+  }
+  if (startupRetryTimer) {
+    clearTimeout(startupRetryTimer);
   }
   for (const controller of activeScrapeRuns.values()) {
     controller.abort();
@@ -122,7 +144,10 @@ function _stopJobSchedulerForTests() {
   pollTimer = null;
   cleanupTimer = null;
   pollInFlight = false;
-  schedulerStarted = false;
+  startupAttempt = null;
+  startupRetryTimer = null;
+  startupRetryCount = 0;
+  setSchedulerState("stopped");
 }
 
 function _abortShopScrapeJob(jobId: string) {
@@ -146,23 +171,84 @@ function _abortMaterialProfileSearchJob(jobId: string) {
 }
 
 async function _runJobSchedulerTickForTests() {
-  await pollScheduler();
+  await pollScheduler({ allowBeforeReady: true });
+}
+
+async function beginSchedulerInitialization() {
+  if (startupAttempt) return startupAttempt;
+
+  setSchedulerState("recovering", { lastError: null });
+  startupAttempt = initializeScheduler()
+    .then(() => {
+      if (!schedulerEnabled) return;
+      startupRetryCount = 0;
+      setSchedulerState("ready");
+      log.info("scheduler_started", {
+        pollIntervalMs: SCHEDULER_POLL_MS,
+        cleanupIntervalMs: CLEANUP_POLL_MS,
+      });
+      pollTimer = setInterval(() => {
+        void pollScheduler();
+      }, SCHEDULER_POLL_MS);
+      cleanupTimer = setInterval(() => {
+        void cleanupExpiredJobs().catch((error) => {
+          log.warn("scheduler_cleanup_failed", { error });
+        });
+      }, CLEANUP_POLL_MS);
+      pollTimer.unref?.();
+      cleanupTimer.unref?.();
+    })
+    .catch((error) => {
+      if (!schedulerEnabled) return;
+      markSchedulerPollFailed(error);
+      setSchedulerState("retrying", {
+        lastError:
+          error instanceof Error ? error.message : "scheduler init failed",
+      });
+      const delay = Math.min(
+        STARTUP_RETRY_MAX_MS,
+        STARTUP_RETRY_INITIAL_MS * 2 ** startupRetryCount,
+      );
+      startupRetryCount += 1;
+      log.warn("scheduler_init_retry", { delayMs: delay, error });
+      startupRetryTimer = setTimeout(() => {
+        startupRetryTimer = null;
+        void beginSchedulerInitialization();
+      }, delay);
+      startupRetryTimer.unref?.();
+    })
+    .finally(() => {
+      startupAttempt = null;
+    });
+  return startupAttempt;
 }
 
 async function initializeScheduler() {
+  if (!schedulerEnabled) return;
   try {
     await resetStaleRunningJobs();
-    await resetStaleExcelResearchRows();
-    await cleanupExpiredJobs();
-    await pollScheduler();
+    await resetStaleExcelResearchRows({ startup: true });
+    // Cleanup is optional. A database outage while deleting expired history
+    // must not keep claims paused after required recovery has succeeded.
+    void cleanupExpiredJobs().catch((error) => {
+      log.warn("scheduler_cleanup_failed", { error });
+    });
+    const polled = await pollScheduler({ allowBeforeReady: true });
+    if (!polled) {
+      throw new Error("Scheduler poll did not complete during startup.");
+    }
   } catch (error) {
     log.error("scheduler_init_failed", { error });
+    throw error;
   }
 }
 
-async function pollScheduler() {
+async function pollScheduler(options: { allowBeforeReady?: boolean } = {}) {
+  if (!options.allowBeforeReady && !schedulerEnabled) {
+    return false;
+  }
   if (pollInFlight) {
-    return;
+    return true;
   }
 
   pollInFlight = true;
@@ -180,8 +266,12 @@ async function pollScheduler() {
       ),
       fillExcelResearchSlots(),
     ]);
+    markSchedulerPollSucceeded();
+    return true;
   } catch (error) {
     log.error("scheduler_poll_failed", { error });
+    markSchedulerPollFailed(error);
+    return false;
   } finally {
     pollInFlight = false;
   }
@@ -326,7 +416,7 @@ async function runExcelResearchJob(jobId: string) {
             ? "awaiting_review"
             : "completed";
 
-        await db
+        const [completed] = await db
           .update(excelResearchJobs)
           .set({
             status: nextStatus,
@@ -338,7 +428,21 @@ async function runExcelResearchJob(jobId: string) {
             updatedAt: now,
             lastProgressAt: now,
           })
-          .where(eq(excelResearchJobs.id, jobId));
+          .where(
+            and(
+              eq(excelResearchJobs.id, jobId),
+              eq(excelResearchJobs.status, "running"),
+            ),
+          )
+          .returning({ id: excelResearchJobs.id });
+        if (!completed) {
+          log.info("job_completion_skipped", {
+            jobType: "excel_research",
+            jobId,
+            reason: "state_changed",
+          });
+          break;
+        }
         log.info("job_completed", {
           jobType: "excel_research",
           jobId,
@@ -359,7 +463,12 @@ async function runExcelResearchJob(jobId: string) {
         message: "Job nghiên cứu thất bại.",
         updatedAt: new Date().toISOString(),
       })
-      .where(eq(excelResearchJobs.id, jobId));
+      .where(
+        and(
+          eq(excelResearchJobs.id, jobId),
+          eq(excelResearchJobs.status, "running"),
+        ),
+      );
   } finally {
     activeExcelResearchRuns.delete(jobId);
   }
@@ -607,8 +716,9 @@ async function runImportJob(job: ShopImportJobRow) {
 
   try {
     const products = await loadProductsForImportJob(job);
-    const result = await importScrapedProducts(db, products, {
+    await importScrapedProducts(db, products, {
       signal: controller.signal,
+      importJobId: job.id,
       scrapeJobId: job.scrapeJobId,
       mode: job.productSourceUrls === null ? "create_all" : "match_existing",
       onProgress: (progress) => {
@@ -618,78 +728,76 @@ async function runImportJob(job: ShopImportJobRow) {
 
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
-      await persistLatestImportProgressItems(job.id, progressWriter.latest());
+      await reconcileImportJobProgress(db, job.id);
       return;
     }
 
-    const finishedAt = new Date().toISOString();
-    await db
-      .update(shopImportJobs)
-      .set({
-        status: "completed",
-        processed: products.length,
-        total: products.length,
-        created: result.created,
-        updated: result.updated,
-        skipped: result.skipped,
-        failed: result.failed,
-        items: result.items,
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: null,
-        finishedAt,
-        lastProgressAt: finishedAt,
-        expiresAt: await expiresAt(finishedAt),
-        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(shopImportJobs.id, job.id),
-          eq(shopImportJobs.status, "running"),
-        ),
-      );
+    const durable = await finishImportJob(job.id, { status: "completed" });
+    if (!durable) return;
     log.info("job_completed", {
       jobType: "import",
       jobId: job.id,
-      created: result.created,
-      updated: result.updated,
-      skipped: result.skipped,
-      failed: result.failed,
+      created: durable.created,
+      updated: durable.updated,
+      skipped: durable.skipped,
+      failed: durable.failed,
     });
   } catch (error) {
     await progressWriter.flush();
     if (controller.signal.aborted || (await isJobCancelled("import", job.id))) {
-      await persistLatestImportProgressItems(job.id, progressWriter.latest());
+      await reconcileImportJobProgress(db, job.id);
       return;
     }
 
-    const finishedAt = new Date().toISOString();
     const message = errorMessage(error, "Không thể nhập catalog.");
     log.warn("job_failed", { jobType: "import", jobId: job.id, error });
-    await db
-      .update(shopImportJobs)
-      .set({
-        status: "failed",
-        items: progressWriter.latest()?.items ?? job.items,
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: message,
-        finishedAt,
-        lastProgressAt: finishedAt,
-        expiresAt: await expiresAt(finishedAt),
-        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
-        updatedAt: finishedAt,
-      })
-      .where(
-        and(
-          eq(shopImportJobs.id, job.id),
-          eq(shopImportJobs.status, "running"),
-        ),
-      );
+    await finishImportJob(job.id, { status: "failed", error: message });
   } finally {
     activeImportRuns.delete(job.id);
   }
+}
+
+async function finishImportJob(
+  jobId: string,
+  outcome: { status: "completed" } | { status: "failed"; error: string },
+) {
+  const finishedAt = new Date().toISOString();
+  const expiry = await expiresAt(finishedAt);
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ status: shopImportJobs.status })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, jobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") return null;
+    // Keep reconciliation and terminal status under the product commit lock.
+    const progress = await readImportJobProgress(tx, jobId);
+    if (
+      outcome.status === "completed" &&
+      (!progress || progress.processed !== progress.total)
+    ) {
+      throw new Error(
+        "Job nhập catalog còn sản phẩm chưa xử lý; không thể hoàn tất.",
+      );
+    }
+    await tx
+      .update(shopImportJobs)
+      .set({
+        ...progress,
+        status: outcome.status,
+        currentProductName: null,
+        currentSourceUrl: null,
+        error: outcome.status === "failed" ? outcome.error : null,
+        finishedAt,
+        lastProgressAt: finishedAt,
+        expiresAt: expiry,
+        durationMs: elapsedSql(finishedAt, shopImportJobs.startedAt),
+        updatedAt: finishedAt,
+      })
+      .where(eq(shopImportJobs.id, jobId));
+    return progress;
+  });
 }
 
 async function runEnrichmentJob(job: MaterialEnrichmentJobRow) {
@@ -918,7 +1026,6 @@ async function persistLatestScrapeProgressProducts(
 
 function createImportProgressWriter(jobId: string) {
   let pendingProgress: ShopImportJobProgress | null = null;
-  let latestProgress: ShopImportJobProgress | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushChain: Promise<void> = Promise.resolve();
@@ -939,16 +1046,11 @@ function createImportProgressWriter(jobId: string) {
     flushChain = flushChain
       .catch(() => undefined)
       .then(async () => {
+        await reconcileImportJobProgress(db, jobId);
         const now = new Date().toISOString();
         await db
           .update(shopImportJobs)
           .set({
-            processed: progress.processed,
-            total: progress.total,
-            created: progress.created,
-            updated: progress.updated,
-            skipped: progress.skipped,
-            failed: progress.failed,
             currentProductName: progress.currentProductName,
             currentSourceUrl: progress.currentSourceUrl,
             durationMs: elapsedSql(now, shopImportJobs.startedAt),
@@ -969,7 +1071,6 @@ function createImportProgressWriter(jobId: string) {
   return {
     queue(progress: ShopImportJobProgress) {
       pendingProgress = progress;
-      latestProgress = progress;
       if (Date.now() - lastWriteAt >= PROGRESS_WRITE_MS) {
         void flush();
         return;
@@ -982,28 +1083,7 @@ function createImportProgressWriter(jobId: string) {
       }
     },
     flush,
-    latest() {
-      return latestProgress;
-    },
   };
-}
-
-async function persistLatestImportProgressItems(
-  jobId: string,
-  progress: ShopImportJobProgress | null,
-) {
-  if (!progress?.items?.length) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  await db
-    .update(shopImportJobs)
-    .set({
-      items: progress.items,
-      updatedAt: now,
-    })
-    .where(eq(shopImportJobs.id, jobId));
 }
 
 function createEnrichmentProgressWriter(jobId: string) {
@@ -1205,7 +1285,7 @@ async function isJobCancelled(
 
 async function resetStaleRunningJobs() {
   const now = new Date().toISOString();
-  await Promise.all([
+  const results = await Promise.allSettled([
     db
       .update(shopScrapeJobs)
       .set({
@@ -1217,17 +1297,6 @@ async function resetStaleRunningJobs() {
         updatedAt: now,
       })
       .where(eq(shopScrapeJobs.status, "running")),
-    db
-      .update(shopImportJobs)
-      .set({
-        status: "queued",
-        currentProductName: null,
-        currentSourceUrl: null,
-        error: null,
-        lastProgressAt: now,
-        updatedAt: now,
-      })
-      .where(eq(shopImportJobs.status, "running")),
     db
       .update(materialEnrichmentJobs)
       .set({
@@ -1264,9 +1333,93 @@ async function resetStaleRunningJobs() {
       })
       .where(eq(materialProfileSearchRuns.status, "running")),
   ]);
+  const failures = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures.map((failure) => {
+        const reason: unknown = failure.reason;
+        return reason;
+      }),
+      "Scheduler startup recovery did not settle successfully.",
+    );
+  }
+  await recoverInterruptedImportJobs(now);
+}
+
+async function recoverInterruptedImportJobs(now: string) {
+  const jobs = await db
+    .select({ id: shopImportJobs.id, status: shopImportJobs.status })
+    .from(shopImportJobs)
+    .where(inArray(shopImportJobs.status, ["running", "cancelled"]));
+  for (const job of jobs) {
+    await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ status: shopImportJobs.status })
+        .from(shopImportJobs)
+        .where(eq(shopImportJobs.id, job.id))
+        .for("update")
+        .limit(1);
+      if (!current || !["running", "cancelled"].includes(current.status)) {
+        return;
+      }
+      const progress = await readImportJobProgress(tx, job.id);
+      // A cancellation can commit after a product ledger row but before the
+      // process observes the terminal parent state. Reconcile those durable
+      // counters while preserving cancellation; never requeue the job.
+      if (current.status === "cancelled") {
+        const patch = cancelledImportRecoveryPatch(
+          current.status,
+          progress,
+          now,
+        );
+        if (patch) {
+          await tx
+            .update(shopImportJobs)
+            .set(patch)
+            .where(
+              and(
+                eq(shopImportJobs.id, job.id),
+                eq(shopImportJobs.status, "cancelled"),
+              ),
+            );
+        }
+        return;
+      }
+      if (!progress) {
+        await tx
+          .update(shopImportJobs)
+          .set({
+            status: "failed",
+            currentProductName: null,
+            currentSourceUrl: null,
+            error:
+              "Job nhập bị gián đoạn trước khi có sổ kiểm kê; không tự động chạy lại để tránh tạo trùng. Hãy tạo một job nhập mới.",
+            finishedAt: now,
+            lastProgressAt: now,
+            updatedAt: now,
+          })
+          .where(eq(shopImportJobs.id, job.id));
+        return;
+      }
+      await tx
+        .update(shopImportJobs)
+        .set({
+          ...progress,
+          status: "queued",
+          error: null,
+          finishedAt: null,
+          lastProgressAt: now,
+          updatedAt: now,
+        })
+        .where(eq(shopImportJobs.id, job.id));
+    });
+  }
 }
 
 async function cleanupExpiredJobs() {
+  await resetStaleExcelResearchRows();
   const now = new Date().toISOString();
   await import("~/server/services/material-profile-material-batches").then(
     (service) => service.cleanupExpiredMaterialProfileBatches(now),
@@ -1408,4 +1561,15 @@ export const runJobSchedulerTickForTests = traceFn(
   log,
   "runJobSchedulerTickForTests",
   _runJobSchedulerTickForTests,
+);
+export const recoverInterruptedImportJobsForTests = traceFn(
+  log,
+  "recoverInterruptedImportJobsForTests",
+  recoverInterruptedImportJobs,
+);
+
+export const runShopImportJobForTests = traceFn(
+  log,
+  "runShopImportJobForTests",
+  runImportJob,
 );

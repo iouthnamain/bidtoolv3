@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import { materialImageUrlFromScrape } from "~/lib/materials/image";
 import { computeMergedMaterialValues } from "~/lib/materials/shop-import-merge-preview";
 import type { db as appDb } from "~/server/db";
-import { materials } from "~/server/db/schema";
+import { materials, shopImportItems, shopImportJobs } from "~/server/db/schema";
 import {
   findFuzzyCandidates,
   getCachedDecision,
@@ -23,6 +23,7 @@ import {
 } from "~/server/services/material-price-sources";
 import {
   lockMaterialForUpdate,
+  type MaterialWriteHandle,
   updateLockedMaterial,
 } from "~/server/services/material-write";
 import type {
@@ -38,6 +39,7 @@ const log = createLogger("services-shop-product-importer");
 
 type AppDb = typeof appDb;
 type MaterialRow = typeof materials.$inferSelect;
+type ImportDb = MaterialWriteHandle;
 
 type MaterialInput = {
   code?: string | null;
@@ -80,9 +82,13 @@ export type ImportPreviewSummary = {
 export type ImportScrapedProductsOptions = {
   signal?: AbortSignal;
   onProgress?: (progress: ShopImportJobProgress) => void;
+  importJobId?: string;
   scrapeJobId?: string;
   mode?: ShopImportMode;
 };
+
+type ImportItemStatus = (typeof shopImportItems.$inferSelect)["status"];
+type ImportItemRow = typeof shopImportItems.$inferSelect;
 
 type ClassifyOptions = {
   dryRun?: boolean;
@@ -90,7 +96,7 @@ type ClassifyOptions = {
   mode?: ShopImportMode;
 };
 
-async function _importScrapedProducts(
+async function _importScrapedProductsLegacy(
   db: AppDb,
   products: ScrapedShopProduct[],
   options: ImportScrapedProductsOptions = {},
@@ -237,6 +243,505 @@ async function _importScrapedProducts(
 
   reportProgress(null, null);
   return { created, updated, skipped, failed, items };
+}
+
+async function _importScrapedProducts(
+  db: AppDb,
+  products: ScrapedShopProduct[],
+  options: ImportScrapedProductsOptions = {},
+) {
+  const importJobId = options.importJobId;
+  if (!importJobId) {
+    return _importScrapedProductsLegacy(db, products, options);
+  }
+
+  return importScrapedProductsWithLedger(db, products, {
+    ...options,
+    importJobId,
+  });
+}
+
+function importProductKey(product: ScrapedShopProduct) {
+  const sourceUrl = product.sourceUrl.trim();
+  const identity = sourceUrl
+    ? `url:${sourceUrl}`
+    : [
+        product.sku?.trim() ?? "",
+        product.model?.trim() ?? "",
+        product.name.trim(),
+        product.unit?.trim() ?? "",
+      ].join("\\u001f");
+  return createHash("sha256").update(identity).digest("hex");
+}
+
+export function getImportProductKey(product: ScrapedShopProduct) {
+  return importProductKey(product);
+}
+
+function isSuccessfulImportItem(status: ImportItemStatus) {
+  return status === "created" || status === "updated" || status === "skipped";
+}
+
+function countsAfterItem(
+  counts: {
+    processed: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  },
+  status: ImportItemStatus,
+  delta = 1,
+) {
+  return {
+    processed: counts.processed + delta,
+    created: counts.created + (status === "created" ? delta : 0),
+    updated: counts.updated + (status === "updated" ? delta : 0),
+    skipped: counts.skipped + (status === "skipped" ? delta : 0),
+    failed: counts.failed + (status === "failed" ? delta : 0),
+  };
+}
+
+function importItemToJobItem(item: ImportItemRow): ShopImportJobItem {
+  return {
+    name: item.productName,
+    sourceUrl: item.sourceUrl,
+    action:
+      item.status === "created"
+        ? "created"
+        : item.status === "updated"
+          ? "updated"
+          : item.status === "skipped"
+            ? "skipped"
+            : "failed",
+    ...(item.materialId ? { materialId: item.materialId } : {}),
+    ...(item.message ? { message: item.message } : {}),
+  };
+}
+
+async function getImportItem(
+  db: ImportDb,
+  importJobId: string,
+  productKey: string,
+) {
+  const [item] = await db
+    .select()
+    .from(shopImportItems)
+    .where(
+      and(
+        eq(shopImportItems.importJobId, importJobId),
+        eq(shopImportItems.productKey, productKey),
+      ),
+    )
+    .limit(1);
+  return item ?? null;
+}
+
+async function claimImportItem(
+  tx: ImportDb,
+  input: {
+    importJobId: string;
+    productKey: string;
+    sourceUrl: string;
+    productName: string;
+  },
+) {
+  await tx
+    .insert(shopImportItems)
+    .values({ ...input, status: "processing" })
+    .onConflictDoNothing({
+      target: [shopImportItems.importJobId, shopImportItems.productKey],
+    });
+  const [item] = await tx
+    .select()
+    .from(shopImportItems)
+    .where(
+      and(
+        eq(shopImportItems.importJobId, input.importJobId),
+        eq(shopImportItems.productKey, input.productKey),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  if (!item) {
+    throw new Error("Không thể ghi nhận dòng nhập catalog.");
+  }
+  if (item.status === "failed") {
+    const now = new Date().toISOString();
+    const [retry] = await tx
+      .update(shopImportItems)
+      .set({ status: "processing", message: null, updatedAt: now })
+      .where(eq(shopImportItems.id, item.id))
+      .returning();
+    return retry ?? item;
+  }
+  return item;
+}
+
+async function persistImportItemFailure(
+  db: AppDb,
+  importJobId: string,
+  product: ScrapedShopProduct,
+  productKey: string,
+  message: string,
+) {
+  const now = new Date().toISOString();
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ status: shopImportJobs.status })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, importJobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") throw new ImportJobStoppedError();
+    const [recorded] = await tx
+      .insert(shopImportItems)
+      .values({
+        importJobId,
+        productKey,
+        sourceUrl: product.sourceUrl,
+        productName: product.name.trim() || "(không có tên)",
+        status: "failed",
+        message,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [shopImportItems.importJobId, shopImportItems.productKey],
+        set: { status: "failed", message, updatedAt: now },
+        // A delayed rollback or lost COMMIT acknowledgement must never downgrade
+        // a success. PostgreSQL rechecks this predicate after the unique-key wait.
+        setWhere: inArray(shopImportItems.status, ["processing", "failed"]),
+      })
+      .returning();
+    const winning =
+      recorded ?? (await getImportItem(tx, importJobId, productKey));
+    if (!winning) throw new Error("Không thể đọc kết quả nhập catalog.");
+    return winning;
+  });
+}
+
+async function persistImportItem(
+  db: AppDb,
+  importJobId: string,
+  product: ScrapedShopProduct,
+  productKey: string,
+  classification: ImportClassification,
+  signal?: AbortSignal,
+) {
+  const outcome = await db.transaction(async (tx) => {
+    // Cancellation and product commits serialize on the parent job first.
+    const [job] = await tx
+      .select({ status: shopImportJobs.status })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, importJobId))
+      .for("update")
+      .limit(1);
+    if (job?.status !== "running") throw new ImportJobStoppedError();
+    throwIfImportAborted(signal);
+    const ledger = await claimImportItem(tx, {
+      importJobId,
+      productKey,
+      sourceUrl: product.sourceUrl,
+      productName: classification.name,
+    });
+    if (isSuccessfulImportItem(ledger.status)) {
+      return {
+        ledger,
+        material: null,
+      };
+    }
+
+    const now = new Date().toISOString();
+    if (classification.action === "skip_no_name") {
+      const [updated] = await tx
+        .update(shopImportItems)
+        .set({
+          status: "skipped",
+          message: classification.message,
+          updatedAt: now,
+        })
+        .where(eq(shopImportItems.id, ledger.id))
+        .returning();
+      if (!updated) throw new Error("Không thể lưu kết quả nhập catalog.");
+      return {
+        ledger: updated,
+        material: null,
+      };
+    }
+
+    let material: MaterialRow;
+    let status: "created" | "updated";
+    if (classification.action === "update" && classification.materialId) {
+      const current = await lockMaterialForUpdate(
+        tx,
+        classification.materialId,
+      );
+      const merged = computeMergedMaterialValues(current, product, now);
+      material = await updateLockedMaterial(tx, current, merged, { now });
+      status = "updated";
+    } else {
+      const trimmedUnit = product.unit?.trim();
+      const unit =
+        trimmedUnit && trimmedUnit.length > 0 ? trimmedUnit : "unknown";
+      const [created] = await tx
+        .insert(materials)
+        .values({
+          ...materialValues(
+            {
+              name: classification.name,
+              unit,
+              category: product.category,
+              specText: product.specText,
+              manufacturer: product.manufacturer,
+              originCountry: product.originCountry,
+              defaultUnitPrice: product.price,
+              currency: product.currency,
+              sourceUrl: product.sourceUrl,
+            },
+            now,
+          ),
+          imageUrl: materialImageUrlFromScrape(product.imageUrl),
+          metadataJson: metadataForScrapedProduct(null, product, now),
+        })
+        .returning();
+      material = requireUpdatedMaterial(created);
+      status = "created";
+    }
+    await linkScrapedCatalogPdfs(tx, material.id, product, true);
+    throwIfImportAborted(signal);
+    const [updated] = await tx
+      .update(shopImportItems)
+      .set({
+        status,
+        materialId: material.id,
+        message: classification.message,
+        updatedAt: now,
+      })
+      .where(eq(shopImportItems.id, ledger.id))
+      .returning();
+    if (!updated) throw new Error("Không thể lưu kết quả nhập catalog.");
+    return { ledger: updated, material };
+  });
+  return outcome;
+}
+
+async function loadImportItems(db: ImportDb, importJobId: string) {
+  return db
+    .select()
+    .from(shopImportItems)
+    .where(eq(shopImportItems.importJobId, importJobId))
+    .orderBy(asc(shopImportItems.id));
+}
+
+function progressFromImportItems(rows: ImportItemRow[]): ShopImportJobProgress {
+  let counts = { processed: 0, created: 0, updated: 0, skipped: 0, failed: 0 };
+  const items: ShopImportJobItem[] = [];
+  for (const row of rows) {
+    if (row.status !== "processing") {
+      counts = countsAfterItem(counts, row.status);
+      items.push(importItemToJobItem(row));
+    }
+  }
+  return {
+    ...counts,
+    total: rows.length,
+    items,
+    currentProductName: null,
+    currentSourceUrl: null,
+  };
+}
+
+export async function readImportJobProgress(
+  db: ImportDb,
+  importJobId: string,
+): Promise<ShopImportJobProgress | null> {
+  const rows = await loadImportItems(db, importJobId);
+  return rows.length > 0 ? progressFromImportItems(rows) : null;
+}
+
+export async function reconcileImportJobProgress(
+  db: AppDb,
+  importJobId: string,
+) {
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select({ id: shopImportJobs.id })
+      .from(shopImportJobs)
+      .where(eq(shopImportJobs.id, importJobId))
+      .for("update")
+      .limit(1);
+    if (!job) throw new Error("Không tìm thấy job nhập catalog.");
+    const progress = await readImportJobProgress(tx, importJobId);
+    // Legacy jobs have no ledger; preserve their last known partial evidence.
+    if (progress) {
+      await tx
+        .update(shopImportJobs)
+        .set({ ...progress, updatedAt: new Date().toISOString() })
+        .where(eq(shopImportJobs.id, importJobId));
+    }
+    return progress;
+  });
+}
+
+class ImportJobStoppedError extends Error {
+  constructor() {
+    super("Đã hủy job nhập catalog.");
+  }
+}
+
+async function importScrapedProductsWithLedger(
+  db: AppDb,
+  products: ScrapedShopProduct[],
+  options: ImportScrapedProductsOptions & { importJobId: string },
+): Promise<ShopImportJobResult> {
+  if (products.length === 0) {
+    throwIfImportAborted(options.signal);
+    const durable = await readImportJobProgress(db, options.importJobId);
+    // A restarted job can have a source list that now sanitizes to empty after
+    // every ledger row already reached a terminal outcome. Preserve that
+    // durable result instead of turning an idempotent replay into a failure.
+    if (!durable || durable.processed !== durable.total) {
+      throw new Error("Không có sản phẩm scrape để nhập.");
+    }
+    options.onProgress?.({
+      ...durable,
+      currentProductName: null,
+      currentSourceUrl: null,
+    });
+    return {
+      created: durable.created,
+      updated: durable.updated,
+      skipped: durable.skipped,
+      failed: durable.failed,
+      items: durable.items,
+    };
+  }
+
+  throwIfImportAborted(options.signal);
+  const uniqueProducts = new Map(
+    products.map((product) => [importProductKey(product), product]),
+  );
+  // Persist pending identities before the first material transaction. A rollback
+  // before its first material commit can then resume without guessing.
+  const entries = Array.from(uniqueProducts, ([productKey, product]) => ({
+    importJobId: options.importJobId,
+    productKey,
+    sourceUrl: product.sourceUrl,
+    productName: product.name.trim() || "(không có tên)",
+    status: "processing" as const,
+  }));
+  for (let start = 0; start < entries.length; start += 500) {
+    await db
+      .insert(shopImportItems)
+      .values(entries.slice(start, start + 500))
+      .onConflictDoNothing({
+        target: [shopImportItems.importJobId, shopImportItems.productKey],
+      });
+  }
+  const existingMaterials =
+    options.mode === "create_all"
+      ? []
+      : await db
+          .select()
+          .from(materials)
+          .where(isNull(materials.deletedAt))
+          .limit(25_000);
+  const indexes = createMaterialLookupIndexes(existingMaterials);
+  const rows = await loadImportItems(db, options.importJobId);
+  const byKey = new Map(rows.map((row) => [row.productKey, row]));
+  let progress = progressFromImportItems(rows);
+  const itemIndexes = new Map(
+    rows
+      .filter((row) => row.status !== "processing")
+      .map((row, index) => [row.productKey, index]),
+  );
+  const applyWinningItem = (winning: ImportItemRow) => {
+    const previous = byKey.get(winning.productKey);
+    if (previous && previous.status !== "processing") {
+      progress = {
+        ...progress,
+        ...countsAfterItem(progress, previous.status, -1),
+      };
+    }
+    byKey.set(winning.productKey, winning);
+    if (winning.status !== "processing") {
+      progress = { ...progress, ...countsAfterItem(progress, winning.status) };
+      const itemIndex = itemIndexes.get(winning.productKey);
+      if (itemIndex === undefined) {
+        itemIndexes.set(winning.productKey, progress.items.length);
+        progress.items.push(importItemToJobItem(winning));
+      } else {
+        progress.items[itemIndex] = importItemToJobItem(winning);
+      }
+    }
+  };
+  const reportProgress = (
+    currentProductName: string | null,
+    currentSourceUrl: string | null,
+  ) => {
+    // Callbacks share the incrementally maintained items view. The scheduler
+    // reconciles from PostgreSQL at its bounded flush and terminal boundaries.
+    options.onProgress?.({ ...progress, currentProductName, currentSourceUrl });
+  };
+
+  reportProgress(null, null);
+  for (const [productKey, product] of uniqueProducts) {
+    throwIfImportAborted(options.signal);
+    const name = product.name.trim() || "(không có tên)";
+    reportProgress(name, product.sourceUrl);
+    throwIfImportAborted(options.signal);
+    const existing = byKey.get(productKey);
+    if (existing && isSuccessfulImportItem(existing.status)) continue;
+    try {
+      const classification = await classifyScrapedProductForImport(
+        db,
+        product,
+        indexes,
+        { scrapeJobId: options.scrapeJobId, mode: options.mode },
+      );
+      const outcome = await persistImportItem(
+        db,
+        options.importJobId,
+        product,
+        productKey,
+        classification,
+        options.signal,
+      );
+      if (outcome.material) indexMaterialRow(indexes, outcome.material);
+      applyWinningItem(outcome.ledger);
+    } catch (error) {
+      if (options.signal?.aborted || error instanceof ImportJobStoppedError)
+        throw error;
+      const winning = await persistImportItemFailure(
+        db,
+        options.importJobId,
+        product,
+        productKey,
+        error instanceof Error ? error.message : "Không thể lưu sản phẩm.",
+      );
+      applyWinningItem(winning);
+    }
+    // Callback errors are outside failure bookkeeping: the transaction is done.
+    reportProgress(name, product.sourceUrl);
+  }
+
+  const durable = await readImportJobProgress(db, options.importJobId);
+  if (!durable) throw new Error("Không có sổ kiểm kê cho job nhập catalog.");
+  progress = durable;
+  reportProgress(null, null);
+  if (durable.processed !== durable.total) {
+    throw new Error(
+      "Job nhập catalog còn sản phẩm chưa xử lý; không thể hoàn tất.",
+    );
+  }
+  return {
+    created: durable.created,
+    updated: durable.updated,
+    skipped: durable.skipped,
+    failed: durable.failed,
+    items: durable.items,
+  };
 }
 
 async function _previewShopImportProducts(
@@ -405,7 +910,7 @@ function requireUpdatedMaterial<T>(material: T | undefined): T {
   return material;
 }
 
-async function loadMaterialById(db: AppDb, materialId: number) {
+async function loadMaterialById(db: ImportDb, materialId: number) {
   const [material] = await db
     .select()
     .from(materials)
@@ -693,9 +1198,10 @@ function filledExistingMaterialFieldLabels(
 }
 
 async function linkScrapedCatalogPdfs(
-  db: AppDb,
+  db: ImportDb,
   materialId: number,
   product: ScrapedShopProduct,
+  required = false,
 ) {
   if (product.catalogPdfUrls.length === 0) {
     return;
@@ -712,7 +1218,10 @@ async function linkScrapedCatalogPdfs(
         supplier: product.manufacturer,
       },
     );
-  } catch {
+  } catch (error) {
+    if (required) {
+      throw error;
+    }
     // Catalog PDF linking must not fail the product import.
   }
 }
