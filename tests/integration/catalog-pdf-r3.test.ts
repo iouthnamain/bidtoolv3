@@ -22,16 +22,23 @@ import { createDatabaseFixture } from "../fixtures/remediation/database";
 import { requireTestDatabase } from "../fixtures/remediation/test-target";
 
 const fetchPublicContent = vi.hoisted(() => vi.fn());
+const routeDatabase = vi.hoisted(() => ({ value: undefined as unknown }));
+vi.mock("~/server/db", () => ({
+  get db() {
+    return routeDatabase.value;
+  },
+}));
 vi.mock("~/server/services/public-content-client", () => ({
   fetchPublicContent,
   PUBLIC_CONTENT_PDF_MAX_BYTES: 50 * 1024 * 1024,
 }));
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
-  return { ...actual, rm: vi.fn(actual.rm) };
+  return { ...actual, rm: vi.fn(actual.rm), readFile: vi.fn(actual.readFile) };
 });
 
 import { catalogDocumentRouter } from "~/server/api/routers/catalog-document";
+import { GET as getCatalogFile } from "~/app/api/catalog-pdfs/[id]/file/route";
 import {
   cleanupStaleCatalogPdfVersions,
   publishCatalogPdfFile,
@@ -51,12 +58,14 @@ const checksum = (bytes: Buffer) =>
 beforeEach(async () => {
   fetchPublicContent.mockReset();
   vi.mocked(rm).mockReset();
+  vi.mocked(readFile).mockReset();
   fixture = await createDatabaseFixture();
   await fixture.first`create table ${fixture.first(`${fixture.schema}.material_catalog_documents`)}
     (like public.material_catalog_documents including all)`;
   await fixture.first`set search_path to ${fixture.first(fixture.schema)}, public`;
   await fixture.second`set search_path to ${fixture.second(fixture.schema)}, public`;
   database = drizzle(fixture.first, { schema });
+  routeDatabase.value = database;
   second = drizzle(fixture.second, { schema });
   root = await mkdtemp(path.join(tmpdir(), "catalog-r3-test-"));
   vi.stubEnv("BIDTOOL_CATALOG_PDF_DIR", root);
@@ -196,6 +205,75 @@ test("cleanup error cannot reverse committed publication", async () => {
   ).resolves.toMatchObject({ checksum: checksum(pdf("new")) });
   expect((await current(doc.id)).bytes).toEqual(pdf("new"));
   expect(await readCatalogPdfFile(doc.localFilePath)).toEqual(pdf("old"));
+});
+
+test("GET completes its selected file read before a replacement can unlink it", async () => {
+  const doc = await seed();
+  const actualFs =
+    await vi.importActual<typeof import("node:fs/promises")>(
+      "node:fs/promises",
+    );
+  let reached!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let release!: () => void;
+  const resume = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(readFile).mockImplementationOnce(async (...args) => {
+    expect(args[0]).toBe(path.join(root, doc.localFilePath));
+    reached();
+    await resume;
+    return actualFs.readFile(...args);
+  });
+  const reader = getCatalogFile(
+    new Request(`http://localhost/api/catalog-pdfs/${doc.id}/file`),
+    {
+      params: Promise.resolve({ id: String(doc.id) }),
+    },
+  );
+  const observer = postgres(requireTestDatabase(), { max: 1 });
+  let publication: ReturnType<typeof publishCatalogPdfFile> | undefined;
+  let completed = false;
+  let waitedForReader = false;
+  try {
+    await reading;
+    publication = publishCatalogPdfFile(
+      second,
+      doc.id,
+      "new.pdf",
+      pdf("new"),
+      "reupload",
+    );
+    void publication.then(() => {
+      completed = true;
+    });
+    await vi.waitFor(async () => {
+      const [locks] = await observer<
+        { waiting: number }[]
+      >`select count(*)::int as waiting from pg_locks where locktype='advisory' and classid=${0x504446} and objid=${doc.id} and not granted`;
+      waitedForReader = (locks?.waiting ?? 0) > 0;
+      expect(completed || waitedForReader).toBe(true);
+    });
+  } finally {
+    release();
+    await observer.end();
+  }
+  const response = await reader;
+  await publication;
+  expect(response.status).toBe(200);
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(pdf("old"));
+  expect(waitedForReader).toBe(true);
+  expect((await current(doc.id)).bytes).toEqual(pdf("new"));
+  const next = await getCatalogFile(
+    new Request(`http://localhost/api/catalog-pdfs/${doc.id}/file`),
+    {
+      params: Promise.resolve({ id: String(doc.id) }),
+    },
+  );
+  expect(next.status).toBe(200);
+  expect(Buffer.from(await next.arrayBuffer())).toEqual(pdf("new"));
 });
 
 test("row is re-read under lock, preserving a concurrent source-type change", async () => {

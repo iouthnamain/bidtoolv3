@@ -224,6 +224,41 @@ export async function cleanupStaleCatalogPdfVersions(
   );
 }
 
+/** Keep the selected version alive until its bytes are buffered for the reader. */
+export async function readPublishedCatalogPdf(
+  database: PdfDatabase,
+  documentId: number,
+) {
+  return withDocumentFileLock(
+    database,
+    documentId,
+    async (_connection, scoped) => {
+      const [document] = await scoped
+        .select()
+        .from(materialCatalogDocuments)
+        .where(
+          and(
+            eq(materialCatalogDocuments.id, documentId),
+            isNull(materialCatalogDocuments.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (!document?.localFilePath) return null;
+      try {
+        return {
+          document,
+          file: await readCatalogPdfFile(document.localFilePath),
+        };
+      } catch (error) {
+        if (error instanceof CatalogPdfStorageError) throw error;
+        throw new CatalogPdfStorageError("Không đọc được tệp PDF.", {
+          cause: error,
+        });
+      }
+    },
+  );
+}
+
 /** Write first, then publish in a short row-locked transaction on one connection. */
 export async function publishCatalogPdfFile(
   database: PdfDatabase,
@@ -366,10 +401,38 @@ async function _downloadCatalogPdfFromUrl(url: string): Promise<Buffer> {
   }
 }
 
-export const sanitizeCatalogPdfFileName = traceFn(log, "sanitizeCatalogPdfFileName", _sanitizeCatalogPdfFileName);
-export const assertValidCatalogPdf = traceFn(log, "assertValidCatalogPdf", _assertValidCatalogPdf);
-export const saveCatalogPdfFile = traceFn(log, "saveCatalogPdfFile", _saveCatalogPdfFile);
-export const readCatalogPdfFile = traceFn(log, "readCatalogPdfFile", _readCatalogPdfFile);
-export const deleteCatalogPdfFiles = traceFn(log, "deleteCatalogPdfFiles", _deleteCatalogPdfFiles);
-export const decodeCatalogPdfBase64 = traceFn(log, "decodeCatalogPdfBase64", _decodeCatalogPdfBase64);
-export const downloadCatalogPdfFromUrl = traceFn(log, "downloadCatalogPdfFromUrl", _downloadCatalogPdfFromUrl);
+export const sanitizeCatalogPdfFileName = traceFn(
+  log,
+  "sanitizeCatalogPdfFileName",
+  _sanitizeCatalogPdfFileName,
+);
+export const assertValidCatalogPdf = traceFn(
+  log,
+  "assertValidCatalogPdf",
+  _assertValidCatalogPdf,
+);
+export const saveCatalogPdfFile = traceFn(
+  log,
+  "saveCatalogPdfFile",
+  _saveCatalogPdfFile,
+);
+export const readCatalogPdfFile = traceFn(
+  log,
+  "readCatalogPdfFile",
+  _readCatalogPdfFile,
+);
+export const deleteCatalogPdfFiles = traceFn(
+  log,
+  "deleteCatalogPdfFiles",
+  _deleteCatalogPdfFiles,
+);
+export const decodeCatalogPdfBase64 = traceFn(
+  log,
+  "decodeCatalogPdfBase64",
+  _decodeCatalogPdfBase64,
+);
+export const downloadCatalogPdfFromUrl = traceFn(
+  log,
+  "downloadCatalogPdfFromUrl",
+  _downloadCatalogPdfFromUrl,
+);
