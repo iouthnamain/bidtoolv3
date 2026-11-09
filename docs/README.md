@@ -9,6 +9,7 @@
 | [architecture-remediation-plan.md](./architecture-remediation-plan.md)                   | Prioritized fixes for storage, downloads, material writes, jobs, and deployment         |
 | [architecture-research-t3code-pandacode.md](./architecture-research-t3code-pandacode.md) | Pinned upstream patterns mapped to BidTool's remediation plan                           |
 | [material-profiles-and-materials-mvp.md](./material-profiles-and-materials-mvp.md)       | Kiểm thử thủ công Danh mục và Hồ sơ vật tư                                              |
+| [ci-cd.md](./ci-cd.md)                                                                   | CI/CD gates, protected release and rollback, evidence and integration handoffs          |
 | [updates/README.md](./updates/README.md)                                                 | Release, deployment, and on-prem update system                                          |
 | [architecture-option-b/README.md](./architecture-option-b/README.md)                     | Target architecture and migration plan                                                  |
 | [remediation-14-days/README.md](./remediation-14-days/README.md)                         | Fourteen-day task, dependency, thread and PR delivery schedule                          |
