@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,10 @@ vi.mock("~/server/services/public-content-client", () => ({
   fetchPublicContent,
   PUBLIC_CONTENT_PDF_MAX_BYTES: 50 * 1024 * 1024,
 }));
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
 
 import {
   assertValidCatalogPdf,
@@ -29,11 +33,14 @@ describe("catalog pdf storage", () => {
   let root: string;
 
   beforeEach(async () => {
+    fetchPublicContent.mockReset();
+    vi.mocked(open).mockReset();
     root = await mkdtemp(path.join(tmpdir(), "catalog-pdf-test-"));
     vi.stubEnv("BIDTOOL_CATALOG_PDF_DIR", root);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     await rm(root, { recursive: true, force: true });
   });
@@ -77,7 +84,8 @@ describe("catalog pdf storage", () => {
   describe("saveCatalogPdfFile", () => {
     it("writes the file and returns metadata with a checksum", async () => {
       const stored = await saveCatalogPdfFile(7, "cat.pdf", makePdf("abc"));
-      expect(stored.localFilePath).toBe(path.join("7", "cat.pdf"));
+      expect(stored.localFilePath).not.toBe(path.join("7", "cat.pdf"));
+      expect(stored.fileName).toBe("cat.pdf");
       expect(stored.fileSize).toBeGreaterThan(0);
       expect(stored.checksum).toMatch(/^[0-9a-f]{64}$/);
 
@@ -85,22 +93,17 @@ describe("catalog pdf storage", () => {
       expect(read.toString("latin1")).toContain("abc");
     });
 
-    it("does not leave an orphan when the document dir is cleared before a reupload with a new name", async () => {
-      await saveCatalogPdfFile(9, "old-name.pdf", makePdf("v1"));
-
-      // Mirrors the reuploadPdf flow: clear the document dir, then save again.
-      await deleteCatalogPdfFiles(9);
-      const replaced = await saveCatalogPdfFile(
-        9,
-        "new-name.pdf",
+    it("preserves previous bytes when staging the same display filename", async () => {
+      const first = await saveCatalogPdfFile(9, "cat.pdf", makePdf("v1"));
+      const second = await saveCatalogPdfFile(9, "cat.pdf", makePdf("v2"));
+      expect(second.localFilePath).not.toBe(first.localFilePath);
+      expect(await readCatalogPdfFile(first.localFilePath)).toEqual(
+        makePdf("v1"),
+      );
+      expect(await readCatalogPdfFile(second.localFilePath)).toEqual(
         makePdf("v2"),
       );
-
-      const filesInDir = await readdir(path.join(root, "9"));
-      expect(filesInDir).toEqual(["new-name.pdf"]);
-
-      const read = await readCatalogPdfFile(replaced.localFilePath);
-      expect(read.toString("latin1")).toContain("v2");
+      expect(await readdir(path.join(root, "9"))).toHaveLength(2);
     });
 
     it("changes the checksum when the bytes change", async () => {
@@ -108,9 +111,58 @@ describe("catalog pdf storage", () => {
       const second = await saveCatalogPdfFile(11, "c.pdf", makePdf("two"));
       expect(first.checksum).not.toBe(second.checksum);
     });
+
+    it.each(["partial write", "file sync", "directory sync"])(
+      "preserves a legacy current file on %s failure and removes the new file",
+      async (failure) => {
+        await mkdir(path.join(root, "13"));
+        const old = makePdf("current legacy bytes");
+        await writeFile(path.join(root, "13", "cat.pdf"), old);
+        const actual =
+          await vi.importActual<typeof import("node:fs/promises")>(
+            "node:fs/promises",
+          );
+        vi.mocked(open).mockImplementation(async (...args) => {
+          const handle = await actual.open(...args);
+          if (args[1] === "wx" && failure === "partial write") {
+            const write = handle.writeFile.bind(handle);
+            vi.spyOn(handle, "writeFile").mockImplementationOnce(async () => {
+              await write(Buffer.from("%PDF-partial"));
+              throw new Error("injected ENOSPC after partial write");
+            });
+          }
+          if (
+            (args[1] === "wx" && failure === "file sync") ||
+            (args[1] === "r" && failure === "directory sync")
+          ) {
+            vi.spyOn(handle, "sync").mockRejectedValueOnce(
+              new Error("injected EIO"),
+            );
+          }
+          return handle;
+        });
+        await expect(
+          saveCatalogPdfFile(13, "cat.pdf", makePdf("replacement")),
+        ).rejects.toThrow(/injected/);
+        expect(await readCatalogPdfFile("13/cat.pdf")).toEqual(old);
+        expect(await readdir(path.join(root, "13"))).toEqual(["cat.pdf"]);
+      },
+    );
+
+    it("validates before creating any document directory", async () => {
+      await expect(
+        saveCatalogPdfFile(14, "bad.pdf", Buffer.from("not PDF")),
+      ).rejects.toThrow(CatalogPdfStorageError);
+      expect(await readdir(root)).toEqual([]);
+    });
   });
 
   describe("readCatalogPdfFile", () => {
+    it("still reads the legacy document/filename layout", async () => {
+      await mkdir(path.join(root, "15"));
+      await writeFile(path.join(root, "15", "old.pdf"), makePdf("legacy"));
+      expect(await readCatalogPdfFile("15/old.pdf")).toEqual(makePdf("legacy"));
+    });
     it("rejects path traversal outside the storage root", async () => {
       await expect(
         readCatalogPdfFile("../../../etc/passwd"),
