@@ -25,7 +25,7 @@ import {
 import { scrapeTimeoutMs } from "~/server/services/shop-scrape-limits";
 import {
   closeShopScraperBrowser as _closeShopScraperBrowser,
-  getSharedBrowser,
+  acquireShopScraperBrowser,
 } from "~/server/services/shop-material-scraper/browser";
 import {
   assertSafeScrapeUrl,
@@ -191,42 +191,44 @@ async function _scrapeShopMaterialsFromUrl({
   const startUrl = startResolution.url;
   startUrl.href = normalizeTrackedUrl(startUrl.href);
   const expectedHostname = startUrl.hostname.toLowerCase();
-  const browser = await getSharedBrowser({
+  const browserLease = await acquireShopScraperBrowser({
     hostname: expectedHostname,
     address: startResolution.destination.address,
   });
-  const context = await browser.newContext({
-    locale: "vi-VN",
-    viewport: { width: 1366, height: 900 },
-    userAgent:
-      "Mozilla/5.0 (compatible; BidTool/1.0; +https://localhost) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-  });
-
-  await context.route("**/*", async (route) => {
-    const request = route.request();
-    const resourceType = request.resourceType();
-    if (["font", "image", "media"].includes(resourceType)) {
-      await route.abort();
-      return;
-    }
-
-    try {
-      const requestUrl = new URL(request.url());
-      if (!["http:", "https:"].includes(requestUrl.protocol)) {
-        await route.abort();
-        return;
-      }
-      if (requestUrl.hostname.toLowerCase() !== expectedHostname) {
-        await route.abort();
-        return;
-      }
-      await route.continue();
-    } catch {
-      await route.abort();
-    }
-  });
-
+  let closeContext: (() => Promise<void>) | undefined;
   try {
+    const context = await browserLease.browser.newContext({
+      locale: "vi-VN",
+      viewport: { width: 1366, height: 900 },
+      userAgent:
+        "Mozilla/5.0 (compatible; BidTool/1.0; +https://localhost) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    });
+    closeContext = () => context.close();
+
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      const resourceType = request.resourceType();
+      if (["font", "image", "media"].includes(resourceType)) {
+        await route.abort();
+        return;
+      }
+
+      try {
+        const requestUrl = new URL(request.url());
+        if (!["http:", "https:"].includes(requestUrl.protocol)) {
+          await route.abort();
+          return;
+        }
+        if (requestUrl.hostname.toLowerCase() !== expectedHostname) {
+          await route.abort();
+          return;
+        }
+        await route.continue();
+      } catch {
+        await route.abort();
+      }
+    });
+
     return await withTimeout(
       (async () => {
         const queue = [startUrl.href];
@@ -487,11 +489,13 @@ async function _scrapeShopMaterialsFromUrl({
       "Scrape shop quá thời gian bảo vệ trước khi đọc hết queue.",
     );
   } finally {
-    await withTimeout(
-      context.close().catch(() => undefined),
-      BROWSER_CLOSE_TIMEOUT_MS,
-      "Đóng browser context quá thời gian.",
-    ).catch(() => undefined);
+    if (closeContext)
+      await withTimeout(
+        closeContext().catch(() => undefined),
+        BROWSER_CLOSE_TIMEOUT_MS,
+        "Đóng browser context quá thời gian.",
+      ).catch(() => undefined);
+    await browserLease.release();
   }
 }
 
