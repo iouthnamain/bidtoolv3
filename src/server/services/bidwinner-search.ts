@@ -72,6 +72,8 @@ type ProvinceStream = {
   code: string;
   currentPage: number;
   lastPage: number;
+  seenPages: Set<string>;
+  stopReason: "page_limit" | "invalid_page" | null;
   buffer: LivePackageItem[];
   nextIndex: number;
 };
@@ -192,6 +194,8 @@ function assertAllowedBidWinnerUrl(url: URL) {
  * filter cannot fan out into an unbounded number of remote fetches.
  */
 const MAX_REFINE_PAGES = 5;
+// An unfiltered merge still has to walk each province from its first page.
+const MAX_MERGED_PAGES_PER_PROVINCE = 20;
 
 /**
  * Computes the inclusive 1-based remote page list to fetch.
@@ -499,7 +503,7 @@ function _getRefinementFields(
 function applyLocalRefinement(
   items: LivePackageItem[],
   input: SearchOptions,
-): { items: LivePackageItem[]; fields: LocalRefinementField[] } {
+) {
   const keywords = (input.keyword ?? "")
     .split(",")
     .map((term) => normalizeText(term))
@@ -508,9 +512,7 @@ function applyLocalRefinement(
   const publishedFrom = input.publishedFrom?.trim();
   const publishedTo = input.publishedTo?.trim();
 
-  const fields = getRefinementFields(input);
-
-  const filtered = items.filter((item) => {
+  return items.filter((item) => {
     if (keywords.length > 0) {
       const haystack = normalizeText(`${item.title} ${item.inviter}`);
       if (!keywords.some((term) => haystack.includes(term))) return false;
@@ -548,8 +550,6 @@ function applyLocalRefinement(
 
     return true;
   });
-
-  return { items: filtered, fields };
 }
 
 function sortItems(
@@ -722,33 +722,54 @@ async function fetchParsedBidWinnerPage(
   };
 }
 
-async function ensureProvinceStreamHasItem(stream: ProvinceStream) {
-  while (stream.nextIndex >= stream.buffer.length) {
+function acceptProvincePage(
+  stream: ProvinceStream,
+  requestedPage: number,
+  parsedPage: ParsedBidWinnerPage,
+) {
+  const { current_page: currentPage, last_page: lastPage, data } =
+    parsedPage.payload;
+  const signature = data.map((item) => item.id).sort().join(",");
+  if (
+    (typeof currentPage === "number" && currentPage !== requestedPage) ||
+    (signature && stream.seenPages.has(signature))
+  ) {
+    stream.stopReason = "invalid_page";
+    return;
+  }
+
+  if (signature) stream.seenPages.add(signature);
+  stream.currentPage = requestedPage;
+  if (
+    typeof lastPage === "number" &&
+    Number.isInteger(lastPage) &&
+    lastPage > 0
+  ) {
+    stream.lastPage = lastPage;
+  }
+  stream.buffer = parsedPage.items;
+  stream.nextIndex = 0;
+}
+
+async function ensureProvinceStreamHasItem(
+  stream: ProvinceStream,
+  pageLimit: number,
+) {
+  while (!stream.stopReason && stream.nextIndex >= stream.buffer.length) {
     if (stream.currentPage >= stream.lastPage) {
+      return false;
+    }
+    if (stream.currentPage >= pageLimit) {
+      stream.stopReason = "page_limit";
       return false;
     }
 
     const nextPage = stream.currentPage + 1;
     const parsedPage = await fetchParsedBidWinnerPage(nextPage, stream.code);
-
-    stream.currentPage =
-      typeof parsedPage.payload.current_page === "number"
-        ? parsedPage.payload.current_page
-        : nextPage;
-    stream.lastPage =
-      typeof parsedPage.payload.last_page === "number" &&
-      parsedPage.payload.last_page > 0
-        ? parsedPage.payload.last_page
-        : stream.currentPage;
-    stream.buffer = parsedPage.items;
-    stream.nextIndex = 0;
-
-    if (stream.buffer.length === 0 && stream.currentPage >= stream.lastPage) {
-      return false;
-    }
+    acceptProvincePage(stream, nextPage, parsedPage);
   }
 
-  return true;
+  return !stream.stopReason;
 }
 
 async function _searchBidWinnerLive(
@@ -759,7 +780,7 @@ async function _searchBidWinnerLive(
   const sortOrder: SortOrder =
     normalizedInput.sortOrder === "asc" ? "asc" : "desc";
   const limit = Math.max(normalizedInput.limit, 1);
-  const warnings: string[] = [];
+  let warning: string | undefined;
 
   let provinceCodeMap = cachedProvinceCodeMap ?? new Map<string, string>();
   if (provinceCodeMap.size === 0 && normalizedInput.provinces.length > 0) {
@@ -804,7 +825,8 @@ async function _searchBidWinnerLive(
   let scannedCount = 0;
   let windowTruncated = false;
   let refinedTotal: number | null = null;
-  const refineActive = getRefinementFields(normalizedInput).length > 0;
+  const fields = getRefinementFields(normalizedInput);
+  const refineActive = fields.length > 0;
 
   if (provinceCodes.length <= 1) {
     const selectedProvinceCode = provinceCodes[0];
@@ -867,10 +889,7 @@ async function _searchBidWinnerLive(
       // paginate the filtered list. `total` becomes the filtered count so the
       // client's page count is honest; `windowTruncated` flags that filtering
       // only covered the first `MAX_REFINE_PAGES` source pages.
-      const { items: filteredWindow } = applyLocalRefinement(
-        fetchedItems,
-        normalizedInput,
-      );
+      const filteredWindow = applyLocalRefinement(fetchedItems, normalizedInput);
       refinedTotal = filteredWindow.length;
       windowItems = filteredWindow.slice(
         normalizedInput.offset,
@@ -885,45 +904,50 @@ async function _searchBidWinnerLive(
     }
   } else {
     const firstPages = await Promise.all(
-      provinceCodes.map((code) => fetchParsedBidWinnerPage(1, code)),
+      provinceCodes.map(async (code) => ({
+        code,
+        parsedPage: await fetchParsedBidWinnerPage(1, code),
+      })),
     );
 
-    const streams: ProvinceStream[] = [];
-    for (const [index, parsedPage] of firstPages.entries()) {
+    const streams = firstPages.map(({ code, parsedPage }) => {
       sourceTotal +=
         typeof parsedPage.payload.total === "number" &&
         parsedPage.payload.total > 0
           ? parsedPage.payload.total
           : 0;
 
-      streams.push({
-        code: provinceCodes[index] ?? "",
-        currentPage:
-          typeof parsedPage.payload.current_page === "number" &&
-          parsedPage.payload.current_page > 0
-            ? parsedPage.payload.current_page
-            : 1,
-        lastPage:
-          typeof parsedPage.payload.last_page === "number" &&
-          parsedPage.payload.last_page > 0
-            ? parsedPage.payload.last_page
-            : 1,
-        buffer: parsedPage.items,
+      const stream: ProvinceStream = {
+        code,
+        currentPage: 0,
+        lastPage: 1,
+        seenPages: new Set(),
+        stopReason: null,
+        buffer: [],
         nextIndex: 0,
-      });
-    }
+      };
+      acceptProvincePage(stream, 1, parsedPage);
+      return stream;
+    });
 
     const targetUniqueCount = normalizedInput.offset + limit;
+    const pageLimit = refineActive
+      ? MAX_REFINE_PAGES
+      : MAX_MERGED_PAGES_PER_PROVINCE;
     const mergedItems: LivePackageItem[] = [];
     const seen = new Set<string>();
 
-    while (mergedItems.length < targetUniqueCount) {
-      let bestStreamIndex = -1;
+    merge: while (refineActive || mergedItems.length < targetUniqueCount) {
+      let bestStream: ProvinceStream | null = null;
       let bestItem: LivePackageItem | null = null;
 
-      for (const [index, stream] of streams.entries()) {
-        const hasItem = await ensureProvinceStreamHasItem(stream);
+      for (const stream of streams) {
+        const hasItem = await ensureProvinceStreamHasItem(stream, pageLimit);
         if (!hasItem) {
+          if (!refineActive && stream.stopReason) {
+            // Without its next item we cannot order later results correctly.
+            break merge;
+          }
           continue;
         }
 
@@ -937,20 +961,15 @@ async function _searchBidWinnerLive(
           comparePackagesByPublishedAtDesc(candidate, bestItem) < 0
         ) {
           bestItem = candidate;
-          bestStreamIndex = index;
+          bestStream = stream;
         }
       }
 
-      if (bestStreamIndex < 0 || !bestItem) {
+      if (!bestStream || !bestItem) {
         break;
       }
 
-      const stream = streams[bestStreamIndex];
-      if (!stream) {
-        break;
-      }
-
-      stream.nextIndex += 1;
+      bestStream.nextIndex += 1;
       if (seen.has(bestItem.externalId)) {
         continue;
       }
@@ -959,11 +978,25 @@ async function _searchBidWinnerLive(
       mergedItems.push(bestItem);
     }
 
-    windowItems = mergedItems.slice(
+    scannedCount = mergedItems.length;
+    windowTruncated = streams.some((stream) => stream.stopReason !== null);
+    if (streams.some((stream) => stream.stopReason === "invalid_page")) {
+      warning =
+        "BidWinner trả về trang lặp hoặc sai số trang. Kết quả có thể chưa đầy đủ.";
+    }
+
+    const matchedItems = refineActive
+      ? applyLocalRefinement(mergedItems, normalizedInput)
+      : mergedItems;
+    if (refineActive) {
+      refinedTotal = matchedItems.length;
+    } else if (windowTruncated) {
+      sourceTotal = scannedCount;
+    }
+    windowItems = matchedItems.slice(
       normalizedInput.offset,
       normalizedInput.offset + limit,
     );
-    scannedCount = mergedItems.length;
   }
 
   const windowBudgetValues = windowItems
@@ -980,11 +1013,7 @@ async function _searchBidWinnerLive(
           max: 0,
         };
 
-  const { items: refined, fields } = applyLocalRefinement(
-    windowItems,
-    normalizedInput,
-  );
-  const sorted = sortItems(refined, sortBy, sortOrder);
+  const sorted = sortItems(windowItems, sortBy, sortOrder);
 
   return {
     items: sorted,
@@ -997,7 +1026,7 @@ async function _searchBidWinnerLive(
     windowBudgetRange,
     source: "bidwinner_live",
     fetchedAt: new Date().toISOString(),
-    warning: warnings.length > 0 ? warnings.join(" ") : undefined,
+    warning,
     localRefinement: {
       active: fields.length > 0,
       fields,
