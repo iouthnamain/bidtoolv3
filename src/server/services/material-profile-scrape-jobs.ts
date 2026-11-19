@@ -473,7 +473,7 @@ async function applySelectedProduct(
   productMatchScore: number | null,
   activate: boolean,
   allowChangedSearchGeneration = false,
-  requiredStatus?: ScrapeRunRow["status"],
+  automaticCandidates?: ProfileScrapedProduct[],
 ) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const [item] = await db
@@ -548,14 +548,29 @@ async function applySelectedProduct(
           ),
         )
         .returning({ id: excelWorkspaceItems.id });
-    const [updated] = requiredStatus
+    const [updated] = automaticCandidates
       ? await db.transaction(async (tx) => {
           const [active] = await tx
             .select({ id: materialProfileScrapeRuns.id })
             .from(materialProfileScrapeRuns)
-            .where(runHasStatus(run.id, requiredStatus))
+            .where(runHasStatus(run.id, "running"))
             .for("update");
-          return active ? writeDecision(tx) : [];
+          if (!active) return [];
+          const updated = await writeDecision(tx);
+          if (updated.length > 0) {
+            await tx
+              .update(materialProfileScrapeRuns)
+              .set({
+                status: "completed",
+                scrapedProductCandidatesJson: automaticCandidates,
+                selectedProductJson: product,
+                errorMessage: null,
+                finishedAt: now,
+                updatedAt: now,
+              })
+              .where(runHasStatus(run.id, "running"));
+          }
+          return updated;
         })
       : await writeDecision(db);
     if (updated) {
@@ -674,8 +689,9 @@ async function refreshRunningRun(run: ScrapeRunRow) {
     resolution.score,
     false,
     false,
-    "running",
+    products,
   );
+  if (applied.status === "completed") return;
   await db
     .update(materialProfileScrapeRuns)
     .set({
