@@ -15,6 +15,7 @@ test("source defaults stay in project data; data root is trimmed and explicit di
     "catalog-pdfs",
     "excel-research",
     "material-profiles",
+    "material-control",
   ] as const) {
     expect(resolveStorageDirectory(tree)).toBe(
       path.join("/durable/files", tree),

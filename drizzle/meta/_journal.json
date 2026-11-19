@@ -302,6 +302,20 @@
       "when": 1793768680943,
       "tag": "0042_sudden_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793983602920,
+      "tag": "0043_easy_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793987858940,
+      "tag": "0044_white_starjammers",
+      "breakpoints": true
     }
   ]
 }

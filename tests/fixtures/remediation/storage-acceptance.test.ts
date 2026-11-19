@@ -77,6 +77,10 @@ const artifacts = [
     file: "material-profiles/workspace/source.xlsx",
     bytes: "R1 profile workbook",
   },
+  {
+    file: "material-control/7/attachments/key/receipt.pdf",
+    bytes: "%PDF-material-control",
+  },
 ];
 
 async function command(

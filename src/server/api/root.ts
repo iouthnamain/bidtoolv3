@@ -5,6 +5,7 @@ import { excelResearchRouter } from "~/server/api/routers/excel-research";
 import { materialEnrichmentRouter } from "~/server/api/routers/material-enrichment";
 import { materialProfileRouter } from "~/server/api/routers/material-profile";
 import { materialRouter } from "~/server/api/routers/material";
+import { materialControlRouter } from "~/server/api/routers/material-control";
 import { notificationRouter } from "~/server/api/routers/notification";
 import { searchConfigRouter } from "~/server/api/routers/search-config";
 import { searchRouter } from "~/server/api/routers/search";
@@ -29,6 +30,7 @@ export const appRouter = createTRPCRouter({
   catalogDocument: catalogDocumentRouter,
   excelResearch: excelResearchRouter,
   material: materialRouter,
+  materialControl: materialControlRouter,
   materialEnrichment: materialEnrichmentRouter,
   materialProfile: materialProfileRouter,
   notification: notificationRouter,

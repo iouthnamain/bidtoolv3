@@ -22,6 +22,13 @@ async function setup(failCopy = false) {
     path.join(serverDir, "data/catalog-pdfs/1/catalog.pdf"),
     "%PDF-kept",
   );
+  await mkdir(path.join(serverDir, "data/material-control/7/attachments/key"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(serverDir, "data/material-control/7/attachments/key/receipt.pdf"),
+    "%PDF-material-control",
+  );
   const source = await readFile("electron/main.cjs", "utf8");
   const start = source.indexOf("function desktopDataInventory(");
   const end = source.indexOf("async function startStandaloneNextServer()");
@@ -52,6 +59,12 @@ test("bundled desktop copies legacy bytes before spawn and preserves original on
   expect(
     await readFile(path.join(target, "catalog-pdfs/1/catalog.pdf"), "utf8"),
   ).toBe("%PDF-kept");
+  expect(
+    await readFile(
+      path.join(target, "material-control/7/attachments/key/receipt.pdf"),
+      "utf8",
+    ),
+  ).toBe("%PDF-material-control");
   expect(
     await readFile(
       path.join(serverDir, "data/catalog-pdfs/1/catalog.pdf"),

@@ -1,15 +1,14 @@
 # CI/CD
 
-The workflows validate one immutable source commit and assemble artifacts before publication. They do not establish that the architecture remediation is complete. PR #29 stays draft pending native/browser/restore, protected-delivery and actual tag-dispatch evidence.
+The release workflow validates one immutable source commit and assembles artifacts before publication. Native installation, browser, restore, protected delivery, and actual tag-dispatch acceptance still require separate evidence.
 
 ## Triggers and job graph
 
-- A PR targeting `main` and a push to `main` call `validate.yml` with the event's full SHA (the PR merge commit for `pull_request`). Superseded CI runs are cancelled.
+- Use `bun run verify` to check a PR locally. See the [local PR checks](./updates/ci-cd.md#local-pr-checks) for database setup.
 - An existing stable `vX.Y.Z` tag push or manual **Release** dispatch resolves that remote tag to a full commit first. Lightweight and annotated tags work; missing tags, tags pointing at non-commits and prereleases fail. Stable-only matches the current pins reader's version ordering.
-- Release calls the same `validate.yml` with the resolved SHA and tag version. All subsequent checkouts explicitly use that SHA. The initial resolver checks out the workflow event SHA only to bootstrap the resolver; a dispatch at B can therefore build tag A. Tags predating these scripts fail closed and need a reviewed backport rather than a fallback to B.
+- Release calls `validate.yml` with the resolved SHA and tag version. All subsequent checkouts use that SHA. The initial checkout uses the workflow event SHA to load the resolver. A dispatch at commit B can build the commit at tag A. Releases of commits that predate these scripts require a reviewed backport.
 
 ```text
-PR/main SHA ------------------------> validate
 release event -> resolve tag SHA ---> validate
                                        |-- quality: frozen install, lint, typecheck,
                                        |            unit tests, Next build, metadata/CLI
@@ -26,7 +25,7 @@ release: validate -> Windows/Linux desktop assembly and checks
                   -> create GitHub Release -> promote image latest
 ```
 
-The shared `integration` job retains R0's PostgreSQL 16 service and `bun run test:integration` command. It checks out `inputs.source_sha`, asserts `HEAD`, installs the frozen lockfile and runs the guarded migration/concurrent-connection fixtures with a validated `BIDTOOL_TEST_DATABASE_URL`. GitHub allocates the host port; only the test step receives the loopback URL for role `bidtool_test` and database `bidtool_test_ci`. The job has a 15-minute timeout and read-only token. Both CI and release call this same workflow; release desktop/artifact/publication jobs require its successful completion, including integration. The PR's required-check settings must also include this new check once its actual displayed name is reviewed; this source change does not configure branch protection.
+The `integration` job uses a PostgreSQL 16 service and `bun run test:integration`. It checks out `inputs.source_sha`, asserts `HEAD`, installs the frozen lockfile and runs the guarded migration and concurrent-connection fixtures. GitHub allocates the host port. Only the test step receives `BIDTOOL_TEST_DATABASE_URL`, a loopback URL for role `bidtool_test` and database `bidtool_test_ci`. The job has a 15-minute timeout and a read-only token. Desktop assembly, artifact verification and publication depend on the reusable release validation workflow passing, including this job.
 
 The runtime gate creates only uniquely named Docker containers, an internal network and a data volume. PostgreSQL and the app have no host port bindings. Cleanup names only that invocation's resources; it does not use production Compose or prune Docker. A second migration run and app restart must succeed. The SQL migration count is compared with the checked-out journal. `/api/health` proves HTTP liveness, not scheduler readiness or application correctness.
 
@@ -81,11 +80,11 @@ Do not point mutation tests at development or operator databases. This smoke use
 
 ## Required repository configuration
 
-These are operator setup steps, not changes made by this PR:
+Configure the repository before delivering releases or rolling them back.
 
 1. Create the GitHub **production** environment before enabling delivery. Require reviewers, prevent self-review, disable administrator bypass where supported, and restrict deployment branches/tags to the reviewed release policy. Environment protection is an external prerequisite; declaring `environment: production` alone does not guarantee approval rules exist.
 2. Store `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` as production environment secrets. All three are required for a full release and rollback. Missing credentials fail before any image or web publication. There is no placeholder deployment URL or successful skip.
-3. Allow the production jobs' `GITHUB_TOKEN` to write repository releases and that repository's GHCR package. Other jobs have only `contents: read`; checkout credentials are not persisted. Set required PR checks to the reusable workflow's quality, isolated PostgreSQL integration, runtime and bundle jobs, using their actual names from the first reviewed run.
+3. Allow the production jobs' `GITHUB_TOKEN` to write repository releases and that repository's GHCR package. Other jobs have only `contents: read`. Each checkout disables credential persistence.
 4. Keep protected `main`, review requirements and tag creation rights consistent with the release policy. Review the workflow definition at the dispatch ref as well as the target source. Do not approve an unreviewed dispatch workflow merely because its target tag is trusted.
 5. Rehearse on disposable infrastructure and record environment protection, native packages, Vercel CLI and registry evidence before approving production delivery. No remote settings or secrets are configured automatically.
 
@@ -121,11 +120,11 @@ Both targets are inspected before promotion. It promotes the pinned Vercel deplo
 
 ### R10 source acceptance dry run
 
-`R10 source acceptance` is a read-only workflow that runs `scripts/ci/release-dry-run.ts`. The harness parses the checked-in release, rollback and reusable validation workflows, checks workflow-dispatch input wiring, exact source-SHA propagation, quality-to-publication dependencies, production permissions and locks, and the rollback preflight order. It then runs the real source resolver against temporary Git repositories and the real rollback-pin CLI against disposable pin files. The fixtures record tag A resolved from a dispatch at B, fail for missing, non-commit, moved, or wrong-checkout identities, and reject skipped-web or wrong-repository rollback pins. It never creates a shared tag, calls a release or deployment command, or changes repository settings.
+`bun run verify` runs `scripts/ci/release-dry-run.ts`. The script checks workflow-dispatch inputs, source SHA propagation, which checks must pass before publication, production permissions and locks, and the rollback preflight order. It exercises the source resolver against temporary Git repositories and the rollback-pin CLI against disposable pin files. The fixtures cover building tag A from a dispatch at B, failed source checks for invalid tags and wrong checkouts, and rejected pins for skipped web deployments or images from another repository.
 
-Run the same proof locally with `bun run scripts/ci/release-dry-run.ts`.
+Run just the dry run with `bun run scripts/ci/release-dry-run.ts`.
 
-- **R0 / PR #28:** merged and integrated into `validate.yml` as a required exact-source job for both callers. Its package command/config/fixtures and owned E2E app/database identity checks are preserved. Local PostgreSQL migration/connection tests passed, and the first shared GitHub service job reports success; detailed runner logs remain to be collected. Extend its test suite with the planned domain failure/concurrency cases as those fixes land.
+- **R0 / PR #28.** The PostgreSQL integration tests run locally and in `validate.yml` before release. Local migration and connection tests passed, and the first GitHub service job reports success. Detailed runner logs remain to be collected. Extend the suite with domain failure and concurrency tests as those fixes land.
 - **R8:** extend the reusable gate with controlled browser, transport/filesystem failures, recovered jobs, persistent upgrade/complete restore and extracted desktop-server readiness/document download outside the checkout. Clear `NODE_PATH` and disable global module lookup. Run native NSIS/AppImage/UI and writable-data-path checks on supported runners. Prove two smoke projects coexist and cleanup of one leaves the other/development intact. Current smoke isolates resources by construction but has no recorded concurrent runtime proof. Add a reviewed SearXNG pin in its assigned scope.
 - **R12:** rollback tooling/coordinate source fixes are included here; disposable-registry retag and controlled Vercel rollback rehearsal remain unverified. Existing historical pins with short placeholder digests cannot pass the new gate.
 - **R13:** assembly receipts, checksum validation, saved-image delivery and fail-closed web credentials are included. Complete installed/extracted-artifact runtime, browser/restore and deployment-observation evidence. A file receipt or metadata label must not close F15.

@@ -203,6 +203,19 @@ export const NAV_SECTIONS: RoleSurfaceNavSection[] = [
         ],
       },
       {
+        href: "/material-control",
+        label: "Theo dõi vật tư",
+        icon: "materials",
+        roles: OPERATIONS_ROLES,
+        subItems: [
+          { href: "/material-control", label: "Tổng quan" },
+          { href: "/material-control/projects", label: "Dự án" },
+          { href: "/material-control/stock", label: "Tồn kho" },
+          { href: "/material-control/shortages", label: "Thiếu & chậm" },
+          { href: "/material-control/locations", label: "Địa điểm" },
+        ],
+      },
+      {
         href: "/material-profiles",
         label: "Hồ sơ vật tư",
         icon: "materials",

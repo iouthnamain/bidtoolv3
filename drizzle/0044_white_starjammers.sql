@@ -1,0 +1,6 @@
+ALTER TABLE "material_control_stock_movements" DROP CONSTRAINT "material_control_stock_movements_quantity_positive";--> statement-breakpoint
+DROP INDEX "material_control_locations_project_code_unique";--> statement-breakpoint
+ALTER TABLE "material_control_stock_movements" ADD COLUMN "explicit_adjustment" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "material_control_locations_global_code_unique" ON "material_control_locations" USING btree ("code") WHERE "material_control_locations"."project_id" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "material_control_locations_project_code_unique" ON "material_control_locations" USING btree ("project_id","code") WHERE "material_control_locations"."project_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "material_control_stock_movements" ADD CONSTRAINT "material_control_stock_movements_quantity_positive" CHECK ("material_control_stock_movements"."quantity" > 0 OR ("material_control_stock_movements"."movement_type" = 'adjustment' AND "material_control_stock_movements"."explicit_adjustment" = true AND "material_control_stock_movements"."quantity" <> 0));
