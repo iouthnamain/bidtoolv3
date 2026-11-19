@@ -11,6 +11,7 @@ export default tseslint.config(
       ".electron-build",
       ".next",
       ".next-electron",
+      ".pipeline/runs/",
       "dist-electron",
       "next-env.d.ts",
       "**/*.test.ts",
