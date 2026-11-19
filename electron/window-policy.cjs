@@ -9,14 +9,14 @@ function parseHttpUrl(rawUrl) {
 }
 
 /** @param {URL} from @param {string} location */
-function resolveHttpsUpgrade(from, location) {
+function resolveProbeRedirect(from, location) {
   try {
     const to = new URL(location, from);
-    return from.protocol === "http:" &&
-      to.protocol === "https:" &&
-      from.hostname === to.hostname &&
-      !to.username &&
-      !to.password
+    if (to.username || to.password) return null;
+    return to.origin === from.origin ||
+      (from.protocol === "http:" &&
+        to.protocol === "https:" &&
+        from.hostname === to.hostname)
       ? to.href
       : null;
   } catch {
@@ -75,5 +75,5 @@ module.exports = {
   isApprovedAppFrame,
   isApprovedIpcSender,
   parseHttpUrl,
-  resolveHttpsUpgrade,
+  resolveProbeRedirect,
 };

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   classifyNavigation,
   isApprovedIpcSender,
-  resolveHttpsUpgrade,
+  resolveProbeRedirect,
 } from "../electron/window-policy.cjs";
 
 const localOrigin = "http://127.0.0.1:3000";
@@ -85,13 +85,15 @@ describe("desktop IPC sender policy", () => {
 describe("desktop navigation policy", () => {
   test("allows a configured HTTP server to upgrade to HTTPS on the same host", () => {
     const configured = new URL("http://bidtool.example.test/settings/desktop");
-    expect(resolveHttpsUpgrade(configured, `${remoteOrigin}/dashboard`)).toBe(
+    expect(resolveProbeRedirect(configured, `${remoteOrigin}/dashboard`)).toBe(
       `${remoteOrigin}/dashboard`,
     );
     expect(
-      resolveHttpsUpgrade(configured, "https://docs.example.test/"),
+      resolveProbeRedirect(configured, "https://docs.example.test/"),
     ).toBeNull();
-    expect(resolveHttpsUpgrade(configured, "/dashboard")).toBeNull();
+    expect(resolveProbeRedirect(configured, "/dashboard")).toBe(
+      "http://bidtool.example.test/dashboard",
+    );
   });
 
   test.each([localOrigin, remoteOrigin])(

@@ -12,7 +12,7 @@ const {
   isApprovedAppFrame,
   isApprovedIpcSender,
   parseHttpUrl,
-  resolveHttpsUpgrade,
+  resolveProbeRedirect,
 } = require("./window-policy.cjs");
 
 const HOST = "127.0.0.1";
@@ -483,8 +483,8 @@ function getClientForUrl(url) {
   return url.protocol === "https:" ? https : http;
 }
 
-/** @param {string} rawUrl @param {string} [instanceId] @returns {Promise<string | null>} */
-function probeUrl(rawUrl, instanceId) {
+/** @param {string} rawUrl @param {string} [instanceId] @param {number} [remainingRedirects] @returns {Promise<string | null>} */
+function probeUrl(rawUrl, instanceId, remainingRedirects = 5) {
   return new Promise((resolve) => {
     /** @type {URL} */
     let url;
@@ -506,11 +506,19 @@ function probeUrl(rawUrl, instanceId) {
         );
       } else {
         const status = response.statusCode ?? 500;
-        const upgrade =
+        const redirect =
           status >= 300 && status < 400 && response.headers.location
-            ? resolveHttpsUpgrade(url, response.headers.location)
+            ? resolveProbeRedirect(url, response.headers.location)
             : null;
-        resolve(upgrade ? probeUrl(upgrade) : status < 500 ? rawUrl : null);
+        resolve(
+          redirect
+            ? remainingRedirects > 0
+              ? probeUrl(redirect, undefined, remainingRedirects - 1)
+              : null
+            : status < 500
+              ? rawUrl
+              : null,
+        );
       }
     });
 
@@ -1067,8 +1075,17 @@ async function reloadWindowsToStartUrl() {
     }
 
     // Keep the bundled server available until the configured app has loaded.
-    if (serverConfig.serverUrl && !process.env.BIDTOOL_DESKTOP_DEV_URL?.trim())
-      await stopBundledServer();
+    if (
+      serverConfig.serverUrl &&
+      !process.env.BIDTOOL_DESKTOP_DEV_URL?.trim()
+    ) {
+      await stopBundledServer().catch((error) => {
+        console.warn(
+          "Could not stop the local BidTool server after switching.",
+          errorMessage(error),
+        );
+      });
+    }
 
     return { loadedUrl: startUrl, serverConfig: getDesktopServerConfig() };
   } finally {
