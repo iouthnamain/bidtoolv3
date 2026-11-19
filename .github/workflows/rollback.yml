@@ -39,40 +39,15 @@ jobs:
           bun-version: 1.3.11
       - uses: docker/setup-buildx-action@v3
       - run: bun install --frozen-lockfile
-      - name: Validate reviewed immutable image and real web pin
+      - name: Validate reviewed immutable image and explicit web state
         id: pin
         env:
           TARGET_VERSION: ${{ inputs.target_version }}
         run: bun run scripts/ci/rollback-pin.ts
-      - name: Preflight both targets before promotion
-        env:
-          SOURCE_REF: ${{ steps.pin.outputs.source_ref }}
-          WEB_BUILD_ID: ${{ steps.pin.outputs.web_build_id }}
-        run: |
-          set -euo pipefail
-          bash scripts/ci/production-env.sh
-          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker buildx imagetools inspect "$SOURCE_REF"
-          bunx vercel@65.9.0 inspect "$WEB_BUILD_ID" --token="$VERCEL_TOKEN" --json > /tmp/rollback-web.json
-          jq -e --arg id "$WEB_BUILD_ID" '.id == $id and .readyState == "READY"' /tmp/rollback-web.json
-      - name: Promote pinned web deployment
-        env:
-          WEB_BUILD_ID: ${{ steps.pin.outputs.web_build_id }}
-        run: |
-          set -euo pipefail
-          bash scripts/ci/production-env.sh
-          bunx vercel@65.9.0 promote "$WEB_BUILD_ID" --yes --token="$VERCEL_TOKEN"
-      - name: Promote pinned image digest
-        env:
-          SOURCE_REF: ${{ steps.pin.outputs.source_ref }}
-        run: |
-          set -euo pipefail
-          bash scripts/ci/production-env.sh
-          docker buildx imagetools create --tag "ghcr.io/${GITHUB_REPOSITORY,,}:latest" "$SOURCE_REF"
-      - name: Report limited rollback scope
+      - name: Preflight selected targets, promote and report each action
         env:
           VERSION: ${{ steps.pin.outputs.version }}
           SOURCE_REF: ${{ steps.pin.outputs.source_ref }}
-        run: |
-          echo "Promoted artifact pins for $VERSION ($SOURCE_REF)." >> "$GITHUB_STEP_SUMMARY"
-          echo 'No customer host, desktop installation, database or persisted bytes were rolled back.' >> "$GITHUB_STEP_SUMMARY"
+          WEB_SKIPPED: ${{ steps.pin.outputs.web_skipped }}
+          WEB_BUILD_ID: ${{ steps.pin.outputs.web_build_id }}
+        run: bash scripts/ci/rollback.sh

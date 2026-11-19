@@ -42,7 +42,7 @@ Release workflow embeds version metadata at **build time** via job env. Runtime 
 
 ## Rollback (`rollback.yml`)
 
-Dispatch Rollback with a pinned stable `target_version` such as `0.1.0`. The workflow inspects the Vercel deployment and repository-qualified on-prem image digest before promotion. See [manual artifact rollback](../ci-cd.md#manual-artifact-rollback).
+Dispatch Rollback with a pinned stable `target_version` such as `0.1.0`. The workflow inspects the repository-qualified on-prem image digest and any selected Vercel deployment before promotion. See [manual artifact rollback](../ci-cd.md#manual-artifact-rollback).
 
 ## Release CLI
 

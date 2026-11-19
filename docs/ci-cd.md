@@ -83,7 +83,7 @@ Do not point mutation tests at development or operator databases. This smoke use
 Configure the repository before delivering releases or rolling them back.
 
 1. Create the GitHub **production** environment before enabling delivery. Require reviewers, prevent self-review, disable administrator bypass where supported, and restrict deployment branches/tags to the reviewed release policy. Environment protection is an external prerequisite; declaring `environment: production` alone does not guarantee approval rules exist.
-2. Store `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` as production environment secrets. All three are required for a full release and rollback. Missing credentials fail before any image or web publication. There is no placeholder deployment URL or successful skip.
+2. Store `VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` as production environment secrets. Release and rollback with a real web pin require all three. A `skipped` web pin selects image-only rollback, which requires production protections and registry access.
 3. Allow the production jobs' `GITHUB_TOKEN` to write repository releases and that repository's GHCR package. Other jobs have only `contents: read`. Each checkout disables credential persistence.
 4. Keep protected `main`, review requirements and tag creation rights consistent with the release policy. Review the workflow definition at the dispatch ref as well as the target source. Do not approve an unreviewed dispatch workflow merely because its target tag is trusted.
 5. Rehearse on disposable infrastructure and record environment protection, native packages, Vercel CLI and registry evidence before approving production delivery. No remote settings or secrets are configured automatically.
@@ -112,15 +112,15 @@ Download the **release-pins-proposal** artifact after successful publication, re
 
 ## Manual artifact rollback
 
-Dispatch **Rollback** from a reviewed ref containing the intended `releases/pins.json`; specify a pinned stable version. Approve its production environment after reviewing the forward-only schema compatibility. The job sets up Bun and Docker Buildx, validates a real Vercel deployment ID and constructs `ghcr.io/<this repository>@sha256:<64 hex>` from the image repository plus digest. It rejects another repository, a bare/short digest, conflicting digest coordinates and a historical `skipped` web pin.
+Dispatch **Rollback** from a reviewed ref containing the intended `releases/pins.json`; specify a pinned stable version. Approve its production environment after reviewing the forward-only schema compatibility. The job sets up Bun and Docker Buildx, validates a real Vercel deployment ID or the explicit `skipped` marker, and constructs `ghcr.io/<this repository>@sha256:<64 hex>` from the image repository plus digest. It rejects another repository, a bare/short digest, conflicting digest coordinates and an unknown/empty web ID. No real pin is changed by the R12 code/fixture stage.
 
-Both targets are inspected before promotion. It promotes the pinned Vercel deployment and retags the pinned image digest as `latest`. A separate reviewed pins PR is needed to change the update feed. It does not restore customer bytes, change installed desktop versions, run host updates or reverse database migrations. If the second promotion fails after the first, report the partial result and investigate before retrying.
+All selected targets are inspected before promotion. It promotes a selected Vercel deployment and retags the pinned image digest as `latest`, preserving a single manifest with `--prefer-index=false`. The helper rechecks production protections before each promotion and reports each preflight/action even on failure. An explicit skipped web pin never invokes Vercel. A failed image action after a successful web promotion is reported as partial failure, never full success. A separate reviewed pins PR is needed to change the update feed. This does not restore customer bytes, change installed desktop versions, run host updates or reverse database migrations.
 
 ## Integration handoffs and remaining acceptance
 
 ### R10 source acceptance dry run
 
-`bun run verify` runs `scripts/ci/release-dry-run.ts`. The script checks workflow-dispatch inputs, source SHA propagation, which checks must pass before publication, production permissions and locks, and the rollback preflight order. It exercises the source resolver against temporary Git repositories and the rollback-pin CLI against disposable pin files. The fixtures cover building tag A from a dispatch at B, failed source checks for invalid tags and wrong checkouts, and rejected pins for skipped web deployments or images from another repository.
+`bun run verify` runs `scripts/ci/release-dry-run.ts`. The script checks workflow-dispatch inputs, source SHA propagation, which checks must pass before publication, production permissions and locks, and the rollback preflight order. It exercises the source resolver against temporary Git repositories and the rollback-pin CLI against disposable pin files. The fixtures cover building tag A from a dispatch at B, failed source checks for invalid tags and wrong checkouts, image-only rollback for skipped web deployments, and rejected images from other repositories.
 
 Run just the dry run with `bun run scripts/ci/release-dry-run.ts`.
 
