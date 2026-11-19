@@ -189,6 +189,53 @@ test("settles decimal receipts without a negative transit balance", async ({
   });
 });
 
+test("a legacy receipt attributed to a different shipment cannot settle this requirement's dispatch", async ({
+  inventory,
+}) => {
+  const { database, projectId, warehouse, site, record } = inventory;
+  await record({
+    movementType: "receipt",
+    destinationLocationId: warehouse.id,
+    quantity: 9,
+  });
+  await record({
+    movementType: "shipment",
+    sourceLocationId: warehouse.id,
+    quantity: 4,
+  });
+
+  const shipment = await createShipment(
+    {
+      projectId,
+      sourceLocationId: warehouse.id,
+      destinationLocationId: site.id,
+      lines: [
+        {
+          materialName: "Cáp điện",
+          specText: "CV 3x2.5",
+          unit: "m",
+          quantity: 5,
+        },
+      ],
+    },
+    database,
+  );
+  await dispatchShipment(shipment.id, database);
+  await record({
+    movementType: "site_receipt",
+    destinationLocationId: site.id,
+    shipmentId: shipment.id,
+    quantity: 5,
+  });
+
+  await expectInventory(inventory, {
+    shipped: 4,
+    received: 5,
+    inTransit: 4,
+    siteOnHand: 5,
+  });
+});
+
 test("keeps a requirement readable after a return from shared site stock", async ({
   inventory,
 }) => {

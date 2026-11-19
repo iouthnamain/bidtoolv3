@@ -597,15 +597,33 @@ function calculateReceiptQuantities(
     (total, line) => total + (line.receivedQuantity ?? 0),
     0,
   );
-  let directReceived = 0;
+  const ledgerShipments = matchingShipmentMovements(
+    movements,
+    lines,
+    "shipment",
+    requirement,
+  );
+  const shippedById = new Map<number, number>();
+  for (const shipment of ledgerShipments) {
+    if (shipment.shipmentId != null) {
+      shippedById.set(
+        shipment.shipmentId,
+        (shippedById.get(shipment.shipmentId) ?? 0) + shipment.quantity,
+      );
+    }
+  }
+  let received = shipmentReceived;
   for (const receipt of ledgerReceipts) {
-    if (receipt.shipmentId == null) directReceived += receipt.quantity;
-    else shipmentReceived += receipt.quantity;
+    received += receipt.quantity;
+    if (receipt.shipmentId != null) {
+      const remaining = shippedById.get(receipt.shipmentId) ?? 0;
+      const settled = Math.min(remaining, receipt.quantity);
+      shipmentReceived += settled;
+      shippedById.set(receipt.shipmentId, remaining - settled);
+    }
   }
   const unlinkedShipments = new Set(
-    matchingShipmentMovements(movements, lines, "shipment", requirement).filter(
-      (movement) => movement.shipmentId == null,
-    ),
+    ledgerShipments.filter((movement) => movement.shipmentId == null),
   );
   const unlinkedReceipts = new Set(
     ledgerReceipts.filter((movement) => movement.shipmentId == null),
@@ -623,7 +641,7 @@ function calculateReceiptQuantities(
     }
   }
   return {
-    received: shipmentReceived + directReceived,
+    received,
     shipmentReceived: shipmentReceived + unlinkedReceived,
   };
 }
