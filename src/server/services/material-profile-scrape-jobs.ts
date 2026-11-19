@@ -473,6 +473,7 @@ async function applySelectedProduct(
   productMatchScore: number | null,
   activate: boolean,
   allowChangedSearchGeneration = false,
+  requiredStatus?: ScrapeRunRow["status"],
 ) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const [item] = await db
@@ -531,21 +532,32 @@ async function applySelectedProduct(
     }
     const now = new Date().toISOString();
     const serialized = serializeRowDecision(next);
-    const [updated] = await db
-      .update(excelWorkspaceItems)
-      .set({
-        reviewDecisionJson: serialized,
-        enrichmentUpdatedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(excelWorkspaceItems.id, item.id),
-          eq(excelWorkspaceItems.updatedAt, item.updatedAt),
-          eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
-        ),
-      )
-      .returning({ id: excelWorkspaceItems.id });
+    const writeDecision = (database: Pick<typeof db, "update">) =>
+      database
+        .update(excelWorkspaceItems)
+        .set({
+          reviewDecisionJson: serialized,
+          enrichmentUpdatedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(excelWorkspaceItems.id, item.id),
+            eq(excelWorkspaceItems.updatedAt, item.updatedAt),
+            eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
+          ),
+        )
+        .returning({ id: excelWorkspaceItems.id });
+    const [updated] = requiredStatus
+      ? await db.transaction(async (tx) => {
+          const [active] = await tx
+            .select({ id: materialProfileScrapeRuns.id })
+            .from(materialProfileScrapeRuns)
+            .where(runHasStatus(run.id, requiredStatus))
+            .for("update");
+          return active ? writeDecision(tx) : [];
+        })
+      : await writeDecision(db);
     if (updated) {
       return { status: "completed", error: null, decision: serialized };
     }
@@ -661,6 +673,8 @@ async function refreshRunningRun(run: ScrapeRunRow) {
     resolution.product,
     resolution.score,
     false,
+    false,
+    "running",
   );
   await db
     .update(materialProfileScrapeRuns)
@@ -1186,7 +1200,44 @@ export async function cancelMaterialProfileScrapeJob(
   workspaceId: number,
 ) {
   const job = await getMaterialProfileScrapeJob(jobId, workspaceId);
-  const runs = await listMaterialProfileScrapeRuns(jobId, workspaceId);
+  const { runs, cancelled } = await db.transaction(async (tx) => {
+    const runs = await tx
+      .select()
+      .from(materialProfileScrapeRuns)
+      .where(eq(materialProfileScrapeRuns.jobId, job.id))
+      .orderBy(asc(materialProfileScrapeRuns.id))
+      .for("update");
+    const now = new Date().toISOString();
+    await tx
+      .update(materialProfileScrapeRuns)
+      .set({ status: "cancelled", finishedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(materialProfileScrapeRuns.jobId, job.id),
+          inArray(materialProfileScrapeRuns.status, ACTIVE_RUN_STATUSES),
+        ),
+      );
+    const [cancelled] = await tx
+      .update(materialProfileScrapeJobs)
+      .set({
+        status: "cancelled",
+        processed: runs.length,
+        captured: runs.filter((run) => run.status === "completed").length,
+        needsReview: 0,
+        skipped: runs.filter((run) => run.status === "skipped").length,
+        failed: runs.filter((run) => run.status === "failed").length,
+        currentItemId: null,
+        currentRowIndex: null,
+        currentProductName: null,
+        message: "Đã hủy job scrape hồ sơ vật tư.",
+        finishedAt: now,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      .where(eq(materialProfileScrapeJobs.id, job.id))
+      .returning();
+    return { runs, cancelled };
+  });
   for (const run of runs) {
     if (run.status !== "running" || !run.shopScrapeJobId) continue;
     const child = await getShopScrapeJob(run.shopScrapeJobId).catch(() => null);
@@ -1201,7 +1252,7 @@ export async function cancelMaterialProfileScrapeJob(
           scrapedProductCandidatesJson: partialProducts,
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(materialProfileScrapeRuns.id, run.id));
+        .where(runHasStatus(run.id, "cancelled"));
     }
     if (runOwnsChild(run)) {
       const [{ count: sharedCount = 0 } = { count: 0 }] = await db
@@ -1219,35 +1270,6 @@ export async function cancelMaterialProfileScrapeJob(
       }
     }
   }
-  const now = new Date().toISOString();
-  await db
-    .update(materialProfileScrapeRuns)
-    .set({ status: "cancelled", finishedAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(materialProfileScrapeRuns.jobId, job.id),
-        inArray(materialProfileScrapeRuns.status, ACTIVE_RUN_STATUSES),
-      ),
-    );
-  const [cancelled] = await db
-    .update(materialProfileScrapeJobs)
-    .set({
-      status: "cancelled",
-      processed: runs.length,
-      captured: runs.filter((run) => run.status === "completed").length,
-      needsReview: 0,
-      skipped: runs.filter((run) => run.status === "skipped").length,
-      failed: runs.filter((run) => run.status === "failed").length,
-      currentItemId: null,
-      currentRowIndex: null,
-      currentProductName: null,
-      message: "Đã hủy job scrape hồ sơ vật tư.",
-      finishedAt: now,
-      lastProgressAt: now,
-      updatedAt: now,
-    })
-    .where(eq(materialProfileScrapeJobs.id, job.id))
-    .returning();
   return cancelled;
 }
 
