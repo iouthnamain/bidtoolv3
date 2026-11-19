@@ -532,6 +532,11 @@ async function applySelectedProduct(
     }
     const now = new Date().toISOString();
     const serialized = serializeRowDecision(next);
+    const currentItem = and(
+      eq(excelWorkspaceItems.id, item.id),
+      eq(excelWorkspaceItems.updatedAt, item.updatedAt),
+      eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
+    );
     const writeDecision = (database: Pick<typeof db, "update">) =>
       database
         .update(excelWorkspaceItems)
@@ -540,16 +545,17 @@ async function applySelectedProduct(
           enrichmentUpdatedAt: now,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(excelWorkspaceItems.id, item.id),
-            eq(excelWorkspaceItems.updatedAt, item.updatedAt),
-            eq(excelWorkspaceItems.sourceFingerprint, run.sourceFingerprint),
-          ),
-        )
+        .where(currentItem)
         .returning({ id: excelWorkspaceItems.id });
     const [updated] = automaticCandidates
       ? await db.transaction(async (tx) => {
+          // Workbook replacement locks items before deleting their scrape runs.
+          const [lockedItem] = await tx
+            .select({ id: excelWorkspaceItems.id })
+            .from(excelWorkspaceItems)
+            .where(currentItem)
+            .for("no key update");
+          if (!lockedItem) return [];
           const [active] = await tx
             .select({ id: materialProfileScrapeRuns.id })
             .from(materialProfileScrapeRuns)
@@ -1217,6 +1223,23 @@ export async function cancelMaterialProfileScrapeJob(
 ) {
   const job = await getMaterialProfileScrapeJob(jobId, workspaceId);
   const { runs, cancelled } = await db.transaction(async (tx) => {
+    // Workspace deletion and expired-job cleanup can cascade into these runs.
+    await tx
+      .select({ id: excelWorkspaces.id })
+      .from(excelWorkspaces)
+      .where(eq(excelWorkspaces.id, workspaceId))
+      .for("no key update");
+    const [lockedJob] = await tx
+      .select({ id: materialProfileScrapeJobs.id })
+      .from(materialProfileScrapeJobs)
+      .where(eq(materialProfileScrapeJobs.id, job.id))
+      .for("no key update");
+    if (!lockedJob) {
+      throw new MaterialProfileScrapeJobError(
+        "NOT_FOUND",
+        "Không tìm thấy job scrape.",
+      );
+    }
     const runs = await tx
       .select()
       .from(materialProfileScrapeRuns)
