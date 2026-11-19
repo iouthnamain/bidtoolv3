@@ -99,6 +99,7 @@ let schedulerEnabled = false;
 let pollTimer: TimerHandle | null = null;
 let cleanupTimer: TimerHandle | null = null;
 let pollInFlight = false;
+let startupRecoveryComplete = false;
 let startupAttempt: Promise<void> | null = null;
 let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let startupRetryCount = 0;
@@ -148,6 +149,7 @@ function _stopJobSchedulerForTests() {
   pollTimer = null;
   cleanupTimer = null;
   pollInFlight = false;
+  startupRecoveryComplete = false;
   startupAttempt = null;
   startupRetryTimer = null;
   startupRetryCount = 0;
@@ -230,8 +232,13 @@ async function beginSchedulerInitialization() {
 async function initializeScheduler() {
   if (!schedulerEnabled) return;
   try {
-    await resetStaleRunningJobs();
-    await resetStaleExcelResearchRows({ startup: true });
+    if (!startupRecoveryComplete) {
+      await resetStaleRunningJobs();
+      await resetStaleExcelResearchRows({ startup: true });
+      if (!schedulerEnabled) return;
+      // Once polling can claim work, recovery could requeue a live job.
+      startupRecoveryComplete = true;
+    }
     // Cleanup is optional. A database outage while deleting expired history
     // must not keep claims paused after required recovery has succeeded.
     void cleanupExpiredJobs().catch((error) => {
@@ -256,25 +263,28 @@ async function pollScheduler(options: { allowBeforeReady?: boolean } = {}) {
   }
 
   pollInFlight = true;
+  const queueAttempts = [
+    fillScrapeSlots(),
+    fillImportSlots(),
+    fillEnrichmentSlots(),
+    fillMaterialProfileSearchSlots(),
+    import("~/server/services/material-profile-scrape-jobs").then((service) =>
+      service.advanceMaterialProfileScrapeJobs(),
+    ),
+    import("~/server/services/material-profile-material-batches").then(
+      (service) => service.resumeMaterialProfileSaveBatches(),
+    ),
+    fillExcelResearchSlots(),
+  ];
   try {
-    await Promise.all([
-      fillScrapeSlots(),
-      fillImportSlots(),
-      fillEnrichmentSlots(),
-      fillMaterialProfileSearchSlots(),
-      import("~/server/services/material-profile-scrape-jobs").then((service) =>
-        service.advanceMaterialProfileScrapeJobs(),
-      ),
-      import("~/server/services/material-profile-material-batches").then(
-        (service) => service.resumeMaterialProfileSaveBatches(),
-      ),
-      fillExcelResearchSlots(),
-    ]);
+    await Promise.all(queueAttempts);
     markSchedulerPollSucceeded();
     return true;
   } catch (error) {
     log.error("scheduler_poll_failed", { error });
     markSchedulerPollFailed(error);
+    // A failed queue leaves sibling claims running until their attempts settle.
+    await Promise.allSettled(queueAttempts);
     return false;
   } finally {
     pollInFlight = false;
