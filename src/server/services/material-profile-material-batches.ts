@@ -56,10 +56,10 @@ const TARGET_THRESHOLD = 0.85;
 const TARGET_MARGIN = 0.05;
 // Requests and the scheduler can arrive through separate Next server bundles.
 const globalForBatches = globalThis as typeof globalThis & {
-  bidtoolActiveBatchCommits?: Set<string>;
+  bidtoolActiveBatchCommits?: Map<string, Promise<void>>;
 };
 const activeBatchCommits = (globalForBatches.bidtoolActiveBatchCommits ??=
-  new Set<string>());
+  new Map<string, Promise<void>>());
 
 type WorkspaceItem = typeof excelWorkspaceItems.$inferSelect;
 type Material = typeof materials.$inferSelect;
@@ -1417,20 +1417,24 @@ export async function commitMaterialProfileSaveBatch(
   return requireBatch(batch.id, workspaceId);
 }
 
-async function processMaterialProfileSaveBatch(batchId: string) {
-  const [batch] = await db
-    .select()
-    .from(materialProfileMaterialBatches)
-    .where(eq(materialProfileMaterialBatches.id, batchId))
-    .limit(1);
-  if (
-    !batch ||
-    !["queued", "running"].includes(batch.status) ||
-    activeBatchCommits.has(batchId)
-  )
-    return;
-  activeBatchCommits.add(batchId);
+function processMaterialProfileSaveBatch(batchId: string) {
+  const active = activeBatchCommits.get(batchId);
+  if (active) return active;
+  const commit = Promise.resolve().then(() =>
+    runMaterialProfileSaveBatch(batchId),
+  );
+  activeBatchCommits.set(batchId, commit);
+  return commit;
+}
+
+async function runMaterialProfileSaveBatch(batchId: string) {
   try {
+    const [batch] = await db
+      .select()
+      .from(materialProfileMaterialBatches)
+      .where(eq(materialProfileMaterialBatches.id, batchId))
+      .limit(1);
+    if (!batch || !["queued", "running"].includes(batch.status)) return;
     const now = new Date().toISOString();
     const [claimed] = await db
       .update(materialProfileMaterialBatches)

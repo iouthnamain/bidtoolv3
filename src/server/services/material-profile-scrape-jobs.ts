@@ -11,6 +11,7 @@ import {
   inArray,
   isNull,
   lt,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -790,7 +791,12 @@ async function refreshParent(job: ScrapeJobRow) {
       expiresAt: expiresAt(now),
       updatedAt: now,
     })
-    .where(eq(materialProfileScrapeJobs.id, job.id));
+    .where(
+      and(
+        eq(materialProfileScrapeJobs.id, job.id),
+        ne(materialProfileScrapeJobs.status, "cancelled"),
+      ),
+    );
 }
 
 async function advanceMaterialProfileScrapeJobsInternal() {
