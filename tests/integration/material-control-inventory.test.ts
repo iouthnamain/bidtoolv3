@@ -13,6 +13,8 @@ import {
 } from "~/server/services/material-control/inventory-queries";
 import {
   recordMovement,
+  recordTransfer,
+  reverseMovement,
   type RecordMovementInput,
 } from "~/server/services/material-control/movement-service";
 import {
@@ -154,6 +156,106 @@ async function expectInventory(
       .resolves.toMatchObject([{ requirement: requirementWithSummary }]),
   ]);
 }
+
+test("uses both physical endpoints for warehouse receipts, transfers and reversals", async ({
+  inventory,
+}) => {
+  const { database, projectId, warehouse, zone, requirement, record } =
+    inventory;
+  const secondWarehouse = await createLocation(
+    { projectId, code: "KHO-2", name: "Kho 2", type: "warehouse" },
+    database,
+  );
+  await record({
+    movementType: "receipt",
+    destinationLocationId: warehouse.id,
+    quantity: 12,
+  });
+  const sent = await record({
+    movementType: "shipment",
+    sourceLocationId: warehouse.id,
+    quantity: 4,
+  });
+  await reverseMovement(sent.id, database);
+  await record({
+    movementType: "site_receipt",
+    destinationLocationId: secondWarehouse.id,
+    quantity: 4,
+  });
+  await expectInventory(inventory, {
+    shipped: 4,
+    received: 4,
+    inTransit: 0,
+    siteOnHand: 0,
+  });
+
+  await recordTransfer(
+    {
+      projectId,
+      requirementId: requirement.id,
+      sourceLocationId: warehouse.id,
+      destinationLocationId: zone.id,
+      quantity: 6,
+    },
+    database,
+  );
+  await expectInventory(inventory, {
+    shipped: 4,
+    received: 4,
+    inTransit: 0,
+    siteOnHand: 6,
+  });
+});
+
+test("ignores a foreign shipment when reading old ledger entries and rejects new links", async ({
+  inventory,
+}) => {
+  const { database, warehouse, site, record } = inventory;
+  const other = await createProject(
+    { name: "Other inventory fixture" },
+    database,
+  );
+  try {
+    const [foreignShipment] = await database
+      .insert(schema.materialControlShipments)
+      .values({
+        projectId: other.id,
+        sourceLocationId: warehouse.id,
+        destinationLocationId: site.id,
+      })
+      .returning({ id: schema.materialControlShipments.id });
+    if (!foreignShipment) throw new Error("Foreign shipment fixture missing.");
+    await record({
+      movementType: "receipt",
+      destinationLocationId: warehouse.id,
+      quantity: 4,
+    });
+    const shipment = {
+      movementType: "shipment",
+      sourceLocationId: warehouse.id,
+      quantity: 4,
+    } as const;
+    await expect(
+      record({ ...shipment, shipmentId: foreignShipment.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const legacy = await record(shipment);
+    await database
+      .update(schema.materialControlStockMovements)
+      .set({ shipmentId: foreignShipment.id })
+      .where(eq(schema.materialControlStockMovements.id, legacy.id));
+    await expectInventory(inventory, {
+      shipped: 4,
+      received: 0,
+      inTransit: 4,
+      siteOnHand: 0,
+    });
+  } finally {
+    await database
+      .delete(schema.materialControlProjects)
+      .where(eq(schema.materialControlProjects.id, other.id));
+  }
+});
 
 test("ignores draft, ready, and cancelled shipments while counting a direct site receipt", async ({
   inventory,

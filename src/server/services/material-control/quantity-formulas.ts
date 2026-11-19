@@ -30,6 +30,7 @@ const reservationStatusSet: ReadonlySet<string> = new Set(
 export type RequirementMovement = MovementInput &
   Readonly<{
     sourceIsSiteOrZone?: boolean;
+    destinationIsSiteOrZone?: boolean;
     shipmentDispatched?: boolean;
   }>;
 
@@ -601,7 +602,30 @@ function calculateReceiptQuantities(
     if (receipt.shipmentId == null) directReceived += receipt.quantity;
     else shipmentReceived += receipt.quantity;
   }
-  return { received: shipmentReceived + directReceived, shipmentReceived };
+  const unlinkedShipments = new Set(
+    matchingShipmentMovements(movements, lines, "shipment", requirement).filter(
+      (movement) => movement.shipmentId == null,
+    ),
+  );
+  const unlinkedReceipts = new Set(
+    ledgerReceipts.filter((movement) => movement.shipmentId == null),
+  );
+  let unlinkedInTransit = 0;
+  let unlinkedReceived = 0;
+  // The ledger arrives in event order. Receipts can settle earlier unlinked dispatches.
+  for (const movement of movements) {
+    if (unlinkedShipments.has(movement)) {
+      unlinkedInTransit += movement.quantity;
+    } else if (unlinkedReceipts.has(movement)) {
+      const delivered = Math.min(movement.quantity, unlinkedInTransit);
+      unlinkedReceived += delivered;
+      unlinkedInTransit -= delivered;
+    }
+  }
+  return {
+    received: shipmentReceived + directReceived,
+    shipmentReceived: shipmentReceived + unlinkedReceived,
+  };
 }
 
 /** Quantity received at the destination, including direct site receipts. */
@@ -689,6 +713,22 @@ function movementDeltaAtLocation(
 
 function movementDeltaForSite(movement: RequirementMovement): number {
   validateMovementInput(movement);
+  if (
+    movement.sourceIsSiteOrZone !== undefined &&
+    movement.destinationIsSiteOrZone !== undefined
+  ) {
+    const {
+      sourceIsSiteOrZone,
+      destinationIsSiteOrZone,
+      movementType,
+      quantity,
+    } = movement;
+    if (movementType === "adjustment")
+      return sourceIsSiteOrZone || destinationIsSiteOrZone ? quantity : 0;
+    return (
+      (Number(destinationIsSiteOrZone) - Number(sourceIsSiteOrZone)) * quantity
+    );
+  }
   switch (movement.movementType) {
     case "site_receipt":
       return movement.quantity;
@@ -696,7 +736,6 @@ function movementDeltaForSite(movement: RequirementMovement): number {
     case "transfer_in":
       return movement.quantity;
     case "shipment":
-      return movement.sourceIsSiteOrZone === false ? 0 : -movement.quantity;
     case "installation":
     case "waste":
     case "transfer_out":

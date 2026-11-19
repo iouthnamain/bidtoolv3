@@ -6,6 +6,7 @@ import { db } from "~/server/db";
 import {
   materialControlLocations,
   materialControlRequirements,
+  materialControlShipments,
   materialControlStockMovements,
   materials,
   materialControlPlans,
@@ -306,6 +307,16 @@ async function insertMovement(
     explicitAdjustment: input.explicitAdjustment === true,
   };
   validateMovementInput(movement);
+  if (movement.shipmentId != null) {
+    const [shipment] = await tx
+      .select({ projectId: materialControlShipments.projectId })
+      .from(materialControlShipments)
+      .where(eq(materialControlShipments.id, movement.shipmentId))
+      .limit(1);
+    if (!shipment) fail("NOT_FOUND", "Chuyến hàng không tồn tại.");
+    if (shipment.projectId !== projectId)
+      fail("BAD_REQUEST", "Chuyến hàng không thuộc dự án phát sinh.");
+  }
   await ensureLocations(tx, projectId, [
     sourceLocationId,
     destinationLocationId,

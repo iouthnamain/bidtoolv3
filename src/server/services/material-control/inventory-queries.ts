@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
 import {
@@ -43,6 +44,7 @@ const dispatchedShipmentStatuses: readonly ShipmentStatus[] = [
   "partially_received",
   "received",
 ];
+const destinationLocations = alias(materialControlLocations, "destination");
 
 export type RequirementSummaryView = RequirementView;
 
@@ -353,6 +355,7 @@ async function loadBundle(
       .select({
         movement: materialControlStockMovements,
         sourceLocationType: materialControlLocations.type,
+        destinationLocationType: destinationLocations.type,
         shipmentStatus: materialControlShipments.status,
       })
       .from(materialControlStockMovements)
@@ -364,10 +367,23 @@ async function loadBundle(
         ),
       )
       .leftJoin(
-        materialControlShipments,
+        destinationLocations,
         eq(
-          materialControlShipments.id,
-          materialControlStockMovements.shipmentId,
+          destinationLocations.id,
+          materialControlStockMovements.destinationLocationId,
+        ),
+      )
+      .leftJoin(
+        materialControlShipments,
+        and(
+          eq(
+            materialControlShipments.id,
+            materialControlStockMovements.shipmentId,
+          ),
+          eq(
+            materialControlShipments.projectId,
+            materialControlStockMovements.projectId,
+          ),
         ),
       )
       .where(
@@ -376,6 +392,10 @@ async function loadBundle(
           inArray(materialControlStockMovements.projectId, projectIds),
           isNull(materialControlStockMovements.projectId),
         ),
+      )
+      .orderBy(
+        asc(materialControlStockMovements.occurredAt),
+        asc(materialControlStockMovements.id),
       ),
     database
       .select()
@@ -384,10 +404,18 @@ async function loadBundle(
   ]);
 
   const movements: RequirementMovement[] = movementRows.map(
-    ({ movement, sourceLocationType, shipmentStatus }) => ({
+    ({
+      movement,
+      sourceLocationType,
+      destinationLocationType,
+      shipmentStatus,
+    }) => ({
       ...movementFromRow(movement),
       sourceIsSiteOrZone:
         sourceLocationType === "site" || sourceLocationType === "zone",
+      destinationIsSiteOrZone:
+        destinationLocationType === "site" ||
+        destinationLocationType === "zone",
       shipmentDispatched:
         shipmentStatus === null
           ? undefined
