@@ -6,6 +6,7 @@ import { db } from "~/server/db";
 import {
   materialControlLocations,
   materialControlRequirements,
+  materialControlShipments,
   materialControlStockMovements,
   materials,
   materialControlPlans,
@@ -274,6 +275,7 @@ async function existingMovements(
 async function insertMovement(
   tx: DbHandle,
   input: RecordMovementInput,
+  reversingExistingMovement = false,
 ): Promise<MovementView> {
   const requirementId = input.requirementId ?? null;
   const context =
@@ -306,6 +308,16 @@ async function insertMovement(
     explicitAdjustment: input.explicitAdjustment === true,
   };
   validateMovementInput(movement);
+  if (movement.shipmentId != null && !reversingExistingMovement) {
+    const [shipment] = await tx
+      .select({ projectId: materialControlShipments.projectId })
+      .from(materialControlShipments)
+      .where(eq(materialControlShipments.id, movement.shipmentId))
+      .limit(1);
+    if (!shipment) fail("NOT_FOUND", "Chuyến hàng không tồn tại.");
+    if (shipment.projectId !== projectId)
+      fail("BAD_REQUEST", "Chuyến hàng không thuộc dự án phát sinh.");
+  }
   await ensureLocations(tx, projectId, [
     sourceLocationId,
     destinationLocationId,
@@ -485,24 +497,28 @@ export async function reverseMovement(
         ? location
         : null
       : original.sourceLocationId;
-    return insertMovement(tx, {
-      projectId: original.projectId,
-      movementType: "reversal",
-      quantity,
-      sourceLocationId,
-      destinationLocationId,
-      requirementId: original.requirementId,
-      shipmentId: original.shipmentId,
-      reservationId: original.reservationId,
-      materialId: original.materialId,
-      materialName: original.materialName,
-      specText: original.specText,
-      unit: original.unit,
-      occurredAt: new Date().toISOString(),
-      reversalOfId: original.id,
-      reference: original.reference,
-      notes: `Đảo ngược phát sinh #${original.id}`,
-    });
+    return insertMovement(
+      tx,
+      {
+        projectId: original.projectId,
+        movementType: "reversal",
+        quantity,
+        sourceLocationId,
+        destinationLocationId,
+        requirementId: original.requirementId,
+        shipmentId: original.shipmentId,
+        reservationId: original.reservationId,
+        materialId: original.materialId,
+        materialName: original.materialName,
+        specText: original.specText,
+        unit: original.unit,
+        occurredAt: new Date().toISOString(),
+        reversalOfId: original.id,
+        reference: original.reference,
+        notes: `Đảo ngược phát sinh #${original.id}`,
+      },
+      true,
+    );
   });
 }
 

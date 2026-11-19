@@ -27,6 +27,17 @@ const reservationStatusSet: ReadonlySet<string> = new Set(
   materialControlReservationStatuses,
 );
 
+export type RequirementMovement = MovementInput &
+  Readonly<{
+    sourceIsSiteOrZone?: boolean;
+    destinationIsSiteOrZone?: boolean;
+    shipmentDispatched?: boolean;
+    hasUnmatchedShipmentLink?: boolean;
+  }>;
+
+type RequirementSummaryInput = RequirementQuantityInput &
+  Readonly<{ movements?: readonly RequirementMovement[] }>;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -525,60 +536,128 @@ function matchingShipmentLines(
   });
 }
 
-/** Quantity marked shipped; a shipment line is preferred over duplicate ledger rows. */
-export function calculateShipped(
-  shipmentLines: readonly ShipmentLine[],
-  movements: readonly MovementInput[] = [],
+function matchingShipmentMovements(
+  movements: readonly RequirementMovement[],
+  lines: readonly ShipmentLine[],
+  movementType: "shipment" | "site_receipt",
   requirement?: RequirementSnapshot,
-): number {
-  const lines = matchingShipmentLines(shipmentLines, requirement);
-  if (lines.length > 0)
-    return lines.reduce((total, line) => total + line.quantity, 0);
-  return movements
-    .filter((movement) => {
-      validateMovementInput(movement);
-      if (movement.movementType !== "shipment") return false;
-      if (requirement) {
-        if (movement.requirementId !== requirement.id) return false;
-        assertMaterialMatch(
-          requirement,
-          movement,
-          "Requirement and shipment movements",
-        );
-      }
-      return true;
-    })
-    .reduce((total, movement) => total + movement.quantity, 0);
+): readonly RequirementMovement[] {
+  const shipmentIds = new Set(lines.map((line) => line.shipmentId ?? null));
+  return movements.filter((movement) => {
+    if (
+      movement.movementType !== movementType ||
+      movement.shipmentDispatched === false ||
+      shipmentIds.has(movement.shipmentId ?? null) ||
+      (requirement && movement.requirementId !== requirement.id)
+    )
+      return false;
+    validateMovementInput(movement);
+    if (requirement) {
+      assertMaterialMatch(
+        requirement,
+        movement,
+        "Requirement and shipment movements",
+      );
+    }
+    return true;
+  });
 }
 
-/** Quantity received at the destination; partial receipt is represented per shipment line. */
-export function calculateReceived(
+/** Quantity dispatched, with line quantities taking precedence over their ledger rows. */
+export function calculateShipped(
   shipmentLines: readonly ShipmentLine[],
-  movements: readonly MovementInput[] = [],
+  movements: readonly RequirementMovement[] = [],
   requirement?: RequirementSnapshot,
 ): number {
   const lines = matchingShipmentLines(shipmentLines, requirement);
-  if (lines.length > 0) {
-    return lines.reduce(
-      (total, line) => total + (line.receivedQuantity ?? 0),
-      0,
-    );
+  const ledgerShipments = matchingShipmentMovements(
+    movements,
+    lines,
+    "shipment",
+    requirement,
+  );
+  return (
+    lines.reduce((total, line) => total + line.quantity, 0) +
+    ledgerShipments.reduce((total, movement) => total + movement.quantity, 0)
+  );
+}
+
+function calculateReceiptQuantities(
+  shipmentLines: readonly ShipmentLine[],
+  movements: readonly RequirementMovement[],
+  requirement?: RequirementSnapshot,
+) {
+  const lines = matchingShipmentLines(shipmentLines, requirement);
+  const ledgerReceipts = matchingShipmentMovements(
+    movements,
+    lines,
+    "site_receipt",
+    requirement,
+  );
+  let shipmentReceived = lines.reduce(
+    (total, line) => total + (line.receivedQuantity ?? 0),
+    0,
+  );
+  const ledgerShipments = matchingShipmentMovements(
+    movements,
+    lines,
+    "shipment",
+    requirement,
+  );
+  const shippedById = new Map<number, number>();
+  for (const shipment of ledgerShipments) {
+    if (shipment.shipmentId != null) {
+      shippedById.set(
+        shipment.shipmentId,
+        (shippedById.get(shipment.shipmentId) ?? 0) + shipment.quantity,
+      );
+    }
   }
-  return movements
-    .filter((movement) => {
-      validateMovementInput(movement);
-      if (movement.movementType !== "site_receipt") return false;
-      if (requirement) {
-        if (movement.requirementId !== requirement.id) return false;
-        assertMaterialMatch(
-          requirement,
-          movement,
-          "Requirement and receipt movements",
-        );
-      }
-      return true;
-    })
-    .reduce((total, movement) => total + movement.quantity, 0);
+  let received = shipmentReceived;
+  for (const receipt of ledgerReceipts) {
+    received += receipt.quantity;
+    if (receipt.shipmentId != null) {
+      const remaining = shippedById.get(receipt.shipmentId) ?? 0;
+      const settled = Math.min(remaining, receipt.quantity);
+      shipmentReceived += settled;
+      shippedById.set(receipt.shipmentId, remaining - settled);
+    }
+  }
+  const unlinkedShipments = new Set(
+    ledgerShipments.filter((movement) => movement.shipmentId == null),
+  );
+  const unlinkedReceipts = new Set(
+    ledgerReceipts.filter(
+      (movement) =>
+        movement.shipmentId == null && !movement.hasUnmatchedShipmentLink,
+    ),
+  );
+  let unlinkedInTransit = 0;
+  let unlinkedReceived = 0;
+  // The ledger arrives in event order. Receipts can settle earlier unlinked dispatches.
+  for (const movement of movements) {
+    if (unlinkedShipments.has(movement)) {
+      unlinkedInTransit += movement.quantity;
+    } else if (unlinkedReceipts.has(movement)) {
+      const delivered = Math.min(movement.quantity, unlinkedInTransit);
+      unlinkedReceived += delivered;
+      unlinkedInTransit -= delivered;
+    }
+  }
+  return {
+    received,
+    shipmentReceived: shipmentReceived + unlinkedReceived,
+  };
+}
+
+/** Quantity received at the destination, including direct site receipts. */
+export function calculateReceived(
+  shipmentLines: readonly ShipmentLine[],
+  movements: readonly RequirementMovement[] = [],
+  requirement?: RequirementSnapshot,
+): number {
+  return calculateReceiptQuantities(shipmentLines, movements, requirement)
+    .received;
 }
 
 export function calculateInTransit(shipped: number, received: number): number {
@@ -654,8 +733,24 @@ function movementDeltaAtLocation(
   return delta;
 }
 
-function movementDeltaForSite(movement: MovementInput): number {
+function movementDeltaForSite(movement: RequirementMovement): number {
   validateMovementInput(movement);
+  if (
+    movement.sourceIsSiteOrZone !== undefined &&
+    movement.destinationIsSiteOrZone !== undefined
+  ) {
+    const {
+      sourceIsSiteOrZone,
+      destinationIsSiteOrZone,
+      movementType,
+      quantity,
+    } = movement;
+    if (movementType === "adjustment")
+      return sourceIsSiteOrZone || destinationIsSiteOrZone ? quantity : 0;
+    return (
+      (Number(destinationIsSiteOrZone) - Number(sourceIsSiteOrZone)) * quantity
+    );
+  }
   switch (movement.movementType) {
     case "site_receipt":
       return movement.quantity;
@@ -722,7 +817,7 @@ export function calculateOnHandAtLocation(
 
 /** Site stock follows the architecture's receipt/return minus consumption formula. */
 export function calculateSiteOnHand(
-  movements: readonly MovementInput[],
+  movements: readonly RequirementMovement[],
   requirement?: RequirementSnapshot,
 ): number {
   const relevant = movements.filter((movement) => {
@@ -744,6 +839,14 @@ export function calculateSiteOnHand(
     (total, movement) => total + movementDeltaForSite(movement),
     0,
   );
+  // A requirement can draw from site stock received outside its own ledger.
+  if (
+    requirement &&
+    !allowNegative &&
+    relevant.some((movement) => movement.sourceIsSiteOrZone !== undefined)
+  ) {
+    return Math.max(0, Number(result.toFixed(3)));
+  }
   assertNonNegative(result, allowNegative, "Site on-hand quantity");
   return result;
 }
@@ -956,12 +1059,12 @@ export function isRequirementLate(
 }
 
 export function calculateRequirementQuantities(
-  input: RequirementQuantityInput,
+  input: RequirementSummaryInput,
 ): ReturnType<typeof calculateRequirementSummary> {
   return calculateRequirementSummary(input);
 }
 
-export function calculateRequirementSummary(input: RequirementQuantityInput): {
+export function calculateRequirementSummary(input: RequirementSummaryInput): {
   required: number;
   ordered: number;
   missingToBuy: number;
@@ -987,8 +1090,14 @@ export function calculateRequirementSummary(input: RequirementQuantityInput): {
   const shipmentLines = input.shipmentLines ?? [];
   const movements = input.movements ?? [];
   const ordered = calculateOrdered(lines, requirement);
-  const shipped = calculateShipped(shipmentLines, movements, requirement);
-  const received = calculateReceived(shipmentLines, movements, requirement);
+  const shipped = Number(
+    calculateShipped(shipmentLines, movements, requirement).toFixed(3),
+  );
+  const { received, shipmentReceived } = calculateReceiptQuantities(
+    shipmentLines,
+    movements,
+    requirement,
+  );
   const installed = calculateInstalled(movements, requirement);
   const remainingToInstall = calculateRemainingToInstall(
     requirement.quantity,
@@ -1004,16 +1113,22 @@ export function calculateRequirementSummary(input: RequirementQuantityInput): {
           requirement.targetLocationId,
           requirement,
         );
-  // A direct site receipt has no preceding shipment row, so it is already
-  // delivered and cannot create an in-transit balance.
+  // Direct site receipts contribute to received totals independently of transit.
   const inTransit =
-    shipped === 0 && received > 0 ? 0 : calculateInTransit(shipped, received);
+    shipped === 0
+      ? 0
+      : Number(
+          calculateInTransit(
+            shipped,
+            Number(shipmentReceived.toFixed(3)),
+          ).toFixed(3),
+        );
   return {
     required: requirement.quantity,
     ordered,
     missingToBuy: calculateMissingToBuy(requirement.quantity, ordered),
     shipped,
-    received,
+    received: Number(received.toFixed(3)),
     inTransit,
     installed,
     remainingToInstall,

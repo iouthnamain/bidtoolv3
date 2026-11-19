@@ -1,7 +1,9 @@
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
 import {
+  materialControlLocations,
   materialControlPlans,
   materialControlPurchaseCommitmentLines,
   materialControlPurchaseCommitments,
@@ -9,10 +11,14 @@ import {
   materialControlRequirements,
   materialControlReservations,
   materialControlShipmentLines,
+  materialControlShipments,
   materialControlStockMovements,
   materialControlProjects,
 } from "~/server/db/schema";
-import { calculateRequirementQuantities } from "~/server/services/material-control/quantity-formulas";
+import {
+  calculateRequirementQuantities,
+  type RequirementMovement,
+} from "~/server/services/material-control/quantity-formulas";
 import type {
   MaterialSnapshot,
   MovementInput,
@@ -31,6 +37,14 @@ type AppDb = typeof db;
 type RequirementRow = typeof materialControlRequirements.$inferSelect;
 type MovementRow = typeof materialControlStockMovements.$inferSelect;
 type ReservationRow = typeof materialControlReservations.$inferSelect;
+type ShipmentStatus = (typeof materialControlShipments.$inferSelect)["status"];
+
+const dispatchedShipmentStatuses: readonly ShipmentStatus[] = [
+  "in_transit",
+  "partially_received",
+  "received",
+];
+const destinationLocations = alias(materialControlLocations, "destination");
 
 export type RequirementSummaryView = RequirementView;
 
@@ -93,7 +107,7 @@ export type DashboardSummaryView = Readonly<{
 type RequirementBundle = Readonly<{
   purchases: readonly PurchaseCommitmentLine[];
   shipments: readonly ShipmentLine[];
-  movements: readonly MovementInput[];
+  movements: readonly RequirementMovement[];
   reservations: readonly ReservationState[];
 }>;
 
@@ -324,18 +338,64 @@ async function loadBundle(
     database
       .select({ line: materialControlShipmentLines })
       .from(materialControlShipmentLines)
+      .innerJoin(
+        materialControlShipments,
+        eq(
+          materialControlShipments.id,
+          materialControlShipmentLines.shipmentId,
+        ),
+      )
       .where(
-        inArray(materialControlShipmentLines.requirementId, requirementIds),
+        and(
+          inArray(materialControlShipmentLines.requirementId, requirementIds),
+          inArray(materialControlShipments.status, dispatchedShipmentStatuses),
+        ),
       ),
     database
-      .select()
+      .select({
+        movement: materialControlStockMovements,
+        sourceLocationType: materialControlLocations.type,
+        destinationLocationType: destinationLocations.type,
+        shipmentStatus: materialControlShipments.status,
+      })
       .from(materialControlStockMovements)
+      .leftJoin(
+        materialControlLocations,
+        eq(
+          materialControlLocations.id,
+          materialControlStockMovements.sourceLocationId,
+        ),
+      )
+      .leftJoin(
+        destinationLocations,
+        eq(
+          destinationLocations.id,
+          materialControlStockMovements.destinationLocationId,
+        ),
+      )
+      .leftJoin(
+        materialControlShipments,
+        and(
+          eq(
+            materialControlShipments.id,
+            materialControlStockMovements.shipmentId,
+          ),
+          eq(
+            materialControlShipments.projectId,
+            materialControlStockMovements.projectId,
+          ),
+        ),
+      )
       .where(
         or(
           inArray(materialControlStockMovements.requirementId, requirementIds),
           inArray(materialControlStockMovements.projectId, projectIds),
           isNull(materialControlStockMovements.projectId),
         ),
+      )
+      .orderBy(
+        asc(materialControlStockMovements.occurredAt),
+        asc(materialControlStockMovements.id),
       ),
     database
       .select()
@@ -343,6 +403,28 @@ async function loadBundle(
       .where(inArray(materialControlReservations.projectId, projectIds)),
   ]);
 
+  const movements: RequirementMovement[] = movementRows.map(
+    ({
+      movement,
+      sourceLocationType,
+      destinationLocationType,
+      shipmentStatus,
+    }) => ({
+      ...movementFromRow(movement),
+      shipmentId: shipmentStatus === null ? null : movement.shipmentId,
+      hasUnmatchedShipmentLink:
+        movement.shipmentId !== null && shipmentStatus === null,
+      sourceIsSiteOrZone:
+        sourceLocationType === "site" || sourceLocationType === "zone",
+      destinationIsSiteOrZone:
+        destinationLocationType === "site" ||
+        destinationLocationType === "zone",
+      shipmentDispatched:
+        shipmentStatus === null
+          ? undefined
+          : dispatchedShipmentStatuses.includes(shipmentStatus),
+    }),
+  );
   const allocationsByLine = new Map<number, typeof allocationRows>();
   for (const allocation of allocationRows) {
     if (allocation.purchaseCommitmentLineId === null) continue;
@@ -388,7 +470,6 @@ async function loadBundle(
         quantity: Number(line.quantity),
         receivedQuantity: Number(line.receivedQuantity),
       }));
-    const movements = movementRows.map(movementFromRow);
     const reservations = reservationRows.map(reservationFromRow);
     bundleByRequirement.set(requirement.id, {
       purchases,
