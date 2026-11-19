@@ -62,6 +62,7 @@ async function main() {
 
   const manifest = parseReleaseManifest({
     version: input.version,
+    commitSha: input.commitSha,
     releasedAt: new Date().toISOString(),
     channel: "stable",
     schemaVersion: lastEntry?.idx ?? 0,

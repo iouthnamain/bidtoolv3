@@ -34,6 +34,7 @@ function runScript(script: string, args: string[] = []) {
 }
 
 for (const script of ["check", "test", "test:integration"]) runScript(script);
+runScript("scripts/ci/release-dry-run.ts");
 runScript("build", ["--dist", ".next/verify"]);
 
 parseReleasePins(
@@ -45,7 +46,7 @@ writeFileSync(
   input,
   JSON.stringify({
     version: "0.0.0-local",
-    commitSha: "0000000",
+    commitSha: "0".repeat(40),
     changelog: "Local verification fixture",
     web: {
       buildId: "dpl_local",
@@ -54,7 +55,7 @@ writeFileSync(
     },
     onprem: {
       image: "ghcr.io/example/bidtoolv3:0.0.0-local",
-      digest: "sha256:deadbeef",
+      digest: `sha256:${"0".repeat(64)}`,
       buildMetadata: "0.0.0-local+onprem.0000000",
     },
     desktop: {

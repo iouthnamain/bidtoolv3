@@ -4,7 +4,7 @@ Validate pull requests locally. GitHub Actions runs the separate release and rol
 
 ## Local PR checks
 
-Run `bun install --frozen-lockfile` and set `BIDTOOL_TEST_DATABASE_URL` to a disposable PostgreSQL 16 database on loopback. Use the role `bidtool_test` and a database name such as `bidtool_test_pr`. Then run `bun run verify` and record its result in the PR. The command runs lint, TypeScript, unit tests, PostgreSQL integration tests, the production build, and release metadata checks. The build uses the disposable database and writes to `.next/verify`.
+Run `bun install --frozen-lockfile` and set `BIDTOOL_TEST_DATABASE_URL` to a disposable PostgreSQL 16 database on loopback. Use the role `bidtool_test` and a database name such as `bidtool_test_pr`. Then run `bun run verify` and record its result in the PR. The command runs lint, TypeScript, unit tests, PostgreSQL integration tests, the release workflow dry run, the production build, and release metadata checks. The build uses the disposable database and writes to `.next/verify`.
 
 Run the affected Playwright test with `bunx playwright test <path>` for browser changes. It uses the same disposable database setting and starts its own app.
 
@@ -20,77 +20,29 @@ BIDTOOL_RUN_STORAGE_ACCEPTANCE=1 BIDTOOL_STORAGE_TEST_IMAGE="$image" \
 
 ## Workflows
 
-| Workflow                                                                 | Trigger                     | Purpose                                                      |
-| ------------------------------------------------------------------------ | --------------------------- | ------------------------------------------------------------ |
-| [`.github/workflows/release.yml`](../../.github/workflows/release.yml)   | Tag `v*` or manual dispatch | Unified release for web, on-prem, desktop, manifest, pins    |
-| [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) | Manual dispatch             | Re-promote pinned web deployment and retag on-prem `:latest` |
+| Workflow                                                                 | Trigger                     | Purpose                                                                 |
+| ------------------------------------------------------------------------ | --------------------------- | ----------------------------------------------------------------------- |
+| [`.github/workflows/release.yml`](../../.github/workflows/release.yml)   | Tag `v*` or manual dispatch | Unified release for web, on-prem, desktop, manifest, pins               |
+| [`.github/workflows/validate.yml`](../../.github/workflows/validate.yml) | Called by Release           | Quality, integration, runtime, and bundle checks for the release commit |
+| [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) | Manual dispatch             | Re-promote pinned web deployment and retag on-prem `:latest`            |
 
 ## Release (`release.yml`)
 
-### Job graph
-
-```mermaid
-flowchart TD
-  quality[quality] --> deploy[deploy-vercel]
-  quality --> docker[docker]
-  quality --> bundle[onprem-bundle]
-  quality --> win[desktop-windows]
-  quality --> linux[desktop-linux]
-  resolve[resolve-version] --> deploy
-  resolve --> docker
-  resolve --> bundle
-  resolve --> win
-  resolve --> linux
-  deploy --> publish[publish-release]
-  docker --> publish
-  bundle --> publish
-  win --> publish
-  linux --> publish
-  resolve --> publish
-```
-
-### Web deploy details
-
-The `deploy-vercel` job:
-
-1. Pulls Vercel project settings (`vercel pull`)
-2. Builds with `vercel build --prod` using release env vars (`BIDTOOL_*`)
-3. Deploys with `vercel deploy --prebuilt --prod --json`
-4. Stores the real Vercel deployment ID (`dpl_...`) in `manifest.json` and `pins.json`
-
-If Vercel secrets are missing, web promotion is skipped and `deployment_id=skipped` is recorded.
-
-### Pins commit
-
-After publishing, `publish-release` updates `releases/pins.json` and commits it to **`main`**, not the tag ref. This keeps the pins registry on the default branch for rollback and runtime version checks.
-
-### Required secrets
-
-| Secret              | Used by                                 |
-| ------------------- | --------------------------------------- |
-| `GITHUB_TOKEN`      | Release publish, GHCR push, pins commit |
-| `VERCEL_TOKEN`      | Web deploy and rollback                 |
-| `VERCEL_ORG_ID`     | Web deploy                              |
-| `VERCEL_PROJECT_ID` | Web deploy                              |
+Release resolves the tag to a commit, verifies the artifacts built from that commit, and publishes through the protected `production` environment. Delivery requires the Vercel environment secrets. After publication, download the pins proposal and review it in a separate PR. See the [release job graph, configuration, and operator steps](../ci-cd.md).
 
 ### Vercel project settings
 
 Set production runtime env vars or use Vercel dashboard values that match release metadata.
 
 - `BIDTOOL_DEPLOYMENT_SURFACE=web`
-- `DATABASE_URL`, `APP_BASE_URL`, etc.
+- `DATABASE_URL`
+- `APP_BASE_URL`
 
 Release workflow embeds version metadata at **build time** via job env. Runtime env on Vercel should still identify the deployment surface.
 
 ## Rollback (`rollback.yml`)
 
-Manual workflow with input `target_version` (for example `0.1.0`):
-
-1. Loads pin from `releases/pins.json`
-2. Promotes pinned Vercel deployment by deployment ID
-3. Retags pinned on-prem digest (or image ref) as GHCR `:latest`
-
-Does **not** roll back desktop installs or database migrations.
+Dispatch Rollback with a pinned stable `target_version` such as `0.1.0`. The workflow inspects the Vercel deployment and repository-qualified on-prem image digest before promotion. See [manual artifact rollback](../ci-cd.md#manual-artifact-rollback).
 
 ## Release CLI
 
@@ -98,12 +50,11 @@ Maintainers should prefer the release CLI over manual tags. See [Release CLI](./
 
 ## Known limits
 
-| Area                       | Limit                                                                                        |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| Web without Vercel secrets | Release continues; web pin marked `skipped`                                                  |
-| First release              | `pins.json` starts empty until first successful release                                      |
-| On-prem bundle             | Ships `releases/pins.json` snapshot; latest manifest comes from GitHub Release after publish |
-| DB rollback                | Not supported — use forward hotfix releases                                                  |
+| Area              | Limit                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| First release     | The pins registry gains the release once its pins proposal merges                   |
+| On-prem bundle    | Ships a `releases/pins.json` snapshot. GitHub Release serves the published manifest |
+| Database recovery | Migrations are forward-only. Fix schema issues with a hotfix release                |
 
 Maintainer tagging commands: [Release CLI](./release-cli.md).
 

@@ -2,408 +2,255 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag, for example v0.1.0"
+        description: "Existing stable release tag, for example v0.1.0"
         required: true
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
+# Release and rollback share this lock, including time awaiting environment approval.
 concurrency:
-  group: release-${{ github.event.inputs.release_tag || github.ref_name }}
+  group: bidtool-production-delivery
   cancel-in-progress: false
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
-  quality:
-    name: Quality Gates
+  resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      version: ${{ steps.source.outputs.version }}
+      release_tag: ${{ steps.source.outputs.release_tag }}
+    steps:
+      # Bootstrap only; every check/build/delivery below checks out the resolved SHA.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - id: source
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: bun run scripts/ci/source.ts resolve
+
+  validate:
+    needs: resolve
+    uses: ./.github/workflows/validate.yml
+    with:
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      version: ${{ needs.resolve.outputs.version }}
+
+  desktop:
+    needs: [resolve, validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            metadata_platform: win
+          - os: ubuntu-latest
+            platform: linux
+            metadata_platform: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
     env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      BIDTOOL_APP_VERSION: ${{ needs.resolve.outputs.version }}
+      BIDTOOL_PACKAGE_VERSION: ${{ needs.resolve.outputs.version }}
+      BIDTOOL_DEPLOYMENT_SURFACE: desktop-bundled
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
       DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
       SKIP_ENV_VALIDATION: "1"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check
-        run: bun run check
-
-      - name: Test
-        run: bun run test
-
-  resolve-version:
-    name: Resolve Release Version
-    runs-on: ubuntu-latest
-    outputs:
-      release_tag: ${{ steps.resolve.outputs.release_tag }}
-      version: ${{ steps.resolve.outputs.version }}
-      short_sha: ${{ steps.resolve.outputs.short_sha }}
-    steps:
-      - name: Resolve release tag
-        id: resolve
+      - run: bun run scripts/ci/source.ts head
+      - run: bun install --frozen-lockfile
+      - name: Set desktop version metadata
+        run: echo "BIDTOOL_BUILD_METADATA=${BIDTOOL_APP_VERSION}+desktop.${METADATA_PLATFORM}.${SOURCE_SHA:0:7}" >> "$GITHUB_ENV"
         env:
-          RELEASE_TAG_INPUT: ${{ github.event.inputs.release_tag || github.ref_name }}
+          METADATA_PLATFORM: ${{ matrix.metadata_platform }}
+      - name: Build desktop with electron-builder filename substitutions
         run: |
-          set -euo pipefail
-          tag="${RELEASE_TAG_INPUT}"
-          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
-            echo "Release tag '$tag' must look like v0.1.0." >&2
-            exit 1
-          fi
-          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          # The placeholders are expanded by electron-builder, not the shell.
+          # shellcheck disable=SC2016
+          bun run desktop:build --config.artifactName='bidtoolv3-${version}-${arch}.${ext}'
+      - name: Verify staged files, installer and updater checksums
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: bun run scripts/ci/artifacts.ts desktop dist-electron "$PLATFORM"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.platform }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.AppImage
+            dist-electron/*.blockmap
+            dist-electron/latest*.yml
+            dist-electron/*-evidence.json
+          if-no-files-found: error
 
-  deploy-vercel:
-    name: Promote Vercel Production
+  verify-artifacts:
+    needs: [resolve, validate, desktop]
     runs-on: ubuntu-latest
-    needs:
-      - quality
-      - resolve-version
-    outputs:
-      deployment_url: ${{ steps.deploy.outputs.deployment_url }}
-      deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+    timeout-minutes: 15
     env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      BIDTOOL_APP_VERSION: ${{ needs.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: assets-*
+          path: release-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-image
+          path: image
+      - run: bun run scripts/ci/source.ts head
+      - run: bun run scripts/ci/artifacts.ts verify release-assets
+
+  publish:
+    needs: [resolve, verify-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+    env:
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      BIDTOOL_APP_VERSION: ${{ needs.resolve.outputs.version }}
+      BIDTOOL_PACKAGE_VERSION: ${{ needs.resolve.outputs.version }}
+      BIDTOOL_DEPLOYMENT_SURFACE: web
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      BIDTOOL_APP_VERSION: ${{ needs.resolve-version.outputs.version }}
-      BIDTOOL_BUILD_METADATA: ${{ needs.resolve-version.outputs.version }}+web.${{ needs.resolve-version.outputs.short_sha }}
-      BIDTOOL_DEPLOYMENT_SURFACE: web
-      BIDTOOL_PACKAGE_VERSION: ${{ needs.resolve-version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
       SKIP_ENV_VALIDATION: "1"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Deploy prebuilt production build
-        id: deploy
-        run: |
-          set -euo pipefail
-          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ]; then
-            echo "Vercel secrets are not configured. Skipping production promotion." >&2
-            echo "deployment_url=https://bidtoolv3.vercel.app" >> "$GITHUB_OUTPUT"
-            echo "deployment_id=skipped" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          bunx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          bunx vercel build --prod --token="$VERCEL_TOKEN"
-          deployment_json="$(bunx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN" --json)"
-          deployment_url="$(printf '%s' "$deployment_json" | jq -r 'if type == "array" then .[0].url else .url end')"
-          deployment_id="$(printf '%s' "$deployment_json" | jq -r 'if type == "array" then .[0].id else .id end')"
-          if [ -z "$deployment_url" ] || [ "$deployment_url" = "null" ]; then
-            echo "Unable to resolve Vercel deployment URL." >&2
-            exit 1
-          fi
-          if [ -z "$deployment_id" ] || [ "$deployment_id" = "null" ]; then
-            echo "Unable to resolve Vercel deployment ID." >&2
-            exit 1
-          fi
-          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
-          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
-
-  docker:
-    name: Publish On-Prem Image
-    runs-on: ubuntu-latest
-    needs:
-      - quality
-      - resolve-version
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-      digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve image coordinates
-        id: meta
-        run: |
-          image="${REGISTRY}/${IMAGE_NAME}:${{ needs.resolve-version.outputs.version }}"
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.resolve-version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          build-args: |
-            BIDTOOL_APP_VERSION=${{ needs.resolve-version.outputs.version }}
-            BIDTOOL_BUILD_METADATA=${{ needs.resolve-version.outputs.version }}+onprem.${{ needs.resolve-version.outputs.short_sha }}
-            BIDTOOL_DEPLOYMENT_SURFACE=onprem
-
-  onprem-bundle:
-    name: Build On-Prem Bundle
-    runs-on: ubuntu-latest
-    needs:
-      - quality
-      - resolve-version
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build bundle
-        run: sh scripts/onprem-package-release.sh "${{ needs.resolve-version.outputs.version }}"
-
-      - name: Upload on-prem bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bidtoolv3-onprem
-          path: dist-onprem/*.tar.gz
-          if-no-files-found: error
-
-  desktop-windows:
-    name: Build Windows Desktop
-    runs-on: windows-latest
-    needs:
-      - quality
-      - resolve-version
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
-      SKIP_ENV_VALIDATION: "1"
-      BIDTOOL_BUILD_METADATA: ${{ needs.resolve-version.outputs.version }}+desktop.win.${{ needs.resolve-version.outputs.short_sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build Windows desktop app
-        run: bun run desktop:build
-
-      - name: Upload Windows desktop artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bidtoolv3-windows
-          path: |
-            dist-electron/*.exe
-            dist-electron/*.blockmap
-            dist-electron/latest.yml
-          if-no-files-found: error
-
-  desktop-linux:
-    name: Build Linux Desktop
-    runs-on: ubuntu-latest
-    needs:
-      - quality
-      - resolve-version
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder
-      SKIP_ENV_VALIDATION: "1"
-      BIDTOOL_BUILD_METADATA: ${{ needs.resolve-version.outputs.version }}+desktop.linux.${{ needs.resolve-version.outputs.short_sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build Linux desktop app
-        run: bun run desktop:build
-
-      - name: Upload Linux desktop artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bidtoolv3-linux
-          path: |
-            dist-electron/*.AppImage
-            dist-electron/*.blockmap
-            dist-electron/latest-linux.yml
-          if-no-files-found: error
-
-  publish-release:
-    name: Publish GitHub Release
-    runs-on: ubuntu-latest
-    needs:
-      - resolve-version
-      - deploy-vercel
-      - docker
-      - onprem-bundle
-      - desktop-windows
-      - desktop-linux
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: bidtoolv3-*
+          pattern: assets-*
           path: release-assets
           merge-multiple: true
-
-      - name: Write manifest input
-        env:
-          RELEASE_TAG: ${{ needs.resolve-version.outputs.release_tag }}
-          VERSION: ${{ needs.resolve-version.outputs.version }}
-          SHORT_SHA: ${{ needs.resolve-version.outputs.short_sha }}
-          WEB_DEPLOYMENT_URL: ${{ needs.deploy-vercel.outputs.deployment_url }}
-          WEB_DEPLOYMENT_ID: ${{ needs.deploy-vercel.outputs.deployment_id }}
-          ONPREM_IMAGE: ${{ needs.docker.outputs.image }}
-          ONPREM_DIGEST: ${{ needs.docker.outputs.digest }}
-          GH_REPO: ${{ github.repository }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-image
+          path: image
+      - name: Fail closed before publication and prepare web build
         run: |
           set -euo pipefail
-          mkdir -p dist-release
-          win_asset="$(find release-assets -name '*.exe' | head -n1 || true)"
-          linux_asset="$(find release-assets -name '*.AppImage' | head -n1 || true)"
-          if [ -z "$win_asset" ] || [ -z "$linux_asset" ]; then
-            echo "Missing desktop release assets." >&2
-            exit 1
-          fi
-          jq -n \
-            --arg version "$VERSION" \
-            --arg changelog "BidTool v3 ${RELEASE_TAG}" \
-            --arg buildId "$WEB_DEPLOYMENT_ID" \
-            --arg deploymentUrl "$WEB_DEPLOYMENT_URL" \
-            --arg webMetadata "${VERSION}+web.${SHORT_SHA}" \
-            --arg image "$ONPREM_IMAGE" \
-            --arg digest "$ONPREM_DIGEST" \
-            --arg onpremMetadata "${VERSION}+onprem.${SHORT_SHA}" \
-            --arg winUrl "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$win_asset")" \
-            --arg winVersion "${VERSION}+desktop.win.${SHORT_SHA}" \
-            --arg linuxUrl "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/$(basename "$linux_asset")" \
-            --arg linuxVersion "${VERSION}+desktop.linux.${SHORT_SHA}" \
-            '{
-              version: $version,
-              changelog: $changelog,
-              web: {
-                buildId: $buildId,
-                deploymentUrl: $deploymentUrl,
-                buildMetadata: $webMetadata
-              },
-              onprem: {
-                image: $image,
-                digest: $digest,
-                buildMetadata: $onpremMetadata
-              },
-              desktop: {
-                win: {
-                  url: $winUrl,
-                  version: $winVersion
-                },
-                linux: {
-                  url: $linuxUrl,
-                  version: $linuxVersion
-                }
-              }
-            }' > dist-release/manifest-input.json
-
-      - name: Generate manifest
-        run: bun run ./scripts/generate-release-manifest.ts --input dist-release/manifest-input.json --output dist-release/manifest.json
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.resolve-version.outputs.release_tag }}
-        run: |
-          set -euo pipefail
-          mapfile -t assets < <(find release-assets -type f | sort)
-          assets+=("dist-release/manifest.json")
-          if [ "${#assets[@]}" -eq 0 ]; then
-            echo "No release assets found." >&2
-            exit 1
-          fi
-
+          bash scripts/ci/production-env.sh
+          bun run scripts/ci/source.ts assert
+          bun run scripts/ci/artifacts.ts verify release-assets
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${assets[@]}" \
-              --title "BidTool v3 $RELEASE_TAG" \
-              --generate-notes \
-              --target "$GITHUB_SHA"
+            echo 'Release already exists; assets will not be overwritten.' >&2
+            exit 1
           fi
-
-      - name: Update release pins
-        env:
-          RELEASE_TAG: ${{ needs.resolve-version.outputs.release_tag }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          bun run ./scripts/update-release-pins.ts \
-            --manifest dist-release/manifest.json \
-            --manifest-url "https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/manifest.json" \
-            --pins releases/pins.json
-
-      - name: Commit release pins to main
-        env:
-          VERSION: ${{ needs.resolve-version.outputs.version }}
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:$BIDTOOL_APP_VERSION"
+          echo "ONPREM_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "BIDTOOL_BUILD_METADATA=${BIDTOOL_APP_VERSION}+web.${SOURCE_SHA:0:7}" >> "$GITHUB_ENV"
+          docker load --input image/runtime-image.tar
+          test "$(docker image inspect bidtool-ci:candidate --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+      - name: Assemble Vercel output before publishing any artifact
         run: |
           set -euo pipefail
-          if git diff --quiet releases/pins.json; then
-            echo "No pins changes to commit."
-            exit 0
+          bunx vercel@65.9.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          bunx vercel@65.9.0 build --prod --token="$VERCEL_TOKEN"
+          test -s .vercel/output/config.json
+          jq -e '.version == 3' .vercel/output/config.json
+          test -d .vercel/output/functions
+      - name: Publish the verified image without rebuilding
+        run: |
+          set -euo pipefail
+          bash scripts/ci/production-env.sh
+          bun run scripts/ci/source.ts assert
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          # Stable version tags cannot be silently replaced by a rerun.
+          if docker buildx imagetools inspect "$ONPREM_IMAGE" > /tmp/image-exists.log 2>&1; then
+            echo 'Version image already exists; refusing replacement.' >&2
+            exit 1
+          elif ! grep -Eqi 'manifest unknown|not found' /tmp/image-exists.log; then
+            cat /tmp/image-exists.log >&2
+            exit 1
           fi
-          cp releases/pins.json /tmp/pins.json
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
-          cp /tmp/pins.json releases/pins.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add releases/pins.json
-          git commit -m "chore(release): update pins for v${VERSION} [skip ci]"
-          git push origin main
+          docker tag bidtool-ci:candidate "$ONPREM_IMAGE"
+          docker push "$ONPREM_IMAGE"
+          digest=$(docker buildx imagetools inspect "$ONPREM_IMAGE" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "ONPREM_DIGEST=$digest" >> "$GITHUB_ENV"
+      - name: Deploy verified Vercel output
+        run: |
+          set -euo pipefail
+          bash scripts/ci/production-env.sh
+          bun run scripts/ci/source.ts assert
+          mkdir -p dist-release
+          deployment_url=$(bunx vercel@65.9.0 deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" \
+            --meta "bidtoolSourceSha=$SOURCE_SHA" --meta "bidtoolVersion=$BIDTOOL_APP_VERSION")
+          [[ "$deployment_url" =~ ^https://[a-zA-Z0-9.-]+$ ]]
+          bunx vercel@65.9.0 inspect "$deployment_url" --token="$VERCEL_TOKEN" --json | \
+            jq '{id, url, readyState, meta: {bidtoolSourceSha: .meta.bidtoolSourceSha, bidtoolVersion: .meta.bidtoolVersion}}' \
+            > dist-release/web-deployment.json
+          bun run scripts/ci/metadata.ts release
+      - name: Prepare reviewable pins proposal
+        run: |
+          cp releases/pins.json dist-release/pins.json
+          bun run scripts/update-release-pins.ts --manifest dist-release/manifest.json \
+            --manifest-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/manifest.json" \
+            --pins dist-release/pins.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-pins-proposal
+          path: dist-release/*.json
+          if-no-files-found: error
+      - name: Publish release without replacing existing assets
+        run: |
+          set -euo pipefail
+          bash scripts/ci/production-env.sh
+          bun run scripts/ci/source.ts assert
+          bun run scripts/ci/artifacts.ts verify release-assets
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f | sort)
+          gh release create "$RELEASE_TAG" "${assets[@]}" dist-release/manifest.json \
+            --verify-tag --target "$SOURCE_SHA" --title "BidTool v3 $RELEASE_TAG" --generate-notes
+          # The mutable convenience tag moves only after the release was created.
+          bash scripts/ci/production-env.sh
+          bun run scripts/ci/source.ts assert
+          docker buildx imagetools create --tag "ghcr.io/${GITHUB_REPOSITORY,,}:latest" \
+            "${ONPREM_IMAGE%:*}@$ONPREM_DIGEST"
