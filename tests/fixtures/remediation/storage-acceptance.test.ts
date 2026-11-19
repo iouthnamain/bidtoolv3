@@ -162,6 +162,8 @@ async function stack(root: string, image: string, suffix: string) {
     delete service.ports;
   }
   base.services.app.image = "${BIDTOOL_APP_IMAGE}";
+  base.services.app.environment.DATABASE_URL =
+    "postgresql://bidtool_test:fixture-only@postgres:5432/${BIDTOOL_DATABASE_NAME:-bidtool_test_storage}";
   base.services.app.healthcheck = {
     ...base.services.app.healthcheck,
     interval: "2s",
@@ -211,8 +213,10 @@ async function stack(root: string, image: string, suffix: string) {
     project,
   ];
   const compose = (args: string[]) => docker([...prefix, ...args]);
-  const sql = (query: string, database = "bidtool_test_storage") =>
-    compose([
+  const sql = async (query: string, database?: string) => {
+    const env = await readFile(envFile, "utf8");
+    const selected = /^BIDTOOL_DATABASE_NAME=(\w+)$/m.exec(env)?.[1];
+    return compose([
       "exec",
       "-T",
       "postgres",
@@ -223,11 +227,12 @@ async function stack(root: string, image: string, suffix: string) {
       "-U",
       "bidtool_test",
       "-d",
-      database,
+      database ?? selected ?? "bidtool_test_storage",
       "-At",
       "-c",
       query,
     ]);
+  };
   return {
     project,
     directory,
@@ -465,7 +470,7 @@ test.skipIf(!enabled)(
       await verifyBytesAndDownloads(fresh);
       expect(
         await fresh.sql(
-          "SELECT count(*) FROM pg_database WHERE datname LIKE 'bidtool_previous_%'",
+          "SELECT count(*) FROM pg_database WHERE datname = 'bidtool_test_storage'",
           "postgres",
         ),
       ).toBe("1");
@@ -511,7 +516,7 @@ test.skipIf(!enabled)(
       expect(await records(fresh)).toBe(before);
       expect(
         await fresh.sql(
-          "SELECT count(*) FROM pg_database WHERE datname LIKE 'bidtool_previous_%'",
+          "SELECT count(*) FROM pg_database WHERE datname = 'bidtool_test_storage'",
           "postgres",
         ),
       ).toBe("1");

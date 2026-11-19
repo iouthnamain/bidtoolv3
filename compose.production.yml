@@ -30,7 +30,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-bidtool}:${POSTGRES_PASSWORD:-bidtool}@postgres:5432/${POSTGRES_DB:-bidtoolv3}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-bidtool}:${POSTGRES_PASSWORD:-bidtool}@postgres:5432/${BIDTOOL_DATABASE_NAME:-${POSTGRES_DB:-bidtoolv3}}"
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:13000}"
       BIDWINNER_BASE_URL: "${BIDWINNER_BASE_URL:-https://bidwinner.info}"
       BIDWINNER_TIMEOUT_MS: "${BIDWINNER_TIMEOUT_MS:-15000}"

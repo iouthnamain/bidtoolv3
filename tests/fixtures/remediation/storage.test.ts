@@ -79,6 +79,7 @@ test("backup stops writers, copies all artifact trees, verifies checksums, then 
       path.join(directory, "manifest.json"),
     );
     expect(manifest.version).toBe(1);
+    expect(manifest.sourceDatabase).toBe("bidtool_test_restore");
     expect(
       manifest.entries.filter((entry) => entry.kind === "file"),
     ).toHaveLength(4);
@@ -171,22 +172,46 @@ test("a complete restore stages and checks DB/files before activation and retain
     ).toContain("com.docker.compose.volume=bidtool-onprem-app-data");
     const restore = commands.findIndex((args) => args.includes("pg_restore"));
     const copy = commands.findIndex((args) => args[0] === "run");
-    const swap = commands.findIndex((args) =>
-      args.at(-1)?.includes("ALTER DATABASE"),
+    const selection = commands.findIndex((args) =>
+      args.some((arg) => arg.includes("fixture.env.storage-")),
     );
     const start = commands.findIndex((args) => args.includes("up"));
     expect(copy).toBeGreaterThan(restore);
-    expect(swap).toBeGreaterThan(copy);
-    expect(start).toBeGreaterThan(swap);
-    expect(commands[swap]!.at(-1)).toContain("bidtool_previous_");
+    expect(selection).toBeGreaterThan(copy);
+    expect(start).toBeGreaterThan(selection);
+    expect(
+      commands.some((args) => args.at(-1)?.includes("ALTER DATABASE")),
+    ).toBe(false);
     const env = await readFile(fake.envFile, "utf8");
     expect(env).toContain("BIDTOOL_DATA_VOLUME=");
+    const database = commands.find((args) => args.includes("createdb"))?.at(-1);
+    expect(database).toMatch(/^bidtool_stage_/);
+    expect(env).toContain(`BIDTOOL_DATABASE_NAME=${database}\n`);
     expect(
       JSON.parse(
         await readFile(path.join(fake.dir, "activation.json"), "utf8"),
       ),
-    ).toMatchObject({ image: fake.state.image });
+    ).toMatchObject({ database, image: fake.state.image });
     expect(result.output).toContain("runtime/download proof remains");
+  } finally {
+    await fake.cleanup();
+  }
+});
+
+test("restore leaves the original env selected when Compose ignores the staged database", async () => {
+  const fake = await createStorageDocker();
+  try {
+    const directory = await bundle(fake);
+    const previous = await readFile(fake.envFile, "utf8");
+    await writeFile(path.join(fake.dir, "commands.jsonl"), "");
+    const result = await script(fake, "restore", [directory], {
+      FAKE_APP_PRESENT: "false",
+      FAKE_STORAGE_IGNORE_STAGED_DATABASE: "true",
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("App database target must match");
+    expect(await readFile(fake.envFile, "utf8")).toBe(previous);
+    expect(starts(await fake.commands())).toHaveLength(0);
   } finally {
     await fake.cleanup();
   }
@@ -493,9 +518,12 @@ test("failed startup after activation issues stop and retains the prior database
     const up = commands.findIndex((args) => args.includes("up"));
     expect(up).toBeGreaterThan(0);
     expect(commands.at(-1)).toContain("stop");
-    expect(
-      commands.some((args) => args.at(-1)?.includes("bidtool_previous_")),
-    ).toBe(true);
+    expect(await readFile(fake.envFile, "utf8")).toMatch(
+      /BIDTOOL_DATABASE_NAME=bidtool_stage_.*\nBIDTOOL_DATA_VOLUME=.*\nBIDTOOL_APP_IMAGE=sha256:/,
+    );
+    expect(result.output).toContain(
+      "Previous database retained as bidtool_test_restore.",
+    );
     expect(commands.slice(up + 1).some((args) => args.includes("start"))).toBe(
       false,
     );
