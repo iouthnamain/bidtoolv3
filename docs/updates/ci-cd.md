@@ -1,24 +1,31 @@
 # CI/CD Review
 
-Overview of GitHub Actions workflows and how they relate to the update system.
+Validate pull requests locally. GitHub Actions runs the separate release and rollback workflows.
+
+## Local PR checks
+
+Run `bun install --frozen-lockfile` and set `BIDTOOL_TEST_DATABASE_URL` to a disposable PostgreSQL 16 database on loopback. Use the role `bidtool_test` and a database name such as `bidtool_test_pr`. Then run `bun run verify` and record its result in the PR. The command runs lint, TypeScript, unit tests, real PostgreSQL integration tests, and the production build in order. The build also uses the disposable database.
+
+Run the affected Playwright test with `bunx playwright test <path>` for browser changes. It uses the same disposable database setting and starts its own app.
+
+For changes to on-prem packaging or storage, run the Docker checks on an isolated local Docker host:
+
+```sh
+docker compose --env-file deploy/onprem/.env.customer.example -f compose.production.yml config
+image="bidtool-r1-acceptance:$(git rev-parse HEAD)"
+docker build --tag "$image" .
+BIDTOOL_RUN_STORAGE_ACCEPTANCE=1 BIDTOOL_STORAGE_TEST_IMAGE="$image" \
+  bun run test tests/fixtures/remediation/storage-acceptance.test.ts
+```
+
+For changes to release metadata or scripts, run `bun run release:status` and the affected manifest tests.
 
 ## Workflows
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
-| [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) | Push/PR to `main` | Lint, typecheck, test, build, validate release scripts, smoke-build on-prem Docker |
 | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | Tag `v*` or manual dispatch | Unified release for web, on-prem, desktop, manifest, pins |
 | [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) | Manual dispatch | Re-promote pinned web deployment and retag on-prem `:latest` |
-
-## CI (`ci.yml`)
-
-Runs on every PR and `main` push:
-
-1. **check** — lint, typecheck, test, production build
-2. **release-scripts** — validates `releases/pins.json`, manifest generation, and `release-cli status`
-3. **onprem** — validates `compose.production.yml` and builds the Docker image (no push)
-
-CI does **not** deploy anywhere. It guards code quality and release script correctness.
 
 ## Release (`release.yml`)
 

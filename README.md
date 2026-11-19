@@ -43,8 +43,9 @@ Có thể dùng launcher tương ứng hệ điều hành: `run.ps1`, `run.bat` 
 | ---------------------- | ----------------------------------------------- |
 | `bun run dev`          | Chạy riêng Next.js, không kiểm tra stack cục bộ |
 | `bun run check`        | Chạy ESLint và TypeScript                       |
-| `bun run test`         | Chạy toàn bộ unit/integration test bằng Vitest  |
-| `bun run test:e2e`     | Chạy Playwright end-to-end                      |
+| `bun run test`         | Chạy unit test bằng Vitest                      |
+| `bunx playwright test` | Chạy kiểm thử end-to-end bằng Playwright       |
+| `bun run verify`       | Kiểm tra PR trên máy cục bộ với PostgreSQL thử nghiệm |
 | `bun run build`        | Tạo production build                            |
 | `bun run db:migrate`   | Áp dụng migration hiện có                       |
 | `bun run db:studio`    | Mở Drizzle Studio                               |
@@ -71,6 +72,7 @@ Khi đổi schema: sửa `src/server/db/schema.ts`, chạy `bun run db:generate`
 - [Kiểm thử Danh mục & Hồ sơ vật tư](docs/material-profiles-and-materials-mvp.md)
 - [Mục lục tài liệu](docs/README.md)
 - [Phát hành, cập nhật và on-prem](docs/updates/README.md)
+- [Kiểm tra PR trên máy cục bộ](docs/updates/ci-cd.md#local-pr-checks)
 
 ## Xử lý lỗi cục bộ
 
