@@ -60,7 +60,12 @@ const MAX_BATCH_ITEMS = 500;
 const MAX_CONCURRENT_RUNS = 8;
 const MAX_PRODUCTS = 8;
 const HISTORY_DAYS = 30;
-let advanceInFlight: Promise<void> | null = null;
+const globalForScrapeJobs = globalThis as typeof globalThis & {
+  bidtoolScrapeJobAdvance?: { inFlight: Promise<void> | null };
+};
+const advance = (globalForScrapeJobs.bidtoolScrapeJobAdvance ??= {
+  inFlight: null,
+});
 
 type ScrapeJobRow = typeof materialProfileScrapeJobs.$inferSelect;
 type ScrapeRunRow = typeof materialProfileScrapeRuns.$inferSelect;
@@ -830,11 +835,11 @@ async function advanceMaterialProfileScrapeJobsInternal() {
 }
 
 export async function advanceMaterialProfileScrapeJobs() {
-  if (advanceInFlight) return advanceInFlight;
-  advanceInFlight = advanceMaterialProfileScrapeJobsInternal().finally(() => {
-    advanceInFlight = null;
+  if (advance.inFlight) return advance.inFlight;
+  advance.inFlight = advanceMaterialProfileScrapeJobsInternal().finally(() => {
+    advance.inFlight = null;
   });
-  return advanceInFlight;
+  return advance.inFlight;
 }
 
 export async function getMaterialProfileScrapeJob(

@@ -54,7 +54,12 @@ const HISTORY_LIMIT = 100;
 const HISTORY_DAYS = 30;
 const TARGET_THRESHOLD = 0.85;
 const TARGET_MARGIN = 0.05;
-const activeBatchCommits = new Set<string>();
+// Requests and the scheduler can arrive through separate Next server bundles.
+const globalForBatches = globalThis as typeof globalThis & {
+  bidtoolActiveBatchCommits?: Set<string>;
+};
+const activeBatchCommits = (globalForBatches.bidtoolActiveBatchCommits ??=
+  new Set<string>());
 
 type WorkspaceItem = typeof excelWorkspaceItems.$inferSelect;
 type Material = typeof materials.$inferSelect;
@@ -1413,37 +1418,38 @@ export async function commitMaterialProfileSaveBatch(
 }
 
 async function processMaterialProfileSaveBatch(batchId: string) {
-  if (activeBatchCommits.has(batchId)) return;
   const [batch] = await db
     .select()
     .from(materialProfileMaterialBatches)
     .where(eq(materialProfileMaterialBatches.id, batchId))
     .limit(1);
-  if (!batch || !["queued", "running"].includes(batch.status)) return;
-  activeBatchCommits.add(batchId);
-  const now = new Date().toISOString();
-  const [claimed] = await db
-    .update(materialProfileMaterialBatches)
-    .set({
-      status: "running",
-      startedAt: batch.startedAt ?? now,
-      message: "Đang lưu vào /materials.",
-      expiresAt: expiresAt(now),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(materialProfileMaterialBatches.id, batch.id),
-        eq(materialProfileMaterialBatches.status, batch.status),
-        eq(materialProfileMaterialBatches.updatedAt, batch.updatedAt),
-      ),
-    )
-    .returning({ id: materialProfileMaterialBatches.id });
-  if (!claimed) {
-    activeBatchCommits.delete(batchId);
+  if (
+    !batch ||
+    !["queued", "running"].includes(batch.status) ||
+    activeBatchCommits.has(batchId)
+  )
     return;
-  }
+  activeBatchCommits.add(batchId);
   try {
+    const now = new Date().toISOString();
+    const [claimed] = await db
+      .update(materialProfileMaterialBatches)
+      .set({
+        status: "running",
+        startedAt: batch.startedAt ?? now,
+        message: "Đang lưu vào /materials.",
+        expiresAt: expiresAt(now),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileMaterialBatches.id, batch.id),
+          eq(materialProfileMaterialBatches.status, batch.status),
+          eq(materialProfileMaterialBatches.updatedAt, batch.updatedAt),
+        ),
+      )
+      .returning({ id: materialProfileMaterialBatches.id });
+    if (!claimed) return;
     const rows = await db
       .select()
       .from(materialProfileMaterialBatchRows)
