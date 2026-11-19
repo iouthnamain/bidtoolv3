@@ -6,6 +6,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildOnPremUpdateCommand,
   bumpSemverCore,
   formatReleaseTag,
   normalizeReleaseVersion,
@@ -467,9 +468,13 @@ async function performRelease(bump: SemverBump | null, options: CliOptions) {
   console.log(
     "[release] GitHub Actions release workflow should start shortly.",
   );
-  console.log(
-    `[release] On-prem update command: BIDTOOL_IMAGE_TAG=${version} bun run onprem:update`,
-  );
+  const updateCommand = buildOnPremUpdateCommand(version);
+  if (updateCommand) {
+    console.log(
+      "[release] Review database compatibility before running the on-prem update.",
+    );
+    console.log(`[release] On-prem update command: ${updateCommand}`);
+  }
 }
 
 async function main() {

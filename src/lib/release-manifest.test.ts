@@ -95,7 +95,8 @@ describe("release manifest", () => {
 
     expect(pins.current).toBe("0.2.0");
     expect(buildOnPremUpdateCommand("0.2.0")).toBe(
-      "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
+      "BIDTOOL_IMAGE_TAG=0.2.0 sh scripts/onprem-update.sh --schema-compatible",
     );
+    expect(buildOnPremUpdateCommand("0.2.0 unsupported")).toBeNull();
   });
 });

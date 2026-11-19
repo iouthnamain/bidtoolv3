@@ -96,7 +96,7 @@ describe("version info service", () => {
     expect(status.latest).toBe("0.2.0");
     expect(status.updateAvailable).toBe(true);
     expect(status.updateCommand).toBe(
-      "BIDTOOL_IMAGE_TAG=0.2.0 bun run onprem:update",
+      "BIDTOOL_IMAGE_TAG=0.2.0 sh scripts/onprem-update.sh --schema-compatible",
     );
     expect(status.canApplyInApp).toBe(false);
     expect(
@@ -107,5 +107,13 @@ describe("version info service", () => {
       }),
     ).toBe("copy-onprem-command");
     expect(status.changelog).toBe("New release");
+
+    vi.stubEnv("BIDTOOL_APP_VERSION", "0.2.0");
+    vi.stubEnv("BIDTOOL_BUILD_METADATA", "0.2.0+onprem.abc1234");
+    expect(await getVersionStatus()).toMatchObject({
+      current: "0.2.0",
+      buildMetadata: "0.2.0+onprem.abc1234",
+      updateAvailable: false,
+    });
   });
 });
