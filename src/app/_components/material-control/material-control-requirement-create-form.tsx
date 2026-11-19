@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 
 import { api } from "~/trpc/react";
+import { refreshQuery } from "./refresh-query";
 
 export function MaterialControlRequirementCreateForm({
   planId,
@@ -10,17 +13,45 @@ export function MaterialControlRequirementCreateForm({
   planId: number;
 }) {
   const utils = api.useUtils();
+  const client = useQueryClient();
   const [materialName, setMaterialName] = useState("");
   const [specText, setSpecText] = useState("");
   const [unit, setUnit] = useState("");
   const [amount, setAmount] = useState("1");
   const create = api.materialControl.createRequirement.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (requirement) => {
       setMaterialName("");
       setSpecText("");
       setUnit("");
       setAmount("1");
-      await utils.materialControl.getPlanDetail.invalidate({ planId });
+      const savedPlan = { planId: requirement.planId };
+      const projectId =
+        utils.materialControl.getPlanDetail.getData(savedPlan)?.plan.projectId;
+      const includesProject = (filter: unknown) =>
+        projectId === undefined || filter === undefined || filter === projectId;
+      await Promise.all([
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.getPlanDetail, savedPlan),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listPlanDetails),
+          (input) => includesProject(input.projectId),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.dashboardSummary),
+          (input) => includesProject(input.projectId),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listShortages),
+          (input) =>
+            includesProject(input.projectId) &&
+            (input.lateOnly !== true || requirement.requiredAt !== null),
+        ),
+      ]);
     },
   });
   return (

@@ -2,17 +2,35 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 
 import { api } from "~/trpc/react";
+import { refreshQuery } from "./refresh-query";
 
 export function MaterialControlProjectCreateClient() {
   const router = useRouter();
+  const client = useQueryClient();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const create = api.materialControl.createProject.useMutation({
-    onSuccess: (project) =>
-      router.push(`/material-control/projects/${project.id}`),
+    onSuccess: async (project) => {
+      await Promise.all([
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listProjects),
+          ({ status }) => status === undefined || status === project.status,
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.dashboardSummary),
+          ({ projectId }) =>
+            projectId === undefined || projectId === project.id,
+        ),
+      ]);
+      router.push(`/material-control/projects/${project.id}`);
+    },
   });
   return (
     <form

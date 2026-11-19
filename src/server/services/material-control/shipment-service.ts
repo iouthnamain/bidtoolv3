@@ -85,7 +85,7 @@ function positiveId(value: number | null | undefined): value is number {
 function quantity(value: unknown): asserts value is number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
     fail("BAD_REQUEST", "Số lượng vận chuyển phải lớn hơn 0.");
-  if ((value.toString().split(".")[1]?.length ?? 0) > 3)
+  if (Number(value.toFixed(3)) !== value)
     fail("BAD_REQUEST", "Số lượng chỉ được có tối đa 3 chữ số thập phân.");
 }
 
@@ -368,15 +368,24 @@ export async function receiveShipment(
       .from(materialControlShipmentLines)
       .where(eq(materialControlShipmentLines.shipmentId, id))
       .orderBy(asc(materialControlShipmentLines.id));
+    if (received.length === 0)
+      fail("BAD_REQUEST", "Chọn ít nhất một dòng vật tư để nhận.");
     const requested = new Map(
       received.map((item) => [item.lineId, item.quantity]),
     );
+    if (requested.size !== received.length)
+      fail("BAD_REQUEST", "Mỗi dòng vật tư chỉ được chọn một lần.");
+    const shipmentLineIds = new Set(lines.map((line) => line.id));
+    if (received.some((item) => !shipmentLineIds.has(item.lineId)))
+      fail("BAD_REQUEST", "Dòng vật tư không thuộc chuyến hàng này.");
+
     for (const line of lines) {
       const next = requested.get(line.id);
       if (next === undefined) continue;
       quantity(next);
-      const total = Number(line.receivedQuantity) + next;
-      if (total > Number(line.quantity))
+      // Match PostgreSQL's three-decimal scale before comparing the total.
+      const total = Number((line.receivedQuantity + next).toFixed(3));
+      if (total > line.quantity)
         fail("BAD_REQUEST", "Số lượng nhận vượt quá số lượng gửi.");
       await recordMovementInTransaction(
         {
