@@ -1,14 +1,27 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import journal from "../../../drizzle/meta/_journal.json";
 import { createFakeDocker } from "./fake-docker";
 
 export async function createStorageDocker(failCommand = "") {
   const fake = await createFakeDocker(failCommand);
   const files = path.join(fake.dir, "source");
   const image = `sha256:${"a".repeat(64)}`;
+  const materialControlMigration = journal.entries.find(
+    (entry) => entry.tag === "0043_easy_blue_blade",
+  );
+  if (!materialControlMigration)
+    throw new Error("Missing material-control migration");
   const metadata = {
-    schema: [{ id: 1, hash: "fixture-schema", created_at: 1 }],
+    schema: [
+      { id: 1, hash: "fixture-schema", created_at: 1 },
+      {
+        id: 2,
+        hash: "fixture-material-control",
+        created_at: materialControlMigration.when,
+      },
+    ],
     settings: {},
     references: [
       {
@@ -54,6 +67,7 @@ export async function createStorageDocker(failCommand = "") {
   const state = {
     image,
     metadata,
+    materialControlTable: true,
     config: {
       services: {
         app: {
@@ -113,7 +127,17 @@ else if(args[0]==='volume') {
 }
 else if(args.includes('psql')) {
  const sql=args.at(-1);
- if(sql.includes('json_build_object')) { if(process.env.FAKE_STAGE_MISMATCH==='true' && args.some(a=>a.startsWith('bidtool_stage_')))state.metadata.externalOutputs.push('/unexpected');console.log(JSON.stringify(state.metadata)); }
+ if(sql.includes('FROM material_control_documents') && !state.materialControlTable) {
+  console.error('relation "material_control_documents" does not exist');
+  process.exit(1);
+ }
+ if(sql.includes('json_build_object')) {
+  const {schema, ...artifacts}=state.metadata;
+  if(!sql.includes('FROM material_control_documents'))artifacts.references=artifacts.references.filter(reference=>reference.tree!=='material-control');
+  if(process.env.FAKE_STAGE_MISMATCH==='true' && args.some(a=>a.startsWith('bidtool_stage_')))artifacts.externalOutputs.push('/unexpected');
+  console.log(JSON.stringify(sql.includes("'schema'")?{schema,...artifacts}:artifacts));
+ }
+ else if(sql.includes('FROM drizzle.__drizzle_migrations')) console.log(JSON.stringify(state.metadata.schema));
  else if(sql.includes('pg_database_size')) console.log('1024');
 }
 else if(args.includes('pg_dump')) process.stdout.write('PGDMP-fixture');

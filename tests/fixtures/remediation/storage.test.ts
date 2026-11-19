@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { z } from "zod";
 import { createStorageDocker } from "./storage-fixture";
 
 async function script(
@@ -40,16 +41,46 @@ async function bundle(fake: Awaited<ReturnType<typeof createStorageDocker>>) {
 const starts = (commands: string[][]) =>
   commands.filter((args) => args.includes("up") || args.includes("start"));
 
+const bundleManifestSchema = z
+  .object({
+    version: z.number(),
+    paths: z.object({ root: z.string(), trees: z.record(z.string()) }),
+    database: z.object({ references: z.array(z.unknown()) }).passthrough(),
+    entries: z.array(
+      z.object({ path: z.string(), kind: z.string() }).passthrough(),
+    ),
+    externalOutputs: z.array(z.unknown()),
+  })
+  .passthrough();
+
+async function readBundleManifest(manifestFile: string) {
+  return bundleManifestSchema.parse(
+    JSON.parse(await readFile(manifestFile, "utf8")),
+  );
+}
+
+async function usePreMaterialControlSchema(
+  fake: Awaited<ReturnType<typeof createStorageDocker>>,
+) {
+  fake.state.metadata.schema.pop();
+  fake.state.metadata.references = fake.state.metadata.references.filter(
+    (reference) => reference.tree !== "material-control",
+  );
+  fake.state.materialControlTable = false;
+  await rm(path.join(fake.files, "material-control"), { recursive: true });
+  await fake.saveState();
+}
+
 test("backup stops writers, copies all artifact trees, verifies checksums, then resumes only its app", async () => {
   const fake = await createStorageDocker();
   try {
     const directory = await bundle(fake);
-    const manifest = JSON.parse(
-      await readFile(path.join(directory, "manifest.json"), "utf8"),
+    const manifest = await readBundleManifest(
+      path.join(directory, "manifest.json"),
     );
     expect(manifest.version).toBe(1);
     expect(
-      manifest.entries.filter((e: { kind: string }) => e.kind === "file"),
+      manifest.entries.filter((entry) => entry.kind === "file"),
     ).toHaveLength(4);
     expect(manifest.externalOutputs).toEqual([
       { path: "/operator/exports", included: false },
@@ -151,10 +182,38 @@ test("a complete restore stages and checks DB/files before activation and retain
     const env = await readFile(fake.envFile, "utf8");
     expect(env).toContain("BIDTOOL_DATA_VOLUME=");
     expect(
-      JSON.parse(await readFile(path.join(fake.dir, "activation.json"), "utf8"))
-        .image,
-    ).toBe(fake.state.image);
+      JSON.parse(
+        await readFile(path.join(fake.dir, "activation.json"), "utf8"),
+      ),
+    ).toMatchObject({ image: fake.state.image });
     expect(result.output).toContain("runtime/download proof remains");
+  } finally {
+    await fake.cleanup();
+  }
+});
+
+test("restore accepts a v1 bundle created before material control", async () => {
+  const fake = await createStorageDocker();
+  try {
+    const directory = await bundle(fake);
+    await usePreMaterialControlSchema(fake);
+    const manifestFile = path.join(directory, "manifest.json");
+    const manifest = await readBundleManifest(manifestFile);
+    delete manifest.paths.trees["material-control"];
+    manifest.database = fake.state.metadata;
+    manifest.entries = manifest.entries.filter(
+      (entry) => !/^material-control(?:\/|$)/.test(entry.path),
+    );
+    await rm(path.join(directory, "files/material-control"), {
+      recursive: true,
+    });
+    await writeFile(manifestFile, JSON.stringify(manifest));
+
+    const result = await script(fake, "restore", [directory], {
+      FAKE_APP_PRESENT: "false",
+    });
+    expect(result, result.output).toMatchObject({ code: 0 });
+    expect(result.output).toContain("Bundle activated.");
   } finally {
     await fake.cleanup();
   }
@@ -263,34 +322,67 @@ test.each(["backup", "update", "restore"])(
   },
 );
 
-test("update copies old bytes and publishes a complete bundle before any replacement", async () => {
+test.each(["legacy", "current"])(
+  "update from a %s schema publishes a complete bundle before any replacement",
+  async (schema) => {
+    const fake = await createStorageDocker();
+    try {
+      if (schema === "legacy") await usePreMaterialControlSchema(fake);
+      const result = await script(fake, "update", ["--schema-compatible"]);
+      expect(result, result.output).toMatchObject({ code: 0 });
+      const activation = z
+        .object({ volume: z.string(), image: z.string() })
+        .parse(
+          JSON.parse(
+            await readFile(path.join(fake.dir, "activation.json"), "utf8"),
+          ),
+        );
+      expect(activation.volume).toMatch(/_data_/);
+      expect(activation.image).toBe(fake.state.image);
+      const commands = await fake.commands();
+      expect(commands.findIndex((args) => args[0] === "cp")).toBeLessThan(
+        commands.findIndex((args) => args.includes("up")),
+      );
+      expect(
+        commands.findIndex((args) => args.includes("pg_dump")),
+      ).toBeLessThan(commands.findIndex((args) => args[0] === "run"));
+      const backupRoot = path.join(fake.dir, "backups");
+      const name = (await readdir(backupRoot)).find((file) =>
+        file.endsWith(".bundle"),
+      );
+      expect(name).toBeDefined();
+      const manifest = await readBundleManifest(
+        path.join(backupRoot, name!, "manifest.json"),
+      );
+      expect(Object.hasOwn(manifest.paths.trees, "material-control")).toBe(
+        schema === "current",
+      );
+      expect(manifest.database.references).toEqual(
+        fake.state.metadata.references,
+      );
+      expect(
+        await readFile(
+          path.join(fake.files, "catalog-pdfs/1/upload.pdf"),
+          "utf8",
+        ),
+      ).toBe("%PDF-upload-test");
+    } finally {
+      await fake.cleanup();
+    }
+  },
+);
+
+test("backup rejects a missing material-control table after its migration", async () => {
   const fake = await createStorageDocker();
   try {
-    const result = await script(fake, "update", ["--schema-compatible"]);
-    expect(result, result.output).toMatchObject({ code: 0 });
-    const activation = JSON.parse(
-      await readFile(path.join(fake.dir, "activation.json"), "utf8"),
+    fake.state.materialControlTable = false;
+    await fake.saveState();
+    const result = await script(fake, "backup");
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain(
+      'relation "material_control_documents" does not exist',
     );
-    expect(activation.volume).toMatch(/_data_/);
-    expect(activation.image).toBe(fake.state.image);
-    const commands = await fake.commands();
-    expect(commands.findIndex((args) => args[0] === "cp")).toBeLessThan(
-      commands.findIndex((args) => args.includes("up")),
-    );
-    expect(commands.findIndex((args) => args.includes("pg_dump"))).toBeLessThan(
-      commands.findIndex((args) => args[0] === "run"),
-    );
-    expect(
-      (await readdir(path.join(fake.dir, "backups"))).some((file) =>
-        file.endsWith(".bundle"),
-      ),
-    ).toBe(true);
-    expect(
-      await readFile(
-        path.join(fake.files, "catalog-pdfs/1/upload.pdf"),
-        "utf8",
-      ),
-    ).toBe("%PDF-upload-test");
+    expect(starts(await fake.commands())).toHaveLength(0);
   } finally {
     await fake.cleanup();
   }

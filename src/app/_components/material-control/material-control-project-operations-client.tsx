@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "~/lib/datetime";
 import { api } from "~/trpc/react";
 
 type Mode = "purchases" | "shipments" | "installation";
@@ -96,14 +97,17 @@ export function MaterialControlProjectOperationsClient({
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  {shipment.lines.length} dòng · Đã nhận{" "}
-                  {shipment.lines.reduce(
-                    (sum, line) => sum + line.receivedQuantity,
-                    0,
-                  )}{" "}
-                  /{" "}
-                  {shipment.lines.reduce((sum, line) => sum + line.quantity, 0)}
+                  {shipment.lines.length} dòng
                 </p>
+                <ul className="mt-1 space-y-1 text-sm text-slate-600">
+                  {shipment.lines.map((line) => (
+                    <li key={line.id} className="break-words">
+                      {line.material.materialName}: Đã nhận{" "}
+                      {formatNumber(line.receivedQuantity)} /{" "}
+                      {formatNumber(line.quantity)} {line.material.unit}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
