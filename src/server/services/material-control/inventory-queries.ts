@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
+  materialControlLocations,
   materialControlPlans,
   materialControlPurchaseCommitmentLines,
   materialControlPurchaseCommitments,
@@ -9,10 +10,14 @@ import {
   materialControlRequirements,
   materialControlReservations,
   materialControlShipmentLines,
+  materialControlShipments,
   materialControlStockMovements,
   materialControlProjects,
 } from "~/server/db/schema";
-import { calculateRequirementQuantities } from "~/server/services/material-control/quantity-formulas";
+import {
+  calculateRequirementQuantities,
+  type RequirementMovement,
+} from "~/server/services/material-control/quantity-formulas";
 import type {
   MaterialSnapshot,
   MovementInput,
@@ -31,6 +36,13 @@ type AppDb = typeof db;
 type RequirementRow = typeof materialControlRequirements.$inferSelect;
 type MovementRow = typeof materialControlStockMovements.$inferSelect;
 type ReservationRow = typeof materialControlReservations.$inferSelect;
+type ShipmentStatus = (typeof materialControlShipments.$inferSelect)["status"];
+
+const dispatchedShipmentStatuses: readonly ShipmentStatus[] = [
+  "in_transit",
+  "partially_received",
+  "received",
+];
 
 export type RequirementSummaryView = RequirementView;
 
@@ -93,7 +105,7 @@ export type DashboardSummaryView = Readonly<{
 type RequirementBundle = Readonly<{
   purchases: readonly PurchaseCommitmentLine[];
   shipments: readonly ShipmentLine[];
-  movements: readonly MovementInput[];
+  movements: readonly RequirementMovement[];
   reservations: readonly ReservationState[];
 }>;
 
@@ -324,12 +336,40 @@ async function loadBundle(
     database
       .select({ line: materialControlShipmentLines })
       .from(materialControlShipmentLines)
+      .innerJoin(
+        materialControlShipments,
+        eq(
+          materialControlShipments.id,
+          materialControlShipmentLines.shipmentId,
+        ),
+      )
       .where(
-        inArray(materialControlShipmentLines.requirementId, requirementIds),
+        and(
+          inArray(materialControlShipmentLines.requirementId, requirementIds),
+          inArray(materialControlShipments.status, dispatchedShipmentStatuses),
+        ),
       ),
     database
-      .select()
+      .select({
+        movement: materialControlStockMovements,
+        sourceLocationType: materialControlLocations.type,
+        shipmentStatus: materialControlShipments.status,
+      })
       .from(materialControlStockMovements)
+      .leftJoin(
+        materialControlLocations,
+        eq(
+          materialControlLocations.id,
+          materialControlStockMovements.sourceLocationId,
+        ),
+      )
+      .leftJoin(
+        materialControlShipments,
+        eq(
+          materialControlShipments.id,
+          materialControlStockMovements.shipmentId,
+        ),
+      )
       .where(
         or(
           inArray(materialControlStockMovements.requirementId, requirementIds),
@@ -343,6 +383,17 @@ async function loadBundle(
       .where(inArray(materialControlReservations.projectId, projectIds)),
   ]);
 
+  const movements: RequirementMovement[] = movementRows.map(
+    ({ movement, sourceLocationType, shipmentStatus }) => ({
+      ...movementFromRow(movement),
+      sourceIsSiteOrZone:
+        sourceLocationType === "site" || sourceLocationType === "zone",
+      shipmentDispatched:
+        shipmentStatus === null
+          ? undefined
+          : dispatchedShipmentStatuses.includes(shipmentStatus),
+    }),
+  );
   const allocationsByLine = new Map<number, typeof allocationRows>();
   for (const allocation of allocationRows) {
     if (allocation.purchaseCommitmentLineId === null) continue;
@@ -388,7 +439,6 @@ async function loadBundle(
         quantity: Number(line.quantity),
         receivedQuantity: Number(line.receivedQuantity),
       }));
-    const movements = movementRows.map(movementFromRow);
     const reservations = reservationRows.map(reservationFromRow);
     bundleByRequirement.set(requirement.id, {
       purchases,
