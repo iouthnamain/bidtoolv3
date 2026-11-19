@@ -14,8 +14,11 @@ import { createLogger, traceFn } from "~/server/lib/logger";
 
 const log = createLogger("services-material-enrichment-events");
 
-const emitter = new EventEmitter();
-emitter.setMaxListeners(500);
+const globalForEnrichmentEvents = globalThis as typeof globalThis & {
+  bidtoolEnrichmentEvents?: EventEmitter;
+};
+const emitter = (globalForEnrichmentEvents.bidtoolEnrichmentEvents ??=
+  new EventEmitter().setMaxListeners(500));
 
 export type MaterialEnrichmentStreamEvent = {
   eventId: number;

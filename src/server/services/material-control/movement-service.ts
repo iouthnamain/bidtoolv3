@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
   materialControlLocations,
   materialControlRequirements,
+  materialControlReservations,
   materialControlShipments,
   materialControlStockMovements,
   materials,
@@ -13,7 +14,7 @@ import {
 } from "~/server/db/schema";
 import {
   assertMaterialMatch,
-  calculateOnHandAtLocation,
+  calculateSharedAvailable,
   createTransferPair,
   parseMaterialSnapshot,
   parseMovementInput,
@@ -24,6 +25,7 @@ import type {
   MaterialSnapshot,
   MovementInput,
 } from "./types";
+import { MaterialControlDomainError } from "./types";
 import { captureRequirementSnapshot } from "./requirement-service";
 import { MaterialControlServiceError } from "./project-service";
 
@@ -213,7 +215,7 @@ async function resolveSnapshot(
   return snapshot;
 }
 
-async function ensureLocations(
+async function lockMovementLocations(
   tx: DbHandle,
   projectId: number | null,
   locationIds: readonly (number | null | undefined)[],
@@ -226,7 +228,9 @@ async function ensureLocations(
       projectId: materialControlLocations.projectId,
     })
     .from(materialControlLocations)
-    .where(inArray(materialControlLocations.id, ids));
+    .where(inArray(materialControlLocations.id, ids))
+    .orderBy(asc(materialControlLocations.id))
+    .for("update");
   if (rows.length !== ids.length)
     fail("NOT_FOUND", "Địa điểm phát sinh không tồn tại.");
   if (
@@ -236,47 +240,129 @@ async function ensureLocations(
   }
 }
 
-async function lockLocations(
-  tx: DbHandle,
-  locationIds: readonly (number | null)[],
-) {
-  const ids = [...new Set(locationIds.filter(positiveId))];
-  if (ids.length === 0) return;
-  await tx
-    .select({ id: materialControlLocations.id })
-    .from(materialControlLocations)
-    .where(inArray(materialControlLocations.id, ids))
-    .for("update");
-}
-
-async function existingMovements(
-  tx: DbHandle,
+/** Read stock for a location already locked by the operation using it. */
+export async function getAvailableStockAtLocation(
+  tx: AppTx,
+  locationId: number,
   snapshot: MaterialSnapshot,
-): Promise<MovementInput[]> {
-  const rows = await tx
+  assignedReservationId?: number,
+) {
+  const movements = await tx
     .select()
     .from(materialControlStockMovements)
     .where(
-      snapshot.materialId === null
-        ? and(
-            isNull(materialControlStockMovements.materialId),
-            eq(
-              materialControlStockMovements.materialName,
-              snapshot.materialName,
-            ),
-            eq(materialControlStockMovements.specText, snapshot.specText),
-            eq(materialControlStockMovements.unit, snapshot.unit),
-          )
-        : eq(materialControlStockMovements.materialId, snapshot.materialId),
+      and(
+        or(
+          eq(materialControlStockMovements.sourceLocationId, locationId),
+          eq(materialControlStockMovements.destinationLocationId, locationId),
+        ),
+        snapshot.materialId === null
+          ? and(
+              isNull(materialControlStockMovements.materialId),
+              eq(
+                materialControlStockMovements.materialName,
+                snapshot.materialName,
+              ),
+              eq(materialControlStockMovements.specText, snapshot.specText),
+              eq(materialControlStockMovements.unit, snapshot.unit),
+            )
+          : eq(materialControlStockMovements.materialId, snapshot.materialId),
+      ),
     );
-  return rows.map(normalizeMovementRow);
+  const reservations = await tx
+    .select()
+    .from(materialControlReservations)
+    .where(
+      and(
+        eq(materialControlReservations.locationId, locationId),
+        eq(materialControlReservations.status, "active"),
+        snapshot.materialId === null
+          ? and(
+              isNull(materialControlReservations.materialId),
+              eq(
+                materialControlReservations.materialName,
+                snapshot.materialName,
+              ),
+              eq(materialControlReservations.specText, snapshot.specText),
+              eq(materialControlReservations.unit, snapshot.unit),
+            )
+          : eq(materialControlReservations.materialId, snapshot.materialId),
+      ),
+    )
+    .for("update");
+  const assignedReservation = reservations.find(
+    ({ id }) => id === assignedReservationId,
+  );
+  try {
+    // The ledger uses three decimal places. Compare availability in thousandths.
+    const available =
+      calculateSharedAvailable({
+        movements: movements.map((row) => ({
+          ...normalizeMovementRow(row),
+          quantity: Math.round(row.quantity * 1000),
+        })),
+        reservations: reservations
+          .filter(({ id }) => id !== assignedReservationId)
+          .map((row) => ({
+            ...row,
+            quantity: Math.round(row.quantity * 1000),
+          })),
+        locationId,
+        material: snapshot,
+      }) / 1000;
+    return { available, assignedReservation };
+  } catch (error) {
+    if (error instanceof MaterialControlDomainError)
+      fail("CONFLICT", error.message);
+    throw error;
+  }
+}
+
+function assertAvailableStock(quantity: number, available: number) {
+  if (quantity > available)
+    fail("CONFLICT", `Tồn khả dụng không đủ (còn ${available}).`);
+}
+
+function assertStoredQuantity(quantity: number) {
+  if (Number(quantity.toFixed(3)) !== quantity)
+    fail("BAD_REQUEST", "Số lượng chỉ được có tối đa 3 chữ số thập phân.");
+}
+
+async function restoreReservation(tx: DbHandle, original: MovementRow) {
+  if (original.reservationId === null) return;
+  await tx
+    .update(materialControlReservations)
+    .set({
+      status: "active",
+      fulfilledAt: null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      and(
+        eq(materialControlReservations.id, original.reservationId),
+        eq(materialControlReservations.status, "fulfilled"),
+        // Automatic fulfillment records the same timestamp as its movement.
+        eq(materialControlReservations.fulfilledAt, original.createdAt),
+      ),
+    );
 }
 
 async function insertMovement(
-  tx: DbHandle,
+  tx: AppTx,
   input: RecordMovementInput,
-  reversingExistingMovement = false,
+  original?: MovementRow,
 ): Promise<MovementView> {
+  if (!original && input.movementType === "reversal") {
+    if (!positiveId(input.reversalOfId))
+      fail("BAD_REQUEST", "Mã phát sinh cần đảo ngược không hợp lệ.");
+    return reverseMovementInTransaction(tx, input.reversalOfId, input);
+  }
+  if (!original && input.reversalOfId != null)
+    fail(
+      "BAD_REQUEST",
+      "Chỉ phát sinh đảo ngược mới được tham chiếu phát sinh gốc.",
+    );
+
   const requirementId = input.requirementId ?? null;
   const context =
     requirementId === null ? null : await requirementContext(tx, requirementId);
@@ -308,7 +394,8 @@ async function insertMovement(
     explicitAdjustment: input.explicitAdjustment === true,
   };
   validateMovementInput(movement);
-  if (movement.shipmentId != null && !reversingExistingMovement) {
+  assertStoredQuantity(movement.quantity);
+  if (movement.shipmentId != null && !original) {
     const [shipment] = await tx
       .select({ projectId: materialControlShipments.projectId })
       .from(materialControlShipments)
@@ -318,20 +405,50 @@ async function insertMovement(
     if (shipment.projectId !== projectId)
       fail("BAD_REQUEST", "Chuyến hàng không thuộc dự án phát sinh.");
   }
-  await ensureLocations(tx, projectId, [
+  await lockMovementLocations(tx, projectId, [
     sourceLocationId,
     destinationLocationId,
   ]);
-  await lockLocations(tx, [sourceLocationId, destinationLocationId]);
-  const current = await existingMovements(tx, snapshot);
-  for (const locationId of [sourceLocationId, destinationLocationId]) {
-    if (locationId === null) continue;
-    try {
-      calculateOnHandAtLocation([...current, movement], locationId, snapshot);
-    } catch (error) {
-      if (error instanceof Error) fail("CONFLICT", error.message);
-      throw error;
+  const reservationId = original
+    ? undefined
+    : (input.reservationId ?? undefined);
+  const consumesStock =
+    sourceLocationId !== null && movement.movementType !== "adjustment";
+  if (reservationId !== undefined && !consumesStock) {
+    fail("BAD_REQUEST", "Chỉ phát sinh xuất kho mới có thể hoàn tất giữ chỗ.");
+  }
+  if (consumesStock) {
+    const { available, assignedReservation } =
+      await getAvailableStockAtLocation(
+        tx,
+        sourceLocationId,
+        snapshot,
+        reservationId,
+      );
+    if (reservationId !== undefined) {
+      if (!assignedReservation)
+        fail(
+          "CONFLICT",
+          "Giữ chỗ không còn hiệu lực cho vật tư tại địa điểm này.",
+        );
+      if (
+        assignedReservation.projectId !== projectId ||
+        (assignedReservation.requirementId !== null &&
+          assignedReservation.requirementId !== requirementId)
+      )
+        fail(
+          "BAD_REQUEST",
+          "Giữ chỗ không thuộc dự án hoặc nhu cầu phát sinh.",
+        );
+      assertMaterialMatch(
+        snapshot,
+        assignedReservation,
+        "Vật tư xuất kho và giữ chỗ",
+      );
+      if (movement.quantity < assignedReservation.quantity)
+        fail("BAD_REQUEST", "Số lượng xuất phải đủ để hoàn tất giữ chỗ.");
     }
+    assertAvailableStock(movement.quantity, available);
   }
   const [row] = await tx
     .insert(materialControlStockMovements)
@@ -356,6 +473,17 @@ async function insertMovement(
     })
     .returning();
   if (!row) fail("BAD_REQUEST", "Không ghi được phát sinh kho.");
+  if (reservationId !== undefined) {
+    await tx
+      .update(materialControlReservations)
+      .set({
+        status: "fulfilled",
+        fulfilledAt: row.createdAt,
+        updatedAt: row.createdAt,
+      })
+      .where(eq(materialControlReservations.id, reservationId));
+  }
+  if (original) await restoreReservation(tx, original);
   return movementView(row);
 }
 
@@ -410,26 +538,18 @@ export async function recordTransfer(
       requirementId: input.requirementId ?? null,
       pairId: randomUUID(),
     });
+    assertStoredQuantity(input.quantity);
     const projectId = input.projectId ?? requirement?.projectId ?? null;
-    await ensureLocations(tx, projectId, [
+    await lockMovementLocations(tx, projectId, [
       input.sourceLocationId,
       input.destinationLocationId,
     ]);
-    await lockLocations(tx, [
+    const { available } = await getAvailableStockAtLocation(
+      tx,
       input.sourceLocationId,
-      input.destinationLocationId,
-    ]);
-    const current = await existingMovements(tx, snapshot);
-    try {
-      calculateOnHandAtLocation(
-        [...current, pair[0]],
-        input.sourceLocationId,
-        snapshot,
-      );
-    } catch (error) {
-      if (error instanceof Error) fail("CONFLICT", error.message);
-      throw error;
-    }
+      snapshot,
+    );
+    assertAvailableStock(input.quantity, available);
     const values = pair.map((movement) => ({
       projectId,
       movementType: movement.movementType,
@@ -464,62 +584,101 @@ export async function reverseMovement(
 ): Promise<MovementView> {
   if (!positiveId(movementId))
     fail("BAD_REQUEST", "Mã phát sinh không hợp lệ.");
-  return database.transaction(async (tx) => {
-    const [original] = await tx
-      .select()
-      .from(materialControlStockMovements)
-      .where(eq(materialControlStockMovements.id, movementId))
-      .limit(1)
-      .for("update");
-    if (!original) fail("NOT_FOUND", "Phát sinh kho không tồn tại.");
-    if (original.movementType === "reversal") {
-      fail("BAD_REQUEST", "Không thể đảo ngược một phát sinh đảo ngược.");
-    }
-    const [existing] = await tx
-      .select({ id: materialControlStockMovements.id })
-      .from(materialControlStockMovements)
-      .where(eq(materialControlStockMovements.reversalOfId, original.id))
-      .limit(1);
-    if (existing) fail("CONFLICT", "Phát sinh này đã được đảo ngược.");
-    const location =
-      original.sourceLocationId ?? original.destinationLocationId;
-    if (location === null)
-      fail("BAD_REQUEST", "Phát sinh không có địa điểm để đảo ngược.");
-    const isAdjustment = original.movementType === "adjustment";
-    const quantity = Math.abs(Number(original.quantity));
-    const sourceLocationId = isAdjustment
-      ? Number(original.quantity) < 0
-        ? null
-        : location
-      : original.destinationLocationId;
-    const destinationLocationId = isAdjustment
-      ? Number(original.quantity) < 0
-        ? location
-        : null
-      : original.sourceLocationId;
-    return insertMovement(
-      tx,
+  return database.transaction((tx) =>
+    reverseMovementInTransaction(tx, movementId),
+  );
+}
+
+async function reverseMovementInTransaction(
+  tx: AppTx,
+  movementId: number,
+  request?: RecordMovementInput,
+): Promise<MovementView> {
+  const [original] = await tx
+    .select()
+    .from(materialControlStockMovements)
+    .where(eq(materialControlStockMovements.id, movementId))
+    .limit(1)
+    .for("update");
+  if (!original) fail("NOT_FOUND", "Phát sinh kho không tồn tại.");
+  if (original.movementType === "reversal") {
+    fail("BAD_REQUEST", "Không thể đảo ngược một phát sinh đảo ngược.");
+  }
+  const [existing] = await tx
+    .select({ id: materialControlStockMovements.id })
+    .from(materialControlStockMovements)
+    .where(eq(materialControlStockMovements.reversalOfId, original.id))
+    .limit(1);
+  if (existing) fail("CONFLICT", "Phát sinh này đã được đảo ngược.");
+  const location = original.sourceLocationId ?? original.destinationLocationId;
+  if (location === null)
+    fail("BAD_REQUEST", "Phát sinh không có địa điểm để đảo ngược.");
+  const isAdjustment = original.movementType === "adjustment";
+  const quantity = Math.abs(original.quantity);
+  const sourceLocationId = isAdjustment
+    ? original.quantity < 0
+      ? null
+      : location
+    : original.destinationLocationId;
+  const destinationLocationId = isAdjustment
+    ? original.quantity < 0
+      ? location
+      : null
+    : original.sourceLocationId;
+  if (request) {
+    const requestedFields = [
+      [request.quantity, quantity],
+      [request.projectId, original.projectId],
+      [request.sourceLocationId, sourceLocationId],
+      [request.destinationLocationId, destinationLocationId],
+      [request.requirementId, original.requirementId],
+      [request.shipmentId, original.shipmentId],
+      [request.reservationId, original.reservationId],
+      [request.materialId, original.materialId],
+    ];
+    if (
+      requestedFields.some(
+        ([requested, expected]) =>
+          requested !== undefined && requested !== expected,
+      )
+    )
+      fail("BAD_REQUEST", "Thông tin đảo ngược không khớp với phát sinh gốc.");
+    assertMaterialMatch(
+      original,
       {
-        projectId: original.projectId,
-        movementType: "reversal",
-        quantity,
-        sourceLocationId,
-        destinationLocationId,
-        requirementId: original.requirementId,
-        shipmentId: original.shipmentId,
-        reservationId: original.reservationId,
         materialId: original.materialId,
-        materialName: original.materialName,
-        specText: original.specText,
-        unit: original.unit,
-        occurredAt: new Date().toISOString(),
-        reversalOfId: original.id,
-        reference: original.reference,
-        notes: `Đảo ngược phát sinh #${original.id}`,
+        materialName: request.materialName ?? original.materialName,
+        specText: request.specText ?? original.specText,
+        unit: request.unit ?? original.unit,
       },
-      true,
+      "Vật tư đảo ngược",
     );
-  });
+  }
+  return insertMovement(
+    tx,
+    {
+      projectId: original.projectId,
+      movementType: "reversal",
+      quantity,
+      sourceLocationId,
+      destinationLocationId,
+      requirementId: original.requirementId,
+      shipmentId: original.shipmentId,
+      reservationId: original.reservationId,
+      materialId: original.materialId,
+      materialName: original.materialName,
+      specText: original.specText,
+      unit: original.unit,
+      occurredAt: request?.occurredAt,
+      reversalOfId: original.id,
+      reference:
+        request?.reference === undefined
+          ? original.reference
+          : request.reference,
+      notes: request?.notes ?? `Đảo ngược phát sinh #${original.id}`,
+    },
+    original,
+  );
 }
 
 export async function listMovements(

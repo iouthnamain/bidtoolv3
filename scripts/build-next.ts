@@ -1,4 +1,4 @@
-import { access, rm } from "node:fs/promises";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -89,6 +89,24 @@ async function main() {
 
   if (exitCode !== 0) {
     process.exit(exitCode);
+  }
+
+  // Next emits a CommonJS server.js and copies the root package manifest.
+  const standalonePackage = path.join(
+    rootDir,
+    distDir,
+    "standalone",
+    "package.json",
+  );
+  const packageJson = JSON.parse(await readFile(standalonePackage, "utf8")) as {
+    type?: string;
+  };
+  if (packageJson.type === "module") {
+    packageJson.type = "commonjs";
+    await writeFile(
+      standalonePackage,
+      `${JSON.stringify(packageJson, null, 2)}\n`,
+    );
   }
 }
 
