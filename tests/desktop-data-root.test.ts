@@ -124,7 +124,7 @@ test("remote server routing bypasses bundled startup and its migration", async (
       process,
       START_TIMEOUT_MS: 1,
       getDesktopServerConfig: () => ({ serverUrl: "http://fixture-server" }),
-      waitForUrl: async () => undefined,
+      waitForUrl: async (url: string) => url,
       startStandaloneNextServer: spawn,
     },
   );
@@ -136,9 +136,7 @@ test("remote server routing bypasses bundled startup and its migration", async (
 test("updater waits for child exit before migration and blocks install on stop failure", async () => {
   const { EventEmitter } = await import("node:events");
   const source = await readFile("electron/main.cjs", "utf8");
-  const start = source.indexOf(
-    "async function prepareDesktopStorageForInstall()",
-  );
+  const start = source.indexOf("async function stopBundledServer()");
   const end = source.indexOf("async function startStandaloneNextServer()");
   for (const stopSucceeds of [true, false]) {
     const child = new EventEmitter();
@@ -159,7 +157,8 @@ test("updater waits for child exit before migration and blocks install on stop f
       {
         path,
         nextServerProcess: child,
-        getDesktopServerConfig: () => ({}),
+        bundledServerUrl: "http://127.0.0.1:3000",
+        getDesktopServerConfig: () => ({ serverUrl: "http://fixture-server" }),
         findStandaloneServerPath: () => "/fixture/standalone/server.js",
         prepareDesktopDataRoot: migrate,
         setTimeout,
