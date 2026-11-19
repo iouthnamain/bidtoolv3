@@ -373,7 +373,7 @@ async function fillExcelResearchSlots() {
   const limit = await resolveExcelResearchMaxConcurrentJobs();
   while (activeExcelResearchRuns.size < limit) {
     const jobId = await claimNextExcelResearchJob();
-    if (!jobId) {
+    if (!jobId || queues !== queueState) {
       return;
     }
     void runExcelResearchJob(jobId);
