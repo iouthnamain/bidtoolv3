@@ -4,6 +4,18 @@ import Link from "next/link";
 
 import { api } from "~/trpc/react";
 
+const numberFormat = new Intl.NumberFormat("vi-VN", {
+  maximumFractionDigits: 3,
+});
+
+const flowMetrics = [
+  ["ordered", "Đã đặt mua"],
+  ["shipped", "Đã gửi"],
+  ["received", "Đã nhận"],
+  ["inTransit", "Đang vận chuyển"],
+  ["installed", "Đã lắp"],
+] as const;
+
 function Metric({
   label,
   value,
@@ -24,7 +36,9 @@ function Metric({
       <p className="text-xs font-bold tracking-wide text-slate-600 uppercase">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-extrabold text-slate-950">{value}</p>
+      <p className="mt-2 text-2xl font-extrabold text-slate-950">
+        {typeof value === "number" ? numberFormat.format(value) : value}
+      </p>
     </article>
   );
 }
@@ -56,32 +70,30 @@ export function MaterialControlDashboardClient() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Dự án"
-          value={`${data.projects.active} / ${data.projects.total} đang hoạt động`}
+          value={`${numberFormat.format(data.projects.active)} / ${numberFormat.format(data.projects.total)} đang hoạt động`}
           tone="blue"
         />
         <Metric label="Nhu cầu" value={data.requirements.total} />
         <Metric
-          label="Thiếu cần mua"
-          value={data.requirements.missingToBuy}
+          label="Nhu cầu cần mua thêm"
+          value={data.shortages.count}
           tone="amber"
         />
         <Metric
-          label="Thiếu & chậm"
-          value={`${data.shortages.count} / ${data.shortages.late}`}
+          label="Nhu cầu quá hạn"
+          value={data.shortages.late}
           tone="rose"
         />
       </div>
 
-      <section className="panel p-4">
+      <section aria-labelledby="material-flow-heading" className="panel p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-950">
-              Dòng vật tư
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Số liệu tổng hợp từ nhu cầu và sổ phát sinh bất biến.
-            </p>
-          </div>
+          <h2
+            id="material-flow-heading"
+            className="text-lg font-extrabold text-slate-950"
+          >
+            Tiến độ theo vật tư
+          </h2>
           <Link
             href="/material-control/projects"
             className="rounded border border-slate-500 px-3 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50"
@@ -89,31 +101,37 @@ export function MaterialControlDashboardClient() {
             Mở danh sách dự án
           </Link>
         </div>
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div>
-            <dt className="text-xs text-slate-600">Đã đặt</dt>
-            <dd className="text-lg font-bold">
-              {data.requirements.requiredQuantity -
-                data.requirements.missingToBuy}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-600">Đã vận chuyển</dt>
-            <dd className="text-lg font-bold">{data.logistics.shipped}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-600">Đã nhận</dt>
-            <dd className="text-lg font-bold">{data.logistics.received}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-600">Đang đi</dt>
-            <dd className="text-lg font-bold">{data.logistics.inTransit}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-600">Đã lắp</dt>
-            <dd className="text-lg font-bold">{data.logistics.installed}</dd>
-          </div>
-        </dl>
+        {data.materialFlow.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-600">
+            Chưa có phát sinh mua hàng, vận chuyển hoặc lắp đặt.
+          </p>
+        ) : (
+          <ul role="list" className="mt-3 divide-y divide-slate-200">
+            {data.materialFlow.map((row) => (
+              <li
+                key={JSON.stringify(row.material)}
+                className="grid gap-3 py-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,5fr)]"
+              >
+                <div className="min-w-0 wrap-break-word">
+                  <h3 className="font-bold">{row.material.materialName}</h3>
+                  <p className="text-sm text-slate-600">
+                    {row.material.specText} · Đơn vị {row.material.unit}
+                  </p>
+                </div>
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  {flowMetrics.map(([field, label]) => (
+                    <div key={field}>
+                      <dt className="text-xs text-slate-600">{label}</dt>
+                      <dd className="text-lg font-bold tabular-nums">
+                        {numberFormat.format(row[field])}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
@@ -122,12 +140,13 @@ export function MaterialControlDashboardClient() {
           className="panel p-4 transition hover:border-blue-400"
         >
           <p className="text-xs font-bold tracking-wide text-slate-600 uppercase">
-            Tồn khả dụng
+            Loại vật tư còn khả dụng
           </p>
-          <p className="mt-2 text-2xl font-extrabold">{data.stock.available}</p>
+          <p className="mt-2 text-2xl font-extrabold">
+            {numberFormat.format(data.stock.availableMaterialCount)}
+          </p>
           <p className="mt-1 text-sm text-slate-600">
-            {data.stock.materialCount} loại vật tư tại{" "}
-            {data.stock.locationCount} địa điểm
+            Xem tồn kho theo vật tư và địa điểm
           </p>
         </Link>
         <Link
@@ -135,10 +154,10 @@ export function MaterialControlDashboardClient() {
           className="panel p-4 transition hover:border-rose-400"
         >
           <p className="text-xs font-bold tracking-wide text-slate-600 uppercase">
-            Cần xử lý
+            Nhu cầu cần xử lý
           </p>
           <p className="mt-2 text-2xl font-extrabold text-rose-700">
-            {data.shortages.count + data.shortages.late}
+            {numberFormat.format(data.shortages.needsAttention)}
           </p>
           <p className="mt-1 text-sm text-slate-600">
             Mở danh sách thiếu và quá hạn
@@ -152,7 +171,7 @@ export function MaterialControlDashboardClient() {
             Kho & địa điểm
           </p>
           <p className="mt-2 text-2xl font-extrabold">
-            {data.stock.locationCount}
+            {numberFormat.format(data.stock.locationCount)}
           </p>
           <p className="mt-1 text-sm text-slate-600">
             Tổ chức tồn kho dùng chung cho nhiều dự án
