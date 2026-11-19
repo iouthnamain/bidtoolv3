@@ -202,7 +202,7 @@ test.each(["project", "plan", "requirement"] as const)(
       kind === "project"
         ? getQueryKey(material.listProjects, { limit: 200 }, "query")
         : getQueryKey(material.listPlanDetails, { projectId }, "query");
-    let finishBeforeSave = (_rows: string[]) => {};
+    let finishBeforeSave: (rows: string[]) => void = () => undefined;
     const beforeSave = new Promise<string[]>((resolve) => {
       finishBeforeSave = resolve;
     });
