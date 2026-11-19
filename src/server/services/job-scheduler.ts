@@ -98,7 +98,30 @@ const STARTUP_RETRY_MAX_MS = 30_000;
 let schedulerEnabled = false;
 let pollTimer: TimerHandle | null = null;
 let cleanupTimer: TimerHandle | null = null;
-let pollInFlight = false;
+const queuePollers = [
+  fillScrapeSlots,
+  fillImportSlots,
+  fillEnrichmentSlots,
+  fillMaterialProfileSearchSlots,
+  async () =>
+    (
+      await import("~/server/services/material-profile-scrape-jobs")
+    ).advanceMaterialProfileScrapeJobs(),
+  async () =>
+    (
+      await import("~/server/services/material-profile-material-batches")
+    ).resumeMaterialProfileSaveBatches(),
+  fillExcelResearchSlots,
+];
+function createQueueState() {
+  return {
+    pending: new Map<(typeof queuePollers)[number], Promise<void>>(),
+    ready: false,
+    failed: new Set<(typeof queuePollers)[number]>(),
+  };
+}
+let queueState = createQueueState();
+let stoppedWork: Promise<unknown> | undefined;
 let startupAttempt: Promise<void> | null = null;
 let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let startupRetryCount = 0;
@@ -114,7 +137,15 @@ function _startJobScheduler() {
 
   schedulerEnabled = true;
   startupRetryCount = 0;
-  void beginSchedulerInitialization();
+  if (stoppedWork) {
+    const queues = queueState;
+    void stoppedWork.then(() => {
+      if (schedulerEnabled && queues === queueState)
+        void beginSchedulerInitialization();
+    });
+  } else {
+    void beginSchedulerInitialization();
+  }
 }
 
 function _stopJobSchedulerForTests() {
@@ -147,11 +178,21 @@ function _stopJobSchedulerForTests() {
   activeExcelResearchRuns.clear();
   pollTimer = null;
   cleanupTimer = null;
-  pollInFlight = false;
+  const pending = [...queueState.pending.values()];
+  if (startupAttempt) pending.push(startupAttempt);
+  if (pending.length > 0) {
+    const drain = Promise.allSettled([stoppedWork, ...pending]);
+    stoppedWork = drain;
+    void drain.then(() => {
+      if (stoppedWork === drain) stoppedWork = undefined;
+    });
+  }
+  queueState = createQueueState();
   startupAttempt = null;
   startupRetryTimer = null;
   startupRetryCount = 0;
   setSchedulerState("stopped");
+  return stoppedWork;
 }
 
 function _abortShopScrapeJob(jobId: string) {
@@ -181,12 +222,14 @@ async function _runJobSchedulerTickForTests() {
 async function beginSchedulerInitialization() {
   if (startupAttempt) return startupAttempt;
 
+  const queues = queueState;
+  const isCurrentStart = () => schedulerEnabled && queues === queueState;
   setSchedulerState("recovering", { lastError: null });
-  startupAttempt = initializeScheduler()
+  startupAttempt = initializeScheduler(isCurrentStart)
     .then(() => {
-      if (!schedulerEnabled) return;
+      if (!isCurrentStart()) return;
       startupRetryCount = 0;
-      setSchedulerState("ready");
+      void pollScheduler();
       log.info("scheduler_started", {
         pollIntervalMs: SCHEDULER_POLL_MS,
         cleanupIntervalMs: CLEANUP_POLL_MS,
@@ -203,7 +246,7 @@ async function beginSchedulerInitialization() {
       cleanupTimer.unref?.();
     })
     .catch((error) => {
-      if (!schedulerEnabled) return;
+      if (!isCurrentStart()) return;
       markSchedulerPollFailed(error);
       setSchedulerState("retrying", {
         lastError:
@@ -216,76 +259,73 @@ async function beginSchedulerInitialization() {
       startupRetryCount += 1;
       log.warn("scheduler_init_retry", { delayMs: delay, error });
       startupRetryTimer = setTimeout(() => {
+        if (!isCurrentStart()) return;
         startupRetryTimer = null;
         void beginSchedulerInitialization();
       }, delay);
       startupRetryTimer.unref?.();
     })
     .finally(() => {
-      startupAttempt = null;
+      if (isCurrentStart()) startupAttempt = null;
     });
   return startupAttempt;
 }
 
-async function initializeScheduler() {
-  if (!schedulerEnabled) return;
-  try {
-    await resetStaleRunningJobs();
-    await resetStaleExcelResearchRows({ startup: true });
-    // Cleanup is optional. A database outage while deleting expired history
-    // must not keep claims paused after required recovery has succeeded.
-    void cleanupExpiredJobs().catch((error) => {
-      log.warn("scheduler_cleanup_failed", { error });
-    });
-    const polled = await pollScheduler({ allowBeforeReady: true });
-    if (!polled) {
-      throw new Error("Scheduler poll did not complete during startup.");
-    }
-  } catch (error) {
-    log.error("scheduler_init_failed", { error });
-    throw error;
-  }
+async function initializeScheduler(isCurrentStart: () => boolean) {
+  if (!isCurrentStart()) return;
+  await resetStaleRunningJobs();
+  if (!isCurrentStart()) return;
+  await resetStaleExcelResearchRows({ startup: true });
+  if (!isCurrentStart()) return;
+
+  void cleanupExpiredJobs().catch((error) => {
+    log.warn("scheduler_cleanup_failed", { error });
+  });
 }
 
 async function pollScheduler(options: { allowBeforeReady?: boolean } = {}) {
-  if (!options.allowBeforeReady && !schedulerEnabled) {
-    return false;
-  }
-  if (pollInFlight) {
-    return true;
-  }
+  if (!options.allowBeforeReady && !schedulerEnabled) return;
 
-  pollInFlight = true;
-  try {
-    await Promise.all([
-      fillScrapeSlots(),
-      fillImportSlots(),
-      fillEnrichmentSlots(),
-      fillMaterialProfileSearchSlots(),
-      import("~/server/services/material-profile-scrape-jobs").then((service) =>
-        service.advanceMaterialProfileScrapeJobs(),
-      ),
-      import("~/server/services/material-profile-material-batches").then(
-        (service) => service.resumeMaterialProfileSaveBatches(),
-      ),
-      fillExcelResearchSlots(),
-    ]);
-    markSchedulerPollSucceeded();
-    return true;
-  } catch (error) {
-    log.error("scheduler_poll_failed", { error });
-    markSchedulerPollFailed(error);
-    return false;
-  } finally {
-    pollInFlight = false;
-  }
+  const queues = queueState;
+  const attempts = queuePollers
+    .filter((poll) => !queues.pending.has(poll))
+    .map((poll) => {
+      const attempt = Promise.resolve()
+        .then(poll)
+        .then(
+          () => {
+            queues.failed.delete(poll);
+          },
+          (error: unknown) => {
+            queues.failed.add(poll);
+            if (queues !== queueState) return;
+            log.error("scheduler_poll_failed", { error });
+            markSchedulerPollFailed(error);
+          },
+        )
+        .finally(() => {
+          queues.pending.delete(poll);
+          if (
+            queues === queueState &&
+            (queues.ready || queues.pending.size === 0) &&
+            queues.failed.size === 0
+          ) {
+            queues.ready = true;
+            markSchedulerPollSucceeded();
+          }
+        });
+      queues.pending.set(poll, attempt);
+      return attempt;
+    });
+  await Promise.all(attempts);
 }
 
 async function fillScrapeSlots() {
+  const queues = queueState;
   const limit = await resolveScrapeMaxConcurrentJobs();
   while (activeScrapeRuns.size < limit) {
     const job = await claimNextScrapeJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runScrapeJob(job);
@@ -293,10 +333,11 @@ async function fillScrapeSlots() {
 }
 
 async function fillImportSlots() {
+  const queues = queueState;
   const limit = await resolveImportMaxConcurrentJobs();
   while (activeImportRuns.size < limit) {
     const job = await claimNextImportJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runImportJob(job);
@@ -304,10 +345,11 @@ async function fillImportSlots() {
 }
 
 async function fillEnrichmentSlots() {
+  const queues = queueState;
   const limit = await resolveEnrichmentMaxConcurrentJobs();
   while (activeEnrichmentRuns.size < limit) {
     const job = await claimNextEnrichmentJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runEnrichmentJob(job);
@@ -315,10 +357,11 @@ async function fillEnrichmentSlots() {
 }
 
 async function fillMaterialProfileSearchSlots() {
+  const queues = queueState;
   const limit = 1;
   while (activeMaterialProfileSearchRuns.size < limit) {
     const job = await claimNextMaterialProfileSearchJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runMaterialProfileSearchJob(job);
@@ -326,10 +369,11 @@ async function fillMaterialProfileSearchSlots() {
 }
 
 async function fillExcelResearchSlots() {
+  const queues = queueState;
   const limit = await resolveExcelResearchMaxConcurrentJobs();
   while (activeExcelResearchRuns.size < limit) {
     const jobId = await claimNextExcelResearchJob();
-    if (!jobId) {
+    if (!jobId || queues !== queueState) {
       return;
     }
     void runExcelResearchJob(jobId);
