@@ -556,6 +556,13 @@ async function applySelectedProduct(
   };
 }
 
+function runHasStatus(runId: string, status: ScrapeRunRow["status"]) {
+  return and(
+    eq(materialProfileScrapeRuns.id, runId),
+    eq(materialProfileScrapeRuns.status, status),
+  );
+}
+
 async function restorePersistedProductsForMissingChild(
   run: ScrapeRunRow,
   now: string,
@@ -576,7 +583,7 @@ async function restorePersistedProductsForMissingChild(
       finishedAt: persistedProducts.length > 0 ? null : now,
       updatedAt: now,
     })
-    .where(eq(materialProfileScrapeRuns.id, run.id));
+    .where(runHasStatus(run.id, "running"));
 }
 
 async function refreshRunningRun(run: ScrapeRunRow) {
@@ -600,7 +607,7 @@ async function refreshRunningRun(run: ScrapeRunRow) {
       await db
         .update(materialProfileScrapeRuns)
         .set({ scrapedProductCandidatesJson: products, updatedAt: now })
-        .where(eq(materialProfileScrapeRuns.id, run.id));
+        .where(runHasStatus(run.id, "running"));
     }
     return;
   }
@@ -615,7 +622,7 @@ async function refreshRunningRun(run: ScrapeRunRow) {
         finishedAt: now,
         updatedAt: now,
       })
-      .where(eq(materialProfileScrapeRuns.id, run.id));
+      .where(runHasStatus(run.id, "running"));
     return;
   }
   const snapshot = recordOf(run.inputSnapshotJson);
@@ -646,7 +653,7 @@ async function refreshRunningRun(run: ScrapeRunRow) {
             : null,
         updatedAt: now,
       })
-      .where(eq(materialProfileScrapeRuns.id, run.id));
+      .where(runHasStatus(run.id, "running"));
     return;
   }
   const applied = await applySelectedProduct(
@@ -665,7 +672,7 @@ async function refreshRunningRun(run: ScrapeRunRow) {
       finishedAt: now,
       updatedAt: now,
     })
-    .where(eq(materialProfileScrapeRuns.id, run.id));
+    .where(runHasStatus(run.id, "running"));
 }
 
 async function startQueuedRun(run: ScrapeRunRow) {
@@ -696,7 +703,7 @@ async function startQueuedRun(run: ScrapeRunRow) {
           finishedAt: now,
           updatedAt: now,
         })
-        .where(eq(materialProfileScrapeRuns.id, run.id));
+        .where(runHasStatus(run.id, "queued"));
       return;
     }
     const existing = await getActiveShopScrapeJobByUrl({
@@ -714,10 +721,10 @@ async function startQueuedRun(run: ScrapeRunRow) {
         finishedAt: now,
         updatedAt: now,
       })
-      .where(eq(materialProfileScrapeRuns.id, run.id));
+      .where(runHasStatus(run.id, "queued"));
     return;
   }
-  await db
+  const [started] = await db
     .update(materialProfileScrapeRuns)
     .set({
       status: "running",
@@ -726,7 +733,11 @@ async function startQueuedRun(run: ScrapeRunRow) {
       startedAt: now,
       updatedAt: now,
     })
-    .where(eq(materialProfileScrapeRuns.id, run.id));
+    .where(runHasStatus(run.id, "queued"))
+    .returning({ id: materialProfileScrapeRuns.id });
+  if (!started && childOwned) {
+    await cancelShopScrapeJob(childId).catch(() => null);
+  }
 }
 
 async function refreshParent(job: ScrapeJobRow) {
