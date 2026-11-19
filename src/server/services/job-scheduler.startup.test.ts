@@ -72,7 +72,7 @@ vi.mock("./material-profile-scrape-jobs", () => ({
   advanceMaterialProfileScrapeJobs: async () => undefined,
   cleanupExpiredMaterialProfileScrapeJobs: async () => undefined,
 }));
-vi.mock("./material-profile-material-batches", () => ({
+vi.mock("~/server/services/material-profile-material-batches", () => ({
   resumeMaterialProfileSaveBatches: mocks.resumeMaterialProfileSaveBatches,
   cleanupExpiredMaterialProfileBatches: async () => undefined,
 }));
@@ -101,8 +101,9 @@ describe("job scheduler startup", () => {
   });
 
   afterEach(async () => {
-    stopJobSchedulerForTests();
+    const stopped = stopJobSchedulerForTests();
     await vi.dynamicImportSettled();
+    await stopped;
     vi.useRealTimers();
   });
 
@@ -153,7 +154,7 @@ describe("job scheduler startup", () => {
     await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(999);
     expect.soft(getSchedulerState()).toMatchObject({
-      state: "retrying",
+      state: "recovering",
       lastSuccessfulPollAt: null,
       lastError: "import queue unavailable",
     });
@@ -161,12 +162,12 @@ describe("job scheduler startup", () => {
     expect.soft(mocks.resolveImportMaxConcurrentJobs).toHaveBeenCalledTimes(2);
     expect.soft(scrapeClaims).toBe(2);
     expect.soft(getSchedulerState()).toMatchObject({
-      state: "retrying",
+      state: "recovering",
       lastSuccessfulPollAt: null,
     });
 
     releaseClaim.resolve();
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(getSchedulerState()).toMatchObject({
       state: "ready",
       lastSuccessfulPollAt: expect.any(String),
@@ -193,6 +194,7 @@ describe("job scheduler startup", () => {
   it("keeps polling healthy queues while a save batch drains", async () => {
     startJobScheduler();
     await vi.advanceTimersByTimeAsync(0);
+    await vi.dynamicImportSettled();
     expect(getSchedulerState().state).toBe("ready");
     const finishBatch = deferred();
     mocks.resumeMaterialProfileSaveBatches.mockImplementationOnce(
@@ -221,6 +223,32 @@ describe("job scheduler startup", () => {
     finishBatch.resolve();
   });
 
+  it("starts regular queue polling before a slow first save batch finishes", async () => {
+    const finishBatch = deferred();
+    await import("~/server/services/material-profile-material-batches");
+    mocks.resumeMaterialProfileSaveBatches.mockImplementation(
+      () => finishBatch.promise,
+    );
+    startJobScheduler();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const attemptCount =
+      mocks.resumeMaterialProfileSaveBatches.mock.calls.length;
+    const scrapePolls = mocks.selectQueuedJob.mock.calls.filter(
+      ([table]) => table === shopScrapeJobs,
+    ).length;
+
+    finishBatch.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect({ attemptCount, scrapePolls }).toEqual({
+      attemptCount: 1,
+      scrapePolls: 3,
+    });
+    expect(getSchedulerState().state).toBe("ready");
+  });
+
   it("does not let an old startup overwrite a restarted scheduler", async () => {
     const oldRecovery = deferred();
     mocks.resetStaleExcelResearchRows.mockImplementationOnce(
@@ -233,12 +261,13 @@ describe("job scheduler startup", () => {
 
     startJobScheduler();
     await vi.advanceTimersByTimeAsync(0);
-    expect(getSchedulerState().state).toBe("ready");
-    const timerCount = vi.getTimerCount();
+    expect(getSchedulerState().state).toBe("stopped");
+    expect(startupRecoveries()).toHaveLength(1);
     oldRecovery.resolve();
     await vi.advanceTimersByTimeAsync(0);
+    await vi.dynamicImportSettled();
     expect(getSchedulerState().state).toBe("ready");
-    expect(vi.getTimerCount()).toBe(timerCount);
+    expect(startupRecoveries()).toHaveLength(2);
   });
 
   it("backs off when recovery fails and clears the pending retry on stop", async () => {

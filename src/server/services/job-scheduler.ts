@@ -115,12 +115,13 @@ const queuePollers = [
 ];
 function createQueueState() {
   return {
-    pending: new Set<(typeof queuePollers)[number]>(),
+    pending: new Map<(typeof queuePollers)[number], Promise<void>>(),
+    ready: false,
     failed: new Set<(typeof queuePollers)[number]>(),
   };
 }
 let queueState = createQueueState();
-let startupRecoveryComplete = false;
+let stoppedWork: Promise<unknown> | undefined;
 let startupAttempt: Promise<void> | null = null;
 let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let startupRetryCount = 0;
@@ -136,7 +137,15 @@ function _startJobScheduler() {
 
   schedulerEnabled = true;
   startupRetryCount = 0;
-  void beginSchedulerInitialization();
+  if (stoppedWork) {
+    const queues = queueState;
+    void stoppedWork.then(() => {
+      if (schedulerEnabled && queues === queueState)
+        void beginSchedulerInitialization();
+    });
+  } else {
+    void beginSchedulerInitialization();
+  }
 }
 
 function _stopJobSchedulerForTests() {
@@ -169,12 +178,21 @@ function _stopJobSchedulerForTests() {
   activeExcelResearchRuns.clear();
   pollTimer = null;
   cleanupTimer = null;
+  const pending = [...queueState.pending.values()];
+  if (startupAttempt) pending.push(startupAttempt);
+  if (pending.length > 0) {
+    const drain = Promise.allSettled([stoppedWork, ...pending]);
+    stoppedWork = drain;
+    void drain.then(() => {
+      if (stoppedWork === drain) stoppedWork = undefined;
+    });
+  }
   queueState = createQueueState();
-  startupRecoveryComplete = false;
   startupAttempt = null;
   startupRetryTimer = null;
   startupRetryCount = 0;
   setSchedulerState("stopped");
+  return stoppedWork;
 }
 
 function _abortShopScrapeJob(jobId: string) {
@@ -211,7 +229,7 @@ async function beginSchedulerInitialization() {
     .then(() => {
       if (!isCurrentStart()) return;
       startupRetryCount = 0;
-      setSchedulerState("ready");
+      void pollScheduler();
       log.info("scheduler_started", {
         pollIntervalMs: SCHEDULER_POLL_MS,
         cleanupIntervalMs: CLEANUP_POLL_MS,
@@ -255,80 +273,59 @@ async function beginSchedulerInitialization() {
 
 async function initializeScheduler(isCurrentStart: () => boolean) {
   if (!isCurrentStart()) return;
-  try {
-    if (!startupRecoveryComplete) {
-      await resetStaleRunningJobs();
-      if (!isCurrentStart()) return;
-      await resetStaleExcelResearchRows({ startup: true });
-      if (!isCurrentStart()) return;
-      // Once polling can claim work, recovery could requeue a live job.
-      startupRecoveryComplete = true;
-    }
-    // Cleanup is optional. A database outage while deleting expired history
-    // must not keep claims paused after required recovery has succeeded.
-    void cleanupExpiredJobs().catch((error) => {
-      log.warn("scheduler_cleanup_failed", { error });
-    });
-    const polled = await pollScheduler({
-      allowBeforeReady: true,
-      startup: true,
-    });
-    if (!polled) {
-      throw new Error("Scheduler poll did not complete during startup.");
-    }
-  } catch (error) {
-    log.error("scheduler_init_failed", { error });
-    throw error;
-  }
+  await resetStaleRunningJobs();
+  if (!isCurrentStart()) return;
+  await resetStaleExcelResearchRows({ startup: true });
+  if (!isCurrentStart()) return;
+
+  void cleanupExpiredJobs().catch((error) => {
+    log.warn("scheduler_cleanup_failed", { error });
+  });
 }
 
-async function pollScheduler(
-  options: { allowBeforeReady?: boolean; startup?: boolean } = {},
-) {
-  if (!options.allowBeforeReady && !schedulerEnabled) {
-    return false;
-  }
-  // A queue may still be finishing after a sibling fails. Start only idle queues.
+async function pollScheduler(options: { allowBeforeReady?: boolean } = {}) {
+  if (!options.allowBeforeReady && !schedulerEnabled) return;
+
   const queues = queueState;
-  const queueAttempts = queuePollers
+  const attempts = queuePollers
     .filter((poll) => !queues.pending.has(poll))
     .map((poll) => {
-      queues.pending.add(poll);
-      return poll()
+      const attempt = Promise.resolve()
+        .then(poll)
         .then(
-          () => queues.failed.delete(poll),
+          () => {
+            queues.failed.delete(poll);
+          },
           (error: unknown) => {
             queues.failed.add(poll);
-            throw error;
+            if (queues !== queueState) return;
+            log.error("scheduler_poll_failed", { error });
+            markSchedulerPollFailed(error);
           },
         )
-        .finally(() => queues.pending.delete(poll));
+        .finally(() => {
+          queues.pending.delete(poll);
+          if (
+            queues === queueState &&
+            (queues.ready || queues.pending.size === 0) &&
+            queues.failed.size === 0
+          ) {
+            queues.ready = true;
+            markSchedulerPollSucceeded();
+          }
+        });
+      queues.pending.set(poll, attempt);
+      return attempt;
     });
-  if (queueAttempts.length === 0) return false;
-  try {
-    await Promise.all(queueAttempts);
-    if (
-      queues !== queueState ||
-      queues.pending.size > 0 ||
-      queues.failed.size > 0
-    )
-      return false;
-    markSchedulerPollSucceeded();
-    return true;
-  } catch (error) {
-    if (queues !== queueState) return false;
-    log.error("scheduler_poll_failed", { error });
-    markSchedulerPollFailed(error);
-    if (options.startup) throw error;
-    return false;
-  }
+  await Promise.all(attempts);
 }
 
 async function fillScrapeSlots() {
+  const queues = queueState;
   const limit = await resolveScrapeMaxConcurrentJobs();
   while (activeScrapeRuns.size < limit) {
     const job = await claimNextScrapeJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runScrapeJob(job);
@@ -336,10 +333,11 @@ async function fillScrapeSlots() {
 }
 
 async function fillImportSlots() {
+  const queues = queueState;
   const limit = await resolveImportMaxConcurrentJobs();
   while (activeImportRuns.size < limit) {
     const job = await claimNextImportJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runImportJob(job);
@@ -347,10 +345,11 @@ async function fillImportSlots() {
 }
 
 async function fillEnrichmentSlots() {
+  const queues = queueState;
   const limit = await resolveEnrichmentMaxConcurrentJobs();
   while (activeEnrichmentRuns.size < limit) {
     const job = await claimNextEnrichmentJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runEnrichmentJob(job);
@@ -358,10 +357,11 @@ async function fillEnrichmentSlots() {
 }
 
 async function fillMaterialProfileSearchSlots() {
+  const queues = queueState;
   const limit = 1;
   while (activeMaterialProfileSearchRuns.size < limit) {
     const job = await claimNextMaterialProfileSearchJob();
-    if (!job) {
+    if (!job || queues !== queueState) {
       return;
     }
     void runMaterialProfileSearchJob(job);
@@ -369,6 +369,7 @@ async function fillMaterialProfileSearchSlots() {
 }
 
 async function fillExcelResearchSlots() {
+  const queues = queueState;
   const limit = await resolveExcelResearchMaxConcurrentJobs();
   while (activeExcelResearchRuns.size < limit) {
     const jobId = await claimNextExcelResearchJob();
