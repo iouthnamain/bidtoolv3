@@ -2,6 +2,7 @@ import "server-only";
 
 import postgres from "postgres";
 
+import migrationJournal from "../../../drizzle/meta/_journal.json";
 import { hasDatabaseUrl } from "~/server/runtime";
 import {
   getSchedulerState,
@@ -11,9 +12,7 @@ import { createLogger } from "~/server/lib/logger";
 
 const log = createLogger("api-ready");
 const READINESS_DEADLINE_MS = 2_000;
-// Keep this marker aligned with the latest committed drizzle/meta/_journal.json
-// entry. Readiness reports a schema mismatch; it never applies migrations.
-const EXPECTED_MIGRATION_CREATED_AT = 1_793_768_680_943;
+const EXPECTED_MIGRATION_CREATED_AT = migrationJournal.entries.at(-1)?.when;
 
 type CheckStatus = "ok" | "failed" | "disabled" | "timeout";
 
