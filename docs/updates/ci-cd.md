@@ -1,6 +1,6 @@
 # CI/CD Review
 
-Validate pull requests locally. GitHub Actions runs the separate release and rollback workflows.
+Validate pull requests locally. GitHub Actions runs the separate release and rollback workflows. Vercel Git deployments are disabled in `vercel.json`. The Release workflow deploys through the Vercel CLI.
 
 ## Local PR checks
 
@@ -20,10 +20,10 @@ BIDTOOL_RUN_STORAGE_ACCEPTANCE=1 BIDTOOL_STORAGE_TEST_IMAGE="$image" \
 
 ## Workflows
 
-| Workflow | Trigger | Purpose |
-| --- | --- | --- |
-| [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | Tag `v*` or manual dispatch | Unified release for web, on-prem, desktop, manifest, pins |
-| [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) | Manual dispatch | Re-promote pinned web deployment and retag on-prem `:latest` |
+| Workflow                                                                 | Trigger                     | Purpose                                                      |
+| ------------------------------------------------------------------------ | --------------------------- | ------------------------------------------------------------ |
+| [`.github/workflows/release.yml`](../../.github/workflows/release.yml)   | Tag `v*` or manual dispatch | Unified release for web, on-prem, desktop, manifest, pins    |
+| [`.github/workflows/rollback.yml`](../../.github/workflows/rollback.yml) | Manual dispatch             | Re-promote pinned web deployment and retag on-prem `:latest` |
 
 ## Release (`release.yml`)
 
@@ -66,19 +66,19 @@ After publishing, `publish-release` updates `releases/pins.json` and commits it 
 
 ### Required secrets
 
-| Secret | Used by |
-| --- | --- |
-| `GITHUB_TOKEN` | Release publish, GHCR push, pins commit |
-| `VERCEL_TOKEN` | Web deploy and rollback |
-| `VERCEL_ORG_ID` | Web deploy |
-| `VERCEL_PROJECT_ID` | Web deploy |
+| Secret              | Used by                                 |
+| ------------------- | --------------------------------------- |
+| `GITHUB_TOKEN`      | Release publish, GHCR push, pins commit |
+| `VERCEL_TOKEN`      | Web deploy and rollback                 |
+| `VERCEL_ORG_ID`     | Web deploy                              |
+| `VERCEL_PROJECT_ID` | Web deploy                              |
 
 ### Vercel project settings
 
-1. Disable automatic production deploys from `main`
-2. Set production runtime env vars (or use Vercel dashboard values that match release metadata):
-   - `BIDTOOL_DEPLOYMENT_SURFACE=web`
-   - `DATABASE_URL`, `APP_BASE_URL`, etc.
+Set production runtime env vars or use Vercel dashboard values that match release metadata.
+
+- `BIDTOOL_DEPLOYMENT_SURFACE=web`
+- `DATABASE_URL`, `APP_BASE_URL`, etc.
 
 Release workflow embeds version metadata at **build time** via job env. Runtime env on Vercel should still identify the deployment surface.
 
@@ -98,12 +98,12 @@ Maintainers should prefer the release CLI over manual tags. See [Release CLI](./
 
 ## Known limits
 
-| Area | Limit |
-| --- | --- |
-| Web without Vercel secrets | Release continues; web pin marked `skipped` |
-| First release | `pins.json` starts empty until first successful release |
-| On-prem bundle | Ships `releases/pins.json` snapshot; latest manifest comes from GitHub Release after publish |
-| DB rollback | Not supported — use forward hotfix releases |
+| Area                       | Limit                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| Web without Vercel secrets | Release continues; web pin marked `skipped`                                                  |
+| First release              | `pins.json` starts empty until first successful release                                      |
+| On-prem bundle             | Ships `releases/pins.json` snapshot; latest manifest comes from GitHub Release after publish |
+| DB rollback                | Not supported — use forward hotfix releases                                                  |
 
 Maintainer tagging commands: [Release CLI](./release-cli.md).
 
