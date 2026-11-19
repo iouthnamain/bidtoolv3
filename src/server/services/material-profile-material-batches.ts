@@ -54,7 +54,12 @@ const HISTORY_LIMIT = 100;
 const HISTORY_DAYS = 30;
 const TARGET_THRESHOLD = 0.85;
 const TARGET_MARGIN = 0.05;
-const activeBatchCommits = new Set<string>();
+// Requests and the scheduler can arrive through separate Next server bundles.
+const globalForBatches = globalThis as typeof globalThis & {
+  bidtoolActiveBatchCommits?: Map<string, Promise<void>>;
+};
+const activeBatchCommits = (globalForBatches.bidtoolActiveBatchCommits ??=
+  new Map<string, Promise<void>>());
 
 type WorkspaceItem = typeof excelWorkspaceItems.$inferSelect;
 type Material = typeof materials.$inferSelect;
@@ -1412,38 +1417,43 @@ export async function commitMaterialProfileSaveBatch(
   return requireBatch(batch.id, workspaceId);
 }
 
-async function processMaterialProfileSaveBatch(batchId: string) {
-  if (activeBatchCommits.has(batchId)) return;
-  const [batch] = await db
-    .select()
-    .from(materialProfileMaterialBatches)
-    .where(eq(materialProfileMaterialBatches.id, batchId))
-    .limit(1);
-  if (!batch || !["queued", "running"].includes(batch.status)) return;
-  activeBatchCommits.add(batchId);
-  const now = new Date().toISOString();
-  const [claimed] = await db
-    .update(materialProfileMaterialBatches)
-    .set({
-      status: "running",
-      startedAt: batch.startedAt ?? now,
-      message: "Đang lưu vào /materials.",
-      expiresAt: expiresAt(now),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(materialProfileMaterialBatches.id, batch.id),
-        eq(materialProfileMaterialBatches.status, batch.status),
-        eq(materialProfileMaterialBatches.updatedAt, batch.updatedAt),
-      ),
-    )
-    .returning({ id: materialProfileMaterialBatches.id });
-  if (!claimed) {
-    activeBatchCommits.delete(batchId);
-    return;
-  }
+function processMaterialProfileSaveBatch(batchId: string) {
+  const active = activeBatchCommits.get(batchId);
+  if (active) return active;
+  const commit = Promise.resolve().then(() =>
+    runMaterialProfileSaveBatch(batchId),
+  );
+  activeBatchCommits.set(batchId, commit);
+  return commit;
+}
+
+async function runMaterialProfileSaveBatch(batchId: string) {
   try {
+    const [batch] = await db
+      .select()
+      .from(materialProfileMaterialBatches)
+      .where(eq(materialProfileMaterialBatches.id, batchId))
+      .limit(1);
+    if (!batch || !["queued", "running"].includes(batch.status)) return;
+    const now = new Date().toISOString();
+    const [claimed] = await db
+      .update(materialProfileMaterialBatches)
+      .set({
+        status: "running",
+        startedAt: batch.startedAt ?? now,
+        message: "Đang lưu vào /materials.",
+        expiresAt: expiresAt(now),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(materialProfileMaterialBatches.id, batch.id),
+          eq(materialProfileMaterialBatches.status, batch.status),
+          eq(materialProfileMaterialBatches.updatedAt, batch.updatedAt),
+        ),
+      )
+      .returning({ id: materialProfileMaterialBatches.id });
+    if (!claimed) return;
     const rows = await db
       .select()
       .from(materialProfileMaterialBatchRows)

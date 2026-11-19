@@ -23,7 +23,7 @@ cleanup() {
   if $db_created; then docker rm -fv "$db" >/dev/null 2>&1 || true; fi
   if $volume_created; then docker volume rm "$volume" >/dev/null 2>&1 || true; fi
   if $network_created; then docker network rm "$network" >/dev/null 2>&1 || true; fi
-  rm -rf "$task_dir"
+  rmdir "$task_dir"
   exit "$result"
 }
 trap cleanup EXIT
@@ -52,7 +52,7 @@ docker start "$app" >/dev/null
 
 probe() {
   for _ in {1..90}; do
-    if docker exec "$app" node -e 'fetch("http://127.0.0.1:3000/api/health", {signal: AbortSignal.timeout(2000)}).then(async r => {const b = await r.json(); process.exit(r.ok && b.ok && b.service === "bidtoolv3" ? 0 : 1)}).catch(() => process.exit(1))' >/dev/null 2>&1; then return; fi
+    if docker exec "$app" node -e 'fetch("http://127.0.0.1:3000/api/ready", {signal: AbortSignal.timeout(2000)}).then(async r => {const b = await r.json(); process.exit(r.ok && b.ok && b.service === "bidtoolv3" && b.checks.scheduler === "ok" ? 0 : 1)}).catch(() => process.exit(1))' >/dev/null 2>&1; then return; fi
     sleep 2
   done
   return 1
@@ -74,4 +74,4 @@ test "$actual" = "$expected"
 docker exec "$app" node scripts/db-migrate-runtime.mjs
 docker restart "$app" >/dev/null
 probe
-printf 'Image migration, restart and HTTP liveness passed: %s\n' "$SOURCE_SHA"
+printf 'Image migration, restart and HTTP readiness passed: %s\n' "$SOURCE_SHA"

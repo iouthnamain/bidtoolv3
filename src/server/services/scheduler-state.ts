@@ -15,14 +15,33 @@ type SchedulerStateSnapshot = {
   lastError: string | null;
 };
 
-let snapshot: SchedulerStateSnapshot = {
-  state: "disabled",
-  lastSuccessfulPollAt: null,
-  lastError: null,
+function initialSnapshot(): SchedulerStateSnapshot {
+  return { state: "disabled", lastSuccessfulPollAt: null, lastError: null };
+}
+
+function createSchedulerState() {
+  return {
+    snapshot: initialSnapshot(),
+    runs: {
+      scrape: new Map<string, AbortController>(),
+      import: new Map<string, AbortController>(),
+      enrichment: new Map<string, AbortController>(),
+      profileSearch: new Map<string, AbortController>(),
+      excelResearch: new Set<string>(),
+    },
+  };
+}
+
+// Next can bundle instrumentation and route handlers separately in one process.
+const globalForScheduler = globalThis as typeof globalThis & {
+  bidtoolSchedulerState?: ReturnType<typeof createSchedulerState>;
 };
+const scheduler = (globalForScheduler.bidtoolSchedulerState ??=
+  createSchedulerState());
+export const schedulerActiveRuns = scheduler.runs;
 
 export function getSchedulerState(): SchedulerStateSnapshot {
-  return { ...snapshot };
+  return { ...scheduler.snapshot };
 }
 
 /** Only the explicitly web/serverless surfaces opt out of the local worker. */
@@ -36,12 +55,11 @@ export function setSchedulerState(
   state: SchedulerStartupState,
   details: Partial<Omit<SchedulerStateSnapshot, "state">> = {},
 ) {
-  snapshot = { ...snapshot, state, ...details };
+  scheduler.snapshot = { ...scheduler.snapshot, state, ...details };
 }
 
 export function markSchedulerPollSucceeded(at = new Date().toISOString()) {
-  snapshot = {
-    ...snapshot,
+  scheduler.snapshot = {
     state: "ready",
     lastSuccessfulPollAt: at,
     lastError: null,
@@ -49,16 +67,12 @@ export function markSchedulerPollSucceeded(at = new Date().toISOString()) {
 }
 
 export function markSchedulerPollFailed(error: unknown) {
-  snapshot = {
-    ...snapshot,
+  scheduler.snapshot = {
+    ...scheduler.snapshot,
     lastError: error instanceof Error ? error.message : "scheduler poll failed",
   };
 }
 
 export function resetSchedulerStateForTests() {
-  snapshot = {
-    state: "disabled",
-    lastSuccessfulPollAt: null,
-    lastError: null,
-  };
+  scheduler.snapshot = initialSnapshot();
 }

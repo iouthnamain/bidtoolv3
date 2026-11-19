@@ -12,7 +12,7 @@ import {
   materialProfileSearchJobs,
   materialProfileSearchRuns,
 } from "~/server/db/schema";
-import { hasDatabaseUrl, isServerlessRuntime } from "~/server/runtime";
+import { hasDatabaseUrl } from "~/server/runtime";
 import { sanitizeScrapedProductList } from "~/lib/materials/shop-promo-badges";
 import {
   loadScrapeJobProducts,
@@ -54,6 +54,8 @@ import { createLogger, traceFn } from "~/server/lib/logger";
 import {
   markSchedulerPollFailed,
   markSchedulerPollSucceeded,
+  schedulerActiveRuns,
+  schedulerRequiredForRuntime,
   setSchedulerState,
 } from "~/server/services/scheduler-state";
 
@@ -80,11 +82,13 @@ export function cancelledImportRecoveryPatch(
 const SCHEDULER_POLL_MS = 1_000;
 const PROGRESS_WRITE_MS = 2_000;
 const CLEANUP_POLL_MS = 60 * 60_000;
-const activeScrapeRuns = new Map<string, AbortController>();
-const activeImportRuns = new Map<string, AbortController>();
-const activeEnrichmentRuns = new Map<string, AbortController>();
-const activeMaterialProfileSearchRuns = new Map<string, AbortController>();
-const activeExcelResearchRuns = new Set<string>();
+const {
+  scrape: activeScrapeRuns,
+  import: activeImportRuns,
+  enrichment: activeEnrichmentRuns,
+  profileSearch: activeMaterialProfileSearchRuns,
+  excelResearch: activeExcelResearchRuns,
+} = schedulerActiveRuns;
 
 // R6 assumes one scheduler owner for this database. Durable leases and
 // multi-owner coordination need a separate design before another worker starts
@@ -100,7 +104,7 @@ let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let startupRetryCount = 0;
 
 function _startJobScheduler() {
-  if (!hasDatabaseUrl() || isServerlessRuntime()) {
+  if (!hasDatabaseUrl() || !schedulerRequiredForRuntime()) {
     setSchedulerState("disabled");
     return;
   }
