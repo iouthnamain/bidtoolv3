@@ -127,7 +127,7 @@ else { console.error('unexpected fixture command'); process.exit(99); }
 `;
   for (const name of ["gh", "docker", "bunx"])
     writeFileSync(path.join(bin, name), fake, { mode: 0o755 });
-  for (const name of ["bash", "dirname", "mktemp", "rm", "jq"])
+  for (const name of ["bash", "dirname", "jq"])
     symlinkSync(executable(name), path.join(bin, name));
   const env: NodeJS.ProcessEnv = {
     NODE_ENV: "test",

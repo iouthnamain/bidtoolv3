@@ -22,8 +22,8 @@ import {
   assertValidCatalogPdf,
   CatalogPdfStorageError,
   decodeCatalogPdfBase64,
-  deleteCatalogPdfFiles,
   downloadCatalogPdfFromUrl,
+  publishCatalogPdfFile,
   saveCatalogPdfFile,
 } from "~/server/services/catalog-pdf-storage";
 import type { db as appDb } from "~/server/db";
@@ -324,31 +324,17 @@ export const catalogDocumentRouter = createTRPCRouter({
         storageErrorToTrpc(error);
       }
 
-      let stored;
       try {
-        // Clear any previously stored file first so a reupload with a
-        // different file name does not leave an orphan on disk.
-        await deleteCatalogPdfFiles(document.id);
-        stored = await saveCatalogPdfFile(document.id, input.fileName, buffer);
+        return await publishCatalogPdfFile(
+          ctx.db,
+          document.id,
+          input.fileName,
+          buffer,
+          "reupload",
+        );
       } catch (error) {
         storageErrorToTrpc(error);
       }
-
-      const [updated] = await ctx.db
-        .update(materialCatalogDocuments)
-        .set({
-          localFilePath: stored.localFilePath,
-          fileName: stored.fileName,
-          fileSize: stored.fileSize,
-          mimeType: stored.mimeType,
-          checksum: stored.checksum,
-          sourceType:
-            document.sourceType === "manual_url" ? "uploaded" : document.sourceType,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(materialCatalogDocuments.id, document.id))
-        .returning();
-      return updated ?? document;
     }),
 
   uploadPdf: requirePermission("catalog:write")
@@ -439,31 +425,18 @@ export const catalogDocumentRouter = createTRPCRouter({
         });
       }
 
-      let stored;
       try {
         const buffer = await downloadCatalogPdfFromUrl(sourceUrl);
-        stored = await saveCatalogPdfFile(
+        return await publishCatalogPdfFile(
+          ctx.db,
           document.id,
           document.fileName ?? catalogPdfFileNameFromUrl(sourceUrl),
           buffer,
+          "download",
         );
       } catch (error) {
         storageErrorToTrpc(error);
       }
-
-      const [updated] = await ctx.db
-        .update(materialCatalogDocuments)
-        .set({
-          localFilePath: stored.localFilePath,
-          fileName: stored.fileName,
-          fileSize: stored.fileSize,
-          mimeType: stored.mimeType,
-          checksum: stored.checksum,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(materialCatalogDocuments.id, document.id))
-        .returning();
-      return updated;
     }),
 
   attachToMaterials: requirePermission("catalog:write")

@@ -66,7 +66,8 @@
     "test:integration": "vitest run --config tests/integration/vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "update": "bun run dev:update"
+    "update": "bun run dev:update",
+    "verify": "bun run ./scripts/verify-pr.ts"
   },
   "dependencies": {
     "@sparticuz/chromium-min": "147.0.2",

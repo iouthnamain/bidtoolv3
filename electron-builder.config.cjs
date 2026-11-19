@@ -7,7 +7,9 @@ module.exports = {
     output: "../../dist-electron",
   },
   electronVersion: "42.0.1",
-  files: ["**/*"],
+  // electron-builder excludes nested node_modules by default, but Next's
+  // standalone trace keeps the server's runtime closure in this directory.
+  files: ["**/*", ".next/standalone/node_modules/**/*"],
   npmRebuild: false,
   publish: [
     {

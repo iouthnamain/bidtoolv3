@@ -163,6 +163,44 @@ export const materialsSectionNavItems: PageSectionNavItem[] = [
   },
 ];
 
+export const materialControlSectionNavItems: PageSectionNavItem[] = [
+  {
+    href: "/material-control",
+    label: "Tổng quan",
+    description: "Theo dõi nhu cầu, mua hàng, vận chuyển và tồn kho.",
+    icon: "bar-chart",
+    tone: "blue",
+  },
+  {
+    href: "/material-control/projects",
+    label: "Dự án",
+    description: "Mở workspace dự án và các kế hoạch vật tư.",
+    icon: "boxes",
+    tone: "emerald",
+  },
+  {
+    href: "/material-control/stock",
+    label: "Tồn kho",
+    description: "Xem tồn theo địa điểm, vật tư và phần đã giữ chỗ.",
+    icon: "database",
+    tone: "violet",
+  },
+  {
+    href: "/material-control/shortages",
+    label: "Thiếu & chậm",
+    description: "Các nhu cầu còn thiếu hoặc đã quá hạn.",
+    icon: "warning",
+    tone: "rose",
+  },
+  {
+    href: "/material-control/locations",
+    label: "Địa điểm",
+    description: "Kho, công trường, khu vực và các vị trí ảo.",
+    icon: "home",
+    tone: "amber",
+  },
+];
+
 export const researchEnrichSectionNavItems: PageSectionNavItem[] = [
   {
     href: "/research-enrich",

@@ -54,6 +54,18 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials/:id/documents": "Thư viện catalog PDF",
   "/materials/:id/edit": "Chỉnh sửa",
 
+  // Material control
+  "/material-control": "Theo dõi vật tư",
+  "/material-control/projects": "Dự án vật tư",
+  "/material-control/projects/new": "Tạo workspace vật tư",
+  "/material-control/projects/:id": "Chi tiết dự án vật tư",
+  "/material-control/projects/:id/purchases": "Mua hàng vật tư",
+  "/material-control/projects/:id/shipments": "Vận chuyển vật tư",
+  "/material-control/projects/:id/installation": "Lắp đặt vật tư",
+  "/material-control/stock": "Tồn kho vật tư",
+  "/material-control/shortages": "Thiếu & chậm",
+  "/material-control/locations": "Địa điểm vật tư",
+
   // Material profiles
   "/material-profiles": "Hồ sơ vật tư",
   "/material-profiles/:id": "Chi tiết hồ sơ",

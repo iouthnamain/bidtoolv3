@@ -1,0 +1,3 @@
+# Derive stock from an append-only movement ledger
+
+Material control will record receipts, shipments, installations, returns, waste, transfers, adjustments, and reversals as append-only stock movements. Ordered, shipped, received, installed, in-transit, missing-to-buy, remaining-to-install, on-hand, and available quantities are derived from those movements and reservations instead of stored editable totals. Requirements and movement lines keep immutable name, specification, and unit snapshots alongside nullable links to the global material catalog so later catalog edits cannot rewrite project history.

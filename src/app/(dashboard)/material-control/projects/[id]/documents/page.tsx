@@ -1,0 +1,33 @@
+import { notFound } from "next/navigation";
+
+import { createPageMetadata } from "~/app/_lib/seo";
+import { DashboardShell } from "~/app/_components/dashboard/dashboard-shell";
+import { materialControlSectionNavItems } from "~/app/_components/dashboard/page-nav-presets";
+import { MaterialControlDocumentsClient } from "~/app/_components/material-control/material-control-documents-client";
+
+type Props = { params: Promise<{ id: string }> };
+
+export const metadata = createPageMetadata({
+  title: "Tài liệu dự án vật tư",
+  description: "Bằng chứng và tài liệu trong workspace dự án.",
+  path: "/material-control/projects/documents",
+  keywords: ["tài liệu vật tư"],
+});
+
+export default async function MaterialControlProjectDocumentsPage({
+  params,
+}: Props) {
+  const { id } = await params;
+  const projectId = Number(id);
+  if (!Number.isInteger(projectId) || projectId <= 0) notFound();
+  return (
+    <DashboardShell
+      title="Tài liệu dự án"
+      description="Lưu bằng chứng mua hàng, giao nhận và lắp đặt theo workspace."
+      sectionNavItems={materialControlSectionNavItems}
+      sectionNavTitle="Theo dõi vật tư"
+    >
+      <MaterialControlDocumentsClient projectId={projectId} />
+    </DashboardShell>
+  );
+}

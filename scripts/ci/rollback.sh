@@ -3,7 +3,6 @@ set -euo pipefail
 
 # All targets are validated/preflighted before either promotion. The EXIT report
 # preserves partial results; a failed second action cannot claim full success.
-task_dir=$(mktemp -d)
 phase='input validation'
 image_preflight='not run'
 web_preflight='not run'
@@ -22,7 +21,6 @@ report() {
     fi
     printf 'No customer host, desktop installation, database or persisted bytes were rolled back.\n'
   } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
-  rm -rf -- "$task_dir"
   exit "$result"
 }
 trap report EXIT
@@ -60,8 +58,8 @@ image_preflight='passed'
 
 if [[ "$WEB_SKIPPED" == false ]]; then
   phase='web preflight'; web_preflight='failed'
-  bunx vercel@65.9.0 inspect "$WEB_BUILD_ID" --token="$VERCEL_TOKEN" --json > "$task_dir/web.json"
-  jq -e --arg id "$WEB_BUILD_ID" '.id == $id and .readyState == "READY"' "$task_dir/web.json" >/dev/null
+  bunx vercel@65.9.0 inspect "$WEB_BUILD_ID" --token="$VERCEL_TOKEN" --json |
+    jq -e --arg id "$WEB_BUILD_ID" '.id == $id and .readyState == "READY"' >/dev/null
   web_preflight='passed'
   phase='web promotion'; web_promotion='failed'
   guard

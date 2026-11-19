@@ -14,6 +14,7 @@ import {
   resolveBidwinnerBaseUrl,
   resolveBidwinnerTimeoutMs,
 } from "~/server/services/app-settings";
+import { fetchPublicContent } from "~/server/services/public-content-client";
 
 const DEFAULT_HEADERS = {
   "User-Agent":
@@ -775,7 +776,10 @@ function extractRequiredTables(
 export class InvalidSourceUrlError extends Error {}
 
 function isAllowedBidWinnerHost(host: string): boolean {
-  const normalized = host.trim().toLowerCase();
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
   return (
     BIDWINNER_ALLOWED_HOSTS.has(normalized) ||
     normalized.endsWith(".bidwinner.info")
@@ -789,7 +793,7 @@ function assertAllowedSourceUrl(url: URL): void {
     );
   }
 
-  if (!isAllowedBidWinnerHost(url.host)) {
+  if (!isAllowedBidWinnerHost(url.hostname)) {
     throw new InvalidSourceUrlError(
       "Source URL không hợp lệ: chỉ cho phép domain BidWinner và subdomain liên quan.",
     );
@@ -889,29 +893,15 @@ function hydrateDetailResult(
 }
 
 async function fetchDetailHtml(sourceUrl: string): Promise<string> {
-  const controller = new AbortController();
   const baseUrl = await resolveBidwinnerBaseUrl();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    await resolveBidwinnerTimeoutMs(),
-  );
-
-  try {
-    const response = await fetch(sourceUrl, {
-      headers: buildHeaders(baseUrl),
-      signal: controller.signal,
-      cache: "no-store",
-      redirect: "follow",
-    });
-
-    if (!response.ok) {
-      throw new Error(`Trang nguồn trả về mã lỗi ${response.status}.`);
-    }
-
-    return response.text();
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await fetchPublicContent({
+    url: sourceUrl,
+    kind: "text",
+    timeoutMs: await resolveBidwinnerTimeoutMs(),
+    headers: buildHeaders(baseUrl),
+    validateUrl: assertAllowedSourceUrl,
+  });
+  return response.body.toString("utf8");
 }
 
 async function extractLiveDetails(input: {

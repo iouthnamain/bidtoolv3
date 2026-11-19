@@ -11,7 +11,11 @@ export function resolveDataRoot() {
 }
 
 export function resolveStorageDirectory(
-  subdirectory: "catalog-pdfs" | "excel-research" | "material-profiles",
+  subdirectory:
+    | "catalog-pdfs"
+    | "excel-research"
+    | "material-profiles"
+    | "material-control",
   configured?: string | null,
 ) {
   return configured?.trim()

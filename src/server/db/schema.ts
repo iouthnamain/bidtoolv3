@@ -9,6 +9,7 @@ import {
   jsonb,
   bigint,
   numeric,
+  check,
   index,
   uniqueIndex,
   uuid,
@@ -2328,6 +2329,791 @@ export const verification = pgTable(
   (table) => ({
     verificationIdentifierIdx: index("verification_identifier_idx").on(
       table.identifier,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Material control bounded context
+//
+// This context owns project requirements and the append-only physical stock
+// ledger. Catalog links are intentionally nullable and every operational row
+// stores its own material snapshot so catalog edits cannot rewrite history.
+// ---------------------------------------------------------------------------
+
+export const materialControlProjectStatusEnum = pgEnum(
+  "material_control_project_status",
+  ["draft", "active", "on_hold", "completed", "archived"],
+);
+
+export const materialControlProjectSourceTypeEnum = pgEnum(
+  "material_control_project_source_type",
+  ["tender_package", "tender_plan", "investment_project", "manual"],
+);
+
+export const materialControlLocationTypeEnum = pgEnum(
+  "material_control_location_type",
+  ["warehouse", "site", "zone", "transit", "installed", "waste", "virtual"],
+);
+
+export const materialControlPlanStatusEnum = pgEnum(
+  "material_control_plan_status",
+  ["draft", "active", "completed", "archived"],
+);
+
+export const materialControlRequirementStatusEnum = pgEnum(
+  "material_control_requirement_status",
+  ["open", "partially_fulfilled", "fulfilled", "cancelled"],
+);
+
+export const materialControlPurchaseCommitmentStatusEnum = pgEnum(
+  "material_control_purchase_commitment_status",
+  ["draft", "committed", "partially_received", "received", "cancelled"],
+);
+
+export const materialControlReservationStatusEnum = pgEnum(
+  "material_control_reservation_status",
+  ["active", "released", "fulfilled", "cancelled"],
+);
+
+export const materialControlShipmentStatusEnum = pgEnum(
+  "material_control_shipment_status",
+  [
+    "draft",
+    "ready",
+    "in_transit",
+    "partially_received",
+    "received",
+    "cancelled",
+  ],
+);
+
+export const materialControlMovementTypeEnum = pgEnum(
+  "material_control_movement_type",
+  [
+    "receipt",
+    "shipment",
+    "site_receipt",
+    "installation",
+    "return",
+    "waste",
+    "transfer_out",
+    "transfer_in",
+    "adjustment",
+    "reversal",
+  ],
+);
+
+export const materialControlDocumentCategoryEnum = pgEnum(
+  "material_control_document_category",
+  ["general", "requirement", "purchase", "shipment", "installation", "export"],
+);
+
+export const materialControlProjects = pgTable(
+  "material_control_projects",
+  {
+    id: serial("id").primaryKey(),
+    code: text("code"),
+    name: text("name").notNull(),
+    status: materialControlProjectStatusEnum("status")
+      .notNull()
+      .default("draft"),
+    description: text("description").notNull().default(""),
+    plannedStartAt: timestamp("planned_start_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    plannedEndAt: timestamp("planned_end_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    actualStartAt: timestamp("actual_start_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    actualEndAt: timestamp("actual_end_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    codeUnique: uniqueIndex("material_control_projects_code_unique")
+      .on(table.code)
+      .where(sql`${table.code} IS NOT NULL`),
+    statusUpdatedIdx: index("material_control_projects_status_updated_idx").on(
+      table.status,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const materialControlProjectSources = pgTable(
+  "material_control_project_sources",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    sourceType: materialControlProjectSourceTypeEnum("source_type").notNull(),
+    tenderPackageId: integer("tender_package_id").references(
+      () => tenderPackages.id,
+      { onDelete: "set null" },
+    ),
+    tenderPlanId: integer("tender_plan_id").references(() => tenderPlans.id, {
+      onDelete: "set null",
+    }),
+    investmentProjectId: integer("investment_project_id").references(
+      () => investmentProjects.id,
+      { onDelete: "set null" },
+    ),
+    externalReference: text("external_reference"),
+    label: text("label").notNull().default(""),
+    sourceUrl: text("source_url"),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    sourceShapeCheck: check(
+      "material_control_project_sources_shape_check",
+      sql`(
+        (${table.sourceType} = 'tender_package' AND ${table.tenderPackageId} IS NOT NULL AND ${table.tenderPlanId} IS NULL AND ${table.investmentProjectId} IS NULL AND ${table.externalReference} IS NULL)
+        OR (${table.sourceType} = 'tender_plan' AND ${table.tenderPackageId} IS NULL AND ${table.tenderPlanId} IS NOT NULL AND ${table.investmentProjectId} IS NULL AND ${table.externalReference} IS NULL)
+        OR (${table.sourceType} = 'investment_project' AND ${table.tenderPackageId} IS NULL AND ${table.tenderPlanId} IS NULL AND ${table.investmentProjectId} IS NOT NULL AND ${table.externalReference} IS NULL)
+        OR (${table.sourceType} = 'manual' AND ${table.tenderPackageId} IS NULL AND ${table.tenderPlanId} IS NULL AND ${table.investmentProjectId} IS NULL AND ${table.externalReference} IS NOT NULL)
+      )`,
+    ),
+    projectIdx: index("material_control_project_sources_project_idx").on(
+      table.projectId,
+    ),
+    tenderPackageUnique: uniqueIndex(
+      "material_control_project_sources_tender_package_unique",
+    )
+      .on(table.projectId, table.tenderPackageId)
+      .where(sql`${table.tenderPackageId} IS NOT NULL`),
+    tenderPlanUnique: uniqueIndex(
+      "material_control_project_sources_tender_plan_unique",
+    )
+      .on(table.projectId, table.tenderPlanId)
+      .where(sql`${table.tenderPlanId} IS NOT NULL`),
+    investmentProjectUnique: uniqueIndex(
+      "material_control_project_sources_investment_project_unique",
+    )
+      .on(table.projectId, table.investmentProjectId)
+      .where(sql`${table.investmentProjectId} IS NOT NULL`),
+    manualReferenceUnique: uniqueIndex(
+      "material_control_project_sources_manual_reference_unique",
+    )
+      .on(table.projectId, table.externalReference)
+      .where(sql`${table.externalReference} IS NOT NULL`),
+  }),
+);
+
+export const materialControlLocations = pgTable(
+  "material_control_locations",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id").references(
+      () => materialControlProjects.id,
+      { onDelete: "set null" },
+    ),
+    parentId: integer("parent_id").references(
+      (): AnyPgColumn => materialControlLocations.id,
+      { onDelete: "set null" },
+    ),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    type: materialControlLocationTypeEnum("type").notNull(),
+    isVirtual: boolean("is_virtual").notNull().default(false),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    projectCodeUnique: uniqueIndex(
+      "material_control_locations_project_code_unique",
+    )
+      .on(table.projectId, table.code)
+      .where(sql`${table.projectId} IS NOT NULL`),
+    globalCodeUnique: uniqueIndex(
+      "material_control_locations_global_code_unique",
+    )
+      .on(table.code)
+      .where(sql`${table.projectId} IS NULL`),
+    projectTypeIdx: index("material_control_locations_project_type_idx").on(
+      table.projectId,
+      table.type,
+    ),
+    parentIdx: index("material_control_locations_parent_idx").on(
+      table.parentId,
+    ),
+  }),
+);
+
+export const materialControlPlans = pgTable(
+  "material_control_plans",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    status: materialControlPlanStatusEnum("status").notNull().default("draft"),
+    plannedStartAt: timestamp("planned_start_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    plannedEndAt: timestamp("planned_end_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    projectNameUnique: uniqueIndex(
+      "material_control_plans_project_name_unique",
+    ).on(table.projectId, table.name),
+    projectStatusIdx: index("material_control_plans_project_status_idx").on(
+      table.projectId,
+      table.status,
+    ),
+  }),
+);
+
+export const materialControlRequirements = pgTable(
+  "material_control_requirements",
+  {
+    id: serial("id").primaryKey(),
+    planId: integer("plan_id")
+      .notNull()
+      .references(() => materialControlPlans.id, { onDelete: "cascade" }),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    materialName: text("material_name").notNull(),
+    specText: text("spec_text").notNull(),
+    unit: text("unit").notNull(),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    requiredAt: timestamp("required_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    targetLocationId: integer("target_location_id").references(
+      () => materialControlLocations.id,
+      { onDelete: "set null" },
+    ),
+    status: materialControlRequirementStatusEnum("status")
+      .notNull()
+      .default("open"),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_requirements_quantity_positive",
+      sql`${table.quantity} > 0`,
+    ),
+    planStatusRequiredIdx: index(
+      "material_control_requirements_plan_status_required_idx",
+    ).on(table.planId, table.status, table.requiredAt),
+    materialIdx: index("material_control_requirements_material_idx").on(
+      table.materialId,
+    ),
+    locationIdx: index("material_control_requirements_location_idx").on(
+      table.targetLocationId,
+    ),
+  }),
+);
+
+export const materialControlPurchaseCommitments = pgTable(
+  "material_control_purchase_commitments",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    status: materialControlPurchaseCommitmentStatusEnum("status")
+      .notNull()
+      .default("draft"),
+    supplierName: text("supplier_name"),
+    externalReference: text("external_reference"),
+    committedAt: timestamp("committed_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expectedAt: timestamp("expected_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    projectReferenceUnique: uniqueIndex(
+      "material_control_purchase_commitments_project_reference_unique",
+    )
+      .on(table.projectId, table.externalReference)
+      .where(sql`${table.externalReference} IS NOT NULL`),
+    projectStatusIdx: index(
+      "material_control_purchase_commitments_project_status_idx",
+    ).on(table.projectId, table.status),
+  }),
+);
+
+export const materialControlPurchaseCommitmentLines = pgTable(
+  "material_control_purchase_commitment_lines",
+  {
+    id: serial("id").primaryKey(),
+    commitmentId: integer("commitment_id")
+      .notNull()
+      .references(() => materialControlPurchaseCommitments.id, {
+        onDelete: "cascade",
+      }),
+    requirementId: integer("requirement_id").references(
+      () => materialControlRequirements.id,
+      { onDelete: "set null" },
+    ),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    materialName: text("material_name").notNull(),
+    specText: text("spec_text").notNull(),
+    unit: text("unit").notNull(),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    unitPrice: bigint("unit_price", { mode: "number" }),
+    currency: text("currency").notNull().default("VND"),
+    expectedAt: timestamp("expected_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_purchase_commitment_lines_quantity_positive",
+      sql`${table.quantity} > 0`,
+    ),
+    commitmentIdx: index(
+      "material_control_purchase_commitment_lines_commitment_idx",
+    ).on(table.commitmentId),
+    requirementIdx: index(
+      "material_control_purchase_commitment_lines_requirement_idx",
+    ).on(table.requirementId),
+    materialIdx: index(
+      "material_control_purchase_commitment_lines_material_idx",
+    ).on(table.materialId),
+  }),
+);
+
+export const materialControlReservations = pgTable(
+  "material_control_reservations",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    requirementId: integer("requirement_id").references(
+      () => materialControlRequirements.id,
+      { onDelete: "set null" },
+    ),
+    locationId: integer("location_id")
+      .notNull()
+      .references(() => materialControlLocations.id, { onDelete: "restrict" }),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    materialName: text("material_name").notNull(),
+    specText: text("spec_text").notNull(),
+    unit: text("unit").notNull(),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    status: materialControlReservationStatusEnum("status")
+      .notNull()
+      .default("active"),
+    expiresAt: timestamp("expires_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    releasedAt: timestamp("released_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    fulfilledAt: timestamp("fulfilled_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_reservations_quantity_positive",
+      sql`${table.quantity} > 0`,
+    ),
+    projectStatusIdx: index(
+      "material_control_reservations_project_status_idx",
+    ).on(table.projectId, table.status),
+    locationStatusIdx: index(
+      "material_control_reservations_location_status_idx",
+    ).on(table.locationId, table.status),
+    requirementIdx: index("material_control_reservations_requirement_idx").on(
+      table.requirementId,
+    ),
+    materialIdx: index("material_control_reservations_material_idx").on(
+      table.materialId,
+    ),
+  }),
+);
+
+export const materialControlRequirementAllocations = pgTable(
+  "material_control_requirement_allocations",
+  {
+    id: serial("id").primaryKey(),
+    requirementId: integer("requirement_id")
+      .notNull()
+      .references(() => materialControlRequirements.id, {
+        onDelete: "cascade",
+      }),
+    purchaseCommitmentLineId: integer("purchase_commitment_line_id").references(
+      () => materialControlPurchaseCommitmentLines.id,
+      { onDelete: "cascade" },
+    ),
+    reservationId: integer("reservation_id").references(
+      () => materialControlReservations.id,
+      { onDelete: "cascade" },
+    ),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_requirement_allocations_quantity_positive",
+      sql`${table.quantity} > 0`,
+    ),
+    exactlyOneSource: check(
+      "material_control_requirement_allocations_exactly_one_source",
+      sql`(${table.purchaseCommitmentLineId} IS NOT NULL) <> (${table.reservationId} IS NOT NULL)`,
+    ),
+    requirementIdx: index(
+      "material_control_requirement_allocations_requirement_idx",
+    ).on(table.requirementId),
+    purchaseLineUnique: uniqueIndex(
+      "material_control_requirement_allocations_purchase_line_unique",
+    )
+      .on(table.requirementId, table.purchaseCommitmentLineId)
+      .where(sql`${table.purchaseCommitmentLineId} IS NOT NULL`),
+    reservationUnique: uniqueIndex(
+      "material_control_requirement_allocations_reservation_unique",
+    )
+      .on(table.requirementId, table.reservationId)
+      .where(sql`${table.reservationId} IS NOT NULL`),
+  }),
+);
+
+export const materialControlShipments = pgTable(
+  "material_control_shipments",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    sourceLocationId: integer("source_location_id")
+      .notNull()
+      .references(() => materialControlLocations.id, { onDelete: "restrict" }),
+    destinationLocationId: integer("destination_location_id")
+      .notNull()
+      .references(() => materialControlLocations.id, { onDelete: "restrict" }),
+    status: materialControlShipmentStatusEnum("status")
+      .notNull()
+      .default("draft"),
+    externalReference: text("external_reference"),
+    plannedShipAt: timestamp("planned_ship_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    shippedAt: timestamp("shipped_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    expectedArrivalAt: timestamp("expected_arrival_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    receivedAt: timestamp("received_at", {
+      mode: "string",
+      withTimezone: true,
+    }),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    distinctLocations: check(
+      "material_control_shipments_distinct_locations",
+      sql`${table.sourceLocationId} <> ${table.destinationLocationId}`,
+    ),
+    projectReferenceUnique: uniqueIndex(
+      "material_control_shipments_project_reference_unique",
+    )
+      .on(table.projectId, table.externalReference)
+      .where(sql`${table.externalReference} IS NOT NULL`),
+    projectStatusIdx: index("material_control_shipments_project_status_idx").on(
+      table.projectId,
+      table.status,
+    ),
+    sourceIdx: index("material_control_shipments_source_idx").on(
+      table.sourceLocationId,
+    ),
+    destinationIdx: index("material_control_shipments_destination_idx").on(
+      table.destinationLocationId,
+    ),
+  }),
+);
+
+export const materialControlShipmentLines = pgTable(
+  "material_control_shipment_lines",
+  {
+    id: serial("id").primaryKey(),
+    shipmentId: integer("shipment_id")
+      .notNull()
+      .references(() => materialControlShipments.id, { onDelete: "cascade" }),
+    requirementId: integer("requirement_id").references(
+      () => materialControlRequirements.id,
+      { onDelete: "set null" },
+    ),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    materialName: text("material_name").notNull(),
+    specText: text("spec_text").notNull(),
+    unit: text("unit").notNull(),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    receivedQuantity: numeric("received_quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_shipment_lines_quantity_positive",
+      sql`${table.quantity} > 0`,
+    ),
+    receivedQuantityValid: check(
+      "material_control_shipment_lines_received_quantity_valid",
+      sql`${table.receivedQuantity} >= 0 AND ${table.receivedQuantity} <= ${table.quantity}`,
+    ),
+    shipmentIdx: index("material_control_shipment_lines_shipment_idx").on(
+      table.shipmentId,
+    ),
+    requirementIdx: index("material_control_shipment_lines_requirement_idx").on(
+      table.requirementId,
+    ),
+    materialIdx: index("material_control_shipment_lines_material_idx").on(
+      table.materialId,
+    ),
+  }),
+);
+
+export const materialControlStockMovements = pgTable(
+  "material_control_stock_movements",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id").references(
+      () => materialControlProjects.id,
+      { onDelete: "set null" },
+    ),
+    movementType: materialControlMovementTypeEnum("movement_type").notNull(),
+    sourceLocationId: integer("source_location_id").references(
+      () => materialControlLocations.id,
+      { onDelete: "restrict" },
+    ),
+    destinationLocationId: integer("destination_location_id").references(
+      () => materialControlLocations.id,
+      { onDelete: "restrict" },
+    ),
+    shipmentId: integer("shipment_id").references(
+      () => materialControlShipments.id,
+      { onDelete: "set null" },
+    ),
+    reservationId: integer("reservation_id").references(
+      () => materialControlReservations.id,
+      { onDelete: "set null" },
+    ),
+    requirementId: integer("requirement_id").references(
+      () => materialControlRequirements.id,
+      { onDelete: "set null" },
+    ),
+    materialId: integer("material_id").references(() => materials.id, {
+      onDelete: "set null",
+    }),
+    materialName: text("material_name").notNull(),
+    specText: text("spec_text").notNull(),
+    unit: text("unit").notNull(),
+    quantity: numeric("quantity", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    explicitAdjustment: boolean("explicit_adjustment").notNull().default(false),
+    occurredAt: timestamp("occurred_at", {
+      mode: "string",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    reversalOfId: integer("reversal_of_id").references(
+      (): AnyPgColumn => materialControlStockMovements.id,
+      { onDelete: "restrict" },
+    ),
+    reference: text("reference"),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    quantityPositive: check(
+      "material_control_stock_movements_quantity_positive",
+      sql`${table.quantity} > 0 OR (${table.movementType} = 'adjustment' AND ${table.explicitAdjustment} = true AND ${table.quantity} <> 0)`,
+    ),
+    locationRequired: check(
+      "material_control_stock_movements_location_required",
+      sql`${table.sourceLocationId} IS NOT NULL OR ${table.destinationLocationId} IS NOT NULL`,
+    ),
+    distinctLocations: check(
+      "material_control_stock_movements_distinct_locations",
+      sql`${table.sourceLocationId} IS NULL OR ${table.destinationLocationId} IS NULL OR ${table.sourceLocationId} <> ${table.destinationLocationId}`,
+    ),
+    projectOccurredIdx: index(
+      "material_control_stock_movements_project_occurred_idx",
+    ).on(table.projectId, table.occurredAt),
+    sourceOccurredIdx: index(
+      "material_control_stock_movements_source_occurred_idx",
+    ).on(table.sourceLocationId, table.occurredAt),
+    destinationOccurredIdx: index(
+      "material_control_stock_movements_destination_occurred_idx",
+    ).on(table.destinationLocationId, table.occurredAt),
+    materialOccurredIdx: index(
+      "material_control_stock_movements_material_occurred_idx",
+    ).on(table.materialId, table.occurredAt),
+    reversalUnique: uniqueIndex(
+      "material_control_stock_movements_reversal_unique",
+    )
+      .on(table.reversalOfId)
+      .where(sql`${table.reversalOfId} IS NOT NULL`),
+  }),
+);
+
+export const materialControlDocuments = pgTable(
+  "material_control_documents",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => materialControlProjects.id, { onDelete: "cascade" }),
+    category: materialControlDocumentCategoryEnum("category")
+      .notNull()
+      .default("general"),
+    fileName: text("file_name").notNull(),
+    originalFileName: text("original_file_name").notNull(),
+    relativePath: text("relative_path").notNull(),
+    mimeType: text("mime_type").notNull(),
+    fileSize: bigint("file_size", { mode: "number" }).notNull(),
+    checksum: text("checksum").notNull(),
+    notes: text("notes").notNull().default(""),
+    createdAt: timestamp("created_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "string", withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    fileSizeNonNegative: check(
+      "material_control_documents_file_size_non_negative",
+      sql`${table.fileSize} >= 0`,
+    ),
+    projectPathUnique: uniqueIndex(
+      "material_control_documents_project_path_unique",
+    ).on(table.projectId, table.relativePath),
+    projectCategoryIdx: index(
+      "material_control_documents_project_category_idx",
+    ).on(table.projectId, table.category),
+    checksumIdx: index("material_control_documents_checksum_idx").on(
+      table.checksum,
     ),
   }),
 );
