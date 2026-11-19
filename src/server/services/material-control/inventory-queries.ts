@@ -411,6 +411,7 @@ async function loadBundle(
       shipmentStatus,
     }) => ({
       ...movementFromRow(movement),
+      shipmentId: shipmentStatus === null ? null : movement.shipmentId,
       sourceIsSiteOrZone:
         sourceLocationType === "site" || sourceLocationType === "zone",
       destinationIsSiteOrZone:

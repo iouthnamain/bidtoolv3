@@ -157,6 +157,70 @@ async function expectInventory(
   ]);
 }
 
+test("settles decimal receipts without a negative transit balance", async ({
+  inventory,
+}) => {
+  const { warehouse, site, record } = inventory;
+  await record({
+    movementType: "receipt",
+    destinationLocationId: warehouse.id,
+    quantity: 0.009,
+  });
+  await record({
+    movementType: "shipment",
+    sourceLocationId: warehouse.id,
+    quantity: 0.009,
+  });
+  await record({
+    movementType: "site_receipt",
+    destinationLocationId: site.id,
+    quantity: 0.001,
+  });
+  await record({
+    movementType: "site_receipt",
+    destinationLocationId: site.id,
+    quantity: 0.008,
+  });
+  await expectInventory(inventory, {
+    shipped: 0.009,
+    received: 0.009,
+    inTransit: 0,
+    siteOnHand: 0.009,
+  });
+});
+
+test("keeps a requirement readable after a return from shared site stock", async ({
+  inventory,
+}) => {
+  const { database, projectId, site, warehouse, record, requirement } =
+    inventory;
+  await recordMovement(
+    {
+      projectId,
+      ...requirement.material,
+      movementType: "site_receipt",
+      destinationLocationId: site.id,
+      quantity: 3,
+    },
+    database,
+  );
+  await record({
+    movementType: "return",
+    sourceLocationId: site.id,
+    destinationLocationId: warehouse.id,
+    quantity: 2,
+  });
+  await expectInventory(inventory, {
+    shipped: 0,
+    received: 0,
+    inTransit: 0,
+    siteOnHand: 0,
+  });
+  await expect(
+    listStockBalances({ locationId: site.id }, database),
+  ).resolves.toMatchObject([{ onHand: 1 }]);
+});
+
 test("uses both physical endpoints for warehouse receipts, transfers and reversals", async ({
   inventory,
 }) => {

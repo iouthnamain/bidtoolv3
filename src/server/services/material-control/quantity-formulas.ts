@@ -817,6 +817,14 @@ export function calculateSiteOnHand(
     (total, movement) => total + movementDeltaForSite(movement),
     0,
   );
+  // A requirement can draw from site stock received outside its own ledger.
+  if (
+    requirement &&
+    !allowNegative &&
+    relevant.some((movement) => movement.sourceIsSiteOrZone !== undefined)
+  ) {
+    return Math.max(0, Number(result.toFixed(3)));
+  }
   assertNonNegative(result, allowNegative, "Site on-hand quantity");
   return result;
 }
@@ -1060,7 +1068,9 @@ export function calculateRequirementSummary(input: RequirementSummaryInput): {
   const shipmentLines = input.shipmentLines ?? [];
   const movements = input.movements ?? [];
   const ordered = calculateOrdered(lines, requirement);
-  const shipped = calculateShipped(shipmentLines, movements, requirement);
+  const shipped = Number(
+    calculateShipped(shipmentLines, movements, requirement).toFixed(3),
+  );
   const { received, shipmentReceived } = calculateReceiptQuantities(
     shipmentLines,
     movements,
@@ -1083,13 +1093,20 @@ export function calculateRequirementSummary(input: RequirementSummaryInput): {
         );
   // Direct site receipts contribute to received totals independently of transit.
   const inTransit =
-    shipped === 0 ? 0 : calculateInTransit(shipped, shipmentReceived);
+    shipped === 0
+      ? 0
+      : Number(
+          calculateInTransit(
+            shipped,
+            Number(shipmentReceived.toFixed(3)),
+          ).toFixed(3),
+        );
   return {
     required: requirement.quantity,
     ordered,
     missingToBuy: calculateMissingToBuy(requirement.quantity, ordered),
     shipped,
-    received,
+    received: Number(received.toFixed(3)),
     inTransit,
     installed,
     remainingToInstall,
