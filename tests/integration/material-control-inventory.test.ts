@@ -17,6 +17,7 @@ import {
   reverseMovement,
   type RecordMovementInput,
 } from "~/server/services/material-control/movement-service";
+import { createPurchaseCommitment } from "~/server/services/material-control/procurement-service";
 import {
   createLocation,
   createPlan,
@@ -156,6 +157,142 @@ async function expectInventory(
       .resolves.toMatchObject([{ requirement: requirementWithSummary }]),
   ]);
 }
+
+test("counts each affected requirement once and keeps dashboard quantities per material and unit", async ({
+  inventory,
+}) => {
+  const {
+    database,
+    projectId,
+    warehouse,
+    site,
+    installed,
+    plan,
+    requirement,
+    record,
+    draftShipment,
+  } = inventory;
+  const now = "2026-11-19T00:00:00Z";
+  const requiredAt = "2026-11-01T00:00:00Z";
+  const both = await createRequirement(
+    { ...requirement.material, planId: plan.id, quantity: 6, requiredAt },
+    database,
+  );
+  const onlyShort = await createRequirement(
+    {
+      ...requirement.material,
+      planId: plan.id,
+      quantity: 4,
+      specText: "CV 2x1.5",
+      unit: "cuộn",
+    },
+    database,
+  );
+  const onlyLate = await createRequirement(
+    {
+      materialName: "Ống luồn dây",
+      specText: "20 mm",
+      unit: "ống",
+      planId: plan.id,
+      quantity: 2,
+      requiredAt,
+    },
+    database,
+  );
+  await createPurchaseCommitment(
+    {
+      projectId,
+      status: "committed",
+      lines: [
+        { requirementId: requirement.id, quantity: 42.125 },
+        { requirementId: both.id, quantity: 1 },
+        { requirementId: onlyLate.id, quantity: 2 },
+      ],
+    },
+    database,
+  );
+
+  await record({
+    movementType: "receipt",
+    destinationLocationId: warehouse.id,
+    quantity: 12,
+  });
+  const draft = await draftShipment(warehouse.id, 10);
+  const [line] = draft.lines;
+  if (!line) throw new Error("Missing shipment fixture line.");
+  await dispatchShipment(draft.id, database);
+  await receiveShipment(draft.id, [{ lineId: line.id, quantity: 3 }], database);
+  await record({
+    movementType: "installation",
+    sourceLocationId: site.id,
+    destinationLocationId: installed.id,
+    quantity: 1,
+  });
+  await recordMovement(
+    {
+      movementType: "site_receipt",
+      destinationLocationId: site.id,
+      requirementId: onlyShort.id,
+      quantity: 2,
+    },
+    database,
+  );
+  await recordMovement(
+    {
+      movementType: "waste",
+      sourceLocationId: site.id,
+      requirementId: onlyShort.id,
+      quantity: 2,
+    },
+    database,
+  );
+
+  const [dashboard, shortages] = await Promise.all([
+    getDashboardSummary({ projectId, now }, database),
+    listShortages({ projectId, now }, database),
+  ]);
+  expect(
+    shortages.map(({ requirement: row, shortage, late }) => [
+      row.id,
+      shortage,
+      late,
+    ]),
+  ).toEqual([
+    [both.id, 5, true],
+    [onlyLate.id, 0, true],
+    [onlyShort.id, 4, false],
+  ]);
+  expect(dashboard).toMatchObject({
+    shortages: { count: 2, late: 2, needsAttention: shortages.length },
+    stock: { materialCount: 2, availableMaterialCount: 1 },
+    materialFlow: [
+      {
+        material: { materialName: "Cáp điện", unit: "cuộn" },
+        ordered: 0,
+        shipped: 0,
+        received: 2,
+        inTransit: 0,
+        installed: 0,
+      },
+      {
+        material: { materialName: "Cáp điện", unit: "m" },
+        ordered: 43.125,
+        shipped: 10,
+        received: 3,
+        inTransit: 7,
+        installed: 1,
+      },
+      {
+        material: { materialName: "Ống luồn dây", unit: "ống" },
+        ordered: 2,
+        shipped: 0,
+        received: 0,
+        inTransit: 0,
+        installed: 0,
+      },
+    ],
+  });
+});
 
 test("settles decimal receipts without a negative transit balance", async ({
   inventory,

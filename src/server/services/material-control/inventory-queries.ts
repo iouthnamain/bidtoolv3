@@ -80,6 +80,15 @@ export type ShortageView = Readonly<{
   late: boolean;
 }>;
 
+type MaterialFlowRow = {
+  material: MaterialSnapshot;
+  ordered: number;
+  shipped: number;
+  received: number;
+  inTransit: number;
+  installed: number;
+};
+
 export type DashboardSummaryView = Readonly<{
   projects: Readonly<{ total: number; active: number }>;
   plans: Readonly<{ total: number; active: number }>;
@@ -96,10 +105,12 @@ export type DashboardSummaryView = Readonly<{
     inTransit: number;
     installed: number;
   }>;
-  shortages: Readonly<{ count: number; late: number }>;
+  materialFlow: readonly Readonly<MaterialFlowRow>[];
+  shortages: Readonly<{ count: number; late: number; needsAttention: number }>;
   stock: Readonly<{
     locationCount: number;
     materialCount: number;
+    availableMaterialCount: number;
     available: number;
   }>;
 }>;
@@ -697,6 +708,53 @@ export async function listStockBalances(
   );
 }
 
+function shortagesForRequirements(
+  requirements: readonly RequirementSummaryView[],
+): readonly ShortageView[] {
+  return requirements.flatMap((requirement) => {
+    const { missingToBuy: shortage, late } = requirement.summary;
+    return shortage > 0 || late ? [{ requirement, shortage, late }] : [];
+  });
+}
+
+function materialFlowForRequirements(
+  requirements: readonly RequirementSummaryView[],
+): readonly Readonly<MaterialFlowRow>[] {
+  const flow = new Map<string, MaterialFlowRow>();
+  for (const { material, summary } of requirements) {
+    const { ordered, shipped, received, inTransit, installed } = summary;
+    if (
+      ordered === 0 &&
+      shipped === 0 &&
+      received === 0 &&
+      inTransit === 0 &&
+      installed === 0
+    )
+      continue;
+    const key = keyForMaterial(material);
+    const row = flow.get(key) ?? {
+      material,
+      ordered: 0,
+      shipped: 0,
+      received: 0,
+      inTransit: 0,
+      installed: 0,
+    };
+    row.ordered += ordered;
+    row.shipped += shipped;
+    row.received += received;
+    row.inTransit += inTransit;
+    row.installed += installed;
+    flow.set(key, row);
+  }
+  return [...flow.values()].sort(
+    ({ material: left }, { material: right }) =>
+      left.materialName.localeCompare(right.materialName, "vi-VN") ||
+      left.specText.localeCompare(right.specText, "vi-VN") ||
+      left.unit.localeCompare(right.unit, "vi-VN"),
+  );
+}
+
 export async function listShortages(
   input: {
     projectId?: number;
@@ -724,29 +782,21 @@ export async function listShortages(
     ...new Set(plans.map((plan) => plan.projectId)),
   ]);
   const now = input.now ?? new Date().toISOString();
-  return rows
-    .map((row) =>
-      requirementView(
-        row,
-        bundle.get(row.id) ?? {
-          purchases: [],
-          shipments: [],
-          movements: [],
-          reservations: [],
-        },
-        now,
-      ),
-    )
-    .filter(
-      (requirement) =>
-        requirement.summary.missingToBuy > 0 || requirement.summary.late,
-    )
-    .filter((requirement) => !input.lateOnly || requirement.summary.late)
-    .map((requirement) => ({
-      requirement,
-      shortage: requirement.summary.missingToBuy,
-      late: requirement.summary.late,
-    }));
+  const requirements = rows.map((row) =>
+    requirementView(
+      row,
+      bundle.get(row.id) ?? {
+        purchases: [],
+        shipments: [],
+        movements: [],
+        reservations: [],
+      },
+      now,
+    ),
+  );
+  return shortagesForRequirements(requirements).filter(
+    ({ late }) => !input.lateOnly || late,
+  );
 }
 
 export async function getDashboardSummary(
@@ -792,6 +842,7 @@ export async function getDashboardSummary(
     ),
   );
   const totals = totalsForRequirements(requirements);
+  const shortages = shortagesForRequirements(requirements);
   const stock = await listStockBalances(
     { projectId: input.projectId },
     database,
@@ -824,17 +875,21 @@ export async function getDashboardSummary(
       inTransit: totals.inTransit,
       installed: totals.installed,
     },
+    materialFlow: materialFlowForRequirements(requirements),
     shortages: {
-      count: requirements.filter(
-        (requirement) => requirement.summary.missingToBuy > 0,
-      ).length,
-      late: requirements.filter((requirement) => requirement.summary.late)
-        .length,
+      count: shortages.filter(({ shortage }) => shortage > 0).length,
+      late: shortages.filter(({ late }) => late).length,
+      needsAttention: shortages.length,
     },
     stock: {
       locationCount: new Set(stock.map((row) => row.locationId)).size,
       materialCount: new Set(stock.map((row) => keyForMaterial(row.material)))
         .size,
+      availableMaterialCount: new Set(
+        stock
+          .filter(({ available }) => Number(available.toFixed(3)) > 0)
+          .map(({ material }) => keyForMaterial(material)),
+      ).size,
       available: stock.reduce((total, row) => total + row.available, 0),
     },
   };
