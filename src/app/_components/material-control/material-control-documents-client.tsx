@@ -101,6 +101,8 @@ export function MaterialControlDocumentsClient({
         fileBase64: await fileToBase64(file),
         mimeType: file.type || undefined,
       });
+      // A pending first load may have read the list before this upload committed.
+      await utils.materialControl.listDocuments.cancel({ projectId });
       await utils.materialControl.listDocuments.invalidate({ projectId });
       form.reset();
       setUploadState({ status: "success" });
@@ -147,15 +149,13 @@ export function MaterialControlDocumentsClient({
         </h2>
       </div>
       <form className="border-b border-slate-200 p-4" onSubmit={submitUpload}>
-        <fieldset
-          disabled={isUploading}
-          className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end"
-        >
+        <fieldset className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
           <label className="block min-w-0 text-sm font-bold text-slate-800">
             Loại tài liệu
             <select
               name="category"
               defaultValue="general"
+              disabled={isUploading}
               className="focus-ring mt-1 min-h-11 w-full rounded border border-slate-500 bg-white px-3 py-2 font-normal"
             >
               {Object.entries(categoryLabels).map(([value, label]) => (
@@ -171,11 +171,17 @@ export function MaterialControlDocumentsClient({
               name="file"
               type="file"
               required
+              disabled={isUploading}
               onChange={() => setUploadState({ status: "idle" })}
               className="focus-ring mt-1 block min-h-11 w-full rounded border border-slate-500 bg-white px-3 py-2 font-normal file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:font-semibold"
             />
           </label>
-          <Button type="submit" aria-busy={isUploading}>
+          <Button
+            type="submit"
+            aria-busy={isUploading}
+            aria-disabled={isUploading}
+            className="aria-disabled:cursor-wait aria-disabled:opacity-60"
+          >
             {isUploading ? "Đang tải lên…" : "Tải lên"}
           </Button>
         </fieldset>
@@ -233,8 +239,9 @@ export function MaterialControlDocumentsClient({
                   <Button
                     variant="secondary"
                     size="sm"
-                    disabled={downloadState.status === "pending"}
+                    aria-disabled={downloadState.status === "pending"}
                     aria-busy={isDownloading}
+                    className="aria-disabled:cursor-wait aria-disabled:opacity-60"
                     onClick={() => void downloadDocument(row.id)}
                   >
                     {isDownloading ? "Đang tải xuống…" : "Tải xuống"}
