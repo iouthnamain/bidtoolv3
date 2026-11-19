@@ -141,7 +141,9 @@ export function AboutVersionSection() {
     }
 
     if (status.latest) {
-      success(`Đã kiểm tra — đang chạy ${status.current}, mới nhất ${status.latest}.`);
+      success(
+        `Đã kiểm tra — đang chạy ${status.current}, mới nhất ${status.latest}.`,
+      );
       return;
     }
 
@@ -315,7 +317,7 @@ export function AboutVersionSection() {
       case "run-onprem":
         return "Chạy cập nhật on-prem trực tiếp. Stack Docker sẽ pull image mới và khởi động lại.";
       case "copy-onprem-command":
-        return "Sao chép lệnh và chạy trên máy chủ hosting Docker stack.";
+        return "Kiểm tra tương thích cơ sở dữ liệu trước khi chạy lệnh trên máy chủ Docker.";
       case "check-update":
         return "Kiểm tra manifest phát hành mới nhất và so sánh với phiên bản đang chạy.";
       case "refresh":
@@ -459,10 +461,7 @@ export function AboutVersionSection() {
                       <ArrowUpCircle className="h-3.5 w-3.5" />
                     )
                   }
-                  isLoading={
-                    versionFetching ||
-                    applyOnPremUpdate.isPending
-                  }
+                  isLoading={versionFetching || applyOnPremUpdate.isPending}
                   disabled={applyDisabled}
                   onClick={() => void handleApplyUpdate()}
                 >
@@ -474,11 +473,11 @@ export function AboutVersionSection() {
         ) : null}
 
         {versionStatus?.changelog ? (
-          <div className="rounded border border-slate-500 bg-white shadow-[var(--shadow-flat)] px-4 py-3">
+          <div className="rounded border border-slate-500 bg-white px-4 py-3 shadow-[var(--shadow-flat)]">
             <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
               Ghi chú phát hành
             </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+            <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-slate-700">
               {versionStatus.changelog}
             </p>
           </div>

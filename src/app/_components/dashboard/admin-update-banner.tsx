@@ -95,6 +95,9 @@ export function AdminUpdateBanner() {
               ? ` (${versionStatus.buildMetadata})`
               : ""}
             .
+            {versionStatus.updateCommand
+              ? " Kiểm tra tương thích cơ sở dữ liệu trước khi chạy lệnh cập nhật."
+              : null}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">

@@ -29,7 +29,10 @@ export const desktopPlatformArtifactSchema = z.object({
 
 export const releaseManifestSchema = z.object({
   version: z.string().min(1),
-  commitSha: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  commitSha: z
+    .string()
+    .regex(/^[a-f0-9]{40}$/)
+    .optional(),
   releasedAt: z.string().datetime(),
   channel: releaseChannelSchema,
   schemaVersion: z.number().int().nonnegative(),
@@ -133,7 +136,9 @@ export function formatReleaseTag(version: string): string {
 }
 
 export function pickLatestSemver(versions: readonly string[]): string | null {
-  const unique = [...new Set(versions.map((version) => normalizeReleaseVersion(version)))];
+  const unique = [
+    ...new Set(versions.map((version) => normalizeReleaseVersion(version))),
+  ];
   if (unique.length === 0) {
     return null;
   }
@@ -151,8 +156,9 @@ export function getSchemaVersionFromJournal(journal: {
   return lastEntry?.idx ?? 0;
 }
 
-export function buildOnPremUpdateCommand(version: string): string {
-  return `BIDTOOL_IMAGE_TAG=${version} bun run onprem:update`;
+export function buildOnPremUpdateCommand(version: string): string | null {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(version)) return null;
+  return `BIDTOOL_IMAGE_TAG=${version} sh scripts/onprem-update.sh --schema-compatible`;
 }
 
 export function buildDesktopBuildMetadata(

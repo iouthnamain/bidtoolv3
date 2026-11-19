@@ -3,6 +3,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 
 import {
+  buildOnPremUpdateCommand,
   compareSemver,
   isUpdateAvailable,
   parseReleaseManifest,
@@ -81,7 +82,8 @@ function resolveManifestUrl(): string | null {
     return configured;
   }
 
-  const repo = process.env.BIDTOOL_GITHUB_REPO?.trim() ?? "iouthnamain/bidtoolv3";
+  const repo =
+    process.env.BIDTOOL_GITHUB_REPO?.trim() ?? "iouthnamain/bidtoolv3";
   const current = resolveCurrentVersion();
   return `https://github.com/${repo}/releases/download/v${current}/manifest.json`;
 }
@@ -92,12 +94,15 @@ function resolvePinsUrl(): string {
     return configured;
   }
 
-  const repo = process.env.BIDTOOL_GITHUB_REPO?.trim() ?? "iouthnamain/bidtoolv3";
+  const repo =
+    process.env.BIDTOOL_GITHUB_REPO?.trim() ?? "iouthnamain/bidtoolv3";
   const branch = process.env.BIDTOOL_PINS_BRANCH?.trim() ?? "main";
   return `https://raw.githubusercontent.com/${repo}/${branch}/releases/pins.json`;
 }
 
-async function loadManifestFromFilesystem(path: string): Promise<ReleaseManifest> {
+async function loadManifestFromFilesystem(
+  path: string,
+): Promise<ReleaseManifest> {
   const raw = JSON.parse(await readFile(path, "utf8")) as unknown;
   return parseReleaseManifest(raw);
 }
@@ -152,7 +157,9 @@ async function loadLatestManifest(): Promise<{
       return { manifest: null, manifestUrl: null };
     }
 
-    const manifest = parseReleaseManifest(await fetchJson<unknown>(pin.manifestUrl));
+    const manifest = parseReleaseManifest(
+      await fetchJson<unknown>(pin.manifestUrl),
+    );
     cachedManifest = manifest;
     cachedManifestUrl = pin.manifestUrl;
     cachedManifestFetchedAt = now;
@@ -164,7 +171,9 @@ async function loadLatestManifest(): Promise<{
     }
 
     try {
-      const manifest = parseReleaseManifest(await fetchJson<unknown>(manifestUrl));
+      const manifest = parseReleaseManifest(
+        await fetchJson<unknown>(manifestUrl),
+      );
       cachedManifest = manifest;
       cachedManifestUrl = manifestUrl;
       cachedManifestFetchedAt = now;
@@ -183,7 +192,7 @@ function resolveUpdateCommand(
     return null;
   }
 
-  return `BIDTOOL_IMAGE_TAG=${latestVersion} bun run onprem:update`;
+  return buildOnPremUpdateCommand(latestVersion);
 }
 
 async function _getVersionStatus(): Promise<VersionStatus> {
@@ -219,5 +228,13 @@ function _compareVersionStrings(left: string, right: string): number {
   return compareSemver(left, right);
 }
 
-export const getVersionStatus = traceFn(log, "getVersionStatus", _getVersionStatus);
-export const compareVersionStrings = traceFn(log, "compareVersionStrings", _compareVersionStrings);
+export const getVersionStatus = traceFn(
+  log,
+  "getVersionStatus",
+  _getVersionStatus,
+);
+export const compareVersionStrings = traceFn(
+  log,
+  "compareVersionStrings",
+  _compareVersionStrings,
+);
