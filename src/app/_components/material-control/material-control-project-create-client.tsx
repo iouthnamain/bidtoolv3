@@ -7,12 +7,26 @@ import { api } from "~/trpc/react";
 
 export function MaterialControlProjectCreateClient() {
   const router = useRouter();
+  const utils = api.useUtils();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const create = api.materialControl.createProject.useMutation({
-    onSuccess: (project) =>
-      router.push(`/material-control/projects/${project.id}`),
+    onSuccess: (project) => {
+      void utils.materialControl.listProjects.invalidate(undefined, {
+        predicate: ({ queryKey: [, options] }) => {
+          const status = options?.input?.status;
+          return status === undefined || status === project.status;
+        },
+      });
+      void utils.materialControl.dashboardSummary.invalidate(undefined, {
+        predicate: ({ queryKey: [, options] }) => {
+          const projectId = options?.input?.projectId;
+          return projectId === undefined || projectId === project.id;
+        },
+      });
+      router.push(`/material-control/projects/${project.id}`);
+    },
   });
   return (
     <form

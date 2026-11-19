@@ -12,9 +12,25 @@ export function MaterialControlPlanCreateForm({
   const utils = api.useUtils();
   const [name, setName] = useState("");
   const create = api.materialControl.createPlan.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (plan) => {
       setName("");
-      await utils.materialControl.listPlanDetails.invalidate({ projectId });
+      const includesProject = (filter: number | undefined) =>
+        filter === undefined || filter === plan.projectId;
+      await Promise.all([
+        utils.materialControl.listPlanDetails.invalidate(undefined, {
+          predicate: ({ queryKey: [, options] }) => {
+            const input = options?.input;
+            return (
+              includesProject(input?.projectId) &&
+              (input?.status === undefined || input.status === plan.status)
+            );
+          },
+        }),
+        utils.materialControl.dashboardSummary.invalidate(undefined, {
+          predicate: ({ queryKey: [, options] }) =>
+            includesProject(options?.input?.projectId),
+        }),
+      ]);
     },
   });
   return (

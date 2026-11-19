@@ -15,12 +15,32 @@ export function MaterialControlRequirementCreateForm({
   const [unit, setUnit] = useState("");
   const [amount, setAmount] = useState("1");
   const create = api.materialControl.createRequirement.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (requirement) => {
       setMaterialName("");
       setSpecText("");
       setUnit("");
       setAmount("1");
-      await utils.materialControl.getPlanDetail.invalidate({ planId });
+      const savedPlan = { planId: requirement.planId };
+      const projectId =
+        utils.materialControl.getPlanDetail.getData(savedPlan)?.plan.projectId;
+      const includesProject = (filter: number | undefined) =>
+        projectId === undefined || filter === undefined || filter === projectId;
+      await Promise.all([
+        utils.materialControl.getPlanDetail.invalidate(savedPlan),
+        utils.materialControl.listPlanDetails.invalidate(undefined, {
+          predicate: ({ queryKey: [, options] }) =>
+            includesProject(options?.input?.projectId),
+        }),
+        utils.materialControl.dashboardSummary.invalidate(undefined, {
+          predicate: ({ queryKey: [, options] }) =>
+            includesProject(options?.input?.projectId),
+        }),
+        utils.materialControl.listShortages.invalidate(undefined, {
+          predicate: ({ queryKey: [, options] }) =>
+            includesProject(options?.input?.projectId) &&
+            (!options?.input?.lateOnly || requirement.requiredAt !== null),
+        }),
+      ]);
     },
   });
   return (
