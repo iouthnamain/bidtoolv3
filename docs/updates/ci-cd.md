@@ -1,6 +1,6 @@
 # CI/CD Review
 
-Validate pull requests locally. GitHub Actions runs the separate release and rollback workflows.
+Validate pull requests locally. GitHub Actions runs the separate release and rollback workflows. Vercel Git deployments are disabled in `vercel.json`. The Release workflow deploys through the Vercel CLI.
 
 ## Local PR checks
 
@@ -32,10 +32,11 @@ Release resolves the tag to a commit, verifies the artifacts built from that com
 
 ### Vercel project settings
 
-1. Disable automatic production deploys from `main`
-2. Set production runtime env vars (or use Vercel dashboard values that match release metadata):
-   - `BIDTOOL_DEPLOYMENT_SURFACE=web`
-   - `DATABASE_URL`, `APP_BASE_URL`, etc.
+Set production runtime env vars or use Vercel dashboard values that match release metadata.
+
+- `BIDTOOL_DEPLOYMENT_SURFACE=web`
+- `DATABASE_URL`
+- `APP_BASE_URL`
 
 Release workflow embeds version metadata at **build time** via job env. Runtime env on Vercel should still identify the deployment surface.
 
