@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { shopScrapeJobs } from "~/server/db/schema";
+import { excelResearchJobs, shopScrapeJobs } from "~/server/db/schema";
 import type { resetStaleExcelResearchRows } from "./excel-research/process-batch";
 import type { scrapeShopMaterialsFromUrl } from "./shop-material-scraper";
 import { startJobScheduler, stopJobSchedulerForTests } from "./job-scheduler";
@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => {
   const claimQueuedJob = vi.fn<() => Promise<unknown[]>>();
   const updateJob =
     vi.fn<(table: unknown, patch: { status?: string }) => void>();
+  const selectExcelJob = vi.fn<() => Promise<{ id: string }[]>>();
+  const readExcelJobStatus = vi.fn<() => Promise<{ status: string }[]>>();
   const tx = {
     select: () => ({
       from: (table: unknown) => ({
@@ -32,6 +34,9 @@ const mocks = vi.hoisted(() => {
     selectQueuedJob,
     claimQueuedJob,
     updateJob,
+    selectExcelJob,
+    readExcelJobStatus,
+    resolveExcelResearchMaxConcurrentJobs: vi.fn<() => Promise<number>>(),
     resolveImportMaxConcurrentJobs: vi.fn<() => Promise<number>>(),
     resumeMaterialProfileSaveBatches: vi.fn<() => Promise<void>>(),
     resetStaleExcelResearchRows: vi.fn<typeof resetStaleExcelResearchRows>(),
@@ -39,7 +44,17 @@ const mocks = vi.hoisted(() => {
     db: {
       transaction: (run: (transaction: typeof tx) => Promise<unknown>) =>
         run(tx),
-      select: () => ({ from: () => ({ where: async () => [] }) }),
+      select: () => ({
+        from: (table: unknown) => ({
+          where: () =>
+            table === excelResearchJobs
+              ? {
+                  orderBy: () => ({ limit: selectExcelJob }),
+                  limit: readExcelJobStatus,
+                }
+              : Promise.resolve([]),
+        }),
+      }),
       update: (table: unknown) => ({
         set: (patch: { status?: string }) => ({
           where: async () => updateJob(table, patch),
@@ -60,7 +75,8 @@ vi.mock("./app-settings", () => ({
   resolveScrapeMaxConcurrentPages: async () => 1,
   resolveImportMaxConcurrentJobs: mocks.resolveImportMaxConcurrentJobs,
   resolveEnrichmentMaxConcurrentJobs: async () => 0,
-  resolveExcelResearchMaxConcurrentJobs: async () => 0,
+  resolveExcelResearchMaxConcurrentJobs:
+    mocks.resolveExcelResearchMaxConcurrentJobs,
 }));
 vi.mock("./excel-research/process-batch", () => ({
   resetStaleExcelResearchRows: mocks.resetStaleExcelResearchRows,
@@ -95,8 +111,10 @@ describe("job scheduler startup", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.resetAllMocks();
+    vi.stubEnv("BIDTOOL_DEPLOYMENT_SURFACE", undefined);
     resetSchedulerStateForTests();
     mocks.selectQueuedJob.mockResolvedValue([]);
+    mocks.resolveExcelResearchMaxConcurrentJobs.mockResolvedValue(0);
     mocks.resolveImportMaxConcurrentJobs.mockResolvedValue(0);
   });
 
@@ -104,6 +122,7 @@ describe("job scheduler startup", () => {
     const stopped = stopJobSchedulerForTests();
     await vi.dynamicImportSettled();
     await stopped;
+    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
@@ -268,6 +287,28 @@ describe("job scheduler startup", () => {
     await vi.dynamicImportSettled();
     expect(getSchedulerState().state).toBe("ready");
     expect(startupRecoveries()).toHaveLength(2);
+  });
+
+  it("does not start Excel research when its claim returns after stop", async () => {
+    const claimStarted = deferred();
+    const releaseClaim = deferred();
+    mocks.resolveExcelResearchMaxConcurrentJobs.mockResolvedValue(1);
+    mocks.selectExcelJob.mockResolvedValue([]);
+    mocks.selectExcelJob.mockImplementationOnce(async () => {
+      claimStarted.resolve();
+      await releaseClaim.promise;
+      return [{ id: "excel-1" }];
+    });
+    mocks.readExcelJobStatus.mockResolvedValue([]);
+
+    startJobScheduler();
+    await claimStarted.promise;
+    const stopped = stopJobSchedulerForTests();
+    releaseClaim.resolve();
+    await stopped;
+
+    expect(mocks.readExcelJobStatus).not.toHaveBeenCalled();
+    expect(getSchedulerState().state).toBe("stopped");
   });
 
   it("backs off when recovery fails and clears the pending retry on stop", async () => {
