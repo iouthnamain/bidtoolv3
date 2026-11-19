@@ -37,13 +37,17 @@ vi.mock("~/server/services/app-settings", async (original) => ({
   },
 }));
 
-import { cancelShopImportJob } from "~/server/services/shop-import-jobs";
+import {
+  cancelShopImportJob,
+  startShopImportJob,
+} from "~/server/services/shop-import-jobs";
 import {
   recoverInterruptedImportJobsForTests,
   runShopImportJobForTests,
   stopJobSchedulerForTests,
 } from "~/server/services/job-scheduler";
 import { importScrapedProducts } from "~/server/services/shop-product-importer";
+import { replaceScrapeJobProducts } from "~/server/services/shop-scrape-job-products";
 
 type Database = ReturnType<typeof drizzle<typeof schema>>;
 let fixture: Awaited<ReturnType<typeof createDatabaseFixture>>;
@@ -56,7 +60,9 @@ beforeEach(async () => {
   // faults and cleanup cannot affect another integration file's rows.
   for (const table of [
     "shop_scrape_jobs",
+    "shop_scrape_job_products",
     "shop_import_jobs",
+    "shop_import_job_products",
     "materials",
     "shop_import_items",
     "material_catalog_documents",
@@ -101,9 +107,8 @@ function product(label: string): ScrapedShopProduct {
   };
 }
 
-async function createJob(products: ScrapedShopProduct[]) {
+async function createScrapeJob(products: ScrapedShopProduct[]) {
   const scrapeJobId = randomUUID();
-  const importJobId = randomUUID();
   await database.insert(schema.shopScrapeJobs).values({
     id: scrapeJobId,
     url: `https://example.com/${scrapeJobId}`,
@@ -111,6 +116,12 @@ async function createJob(products: ScrapedShopProduct[]) {
     status: "completed",
     products,
   });
+  return scrapeJobId;
+}
+
+async function createJob(products: ScrapedShopProduct[]) {
+  const scrapeJobId = await createScrapeJob(products);
+  const importJobId = randomUUID();
   await database.insert(schema.shopImportJobs).values({
     id: importJobId,
     scrapeJobId,
@@ -276,6 +287,89 @@ test("recovers a material/ledger commit lost before the first progress flush", a
   expect(await database.select().from(schema.materials)).toHaveLength(1);
   await restartTwice(id, products);
 });
+
+test.each(["all", "selected"])(
+  "imports the %s accepted product values after the scrape is edited",
+  async (selection) => {
+    const accepted = product("accepted");
+    const unselected = product("unselected");
+    const scrapeJobId = await createScrapeJob([accepted, unselected]);
+    await replaceScrapeJobProducts(scrapeJobId, [accepted, unselected]);
+    const job = await startShopImportJob({
+      scrapeJobId,
+      productSourceUrls:
+        selection === "selected" ? [accepted.sourceUrl] : undefined,
+    });
+    const edited = { ...accepted, name: "Edited product", price: 7000 };
+    await replaceScrapeJobProducts(scrapeJobId, [edited, product("added")]);
+
+    await database
+      .update(schema.shopImportJobs)
+      .set({ status: "running" })
+      .where(eq(schema.shopImportJobs.id, job.id));
+    await runShopImportJobForTests(await jobRow(job.id));
+
+    const expected =
+      selection === "selected" ? [accepted] : [accepted, unselected];
+    const imported = await database
+      .select()
+      .from(schema.materials)
+      .orderBy(asc(schema.materials.id));
+    expect(imported).toHaveLength(expected.length);
+    expect(imported).toMatchObject(
+      expected.map((source) => ({
+        name: source.name,
+        sourceUrl: source.sourceUrl,
+        defaultUnitPrice: source.price,
+      })),
+    );
+    expect(await jobRow(job.id)).toMatchObject({
+      status: "completed",
+      processed: expected.length,
+      total: expected.length,
+    });
+  },
+);
+
+test("rolls back enqueue when the product snapshot cannot be saved", async () => {
+  const scrapeJobId = await createScrapeJob([product("snapshot-fault")]);
+  await fixture.first`
+    alter table shop_import_job_products add constraint reject_snapshot
+    check (sort_order > 0)`;
+
+  await expect(startShopImportJob({ scrapeJobId })).rejects.toMatchObject({
+    cause: { constraint_name: "reject_snapshot" },
+  });
+  expect(await database.select().from(schema.shopImportJobs)).toHaveLength(0);
+});
+
+test.each(["before processing", "after a product commit"])(
+  "resumes the queued product snapshot after interruption %s",
+  async (interruption) => {
+    const accepted = [product("before-crash"), product("during-crash")];
+    const scrapeJobId = await createScrapeJob(accepted);
+    await replaceScrapeJobProducts(scrapeJobId, accepted);
+    const job = await startShopImportJob({ scrapeJobId });
+    await database
+      .update(schema.shopImportJobs)
+      .set({ status: "running" })
+      .where(eq(schema.shopImportJobs.id, job.id));
+    if (interruption === "after a product commit") {
+      const first = accepted[0];
+      if (!first) throw new Error("Missing first fixture product.");
+      await run(job.id, [first]);
+    }
+    await replaceScrapeJobProducts(scrapeJobId, [product("unaccepted")]);
+    await restartTwice(job.id, accepted);
+    expect(await ledger(job.id)).toMatchObject(
+      accepted.map((source) => ({
+        productName: source.name,
+        sourceUrl: source.sourceUrl,
+        status: "created",
+      })),
+    );
+  },
+);
 
 test.each(["created", "updated", "skipped"] as const)(
   "a late concurrent failure cannot downgrade a committed %s outcome",

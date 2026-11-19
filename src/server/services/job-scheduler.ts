@@ -5,6 +5,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { db } from "~/server/db";
 import {
+  shopImportJobProducts,
   shopImportJobs,
   shopScrapeJobs,
   excelResearchJobs,
@@ -1271,6 +1272,14 @@ function createMaterialProfileSearchProgressWriter(jobId: string) {
 }
 
 async function loadProductsForImportJob(job: ShopImportJobRow) {
+  const snapshot = await db
+    .select({ product: shopImportJobProducts.productJson })
+    .from(shopImportJobProducts)
+    .where(eq(shopImportJobProducts.importJobId, job.id))
+    .orderBy(asc(shopImportJobProducts.sortOrder));
+  if (snapshot.length > 0) return snapshot.map(({ product }) => product);
+
+  // Jobs queued before product snapshots were introduced still use their source.
   const [scrapeJob] = await db
     .select({
       id: shopScrapeJobs.id,
@@ -1435,7 +1444,14 @@ async function recoverInterruptedImportJobs(now: string) {
         }
         return;
       }
-      if (!progress) {
+      const [snapshot] = progress
+        ? []
+        : await tx
+            .select({ jobId: shopImportJobProducts.importJobId })
+            .from(shopImportJobProducts)
+            .where(eq(shopImportJobProducts.importJobId, job.id))
+            .limit(1);
+      if (!progress && !snapshot) {
         await tx
           .update(shopImportJobs)
           .set({
