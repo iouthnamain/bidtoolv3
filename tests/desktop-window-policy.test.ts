@@ -96,6 +96,13 @@ describe("desktop navigation policy", () => {
     );
   });
 
+  test("rejects a non-HTTP redirect even when its origin matches", () => {
+    const configured = new URL(remoteOrigin);
+    expect(
+      resolveProbeRedirect(configured, `blob:${remoteOrigin}/viewer`),
+    ).toBeNull();
+  });
+
   test.each([localOrigin, remoteOrigin])(
     "allows same-origin links and redirects at %s",
     (origin) => {

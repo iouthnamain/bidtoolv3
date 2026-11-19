@@ -32,6 +32,8 @@ const EXPORT_PICK_FOLDER_CHANNEL = "bidtool:export:pick-folder";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let nextServerProcess = null;
+/** @type {import("node:child_process").ChildProcess | null} */
+let bundledServerBeingReplaced = null;
 /** @type {string | null} */
 let bundledServerUrl = null;
 /** @type {WeakMap<Electron.WebContents, string>} */
@@ -878,11 +880,16 @@ async function prepareDesktopStorageForInstall() {
   }
 }
 
+/** @param {import("node:child_process").ChildProcess} child */
+function canReuseBundledServer(child) {
+  return child.exitCode === null && child.signalCode === null && !child.killed;
+}
+
 async function startStandaloneNextServer() {
   if (
     bundledServerUrl &&
-    nextServerProcess?.exitCode === null &&
-    !nextServerProcess.killed
+    nextServerProcess &&
+    canReuseBundledServer(nextServerProcess)
   )
     return bundledServerUrl;
   if (nextServerProcess) await stopBundledServer();
@@ -929,13 +936,16 @@ async function startStandaloneNextServer() {
     const bundledOrigin = parseHttpUrl(url)?.origin;
     const servingLocalWindow =
       nextServerProcess === serverProcess &&
-      BrowserWindow.getAllWindows().some(
+      getAppWindows().some(
         (window) =>
-          !window.isDestroyed() &&
-          appWindowOrigins.has(window.webContents) &&
           parseHttpUrl(window.webContents.getURL())?.origin === bundledOrigin,
       );
-    if (!isQuitting && !serverProcess.killed && servingLocalWindow) {
+    if (
+      !isQuitting &&
+      !serverProcess.killed &&
+      bundledServerBeingReplaced !== serverProcess &&
+      servingLocalWindow
+    ) {
       dialog.showErrorBox(
         "BidTool server stopped",
         `The local Next.js server exited with code ${code ?? "unknown"}.`,
@@ -1065,38 +1075,52 @@ async function resolveStartUrl() {
   return await startStandaloneNextServer();
 }
 
+function getAppWindows() {
+  return BrowserWindow.getAllWindows().filter(
+    (window) =>
+      !window.isDestroyed() && appWindowOrigins.has(window.webContents),
+  );
+}
+
+/** @param {string} appUrl */
+async function restoreDesktopSettings(appUrl) {
+  const settingsUrl = new URL("/settings/desktop", appUrl).href;
+  await Promise.allSettled(
+    getAppWindows().map((window) => loadAppWindow(window, settingsUrl)),
+  );
+}
+
 async function reloadWindowsToStartUrl() {
   if (reloadInFlight || updateInstallInFlight)
     throw new Error("BidTool đang chuyển server hoặc cài bản cập nhật.");
   reloadInFlight = true;
+  const previousAppUrl = lastAppUrl;
+  let navigationStarted = false;
   try {
     const serverConfig = getDesktopServerConfig();
+    const switchingToRemote =
+      serverConfig.serverUrl && !process.env.BIDTOOL_DESKTOP_DEV_URL?.trim();
+    if (
+      switchingToRemote &&
+      bundledServerUrl &&
+      previousAppUrl &&
+      new URL(previousAppUrl).origin === new URL(bundledServerUrl).origin
+    ) {
+      // If the old child exits during the switch, either finish loading the
+      // remote app or restart the child to bring back settings.
+      bundledServerBeingReplaced = nextServerProcess;
+    }
     const startUrl = await resolveStartUrl();
 
-    const windows = BrowserWindow.getAllWindows().filter(
-      (window) =>
-        !window.isDestroyed() && appWindowOrigins.has(window.webContents),
-    );
-    const previousAppUrl = lastAppUrl;
+    navigationStarted = true;
     const results = await Promise.allSettled(
-      windows.map((window) => loadAppWindow(window, startUrl)),
+      getAppWindows().map((window) => loadAppWindow(window, startUrl)),
     );
     const failure = results.find((result) => result.status === "rejected");
-    if (failure) {
-      if (previousAppUrl) {
-        const settingsUrl = new URL("/settings/desktop", previousAppUrl).href;
-        await Promise.allSettled(
-          windows.map((window) => loadAppWindow(window, settingsUrl)),
-        );
-      }
-      throw failure.reason;
-    }
+    if (failure) throw failure.reason;
 
     // Keep the bundled server available until the configured app has loaded.
-    if (
-      serverConfig.serverUrl &&
-      !process.env.BIDTOOL_DESKTOP_DEV_URL?.trim()
-    ) {
+    if (switchingToRemote) {
       await stopBundledServer().catch((error) => {
         console.warn(
           "Could not stop the local BidTool server after switching.",
@@ -1106,7 +1130,26 @@ async function reloadWindowsToStartUrl() {
     }
 
     return { loadedUrl: startUrl, serverConfig: getDesktopServerConfig() };
+  } catch (error) {
+    if (previousAppUrl && !isQuitting) {
+      const oldChild = bundledServerBeingReplaced;
+      if (navigationStarted && (!oldChild || canReuseBundledServer(oldChild))) {
+        await restoreDesktopSettings(previousAppUrl);
+      }
+      if (oldChild && !canReuseBundledServer(oldChild) && !isQuitting) {
+        try {
+          await restoreDesktopSettings(await startStandaloneNextServer());
+        } catch (recoveryError) {
+          console.warn(
+            "Could not restore the local BidTool server after switching.",
+            errorMessage(recoveryError),
+          );
+        }
+      }
+    }
+    throw error;
   } finally {
+    bundledServerBeingReplaced = null;
     reloadInFlight = false;
   }
 }

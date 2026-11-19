@@ -1,7 +1,7 @@
-/** @param {string} rawUrl */
-function parseHttpUrl(rawUrl) {
+/** @param {string} rawUrl @param {URL} [base] */
+function parseHttpUrl(rawUrl, base) {
   try {
-    const url = new URL(rawUrl);
+    const url = new URL(rawUrl, base);
     return url.protocol === "http:" || url.protocol === "https:" ? url : null;
   } catch {
     return null;
@@ -10,18 +10,14 @@ function parseHttpUrl(rawUrl) {
 
 /** @param {URL} from @param {string} location */
 function resolveProbeRedirect(from, location) {
-  try {
-    const to = new URL(location, from);
-    if (to.username || to.password) return null;
-    return to.origin === from.origin ||
-      (from.protocol === "http:" &&
-        to.protocol === "https:" &&
-        from.hostname === to.hostname)
-      ? to.href
-      : null;
-  } catch {
-    return null;
-  }
+  const to = parseHttpUrl(location, from);
+  if (!to || to.username || to.password) return null;
+  return to.origin === from.origin ||
+    (from.protocol === "http:" &&
+      to.protocol === "https:" &&
+      from.hostname === to.hostname)
+    ? to.href
+    : null;
 }
 
 /** @typedef {Pick<Electron.WebFrameMain, "isDestroyed" | "detached" | "origin" | "url">} AppFrame */
