@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 
 import { api } from "~/trpc/react";
+import { refreshQuery } from "./refresh-query";
 
 export function MaterialControlRequirementCreateForm({
   planId,
@@ -10,6 +13,7 @@ export function MaterialControlRequirementCreateForm({
   planId: number;
 }) {
   const utils = api.useUtils();
+  const client = useQueryClient();
   const [materialName, setMaterialName] = useState("");
   const [specText, setSpecText] = useState("");
   const [unit, setUnit] = useState("");
@@ -23,23 +27,30 @@ export function MaterialControlRequirementCreateForm({
       const savedPlan = { planId: requirement.planId };
       const projectId =
         utils.materialControl.getPlanDetail.getData(savedPlan)?.plan.projectId;
-      const includesProject = (filter: number | undefined) =>
+      const includesProject = (filter: unknown) =>
         projectId === undefined || filter === undefined || filter === projectId;
       await Promise.all([
-        utils.materialControl.getPlanDetail.invalidate(savedPlan),
-        utils.materialControl.listPlanDetails.invalidate(undefined, {
-          predicate: ({ queryKey: [, options] }) =>
-            includesProject(options?.input?.projectId),
-        }),
-        utils.materialControl.dashboardSummary.invalidate(undefined, {
-          predicate: ({ queryKey: [, options] }) =>
-            includesProject(options?.input?.projectId),
-        }),
-        utils.materialControl.listShortages.invalidate(undefined, {
-          predicate: ({ queryKey: [, options] }) =>
-            includesProject(options?.input?.projectId) &&
-            (!options?.input?.lateOnly || requirement.requiredAt !== null),
-        }),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.getPlanDetail, savedPlan),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listPlanDetails),
+          (input) => includesProject(input.projectId),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.dashboardSummary),
+          (input) => includesProject(input.projectId),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listShortages),
+          (input) =>
+            includesProject(input.projectId) &&
+            (input.lateOnly !== true || requirement.requiredAt !== null),
+        ),
       ]);
     },
   });

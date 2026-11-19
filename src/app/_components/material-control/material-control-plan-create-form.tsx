@@ -1,35 +1,37 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 
 import { api } from "~/trpc/react";
+import { refreshQuery } from "./refresh-query";
 
 export function MaterialControlPlanCreateForm({
   projectId,
 }: {
   projectId: number;
 }) {
-  const utils = api.useUtils();
+  const client = useQueryClient();
   const [name, setName] = useState("");
   const create = api.materialControl.createPlan.useMutation({
     onSuccess: async (plan) => {
       setName("");
-      const includesProject = (filter: number | undefined) =>
+      const includesProject = (filter: unknown) =>
         filter === undefined || filter === plan.projectId;
       await Promise.all([
-        utils.materialControl.listPlanDetails.invalidate(undefined, {
-          predicate: ({ queryKey: [, options] }) => {
-            const input = options?.input;
-            return (
-              includesProject(input?.projectId) &&
-              (input?.status === undefined || input.status === plan.status)
-            );
-          },
-        }),
-        utils.materialControl.dashboardSummary.invalidate(undefined, {
-          predicate: ({ queryKey: [, options] }) =>
-            includesProject(options?.input?.projectId),
-        }),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listPlanDetails),
+          ({ projectId, status }) =>
+            includesProject(projectId) &&
+            (status === undefined || status === plan.status),
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.dashboardSummary),
+          ({ projectId }) => includesProject(projectId),
+        ),
       ]);
     },
   });

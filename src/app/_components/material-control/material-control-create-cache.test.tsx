@@ -1,9 +1,10 @@
-import { QueryObserver } from "@tanstack/react-query";
+import { QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import {
   createTRPCQueryUtils,
   createTRPCReact,
   getQueryKey,
 } from "@trpc/react-query";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test, vi } from "vitest";
 
@@ -29,16 +30,25 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
-vi.mock("~/trpc/react", () => ({
-  api: {
-    useUtils: mocks.useUtils,
-    materialControl: {
-      createProject: { useMutation: mocks.createProject },
-      createPlan: { useMutation: mocks.createPlan },
-      createRequirement: { useMutation: mocks.createRequirement },
+vi.mock("~/trpc/react", async () => {
+  const { createTRPCReact } = await import("@trpc/react-query");
+  const { materialControl } = createTRPCReact<AppRouter>();
+  return {
+    api: {
+      useUtils: mocks.useUtils,
+      materialControl: {
+        listProjects: materialControl.listProjects,
+        listPlanDetails: materialControl.listPlanDetails,
+        dashboardSummary: materialControl.dashboardSummary,
+        listShortages: materialControl.listShortages,
+        getPlanDetail: materialControl.getPlanDetail,
+        createProject: { useMutation: mocks.createProject },
+        createPlan: { useMutation: mocks.createPlan },
+        createRequirement: { useMutation: mocks.createRequirement },
+      },
     },
-  },
-}));
+  };
+});
 
 const api = createTRPCReact<AppRouter>();
 const trpcClient = api.createClient({ links: [] });
@@ -47,6 +57,12 @@ const projectId = 17;
 const planId = 23;
 const now = "2026-11-19T00:00:00Z";
 let cache: ReturnType<typeof createQueryClient>;
+
+function renderForm(component: ReactNode) {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={cache}>{component}</QueryClientProvider>,
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -74,7 +90,7 @@ test("creating a project invalidates cached project lists and dashboard before r
   ];
   for (const key of [...affected, ...unaffected]) cache.setQueryData(key, []);
 
-  renderToStaticMarkup(<MaterialControlProjectCreateClient />);
+  renderForm(<MaterialControlProjectCreateClient />);
   mocks.push.mockImplementationOnce(() => {
     for (const key of affected)
       expect(cache.getQueryState(key)?.isInvalidated, JSON.stringify(key)).toBe(
@@ -112,7 +128,7 @@ test("creating a plan invalidates the plan lists and dashboard that include it",
   ];
   for (const key of [...affected, ...unaffected]) cache.setQueryData(key, []);
 
-  renderToStaticMarkup(<MaterialControlPlanCreateForm projectId={projectId} />);
+  renderForm(<MaterialControlPlanCreateForm projectId={projectId} />);
   await mocks.createPlan.mock.lastCall?.[0].onSuccess({
     projectId,
     status: "draft",
@@ -160,9 +176,7 @@ test("returning to a cached project after saving a requirement picks up the new 
   const unsubscribe = observer.subscribe(() => undefined);
   try {
     await cache.fetchQuery(planDetail);
-    renderToStaticMarkup(
-      <MaterialControlRequirementCreateForm planId={planId} />,
-    );
+    renderForm(<MaterialControlRequirementCreateForm planId={planId} />);
     requirementCount = 1;
     await mocks.createRequirement.mock.lastCall?.[0].onSuccess({
       planId,
@@ -180,3 +194,63 @@ test("returning to a cached project after saving a requirement picks up the new 
     unsubscribe();
   }
 });
+
+test.each(["project", "plan", "requirement"] as const)(
+  "a pre-save list response cannot overwrite the cache after creating a %s",
+  async (kind) => {
+    const queryKey =
+      kind === "project"
+        ? getQueryKey(material.listProjects, { limit: 200 }, "query")
+        : getQueryKey(material.listPlanDetails, { projectId }, "query");
+    let finishBeforeSave = (_rows: string[]) => {};
+    const beforeSave = new Promise<string[]>((resolve) => {
+      finishBeforeSave = resolve;
+    });
+    let saved = false;
+    const queryFn = vi.fn(() => (saved ? ["new record"] : beforeSave));
+    const opts = { queryKey, queryFn };
+    const observer = new QueryObserver(cache, opts);
+    const firstLoad = kind === "plan";
+    if (!firstLoad) cache.setQueryData(queryKey, []);
+    const unsubscribe = observer.subscribe(() => undefined);
+    const refresh = firstLoad ? undefined : observer.refetch();
+    if (!firstLoad) unsubscribe();
+    try {
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      saved = true;
+      let onSuccess;
+      if (kind === "project") {
+        renderForm(<MaterialControlProjectCreateClient />);
+        onSuccess = mocks.createProject.mock.lastCall?.[0].onSuccess({
+          id: projectId,
+          status: "draft",
+        });
+      } else if (kind === "plan") {
+        renderForm(<MaterialControlPlanCreateForm projectId={projectId} />);
+        onSuccess = mocks.createPlan.mock.lastCall?.[0].onSuccess({
+          projectId,
+          status: "draft",
+        });
+      } else {
+        cache.setQueryData(
+          getQueryKey(material.getPlanDetail, { planId }, "query"),
+          {
+            plan: { projectId },
+          },
+        );
+        renderForm(<MaterialControlRequirementCreateForm planId={planId} />);
+        onSuccess = mocks.createRequirement.mock.lastCall?.[0].onSuccess({
+          planId,
+          requiredAt: null,
+        });
+      }
+
+      finishBeforeSave([]);
+      await Promise.all([onSuccess, refresh]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(await cache.fetchQuery(opts)).toEqual(["new record"]);
+    } finally {
+      unsubscribe();
+    }
+  },
+);

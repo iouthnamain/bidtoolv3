@@ -2,29 +2,33 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 
 import { api } from "~/trpc/react";
+import { refreshQuery } from "./refresh-query";
 
 export function MaterialControlProjectCreateClient() {
   const router = useRouter();
-  const utils = api.useUtils();
+  const client = useQueryClient();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const create = api.materialControl.createProject.useMutation({
-    onSuccess: (project) => {
-      void utils.materialControl.listProjects.invalidate(undefined, {
-        predicate: ({ queryKey: [, options] }) => {
-          const status = options?.input?.status;
-          return status === undefined || status === project.status;
-        },
-      });
-      void utils.materialControl.dashboardSummary.invalidate(undefined, {
-        predicate: ({ queryKey: [, options] }) => {
-          const projectId = options?.input?.projectId;
-          return projectId === undefined || projectId === project.id;
-        },
-      });
+    onSuccess: async (project) => {
+      await Promise.all([
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.listProjects),
+          ({ status }) => status === undefined || status === project.status,
+        ),
+        refreshQuery(
+          client,
+          getQueryKey(api.materialControl.dashboardSummary),
+          ({ projectId }) =>
+            projectId === undefined || projectId === project.id,
+        ),
+      ]);
       router.push(`/material-control/projects/${project.id}`);
     },
   });
