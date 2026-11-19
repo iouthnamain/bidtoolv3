@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
@@ -8,18 +8,15 @@ import {
   materialControlPurchaseCommitments,
   materialControlRequirements,
   materialControlReservations,
-  materialControlStockMovements,
   materials,
   materialControlProjects,
 } from "~/server/db/schema";
-import { calculateSharedAvailable } from "./quantity-formulas";
+import { getAvailableStockAtLocation } from "./movement-service";
 import { captureRequirementSnapshot } from "./requirement-service";
 import type {
   MaterialControlPurchaseStatus,
   MaterialControlReservationStatus,
   MaterialSnapshot,
-  MovementInput,
-  ReservationState,
 } from "./types";
 import {
   MaterialControlServiceError,
@@ -125,7 +122,7 @@ function quantity(value: unknown, label: string): asserts value is number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     fail("BAD_REQUEST", `${label} phải lớn hơn 0.`);
   }
-  if ((value.toString().split(".")[1]?.length ?? 0) > 3) {
+  if (Number(value.toFixed(3)) !== value) {
     fail("BAD_REQUEST", `${label} chỉ được có tối đa 3 chữ số thập phân.`);
   }
 }
@@ -355,42 +352,6 @@ export async function listPurchaseCommitments(
   return Promise.all(rows.map((row) => commitmentView(database, row)));
 }
 
-function movementFromRow(
-  row: typeof materialControlStockMovements.$inferSelect,
-): MovementInput {
-  return {
-    materialId: row.materialId,
-    materialName: row.materialName,
-    specText: row.specText,
-    unit: row.unit,
-    movementType: row.movementType,
-    quantity: Number(row.quantity),
-    sourceLocationId: row.sourceLocationId,
-    destinationLocationId: row.destinationLocationId,
-    requirementId: row.requirementId,
-    shipmentId: row.shipmentId,
-    reversalOfId: row.reversalOfId,
-    pairId: null,
-    explicitAdjustment: row.explicitAdjustment,
-  };
-}
-
-function reservationFromRow(
-  row: typeof materialControlReservations.$inferSelect,
-): ReservationState {
-  return {
-    materialId: row.materialId,
-    materialName: row.materialName,
-    specText: row.specText,
-    unit: row.unit,
-    id: row.id,
-    locationId: row.locationId,
-    quantity: Number(row.quantity),
-    status: row.status,
-    requirementId: row.requirementId,
-  };
-}
-
 export async function createReservation(
   input: CreateReservationInput,
   database: AppDb = db,
@@ -413,61 +374,11 @@ export async function createReservation(
     if (context && context.projectId !== input.projectId)
       fail("BAD_REQUEST", "Nhu cầu không thuộc dự án.");
     const { snapshot } = await resolveSnapshot(tx, input);
-    const materialMovementCondition =
-      snapshot.materialId === null
-        ? and(
-            isNull(materialControlStockMovements.materialId),
-            eq(
-              materialControlStockMovements.materialName,
-              snapshot.materialName,
-            ),
-            eq(materialControlStockMovements.specText, snapshot.specText),
-            eq(materialControlStockMovements.unit, snapshot.unit),
-          )
-        : eq(materialControlStockMovements.materialId, snapshot.materialId);
-    const materialReservationCondition =
-      snapshot.materialId === null
-        ? and(
-            isNull(materialControlReservations.materialId),
-            eq(materialControlReservations.materialName, snapshot.materialName),
-            eq(materialControlReservations.specText, snapshot.specText),
-            eq(materialControlReservations.unit, snapshot.unit),
-          )
-        : eq(materialControlReservations.materialId, snapshot.materialId);
-    const movements = await tx
-      .select()
-      .from(materialControlStockMovements)
-      .where(
-        and(
-          materialMovementCondition,
-          or(
-            eq(
-              materialControlStockMovements.sourceLocationId,
-              input.locationId,
-            ),
-            eq(
-              materialControlStockMovements.destinationLocationId,
-              input.locationId,
-            ),
-          ),
-        ),
-      );
-    const reservations = await tx
-      .select()
-      .from(materialControlReservations)
-      .where(
-        and(
-          eq(materialControlReservations.locationId, input.locationId),
-          materialReservationCondition,
-        ),
-      )
-      .for("update");
-    const available = calculateSharedAvailable({
-      movements: movements.map(movementFromRow),
-      reservations: reservations.map(reservationFromRow),
-      locationId: input.locationId,
-      material: snapshot,
-    });
+    const { available } = await getAvailableStockAtLocation(
+      tx,
+      input.locationId,
+      snapshot,
+    );
     if (input.quantity > available)
       fail("CONFLICT", `Tồn khả dụng không đủ (còn ${available}).`);
     const [row] = await tx
