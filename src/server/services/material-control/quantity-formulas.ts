@@ -32,6 +32,7 @@ export type RequirementMovement = MovementInput &
     sourceIsSiteOrZone?: boolean;
     destinationIsSiteOrZone?: boolean;
     shipmentDispatched?: boolean;
+    hasUnmatchedShipmentLink?: boolean;
   }>;
 
 type RequirementSummaryInput = RequirementQuantityInput &
@@ -626,7 +627,10 @@ function calculateReceiptQuantities(
     ledgerShipments.filter((movement) => movement.shipmentId == null),
   );
   const unlinkedReceipts = new Set(
-    ledgerReceipts.filter((movement) => movement.shipmentId == null),
+    ledgerReceipts.filter(
+      (movement) =>
+        movement.shipmentId == null && !movement.hasUnmatchedShipmentLink,
+    ),
   );
   let unlinkedInTransit = 0;
   let unlinkedReceived = 0;

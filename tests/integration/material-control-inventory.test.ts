@@ -318,7 +318,7 @@ test("uses both physical endpoints for warehouse receipts, transfers and reversa
   });
 });
 
-test("ignores a foreign shipment when reading old ledger entries and rejects new links", async ({
+test("preserves legacy dispatches and keeps foreign receipts from settling transit", async ({
   inventory,
 }) => {
   const { database, warehouse, site, record } = inventory;
@@ -350,16 +350,38 @@ test("ignores a foreign shipment when reading old ledger entries and rejects new
       record({ ...shipment, shipmentId: foreignShipment.id }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
-    const legacy = await record(shipment);
+    const dispatch = await record(shipment);
+    const receipt = await record({
+      movementType: "site_receipt",
+      destinationLocationId: site.id,
+      quantity: 3,
+    });
     await database
       .update(schema.materialControlStockMovements)
       .set({ shipmentId: foreignShipment.id })
-      .where(eq(schema.materialControlStockMovements.id, legacy.id));
+      .where(eq(schema.materialControlStockMovements.id, receipt.id));
     await expectInventory(inventory, {
       shipped: 4,
-      received: 0,
+      received: 3,
       inTransit: 4,
-      siteOnHand: 0,
+      siteOnHand: 3,
+    });
+
+    await database
+      .update(schema.materialControlStockMovements)
+      .set({ shipmentId: foreignShipment.id })
+      .where(eq(schema.materialControlStockMovements.id, dispatch.id));
+    await reverseMovement(receipt.id, database);
+    await record({
+      movementType: "site_receipt",
+      destinationLocationId: site.id,
+      quantity: 2,
+    });
+    await expectInventory(inventory, {
+      shipped: 4,
+      received: 5,
+      inTransit: 2,
+      siteOnHand: 2,
     });
   } finally {
     await database
