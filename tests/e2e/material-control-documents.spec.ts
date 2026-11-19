@@ -83,7 +83,7 @@ test("refreshes an empty list that was loading when evidence was attached", asyn
   if (!href) throw new Error("Missing project documents link.");
 
   let initialListFetched = false;
-  let releaseInitialList = () => {};
+  let releaseInitialList: () => void = () => undefined;
   const initialListGate = new Promise<void>((resolve) => {
     releaseInitialList = resolve;
   });
