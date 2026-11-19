@@ -5,7 +5,11 @@ const config = {
   ...(distDir ? { distDir } : {}),
   allowedDevOrigins: ["127.0.0.1"],
   output: "standalone",
-  serverExternalPackages: ["@sparticuz/chromium-min", "playwright-core"],
+  serverExternalPackages: [
+    "@sparticuz/chromium-min",
+    "playwright",
+    "playwright-core",
+  ],
   logging: {
     incomingRequests: false,
   },

@@ -98,6 +98,7 @@ try {
   for (const entry of [
     "src",
     "public",
+    "drizzle/meta/_journal.json",
     "next.config.js",
     "tsconfig.json",
     "postcss.config.js",
