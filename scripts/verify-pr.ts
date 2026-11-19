@@ -47,10 +47,21 @@ writeFileSync(
     version: "0.0.0-local",
     commitSha: "0000000",
     changelog: "Local verification fixture",
+    web: {
+      buildId: "dpl_local",
+      deploymentUrl: "https://example.com",
+      buildMetadata: "0.0.0-local+web.0000000",
+    },
     onprem: {
       image: "ghcr.io/example/bidtoolv3:0.0.0-local",
       digest: "sha256:deadbeef",
       buildMetadata: "0.0.0-local+onprem.0000000",
+    },
+    desktop: {
+      linux: {
+        url: "https://example.com/app.AppImage",
+        version: "0.0.0-local+desktop.linux.0000000",
+      },
     },
   }),
 );
