@@ -6,6 +6,8 @@
 .next
 .next-electron
 .electron-build
+.pipeline/runs
+data
 dist-electron
 node_modules
 coverage
