@@ -510,7 +510,11 @@ function probeUrl(rawUrl, instanceId, remainingRedirects = 5) {
           status >= 300 && status < 400 && response.headers.location
             ? resolveProbeRedirect(url, response.headers.location)
             : null;
-        if (!redirect) {
+        const browserShouldFollow =
+          response.headers["set-cookie"] &&
+          redirect &&
+          parseHttpUrl(redirect)?.origin === url.origin;
+        if (!redirect || browserShouldFollow) {
           resolve(status < 500 ? rawUrl : null);
         } else if (remainingRedirects === 0) {
           resolve(null);
@@ -922,10 +926,15 @@ async function startStandaloneNextServer() {
   });
   serverProcess.once("exit", (code) => {
     exited = true;
+    const bundledOrigin = parseHttpUrl(url)?.origin;
     const servingLocalWindow =
       nextServerProcess === serverProcess &&
-      lastAppUrl !== null &&
-      parseHttpUrl(lastAppUrl)?.origin === url;
+      BrowserWindow.getAllWindows().some(
+        (window) =>
+          !window.isDestroyed() &&
+          appWindowOrigins.has(window.webContents) &&
+          parseHttpUrl(window.webContents.getURL())?.origin === bundledOrigin,
+      );
     if (!isQuitting && !serverProcess.killed && servingLocalWindow) {
       dialog.showErrorBox(
         "BidTool server stopped",
