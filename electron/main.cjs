@@ -12,6 +12,7 @@ const {
   isApprovedAppFrame,
   isApprovedIpcSender,
   parseHttpUrl,
+  resolveHttpsUpgrade,
 } = require("./window-policy.cjs");
 
 const HOST = "127.0.0.1";
@@ -31,6 +32,8 @@ const EXPORT_PICK_FOLDER_CHANNEL = "bidtool:export:pick-folder";
 
 /** @type {import("node:child_process").ChildProcess | null} */
 let nextServerProcess = null;
+/** @type {string | null} */
+let bundledServerUrl = null;
 /** @type {WeakMap<Electron.WebContents, string>} */
 const appWindowOrigins = new WeakMap();
 /** @type {string | null} */
@@ -455,6 +458,7 @@ async function installDesktopUpdate() {
   if (
     !updaterConfigured ||
     updateInstallInFlight ||
+    reloadInFlight ||
     desktopUpdateState.status !== "downloaded"
   ) {
     return { accepted: false, completed: false, state: desktopUpdateState };
@@ -479,28 +483,42 @@ function getClientForUrl(url) {
   return url.protocol === "https:" ? https : http;
 }
 
-/** @param {string} rawUrl */
-function probeUrl(rawUrl) {
+/** @param {string} rawUrl @param {string} [instanceId] @returns {Promise<string | null>} */
+function probeUrl(rawUrl, instanceId) {
   return new Promise((resolve) => {
     /** @type {URL} */
     let url;
     try {
       url = new URL(rawUrl);
     } catch {
-      resolve(false);
+      resolve(null);
       return;
     }
 
     const request = getClientForUrl(url).get(url, (response) => {
       response.resume();
-      resolve((response.statusCode ?? 500) < 500);
+      if (instanceId) {
+        resolve(
+          response.statusCode === 200 &&
+            response.headers["x-bidtool-desktop-instance"] === instanceId
+            ? rawUrl
+            : null,
+        );
+      } else {
+        const status = response.statusCode ?? 500;
+        const upgrade =
+          status >= 300 && status < 400 && response.headers.location
+            ? resolveHttpsUpgrade(url, response.headers.location)
+            : null;
+        resolve(upgrade ? probeUrl(upgrade) : status < 500 ? rawUrl : null);
+      }
     });
 
     request.setTimeout(1_500, () => {
       request.destroy();
-      resolve(false);
+      resolve(null);
     });
-    request.on("error", () => resolve(false));
+    request.on("error", () => resolve(null));
   });
 }
 
@@ -511,9 +529,8 @@ function probeUrl(rawUrl) {
 async function waitForUrl(url, timeoutMs) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (await probeUrl(url)) {
-      return;
-    }
+    const readyUrl = await probeUrl(url);
+    if (readyUrl) return readyUrl;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
@@ -802,8 +819,7 @@ function prepareDesktopDataRoot(serverDir) {
   return target;
 }
 
-async function prepareDesktopStorageForInstall() {
-  if (getDesktopServerConfig().serverUrl) return;
+async function stopBundledServer() {
   const child = nextServerProcess;
   if (child && child.exitCode === null && child.signalCode === null) {
     // A sent signal is not proof that filesystem writers have stopped.
@@ -823,19 +839,36 @@ async function prepareDesktopStorageForInstall() {
         clearTimeout(timer);
         reject(error);
       });
-      if (!child.kill()) {
+      if (!child.killed && !child.kill()) {
         clearTimeout(timer);
         reject(
           new Error("Could not stop local server; desktop update blocked."),
         );
       }
     });
-    nextServerProcess = null;
   }
-  prepareDesktopDataRoot(path.dirname(findStandaloneServerPath()));
+  if (nextServerProcess === child) {
+    nextServerProcess = null;
+    bundledServerUrl = null;
+  }
+}
+
+async function prepareDesktopStorageForInstall() {
+  const hadLocalServer = nextServerProcess !== null;
+  await stopBundledServer();
+  if (hadLocalServer || !getDesktopServerConfig().serverUrl) {
+    prepareDesktopDataRoot(path.dirname(findStandaloneServerPath()));
+  }
 }
 
 async function startStandaloneNextServer() {
+  if (
+    bundledServerUrl &&
+    nextServerProcess?.exitCode === null &&
+    !nextServerProcess.killed
+  )
+    return bundledServerUrl;
+  if (nextServerProcess) await stopBundledServer();
   loadLocalEnv();
   const port =
     Number(process.env.BIDTOOL_DESKTOP_PORT) || (await findAvailablePort());
@@ -843,6 +876,7 @@ async function startStandaloneNextServer() {
   const serverDir = path.dirname(serverPath);
   const dataRoot = prepareDesktopDataRoot(serverDir);
   const url = `http://${HOST}:${port}`;
+  const instanceId = crypto.randomUUID();
   let exited = false;
 
   const serverProcess = spawn(process.execPath, [serverPath], {
@@ -850,6 +884,7 @@ async function startStandaloneNextServer() {
     env: {
       ...process.env,
       BIDTOOL_DESKTOP: "1",
+      BIDTOOL_DESKTOP_INSTANCE: instanceId,
       BIDTOOL_DATA_DIR: dataRoot,
       ELECTRON_RUN_AS_NODE: "1",
       FORCE_COLOR: "0",
@@ -890,7 +925,8 @@ async function startStandaloneNextServer() {
         "The local Next.js server exited before it became ready.",
       );
     }
-    if (await probeUrl(url)) {
+    if (await probeUrl(`${url}/api/health`, instanceId)) {
+      bundledServerUrl = url;
       return url;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -954,8 +990,9 @@ async function loadAppWindow(window, startUrl) {
     await window.loadURL(startUrl);
     lastAppUrl = startUrl;
   } catch (error) {
-    if (previousOrigin) appWindowOrigins.set(webContents, previousOrigin);
-    else appWindowOrigins.delete(webContents);
+    if (previousOrigin) {
+      appWindowOrigins.set(webContents, previousOrigin);
+    } else appWindowOrigins.delete(webContents);
     throw error;
   }
 }
@@ -991,39 +1028,47 @@ async function createMainWindow(startUrl) {
 async function resolveStartUrl() {
   const devUrl = process.env.BIDTOOL_DESKTOP_DEV_URL?.trim();
   if (devUrl) {
-    await waitForUrl(devUrl, START_TIMEOUT_MS);
-    return devUrl;
+    return waitForUrl(devUrl, START_TIMEOUT_MS);
   }
 
   const serverConfig = getDesktopServerConfig();
   if (serverConfig.serverUrl) {
-    await waitForUrl(serverConfig.serverUrl, START_TIMEOUT_MS);
-    return serverConfig.serverUrl;
+    return waitForUrl(serverConfig.serverUrl, START_TIMEOUT_MS);
   }
 
   return await startStandaloneNextServer();
 }
 
 async function reloadWindowsToStartUrl() {
-  if (reloadInFlight) throw new Error("BidTool đang chuyển server.");
+  if (reloadInFlight || updateInstallInFlight)
+    throw new Error("BidTool đang chuyển server hoặc cài bản cập nhật.");
   reloadInFlight = true;
   try {
     const serverConfig = getDesktopServerConfig();
     const startUrl = await resolveStartUrl();
 
-    await Promise.all(
-      BrowserWindow.getAllWindows()
-        .filter(
-          (window) =>
-            !window.isDestroyed() && appWindowOrigins.has(window.webContents),
-        )
-        .map((window) => loadAppWindow(window, startUrl)),
+    const windows = BrowserWindow.getAllWindows().filter(
+      (window) =>
+        !window.isDestroyed() && appWindowOrigins.has(window.webContents),
     );
+    const previousAppUrl = lastAppUrl;
+    const results = await Promise.allSettled(
+      windows.map((window) => loadAppWindow(window, startUrl)),
+    );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) {
+      if (previousAppUrl) {
+        const settingsUrl = new URL("/settings/desktop", previousAppUrl).href;
+        await Promise.allSettled(
+          windows.map((window) => loadAppWindow(window, settingsUrl)),
+        );
+      }
+      throw failure.reason;
+    }
 
     // Keep the bundled server available until the configured app has loaded.
-    if (serverConfig.serverUrl === startUrl && nextServerProcess?.kill()) {
-      nextServerProcess = null;
-    }
+    if (serverConfig.serverUrl && !process.env.BIDTOOL_DESKTOP_DEV_URL?.trim())
+      await stopBundledServer();
 
     return { loadedUrl: startUrl, serverConfig: getDesktopServerConfig() };
   } finally {

@@ -8,6 +8,22 @@ function parseHttpUrl(rawUrl) {
   }
 }
 
+/** @param {URL} from @param {string} location */
+function resolveHttpsUpgrade(from, location) {
+  try {
+    const to = new URL(location, from);
+    return from.protocol === "http:" &&
+      to.protocol === "https:" &&
+      from.hostname === to.hostname &&
+      !to.username &&
+      !to.password
+      ? to.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** @typedef {Pick<Electron.WebFrameMain, "isDestroyed" | "detached" | "origin" | "url">} AppFrame */
 /** @typedef {{ isDestroyed: Electron.WebContents["isDestroyed"], mainFrame: AppFrame }} AppWebContents */
 
@@ -59,4 +75,5 @@ module.exports = {
   isApprovedAppFrame,
   isApprovedIpcSender,
   parseHttpUrl,
+  resolveHttpsUpgrade,
 };
