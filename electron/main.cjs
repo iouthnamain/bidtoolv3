@@ -510,15 +510,20 @@ function probeUrl(rawUrl, instanceId, remainingRedirects = 5) {
           status >= 300 && status < 400 && response.headers.location
             ? resolveProbeRedirect(url, response.headers.location)
             : null;
-        resolve(
-          redirect
-            ? remainingRedirects > 0
-              ? probeUrl(redirect, undefined, remainingRedirects - 1)
-              : null
-            : status < 500
-              ? rawUrl
-              : null,
-        );
+        if (!redirect) {
+          resolve(status < 500 ? rawUrl : null);
+        } else if (remainingRedirects === 0) {
+          resolve(null);
+        } else {
+          resolve(
+            probeUrl(redirect, undefined, remainingRedirects - 1).then(
+              (ready) =>
+                ready && parseHttpUrl(ready)?.origin === url.origin
+                  ? rawUrl
+                  : ready,
+            ),
+          );
+        }
       }
     });
 
@@ -917,7 +922,11 @@ async function startStandaloneNextServer() {
   });
   serverProcess.once("exit", (code) => {
     exited = true;
-    if (!isQuitting && !serverProcess.killed) {
+    const servingLocalWindow =
+      nextServerProcess === serverProcess &&
+      lastAppUrl !== null &&
+      parseHttpUrl(lastAppUrl)?.origin === url;
+    if (!isQuitting && !serverProcess.killed && servingLocalWindow) {
       dialog.showErrorBox(
         "BidTool server stopped",
         `The local Next.js server exited with code ${code ?? "unknown"}.`,
