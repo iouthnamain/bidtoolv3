@@ -7,7 +7,7 @@ import {
   tenantConditionForValue,
   type TenantScopeValue,
 } from "~/server/api/tenant-scope";
-import { shopImportJobs } from "~/server/db/schema";
+import { shopImportJobProducts, shopImportJobs } from "~/server/db/schema";
 import { resolveScrapeJobTtlDays } from "~/server/services/app-settings";
 import { abortShopImportJob } from "~/server/services/job-scheduler";
 import { ShopJobServiceError } from "~/server/services/shop-job-errors";
@@ -66,6 +66,7 @@ type ShopImportJobRow = typeof shopImportJobs.$inferSelect;
 const ACTIVE_JOB_STATUSES: ShopImportJobStatus[] = ["queued", "running"];
 const DEFAULT_LIST_LIMIT = 25;
 const MAX_LIST_LIMIT = 100;
+const SNAPSHOT_INSERT_BATCH_SIZE = 500;
 
 async function _startShopImportJob(
   input: {
@@ -81,23 +82,39 @@ async function _startShopImportJob(
   );
 
   const now = new Date().toISOString();
-  const [job] = await db
-    .insert(shopImportJobs)
-    .values({
-      id: randomUUID(),
-      scrapeJobId: scrapeJob.id,
-      status: "queued",
-      productSourceUrls,
-      total: products.length,
-      // Inherit the parent scrape job's tenant so the import job is owned by
-      // the same tenant.
-      tenantId: scrapeJob.tenantId ?? null,
-      startedAt: now,
-      updatedAt: now,
-    })
-    .returning();
-
-  return toImportJobSnapshot(requireRow(job));
+  const job = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(shopImportJobs)
+      .values({
+        id: randomUUID(),
+        scrapeJobId: scrapeJob.id,
+        status: "queued",
+        productSourceUrls,
+        total: products.length,
+        tenantId: scrapeJob.tenantId ?? null,
+        startedAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    const job = requireRow(inserted);
+    for (
+      let start = 0;
+      start < products.length;
+      start += SNAPSHOT_INSERT_BATCH_SIZE
+    ) {
+      await tx.insert(shopImportJobProducts).values(
+        products
+          .slice(start, start + SNAPSHOT_INSERT_BATCH_SIZE)
+          .map((productJson, index) => ({
+            importJobId: job.id,
+            sortOrder: start + index,
+            productJson,
+          })),
+      );
+    }
+    return job;
+  });
+  return toImportJobSnapshot(job);
 }
 
 async function _listShopImportJobs(

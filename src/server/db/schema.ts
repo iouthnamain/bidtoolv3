@@ -11,11 +11,14 @@ import {
   numeric,
   check,
   index,
+  primaryKey,
   uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+import type { ScrapedShopProduct } from "~/server/services/shop-material-scraper";
 
 export const notificationFrequencyEnum = pgEnum("notification_frequency", [
   "daily",
@@ -996,6 +999,22 @@ export const shopImportJobs = pgTable(
     shopImportJobsTenantIdx: index("shop_import_jobs_tenant_id_idx").on(
       table.tenantId,
     ),
+  }),
+);
+
+export const shopImportJobProducts = pgTable(
+  "shop_import_job_products",
+  {
+    importJobId: uuid("import_job_id")
+      .notNull()
+      .references(() => shopImportJobs.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull(),
+    productJson: jsonb("product_json").$type<ScrapedShopProduct>().notNull(),
+  },
+  (table) => ({
+    importJobProductOrder: primaryKey({
+      columns: [table.importJobId, table.sortOrder],
+    }),
   }),
 );
 
