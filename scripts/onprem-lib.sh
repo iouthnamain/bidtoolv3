@@ -207,7 +207,20 @@ function environment(list) {
   );
 }
 const dbUser = () => config.services.postgres.environment.POSTGRES_USER || "bidtool";
-const dbName = () => config.services.postgres.environment.POSTGRES_DB || "bidtoolv3";
+function dbName(target = config, selectedName = process.env.BIDTOOL_DATABASE_NAME) {
+  const url = new URL(target.services.app.environment.DATABASE_URL);
+  const name = decodeURIComponent(url.pathname.slice(1));
+  const expected = selectedName || config.services.postgres.environment.POSTGRES_DB || "bidtoolv3";
+  if (
+    !["postgres:", "postgresql:"].includes(url.protocol) ||
+    url.hostname !== "postgres" ||
+    (url.port && url.port !== "5432") ||
+    decodeURIComponent(url.username) !== dbUser() ||
+    name !== expected
+  )
+    fail("App database target must match the bundled PostgreSQL service.");
+  return name;
+}
 function db(sql, database = dbName()) {
   return compose([
     "exec",
@@ -378,15 +391,6 @@ function currentApp() {
     fail(
       "Old container DATABASE_URL differs from effective Compose configuration; preserve the original database configuration before backup.",
     );
-  const databaseUrl = new URL(expectedDatabase);
-  if (
-    !["postgres:", "postgresql:"].includes(databaseUrl.protocol) ||
-    databaseUrl.hostname !== "postgres" ||
-    (databaseUrl.port && databaseUrl.port !== "5432") ||
-    decodeURIComponent(databaseUrl.pathname.slice(1)) !== dbName() ||
-    decodeURIComponent(databaseUrl.username) !== dbUser()
-  )
-    fail("App database target must match the bundled PostgreSQL service before complete backup.");
   wasRunning = container.State.Running;
   return id;
 }
@@ -450,6 +454,7 @@ function backup(id) {
     image: container.Image,
     appVersion: environment(container.Config.Env).BIDTOOL_APP_VERSION || null,
     paths,
+    sourceDatabase: dbName(),
     previousMounts: (container.Mounts || []).map((mount) => ({
       type: mount.Type,
       name: mount.Name || null,
@@ -533,14 +538,49 @@ for(const e of m.entries){const f=p.join('/target',e.path),s=fs.lstatSync(f);if(
   console.log(`Staged volume: ${volume}; retained until operator cleanup.`);
   return volume;
 }
-function setEnv(key, value) {
-  if (!/^[A-Za-z0-9_./:@-]+$/.test(value)) fail(`Unsafe value for ${key}`);
+function selectStorage(values) {
+  for (const [key, value] of Object.entries(values)) {
+    if (!/^[A-Za-z0-9_./:@-]+$/.test(value)) fail(`Unsafe value for ${key}`);
+  }
   const contents = fs.readFileSync(envFile, "utf8");
-  const lines = contents.split("\n").filter((line) => !line.startsWith(key + "="));
+  const keys = Object.keys(values);
+  const lines = contents.trimEnd().split("\n").filter((line) =>
+    !keys.some((key) => line.startsWith(key + "=")),
+  );
   const temp = envFile + `.storage-${token}`;
-  fs.writeFileSync(temp, lines.join("\n") + `\n${key}=${value}\n`, { mode: 0o600 });
+  const stagedEnv = { ...process.env, ...values };
+  const fd = fs.openSync(temp, "wx", 0o600);
+  try {
+    const selection = Object.entries(values).map(([key, value]) => `${key}=${value}`);
+    fs.writeFileSync(fd, [...lines, ...selection, ""].join("\n"));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const args = [...composeArgs];
+  args[2] = temp;
+  const target = json(run([...args, "config", "--format", "json"], { env: stagedEnv }));
+  dbName(target, values.BIDTOOL_DATABASE_NAME);
+  if (
+    target.services.app.image !== values.BIDTOOL_APP_IMAGE ||
+    target.volumes?.["bidtool-onprem-app-data"]?.name !== values.BIDTOOL_DATA_VOLUME ||
+    !target.services.app.volumes?.some((mount) =>
+      mount.type === "volume" &&
+      mount.source === "bidtool-onprem-app-data" &&
+      mount.target === "/app/data",
+    )
+  )
+    fail("Compose did not resolve the staged database, volume and image together. Use the current on-prem Compose file.");
+
+  replacing = true;
   fs.renameSync(temp, envFile);
-  process.env[key] = value; // Exported old env would otherwise override --env-file.
+  Object.assign(process.env, values); // Exported old env would otherwise override --env-file.
+  const directory = fs.openSync(path.dirname(envFile), "r");
+  try {
+    fs.fsyncSync(directory);
+  } finally {
+    fs.closeSync(directory);
+  }
 }
 function imageId(image) {
   return run(["image", "inspect", image, "--format", "{{.Id}}"]);
@@ -652,10 +692,12 @@ try {
       verifyTargetPaths(metadata, manifest.paths);
       verifyReferences(file, manifest, metadata);
       const volume = initializeVolume(file, manifest.image);
-      replacing = true;
-      setEnv("BIDTOOL_DATA_VOLUME", volume);
-      setEnv("BIDTOOL_APP_IMAGE", manifest.image);
-      activateDatabase(staging);
+      console.log(`Previous database retained as ${dbName()}.`);
+      selectStorage({
+        BIDTOOL_DATABASE_NAME: staging,
+        BIDTOOL_DATA_VOLUME: volume,
+        BIDTOOL_APP_IMAGE: manifest.image,
+      });
       start();
       console.log(
         "Bundle activated. Required runtime/download proof remains an operator check. Previous database, volume and bundle are retained.",
@@ -685,9 +727,7 @@ try {
       verifyTargetPaths(result.manifest.database, result.manifest.paths);
       const targetImage = imageId(image);
       const volume = initializeVolume(result.directory, targetImage);
-      replacing = true;
-      setEnv("BIDTOOL_DATA_VOLUME", volume);
-      setEnv("BIDTOOL_APP_IMAGE", targetImage);
+      selectStorage({ BIDTOOL_DATA_VOLUME: volume, BIDTOOL_APP_IMAGE: targetImage });
       start();
       console.log(
         `Update activated. Preserve ${result.directory} and prior volume; verify document downloads before declaring success.`,

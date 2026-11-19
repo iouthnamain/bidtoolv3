@@ -116,8 +116,19 @@ fs.appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify(args)+'\\n');
 if (process.env.FAKE_DOCKER_FAIL && args.includes(process.env.FAKE_DOCKER_FAIL)) process.exit(Number(process.env.FAKE_DOCKER_EXIT));
 const state=JSON.parse(fs.readFileSync(process.env.FAKE_STORAGE_STATE));
 const base=path.dirname(process.env.FAKE_STORAGE_STATE);
-if(args.includes('up')) fs.writeFileSync(path.join(base,'activation.json'),JSON.stringify({volume:process.env.BIDTOOL_DATA_VOLUME,image:process.env.BIDTOOL_APP_IMAGE}));
-if(args.includes('config')) console.log(JSON.stringify(state.config));
+if(args.includes('up')) fs.writeFileSync(path.join(base,'activation.json'),JSON.stringify({database:process.env.BIDTOOL_DATABASE_NAME,volume:process.env.BIDTOOL_DATA_VOLUME,image:process.env.BIDTOOL_APP_IMAGE}));
+if(args.includes('config')) {
+ const config=state.config;
+  config.services.app.volumes=[{type:'volume',source:'bidtool-onprem-app-data',target:'/app/data'}];
+ if(process.env.BIDTOOL_DATABASE_NAME && process.env.FAKE_STORAGE_IGNORE_STAGED_DATABASE!=='true') {
+  const database=new URL(config.services.app.environment.DATABASE_URL);
+  database.pathname=process.env.BIDTOOL_DATABASE_NAME;
+  config.services.app.environment.DATABASE_URL=database.href;
+ }
+ if(process.env.BIDTOOL_APP_IMAGE) config.services.app.image=process.env.BIDTOOL_APP_IMAGE;
+ config.volumes={'bidtool-onprem-app-data':{name:process.env.BIDTOOL_DATA_VOLUME}};
+ console.log(JSON.stringify(config));
+}
 else if(args.includes('ps')) { if(process.env.FAKE_APP_PRESENT!=='false') console.log('fixture-app'); }
 else if(args[0]==='inspect') console.log(JSON.stringify([state.container]));
 else if(args[0]==='image') console.log(state.image);
